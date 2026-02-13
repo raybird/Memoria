@@ -365,6 +365,13 @@ tar -czf - $MEMORIA_HOME | gpg -c > backup.tar.gz.gpg
 grep -r "password\|secret\|api_key" $MEMORIA_HOME/knowledge/
 ```
 
+### 開源分享前檢查清單
+
+- [ ] `knowledge/Daily/` 未被提交（預設已 ignore）
+- [ ] `.memory/sessions/*.json` 與 `.memory/events.jsonl` 未被提交
+- [ ] `.env*`、`configs/secrets.yaml` 不含任何真實憑證
+- [ ] 對外示例已去識別化（移除個資、客戶名、內網 URL）
+
 ---
 
 ## 🛠️ 故障排除
@@ -401,6 +408,9 @@ source ~/.zshrc
 ## 📖 完整文檔
 
 - **系統規格**: `PERSISTENT_MEMORY_SYSTEM_SPEC.md`
+- **安全政策**: `SECURITY.md`
+- **變更記錄**: `CHANGELOG.md`
+- **授權條款**: `LICENSE`
 - **API 文檔**: 見 `docs/API.md`（如有）
 - **架構設計**: 見 `docs/ARCHITECTURE.md`（如有）
 
