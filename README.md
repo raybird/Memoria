@@ -170,6 +170,11 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 2. 產生橋接資料到 `.memory/exports/mcp-bridge/`
 3. 啟動 `mcp-memory-libsql` 並呼叫 `create_entities` / `create_relations`
 
+可直接使用的模板與操作文件：
+
+- Gemini/OpenCode MCP 配置模板：`skills/memoria-memory-sync/resources/mcp/`
+- 自動 ingest 說明：`skills/memoria-memory-sync/resources/mcp/INGEST_PLAYBOOK.md`
+
 
 ### 其他工具
 
@@ -261,7 +266,18 @@ $MEMORIA_HOME/
 │   └── global/preferences.yaml
 │
 ├── scripts/                      # 自動化腳本
-│   └── post-session-hook.sh
+│   ├── post-session-hook.sh
+│   └── test-smoke.sh
+├── skills/                       # Agent Skills
+│   └── memoria-memory-sync/
+│       ├── SKILL.md
+│       ├── references/REFERENCE.md
+│       ├── resources/mcp/
+│       └── scripts/
+│           ├── run-sync-with-enhancement.sh
+│           ├── build-mcp-bridge-payload.mjs
+│           ├── build-mcp-tool-requests.mjs
+│           └── ingest-mcp-libsql.mjs
 ├── src/                          # TypeScript CLI 原始碼
 │   └── cli.ts
 ├── cli                           # TS CLI 入口（執行 memoria 指令）
@@ -387,7 +403,9 @@ grep -r "password\|secret\|api_key" $MEMORIA_HOME/knowledge/
 ### 開源分享前檢查清單
 
 - [ ] `knowledge/Daily/` 未被提交（預設已 ignore）
+- [ ] `knowledge/Decisions/` 與 `knowledge/Skills/` 內容未被提交（預設已 ignore）
 - [ ] `.memory/sessions/*.json` 與 `.memory/events.jsonl` 未被提交
+- [ ] `.memory/exports/mcp-bridge/*.json` 未被提交
 - [ ] `.env*`、`configs/secrets.yaml` 不含任何真實憑證
 - [ ] 對外示例已去識別化（移除個資、客戶名、內網 URL）
 
@@ -412,6 +430,21 @@ pnpm install
 
 # 先做 dry-run 驗證輸入
 MEMORIA_HOME=$MEMORIA_HOME ./cli sync --dry-run examples/session.sample.json
+```
+
+### 問題：MCP/libSQL 自動增強失敗
+
+```bash
+# 1. 檢查 libSQL 連線設定
+echo "$LIBSQL_URL"
+
+# 2. 驗證 mcp-memory-libsql 可啟動
+npx -y mcp-memory-libsql
+
+# 3. 重新跑自動增強流程
+LIBSQL_URL="file:/path/to/memory-tool.db" \
+  bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh \
+  examples/session.sample.json
 ```
 
 ### 問題：Gemini 沒有載入記憶
