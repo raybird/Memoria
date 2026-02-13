@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `memoria sync --dry-run` for validation and write-preview without mutating files.
+- `memoria stats` command for sessions/events/skills summary and top skills.
+
+### Changed
+- Session JSON parsing now validates schema with clearer error messages.
+- README now documents dry-run and stats command usage.
+
 ## [1.1.1] - 2026-02-13
 
 ### Added

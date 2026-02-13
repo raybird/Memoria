@@ -90,6 +90,9 @@ MEMORIA_HOME=$(pwd) ./cli init
 
 # 6. 快速測試同步（可選）
 MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
+
+# 7. 先預覽同步結果（不寫入檔案）
+MEMORIA_HOME=$(pwd) ./cli sync --dry-run examples/session.sample.json
 ```
 
 ---
@@ -309,6 +312,11 @@ tar -xzf ai-memory-backup-20250213.tar.gz -C ~/
 ## 📊 系統監控
 
 ### 查看記憶統計
+
+```bash
+# TS CLI（推薦）
+MEMORIA_HOME=$MEMORIA_HOME ./cli stats
+```
 
 ```python
 # 使用 Python 腳本

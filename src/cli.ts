@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import Database from 'better-sqlite3'
+import { z } from 'zod'
 
 type Json = Record<string, unknown>
 
@@ -24,6 +25,27 @@ type SessionData = {
   summary?: string
   events?: SessionEvent[]
 }
+
+const sessionEventSchema = z
+  .object({
+    id: z.string().optional(),
+    timestamp: z.string().optional(),
+    type: z.string().optional(),
+    event_type: z.string().optional(),
+    content: z.unknown().optional(),
+    metadata: z.unknown().optional()
+  })
+  .passthrough()
+
+const sessionSchema = z
+  .object({
+    id: z.string().optional(),
+    timestamp: z.string().optional(),
+    project: z.string().optional(),
+    summary: z.string().optional(),
+    events: z.array(sessionEventSchema).default([])
+  })
+  .passthrough()
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -112,7 +134,22 @@ function initDatabase(dbPath: string): void {
 
 async function readSession(sessionFile: string): Promise<SessionData> {
   const raw = await fs.readFile(sessionFile, 'utf8')
-  const data = JSON.parse(raw) as Json
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`Session file is not valid JSON: ${sessionFile}`)
+  }
+
+  const validated = sessionSchema.safeParse(parsed)
+  if (!validated.success) {
+    const details = validated.error.issues
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ')
+    throw new Error(`Session schema validation failed: ${details}`)
+  }
+
+  const data = validated.data
   return {
     id: typeof data.id === 'string' ? data.id : undefined,
     timestamp: typeof data.timestamp === 'string' ? data.timestamp : undefined,
@@ -161,6 +198,58 @@ function importSession(dbPath: string, sessionData: SessionData): string {
   }
 
   return sessionId
+}
+
+function getEventType(event: SessionEvent): string {
+  return event.type ?? event.event_type ?? 'UnknownEvent'
+}
+
+function getEventContentObject(event: SessionEvent): Json {
+  if (event.content && typeof event.content === 'object' && !Array.isArray(event.content)) {
+    return event.content as Json
+  }
+  return {}
+}
+
+function previewSync(memoriaHome: string, sessionFile: string, sessionData: SessionData): void {
+  const sessionId = sessionData.id?.trim() || `session_${Date.now()}`
+  const timestamp = safeDate(sessionData.timestamp).toISOString()
+  const events = sessionData.events ?? []
+  const date = safeDate(timestamp).toISOString().slice(0, 10)
+  const dailyPath = path.join(memoriaHome, 'knowledge', 'Daily', `${date}.md`)
+  const dbPath = path.join(memoriaHome, '.memory', 'sessions.db')
+
+  const decisionPaths = events
+    .filter((e) => getEventType(e) === 'DecisionMade')
+    .map((event, idx) => {
+      const content = getEventContentObject(event)
+      const decisionTitle =
+        typeof content.decision === 'string' && content.decision.trim() ? content.decision.trim() : 'Untitled Decision'
+      const eventId = event.id?.trim() || `dryrun_${idx + 1}`
+      const filename = `${date}_${slugify(decisionTitle).slice(0, 40)}_${slugify(eventId).slice(0, 8)}.md`
+      return path.join(memoriaHome, 'knowledge', 'Decisions', filename)
+    })
+
+  const skillPaths = events
+    .filter((e) => getEventType(e) === 'SkillLearned')
+    .map((event) => {
+      const content = getEventContentObject(event)
+      const skillName =
+        typeof content.skill_name === 'string' && content.skill_name.trim() ? content.skill_name.trim() : 'Untitled Skill'
+      return path.join(memoriaHome, 'knowledge', 'Skills', `${slugify(skillName)}.md`)
+    })
+
+  console.log('🧪 Dry run (no files written)')
+  console.log(`- session file: ${sessionFile}`)
+  console.log(`- session id: ${sessionId}`)
+  console.log(`- project: ${sessionData.project ?? 'default'}`)
+  console.log(`- events: ${events.length}`)
+  console.log(`- database upsert: ${dbPath}`)
+  console.log(`- daily note append: ${dailyPath}`)
+  console.log(`- decisions to write: ${decisionPaths.length}`)
+  for (const p of decisionPaths.slice(0, 5)) console.log(`  - ${p}`)
+  console.log(`- skills to write: ${skillPaths.length}`)
+  for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`)
 }
 
 async function syncDailyNote(memoriaHome: string, dbPath: string, sessionId: string): Promise<void> {
@@ -348,6 +437,45 @@ async function doctor(memoriaHome: string): Promise<void> {
   }
 }
 
+function stats(memoriaHome: string): void {
+  const dbPath = path.join(memoriaHome, '.memory', 'sessions.db')
+  if (!existsSync(dbPath)) {
+    console.log(`✗ sessions.db not found: ${dbPath}`)
+    console.log('Run `memoria init` first.')
+    return
+  }
+
+  const db = new Database(dbPath, { readonly: true })
+  try {
+    const totalSessions = Number((db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c)
+    const totalEvents = Number((db.prepare('SELECT COUNT(*) AS c FROM events').get() as { c: number }).c)
+    const totalSkills = Number((db.prepare('SELECT COUNT(*) AS c FROM skills').get() as { c: number }).c)
+    const lastSession = db
+      .prepare('SELECT id, timestamp, project FROM sessions ORDER BY timestamp DESC LIMIT 1')
+      .get() as { id: string; timestamp: string; project: string } | undefined
+
+    const topSkills = db
+      .prepare('SELECT name, use_count, success_rate FROM skills ORDER BY use_count DESC, name ASC LIMIT 5')
+      .all() as { name: string; use_count: number; success_rate: number }[]
+
+    console.log('📊 Memoria Stats')
+    console.log(`- sessions: ${totalSessions}`)
+    console.log(`- events: ${totalEvents}`)
+    console.log(`- skills: ${totalSkills}`)
+    if (lastSession) {
+      console.log(`- last session: ${lastSession.id} (${lastSession.project}, ${lastSession.timestamp})`)
+    }
+    if (topSkills.length > 0) {
+      console.log('- top skills:')
+      for (const skill of topSkills) {
+        console.log(`  - ${skill.name}: uses=${skill.use_count}, success=${(skill.success_rate * 100).toFixed(1)}%`)
+      }
+    }
+  } finally {
+    db.close()
+  }
+}
+
 async function run(): Promise<void> {
   const memoriaHome = getMemoriaHome()
   const memoryPath = path.join(memoriaHome, '.memory')
@@ -371,12 +499,19 @@ async function run(): Promise<void> {
     .command('sync')
     .description('Import session JSON and sync notes')
     .argument('<sessionFile>', 'Path to session JSON file')
-    .action(async (sessionFile: string) => {
+    .option('--dry-run', 'Validate and preview without writing files')
+    .action(async (sessionFile: string, options: { dryRun?: boolean }) => {
+      const absSessionPath = path.resolve(sessionFile)
+      const sessionData = await readSession(absSessionPath)
+
+      if (options.dryRun) {
+        previewSync(memoriaHome, absSessionPath, sessionData)
+        return
+      }
+
       await ensureBaseDirs(memoriaHome)
       initDatabase(dbPath)
 
-      const absSessionPath = path.resolve(sessionFile)
-      const sessionData = await readSession(absSessionPath)
       const sessionId = importSession(dbPath, sessionData)
 
       await syncDailyNote(memoriaHome, dbPath, sessionId)
@@ -385,6 +520,13 @@ async function run(): Promise<void> {
 
       console.log(`✓ 已導入會話: ${sessionId}`)
       console.log('✅ 同步完成!')
+    })
+
+  program
+    .command('stats')
+    .description('Show session, event, and skill statistics')
+    .action(() => {
+      stats(memoriaHome)
     })
 
   program
