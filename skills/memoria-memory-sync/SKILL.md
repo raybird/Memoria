@@ -102,6 +102,9 @@ Environment gates:
 - `LIBSQL_URL`
 - `LIBSQL_AUTH_TOKEN` (for remote libSQL)
 - Optional orchestration command: `MEMORIA_MCP_ENHANCE_CMD`
+- Generated payload env: `MEMORIA_MCP_PAYLOAD`
+- Generated request env: `MEMORIA_MCP_REQUESTS`
+- Optional MCP server override: `MEMORIA_MCP_SERVER_COMMAND`, `MEMORIA_MCP_SERVER_ARGS`
 
 Use helper script for this pattern:
 
@@ -109,14 +112,44 @@ Use helper script for this pattern:
 bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
 ```
 
+Example MCP server config (from `mcp-memory-libsql` style):
+
+```json
+{
+  "mcpServers": {
+    "mcp-memory-libsql": {
+      "command": "npx",
+      "args": ["-y", "mcp-memory-libsql"],
+      "env": {
+        "LIBSQL_URL": "file:/path/to/your/database.db"
+      }
+    }
+  }
+}
+```
+
+Template files (ts-cli-skill style resources):
+
+- `resources/mcp/gemini-cli.mcp.json`
+- `resources/mcp/opencode.mcp.json`
+- `resources/mcp/INGEST_PLAYBOOK.md`
+
 Expected behavior:
 
-- If MCP env/command is configured: run enhancement after base sync
-- If not configured: base sync still succeeds and enhancement is skipped
+- If `LIBSQL_URL` is set: bridge payload is generated from `sessions/events/skills`
+- Tool-ready request bundle is generated as `MEMORIA_MCP_REQUESTS`
+- If `MEMORIA_MCP_ENHANCE_CMD` is set: run that command
+- If command is not set: auto-run built-in ingest script against `mcp-memory-libsql`
+- If MCP env is missing: base sync still succeeds and enhancement is skipped
 
 ## References
 
 - Detailed operational guidance: `references/REFERENCE.md`
 - Helper command wrapper: `scripts/run-sync.sh`
 - Hybrid wrapper (base + optional MCP): `scripts/run-sync-with-enhancement.sh`
+- Bridge payload builder: `scripts/build-mcp-bridge-payload.mjs`
+- MCP tool request builder: `scripts/build-mcp-tool-requests.mjs`
+- MCP auto-ingest runner: `scripts/ingest-mcp-libsql.mjs`
+- MCP config templates: `resources/mcp/*.json`
+- Ingest guide template: `resources/mcp/INGEST_PLAYBOOK.md`
 - Session JSON starter template: `assets/session.template.json`

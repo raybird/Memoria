@@ -92,6 +92,11 @@ MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
 
 # 7. 先預覽同步結果（不寫入檔案）
 MEMORIA_HOME=$(pwd) ./cli sync --dry-run examples/session.sample.json
+
+# 8. （可選）啟用 MCP/libSQL 自動增強同步
+LIBSQL_URL="file:/path/to/memory-tool.db" \
+  bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh \
+  examples/session.sample.json
 ```
 
 ---
@@ -120,7 +125,7 @@ source ~/.zshrc
 gemini
 
 # 測試記憶
-You: "記住：我喜歡用 Python 3.11+ 特性"
+You: "記住：我偏好 TypeScript CLI 工作流"
 AI: "好的，已記住。這將保存到你的核心記憶中。"
 
 # 結束會話後同步
@@ -143,6 +148,28 @@ skill_learning = true
 skill_path = "$MEMORIA_HOME/knowledge/Skills"
 auto_extract = true
 ```
+
+### Agent Skill（agentskills.io）
+
+本專案已提供可直接使用的 skill：
+
+- `skills/memoria-memory-sync/SKILL.md`
+- 參考資料：`skills/memoria-memory-sync/references/REFERENCE.md`
+- MCP 模板：`skills/memoria-memory-sync/resources/mcp/`
+
+若你已安裝 `mcp-memory-libsql`，可用自動模式把本地記憶同步後再送入 MCP：
+
+```bash
+export LIBSQL_URL="file:/path/to/memory-tool.db"
+bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
+```
+
+這個流程會自動：
+
+1. 先執行 Memoria `init/sync/stats`
+2. 產生橋接資料到 `.memory/exports/mcp-bridge/`
+3. 啟動 `mcp-memory-libsql` 並呼叫 `create_entities` / `create_relations`
+
 
 ### 其他工具
 

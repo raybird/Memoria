@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mcp-memory-libsql": {
+      "command": "npx",
+      "args": ["-y", "mcp-memory-libsql"],
+      "env": {
+        "LIBSQL_URL": "file:/ABSOLUTE/PATH/TO/memory-tool.db"
+      }
+    }
+  }
+}

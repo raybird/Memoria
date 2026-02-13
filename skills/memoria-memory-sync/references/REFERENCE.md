@@ -111,9 +111,77 @@ This avoids data loss risk while still enabling advanced retrieval.
 Suggested runtime pattern:
 
 1. `./cli sync <session.json>`
-2. Optional enhancement command if `LIBSQL_URL` is set
-3. Report enhancement status explicitly (ran/skipped/failed)
+2. Build bridge payload: `node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs --memoria-home <path>`
+3. Optional enhancement command if `LIBSQL_URL` is set
+4. Report enhancement status explicitly (ran/skipped/failed)
 
 Helper wrapper in this skill:
 
 - `scripts/run-sync-with-enhancement.sh`
+- `scripts/build-mcp-tool-requests.mjs`
+- `scripts/ingest-mcp-libsql.mjs`
+
+Bridge payload contract:
+
+- Output file is JSON with `entities` and `relations`
+- Payload path is exposed as `MEMORIA_MCP_PAYLOAD`
+- Default location: `.memory/exports/mcp-bridge/`
+
+MCP request bundle contract:
+
+- Output file includes `create_entities`, `create_relations`, and verify requests
+- File path is exposed as `MEMORIA_MCP_REQUESTS`
+- Designed to match `mcp-memory-libsql` tool names and argument shape
+
+Example MCP server config:
+
+```json
+{
+  "mcpServers": {
+    "mcp-memory-libsql": {
+      "command": "npx",
+      "args": ["-y", "mcp-memory-libsql"],
+      "env": {
+        "LIBSQL_URL": "file:/path/to/your/database.db"
+      }
+    }
+  }
+}
+```
+
+Client templates in this skill:
+
+- Gemini CLI: `resources/mcp/gemini-cli.mcp.json`
+- OpenCode: `resources/mcp/opencode.mcp.json`
+
+These are intentionally template-first (similar to `ts-cli-skill` resource pattern):
+
+- keep reusable config skeletons in `resources/`
+- keep runtime orchestration in `scripts/`
+- keep reasoning and constraints in `SKILL.md` and `references/`
+
+Example enhancement command:
+
+```bash
+export LIBSQL_URL="libsql://your-db.turso.io"
+export LIBSQL_AUTH_TOKEN="your-token"
+export MEMORIA_MCP_ENHANCE_CMD='cat "$MEMORIA_MCP_PAYLOAD" | your-ingest-command'
+bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
+```
+
+Automatic mode (no custom command):
+
+- If `LIBSQL_URL` is set and `MEMORIA_MCP_ENHANCE_CMD` is not set,
+  `run-sync-with-enhancement.sh` auto-runs `scripts/ingest-mcp-libsql.mjs`.
+- Default server launch is equivalent to:
+  - command: `npx`
+  - args: `-y mcp-memory-libsql`
+- Override with:
+  - `MEMORIA_MCP_SERVER_COMMAND`
+  - `MEMORIA_MCP_SERVER_ARGS`
+
+If your agent can call MCP tools directly, use `MEMORIA_MCP_REQUESTS` as the argument source:
+
+1. Read `create_entities` from the request bundle and call `create_entities`
+2. Read `create_relations` and call `create_relations`
+3. Optionally call `read_graph` or `search_nodes` for verification

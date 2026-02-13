@@ -65,8 +65,17 @@ Before opening PRs, mirror CI locally in this order:
 - `src/cli.ts`: TypeScript CLI implementation.
 - `cli`: executable shim (`pnpm tsx`).
 - `scripts/test-smoke.sh`: smoke test.
+- `skills/memoria-memory-sync/SKILL.md`: Agent Skill entrypoint.
+- `skills/memoria-memory-sync/scripts/`: hybrid sync and MCP bridge scripts.
 - `examples/session.sample.json`: sample input for sync flow.
 - `.github/workflows/ci.yml`: canonical validation pipeline.
+
+## Agent Skill and MCP Notes
+
+- Primary skill path: `skills/memoria-memory-sync/SKILL.md`.
+- Hybrid runner: `skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh`.
+- MCP integration is optional and gated by `LIBSQL_URL`.
+- Default MCP server launch for automation is `npx -y mcp-memory-libsql`.
 
 ## Code Style: General
 
