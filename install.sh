@@ -89,8 +89,8 @@ user_profile:
   timezone: "Asia/Taipei"
   
 coding_preferences:
-  language: "Python"
-  style: "PEP8"
+  language: "TypeScript"
+  style: "Project conventions"
   editor: "VSCode"
   
 communication:
@@ -165,7 +165,7 @@ else
 fi
 echo ""
 
-# 步驟 5: 設置 CLI 运行時（TS 優先，Python 備援）
+# 步驟 5: 設置 CLI 运行時（TypeScript）
 echo "[5/7] 設置 CLI 运行時..."
 
 if command -v node &> /dev/null && command -v pnpm &> /dev/null; then
@@ -174,19 +174,9 @@ if command -v node &> /dev/null && command -v pnpm &> /dev/null; then
     chmod +x "$INSTALL_DIR/cli" || true
     echo "✓ TypeScript CLI 已就緒"
 else
-    echo "⚠ 未檢測到 Node.js 或 pnpm，將使用 Python 備援"
-fi
-
-echo ""
-echo "- 準備 Python 備援腳本..."
-
-# 這裡假設 sync_memory.py 已經在當前目錄
-if [ -f "sync_memory.py" ]; then
-    cp sync_memory.py "$SCRIPTS_DIR/"
-    chmod +x "$SCRIPTS_DIR/sync_memory.py"
-    echo "✓ sync_memory.py 已複製"
-else
-    echo "⚠ sync_memory.py 未找到，請手動複製"
+    echo "✗ 未檢測到 Node.js 或 pnpm，無法安裝 TypeScript CLI"
+    echo "  請先安裝 Node.js (>=18) 與 pnpm，然後重新執行 install.sh"
+    exit 1
 fi
 # 步驟 6: 創建自動化 hooks
 echo "[6/7] 創建自動化 hooks..."
@@ -203,17 +193,11 @@ LATEST_SESSION=$(ls -t "$MEMORIA_HOME"/.memory/sessions/*.json 2>/dev/null | hea
 if [ -n "$LATEST_SESSION" ]; then
     echo "正在同步最新會話: $LATEST_SESSION"
 
-    TS_SYNC_OK=0
-    # 優先使用 TypeScript CLI
     if [ -x "$MEMORIA_HOME/cli" ] && command -v pnpm &> /dev/null; then
-        if (cd "$MEMORIA_HOME" && MEMORIA_HOME="$MEMORIA_HOME" ./cli sync "$LATEST_SESSION"); then
-            TS_SYNC_OK=1
-        fi
-    fi
-
-    # 備援: Python
-    if [ "$TS_SYNC_OK" -ne 1 ] && [ -f "$MEMORIA_HOME/scripts/sync_memory.py" ]; then
-        MEMORIA_HOME="$MEMORIA_HOME" python3 "$MEMORIA_HOME/scripts/sync_memory.py" "$LATEST_SESSION"
+        (cd "$MEMORIA_HOME" && MEMORIA_HOME="$MEMORIA_HOME" ./cli sync "$LATEST_SESSION")
+    else
+        echo "✗ 找不到可執行的 TypeScript CLI，無法同步"
+        exit 1
     fi
     
     # Git 提交
@@ -235,15 +219,10 @@ echo ""
 echo "[7/7] 初始化資料庫..."
 if [ -x "$INSTALL_DIR/cli" ] && command -v pnpm &> /dev/null; then
     (cd "$INSTALL_DIR" && MEMORIA_HOME="$INSTALL_DIR" ./cli init)
-    echo "✓ (TS) 資料庫已初始化"
-elif [ -f "$SCRIPTS_DIR/sync_memory.py" ]; then
-    MEMORIA_HOME="$INSTALL_DIR" python3 "$SCRIPTS_DIR/sync_memory.py" --init
-    echo "✓ (Python) 資料庫已初始化"
+    echo "✓ (TypeScript) 資料庫已初始化"
 else
     echo "⚠ 資料庫初始化失敗，請手動運行:"
     echo "   cd $INSTALL_DIR && MEMORIA_HOME=$INSTALL_DIR ./cli init"
-    echo "   或"
-    echo "   MEMORIA_HOME=$INSTALL_DIR python3 $SCRIPTS_DIR/sync_memory.py --init"
 fi
 echo ""
 
@@ -269,7 +248,7 @@ echo "   - Gemini CLI: gemini"
 echo "   - OpenCode: 配置 config.toml 指向 $MEMORY_DIR"
 echo ""
 echo "4. 測試記憶系統:"
-echo "   與 AI 對話並說 '記住：我喜歡 Python'"
+echo "   與 AI 對話並說 '記住：我偏好 TypeScript CLI'"
 echo "   結束會話後，運行:"
 echo "   $SCRIPTS_DIR/post-session-hook.sh"
 echo ""

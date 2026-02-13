@@ -93,7 +93,6 @@ $MEMORIA_HOME/
 │       └── preferences.yaml
 │
 ├── scripts/                      # 自動化腳本
-│   ├── sync_memory.py           # Python 備援同步腳本
 │   ├── post-session-hook.sh     # 會話結束 hook
 │   ├── compress_context.py      # 上下文壓縮
 │   ├── extract_skills.py        # 技能提取
@@ -373,11 +372,7 @@ gemini chat export --session-name "$(date +%Y%m%d_%H%M%S)" \
 MEMORIA_HOME="$MEMORIA_HOME" ./cli sync \
   "$MEMORIA_HOME/.memory/sessions/gemini_$(date +%Y%m%d_%H%M%S).json"
 
-# 3. 備援方案（若 TS 不可用）
-MEMORIA_HOME="$MEMORIA_HOME" python3 "$MEMORIA_HOME/scripts/sync_memory.py" \
-  "$MEMORIA_HOME/.memory/sessions/gemini_$(date +%Y%m%d_%H%M%S).json"
-
-# 4. Git 提交
+# 3. Git 提交
 cd "$MEMORIA_HOME"
 git add .
 git commit -m "Auto-sync: Gemini session $(date +%Y-%m-%d_%H:%M:%S)"
@@ -722,9 +717,8 @@ git init
 # 安裝 TS CLI 依賴（Node + pnpm）
 pnpm install
 
-# 初始化資料庫（TS 優先）
+# 初始化資料庫（TypeScript CLI）
 MEMORIA_HOME=$MEMORIA_HOME ./cli init
-# 備援：MEMORIA_HOME=$MEMORIA_HOME python3 scripts/sync_memory.py --init
 
 # 下載腳本（假設你已經有了）
 # 或者從這個規格文檔創建
@@ -753,13 +747,11 @@ cat > $MEMORIA_HOME/scripts/post-session-hook.sh << 'EOF'
 
 MEMORIA_HOME="${MEMORIA_HOME:-$(pwd)}"
 
-# 同步到 Obsidian（TS 優先）
+# 同步到 Obsidian（TypeScript CLI）
 LATEST_SESSION=$(ls -t "$MEMORIA_HOME"/.memory/sessions/*.json 2>/dev/null | head -n1 || true)
 if [ -n "$LATEST_SESSION" ]; then
   if [ -x "$MEMORIA_HOME/cli" ] && command -v pnpm >/dev/null 2>&1; then
     MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_HOME/cli" sync "$LATEST_SESSION"
-  elif [ -f "$MEMORIA_HOME/scripts/sync_memory.py" ]; then
-    MEMORIA_HOME="$MEMORIA_HOME" python3 "$MEMORIA_HOME/scripts/sync_memory.py" "$LATEST_SESSION"
   fi
 fi
 

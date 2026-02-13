@@ -1,0 +1,43 @@
+{
+  "id": "session_2026_01_01_000001",
+  "timestamp": "2026-01-01T00:00:01.000Z",
+  "project": "example-project",
+  "summary": "Implemented memory sync and captured one decision and one learned skill.",
+  "events": [
+    {
+      "id": "evt_decision_001",
+      "timestamp": "2026-01-01T00:01:00.000Z",
+      "type": "DecisionMade",
+      "content": {
+        "decision": "Use SQLite as default local store",
+        "rationale": "Simple local durability and no extra infrastructure",
+        "alternatives_considered": [
+          "In-memory only",
+          "Remote libSQL first"
+        ],
+        "impact_level": "high"
+      },
+      "metadata": {
+        "source": "template"
+      }
+    },
+    {
+      "id": "evt_skill_001",
+      "timestamp": "2026-01-01T00:02:00.000Z",
+      "type": "SkillLearned",
+      "content": {
+        "skill_name": "safe-memory-sync-workflow",
+        "category": "operations",
+        "success_rate": 0.9,
+        "pattern": "Initialize first, validate input, then sync and verify stats.",
+        "examples": [
+          "Run init before first sync",
+          "Use dry-run for untrusted session files"
+        ]
+      },
+      "metadata": {
+        "source": "template"
+      }
+    }
+  ]
+}

@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 ## [1.1.1] - 2026-02-13
 
 ### Added
-- GitHub Actions CI workflow for TypeScript, shell, and Python fallback validation.
+- GitHub Actions CI workflow for TypeScript and shell validation.
 - Smoke test script at `scripts/test-smoke.sh` for end-to-end `init` + `sync` verification.
 - `SECURITY.md` with private reporting and open-source data safety guidance.
 - MIT `LICENSE` file.
@@ -30,6 +30,6 @@ All notable changes to this project will be documented in this file.
 - Sample session file at `examples/session.sample.json`.
 
 ### Changed
-- Install and hook flow updated to TS-first with Python fallback.
+- Install and hook flow updated to TS-only runtime.
 - Path handling aligned around `MEMORIA_HOME`.
 - Ignore rules hardened for safer open-source sharing.

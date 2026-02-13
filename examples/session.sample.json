@@ -20,11 +20,11 @@
       "timestamp": "2026-02-13T09:31:00",
       "type": "DecisionMade",
       "content": {
-        "decision": "採用 TS CLI，保留 Python 備援",
-        "rationale": "降低維護成本並保持向後相容",
+        "decision": "採用 TS CLI，移除 Python 支援",
+        "rationale": "降低維護成本並統一執行路徑",
         "alternatives_considered": [
-          "只用 Python",
-          "一次性完全切換到 TS"
+          "維持雙軌（TS + Python）",
+          "先維持現狀再延後清理"
         ],
         "impact_level": "high"
       },

@@ -30,16 +30,8 @@ jobs:
       - name: Type check
         run: pnpm run check
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Validate install script syntax
         run: bash -n install.sh
-
-      - name: Validate Python fallback syntax
-        run: python3 -m py_compile sync_memory.py
 
       - name: Run smoke test
         run: bash scripts/test-smoke.sh

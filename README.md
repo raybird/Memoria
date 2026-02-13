@@ -81,9 +81,8 @@ mkdir -p scripts configs/{gemini,opencode,global}
 # 3. 安裝 CLI 依賴（TS 模式）
 pnpm install
 
-# 4. 初始化（TS 優先，Python 備援）
+# 4. 初始化（TypeScript CLI）
 MEMORIA_HOME=$(pwd) ./cli init
-# 或：MEMORIA_HOME=$(pwd) python3 scripts/sync_memory.py --init
 
 # 5. 配置你的 AI tool
 # 詳見下方「工具配置」章節
@@ -235,7 +234,6 @@ $MEMORIA_HOME/
 │   └── global/preferences.yaml
 │
 ├── scripts/                      # 自動化腳本
-│   ├── sync_memory.py
 │   └── post-session-hook.sh
 ├── src/                          # TypeScript CLI 原始碼
 │   └── cli.ts
@@ -318,20 +316,6 @@ tar -xzf ai-memory-backup-20250213.tar.gz -C ~/
 MEMORIA_HOME=$MEMORIA_HOME ./cli stats
 ```
 
-```python
-# 使用 Python 腳本
-python3 << EOF
-import sqlite3
-conn = sqlite3.connect('$MEMORIA_HOME/.memory/sessions.db')
-cursor = conn.cursor()
-
-print("記憶系統統計：")
-print(f"總會話數: {cursor.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]}")
-print(f"總事件數: {cursor.execute('SELECT COUNT(*) FROM events').fetchone()[0]}")
-print(f"學習技能: {cursor.execute('SELECT COUNT(*) FROM skills').fetchone()[0]}")
-EOF
-```
-
 ### 健康檢查
 
 ```bash
@@ -395,10 +379,12 @@ lsof $MEMORIA_HOME/.memory/sessions.db
 ### 問題：同步腳本失敗
 
 ```bash
-# 檢查 Python 依賴
-pip3 install --upgrade pip
-# 檢查腳本權限
-chmod +x $MEMORIA_HOME/scripts/*.py
+# 檢查 CLI 可執行檔與依賴
+ls -la $MEMORIA_HOME/cli
+pnpm install
+
+# 先做 dry-run 驗證輸入
+MEMORIA_HOME=$MEMORIA_HOME ./cli sync --dry-run examples/session.sample.json
 ```
 
 ### 問題：Gemini 沒有載入記憶
