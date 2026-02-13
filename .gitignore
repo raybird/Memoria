@@ -12,10 +12,15 @@ node_modules/
 .memory/sessions.db-shm
 .memory/exports/*.json
 .memory/sessions/*.json
+.memory/events.jsonl
 
 # Environment files
 .env
 .env.*
+
+# Open-source safe defaults
+knowledge/Daily/**
+!knowledge/Daily/.gitkeep
 
 # Temp files
 *.tmp
