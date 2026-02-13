@@ -113,40 +113,42 @@ LIBSQL_URL="file:/path/to/memory-tool.db" \
 
 ### Gemini CLI
 
+> 註：Gemini CLI 版本之間配置方式可能不同。建議使用本專案模板，避免手寫舊設定。
+
+1. 複製 MCP 模板：`skills/memoria-memory-sync/resources/mcp/gemini-cli.mcp.json`
+2. 將 `LIBSQL_URL` 改為你的實際資料庫路徑
+3. 貼到你的 Gemini CLI MCP 設定位置
+4. 會話結束後可執行：`$MEMORIA_HOME/scripts/post-session-hook.sh`
+
+若你只想先啟用本地記憶（不接 MCP），仍可使用：
+
 ```bash
-# 1. 複製系統提示
 cp $MEMORIA_HOME/configs/gemini/GEMINI.md ~/.gemini/
-
-# 2. 設置環境變量
-echo 'export GEMINI_MEMORY_PATH="$MEMORIA_HOME/.memory"' >> ~/.zshrc
-source ~/.zshrc
-
-# 3. 開始使用
 gemini
-
-# 測試記憶
-You: "記住：我偏好 TypeScript CLI 工作流"
-AI: "好的，已記住。這將保存到你的核心記憶中。"
-
-# 結束會話後同步
-$MEMORIA_HOME/scripts/post-session-hook.sh
 ```
 
 ### OpenCode
 
-```toml
-# config.toml
+> 註：OpenCode 版本之間配置格式可能不同。建議優先使用本專案提供的 MCP 模板，而不是手寫舊版 `toml` 節點。
 
-[opencode.memory]
-enabled = true
-memory_path = "$MEMORIA_HOME/.memory"
-auto_checkpoint = true
-checkpoint_interval = 50
+1. 複製模板：`skills/memoria-memory-sync/resources/mcp/opencode.mcp.json`
+2. 將 `LIBSQL_URL` 改為你的實際資料庫路徑
+3. 貼到你的 OpenCode MCP 設定位置
 
-[opencode.skills]
-skill_learning = true
-skill_path = "$MEMORIA_HOME/knowledge/Skills"
-auto_extract = true
+模板內容如下：
+
+```json
+{
+  "mcpServers": {
+    "mcp-memory-libsql": {
+      "command": "npx",
+      "args": ["-y", "mcp-memory-libsql"],
+      "env": {
+        "LIBSQL_URL": "file:/path/to/your/database.db"
+      }
+    }
+  }
+}
 ```
 
 ### Agent Skill（agentskills.io）
