@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-02-13
+
 ### Added
 - GitHub Actions CI workflow for TypeScript, shell, and Python fallback validation.
 - Smoke test script at `scripts/test-smoke.sh` for end-to-end `init` + `sync` verification.
