@@ -151,6 +151,15 @@ gemini
 }
 ```
 
+### `mcp-memory-libsql` 在本專案的用途
+
+在這個架構中，`mcp-memory-libsql` 是「**語意增強層**」，不是取代 Memoria 的主儲存。
+
+- **Memoria（主流程）**：負責 `init/sync/stats`、SQLite 持久化、以及 `knowledge/` markdown 輸出。
+- **mcp-memory-libsql（增強流程）**：負責 entities/relations、語意檢索、圖關聯查詢。
+- **整合原則**：先用 Memoria 落地本地記憶，再自動 ingest 到 MCP/libSQL 做進階檢索。
+- **可選啟用**：只有設定 `LIBSQL_URL` 時才會啟用增強；沒設定時 Memoria 仍可獨立運作。
+
 ### Agent Skill（agentskills.io）
 
 本專案已提供可直接使用的 skill：
