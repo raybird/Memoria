@@ -6,7 +6,7 @@ node_modules/
 .memory/sessions.db-journal
 .memory/sessions.db-wal
 .memory/sessions.db-shm
-.memory/exports/*.json
+.memory/exports/**/*.json
 .memory/sessions/*.json
 .memory/events.jsonl
 
@@ -17,6 +17,10 @@ node_modules/
 # Open-source safe defaults
 knowledge/Daily/**
 !knowledge/Daily/.gitkeep
+knowledge/Decisions/**
+!knowledge/Decisions/.gitkeep
+knowledge/Skills/**
+!knowledge/Skills/.gitkeep
 
 # Temp files
 *.tmp
