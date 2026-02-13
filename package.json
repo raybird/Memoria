@@ -1,0 +1,32 @@
+{
+  "name": "memoria",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "memoria": "./cli"
+  },
+  "scripts": {
+    "memoria": "tsx src/cli.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "commander": "^14.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

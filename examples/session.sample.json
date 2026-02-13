@@ -1,0 +1,54 @@
+{
+  "id": "session_example_001",
+  "timestamp": "2026-02-13T09:30:00",
+  "project": "Memoria",
+  "summary": "示範：使用 TS CLI 同步 session",
+  "events": [
+    {
+      "id": "evt_user_001",
+      "timestamp": "2026-02-13T09:30:10",
+      "type": "UserMessage",
+      "content": {
+        "text": "記住我們改成 TS-first 的同步策略"
+      },
+      "metadata": {
+        "channel": "cli"
+      }
+    },
+    {
+      "id": "evt_decision_001",
+      "timestamp": "2026-02-13T09:31:00",
+      "type": "DecisionMade",
+      "content": {
+        "decision": "採用 TS CLI，保留 Python 備援",
+        "rationale": "降低維護成本並保持向後相容",
+        "alternatives_considered": [
+          "只用 Python",
+          "一次性完全切換到 TS"
+        ],
+        "impact_level": "high"
+      },
+      "metadata": {
+        "source": "migration-plan"
+      }
+    },
+    {
+      "id": "evt_skill_001",
+      "timestamp": "2026-02-13T09:32:00",
+      "type": "SkillLearned",
+      "content": {
+        "skill_name": "TS-first Migration",
+        "category": "tooling",
+        "success_rate": 0.88,
+        "pattern": "先雙軌運行，穩定後移除舊路徑",
+        "examples": [
+          "memoria cli init",
+          "memoria cli sync"
+        ]
+      },
+      "metadata": {
+        "phase": "transition"
+      }
+    }
+  ]
+}
