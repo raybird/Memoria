@@ -55,6 +55,13 @@ MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
 ```bash
 MEMORIA_HOME=$(pwd) ./cli stats
 MEMORIA_HOME=$(pwd) ./cli doctor
+MEMORIA_HOME=$(pwd) ./cli verify
+```
+
+Optional skill validation (if `skills-ref` is installed):
+
+```bash
+skills-ref validate skills/memoria-memory-sync
 ```
 
 ## Single-Test Guidance
@@ -105,6 +112,7 @@ Environment gates:
 - Generated payload env: `MEMORIA_MCP_PAYLOAD`
 - Generated request env: `MEMORIA_MCP_REQUESTS`
 - Optional MCP server override: `MEMORIA_MCP_SERVER_COMMAND`, `MEMORIA_MCP_SERVER_ARGS`
+- MCP failure policy: `MEMORIA_MCP_STRICT` (`1` fail-fast, `0` continue)
 
 Use helper script for this pattern:
 
@@ -141,6 +149,12 @@ Expected behavior:
 - If `MEMORIA_MCP_ENHANCE_CMD` is set: run that command
 - If command is not set: auto-run built-in ingest script against `mcp-memory-libsql`
 - If MCP env is missing: base sync still succeeds and enhancement is skipped
+
+Failure semantics:
+
+- Base sync completes before enhancement starts.
+- In strict mode (`MEMORIA_MCP_STRICT=1`), enhancement failure returns non-zero exit.
+- In non-strict mode (`MEMORIA_MCP_STRICT=0`), enhancement failure is logged and workflow continues.
 
 ## References
 

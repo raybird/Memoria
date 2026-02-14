@@ -26,6 +26,13 @@ This reference supports `SKILL.md` for deeper implementation details.
   - `MEMORIA_HOME=$(pwd) ./cli stats`
 - Run environment health checks:
   - `MEMORIA_HOME=$(pwd) ./cli doctor`
+- Run runtime/schema verification:
+  - `MEMORIA_HOME=$(pwd) ./cli verify`
+  - `MEMORIA_HOME=$(pwd) ./cli verify --json`
+
+Skill validation (if available):
+
+- `skills-ref validate skills/memoria-memory-sync`
 
 ## CI Parity Checklist
 
@@ -179,6 +186,9 @@ Automatic mode (no custom command):
 - Override with:
   - `MEMORIA_MCP_SERVER_COMMAND`
   - `MEMORIA_MCP_SERVER_ARGS`
+- Failure policy:
+  - `MEMORIA_MCP_STRICT=1` (default): fail fast on MCP ingest errors
+  - `MEMORIA_MCP_STRICT=0`: continue after logging MCP ingest failure
 
 If your agent can call MCP tools directly, use `MEMORIA_MCP_REQUESTS` as the argument source:
 

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Optional MCP end-to-end check script: `scripts/test-mcp-e2e.sh`.
+- Installation completion checklist and compatibility matrix in `README.md`.
+- Documented MCP failure policy via `MEMORIA_MCP_STRICT`.
+
 ## [1.2.0] - 2026-02-14
 
 ### Added

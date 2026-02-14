@@ -40,6 +40,16 @@ export MEMORIA_MCP_SERVER_COMMAND="npx"
 export MEMORIA_MCP_SERVER_ARGS="-y mcp-memory-libsql"
 ```
 
+Failure policy:
+
+```bash
+# default: enhancement fail -> non-zero exit
+export MEMORIA_MCP_STRICT=1
+
+# optional: enhancement fail -> warning and continue
+export MEMORIA_MCP_STRICT=0
+```
+
 ## Notes
 
 - Entity `name` values come from Memoria IDs and are treated as unique keys.

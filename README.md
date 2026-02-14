@@ -171,7 +171,7 @@ node dist/cli.mjs init
 
 1. 複製 MCP 模板：`skills/memoria-memory-sync/resources/mcp/gemini-cli.mcp.json`
 2. 將 `LIBSQL_URL` 改為你的實際資料庫路徑
-3. 貼到你的 Gemini CLI MCP 設定位置
+3. 貼到你的 Gemini CLI MCP 設定位置（常見為 `~/.gemini/` 底下的 MCP config 檔）
 4. 會話結束後可執行：`$MEMORIA_HOME/scripts/post-session-hook.sh`
 
 若你只想先啟用本地記憶（不接 MCP），仍可使用：
@@ -187,7 +187,7 @@ gemini
 
 1. 複製模板：`skills/memoria-memory-sync/resources/mcp/opencode.mcp.json`
 2. 將 `LIBSQL_URL` 改為你的實際資料庫路徑
-3. 貼到你的 OpenCode MCP 設定位置
+3. 貼到你的 OpenCode MCP 設定位置（常見為 `~/.config/opencode/` 底下的 MCP config 檔）
 
 模板內容如下：
 
@@ -222,6 +222,12 @@ gemini
 - 參考資料：`skills/memoria-memory-sync/references/REFERENCE.md`
 - MCP 模板：`skills/memoria-memory-sync/resources/mcp/`
 
+若你有安裝 `skills-ref`，可先驗證 skill 結構：
+
+```bash
+skills-ref validate skills/memoria-memory-sync
+```
+
 若你已安裝 `mcp-memory-libsql`，可用自動模式把本地記憶同步後再送入 MCP：
 
 ```bash
@@ -234,6 +240,14 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 1. 先執行 Memoria `init/sync/stats`
 2. 產生橋接資料到 `.memory/exports/mcp-bridge/`
 3. 啟動 `mcp-memory-libsql` 並呼叫 `create_entities` / `create_relations`
+
+若你希望「MCP 失敗也不要中斷主流程」，可設：
+
+```bash
+export MEMORIA_MCP_STRICT=0
+```
+
+預設是 `MEMORIA_MCP_STRICT=1`（嚴格模式，MCP 失敗即返回非 0）。
 
 可直接使用的模板與操作文件：
 
@@ -443,6 +457,14 @@ MEMORIA_HOME=$MEMORIA_HOME ./cli verify
 MEMORIA_HOME=$MEMORIA_HOME ./cli verify --json
 ```
 
+### MCP 端到端驗證（可選）
+
+```bash
+bash scripts/test-mcp-e2e.sh
+```
+
+此腳本會在臨時目錄完成：Memoria sync -> bridge payload -> MCP ingest，並驗證 request bundle 是否生成。
+
 ---
 
 ## 🔒 隱私與安全
@@ -596,3 +618,22 @@ MIT License - 詳見 LICENSE 文件
 - [ ] 設置了自動備份（可選）
 
 全部完成？恭喜！你現在擁有一個會成長的 AI 助手了！ 🎉
+
+## ✅ 安裝完成定義（Definition of Installed）
+
+滿足以下條件，可視為「完整安裝完成」：
+
+- [ ] `./cli init` 成功
+- [ ] `./cli sync examples/session.sample.json` 成功
+- [ ] `./cli verify` 回報 `ok: yes`
+- [ ] `./cli verify --json` 可輸出機器可讀結果
+- [ ] （若啟用 MCP）`bash scripts/test-mcp-e2e.sh` 成功
+
+## 🧩 相容性矩陣（建議）
+
+- Node.js: `>=18`（建議 20/22）
+- Package manager: `pnpm`（推薦）或 `npm`（fallback）
+- CLI runtime:
+  - 開發模式：`tsx`（透過 `pnpm`/`npm exec`）
+  - 發佈模式：`node dist/cli.mjs`
+- MCP 增強（可選）：`mcp-memory-libsql` + `LIBSQL_URL`
