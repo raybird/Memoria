@@ -22,6 +22,12 @@ MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" sync "$SESSION_FILE"
 echo "[smoke] verify"
 MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" verify
 
+echo "[smoke] export"
+MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" export --type all --format json --out "$TMP_MEMORIA_HOME/.memory/exports"
+
+echo "[smoke] prune(dry-run)"
+MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" prune --all --dry-run
+
 if [ ! -f "$TMP_MEMORIA_HOME/.memory/sessions.db" ]; then
   echo "sessions.db was not created"
   exit 1

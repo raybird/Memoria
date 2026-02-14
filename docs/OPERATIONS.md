@@ -7,6 +7,8 @@
 ./cli doctor
 ./cli verify
 ./cli verify --json
+./cli prune --all --dry-run
+./cli export --type all --format json
 ```
 
 ## Test Commands

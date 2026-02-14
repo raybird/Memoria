@@ -10,6 +10,8 @@ This document is the source of truth for what Memoria currently implements.
   - `stats`
   - `doctor`
   - `verify` (`--json`)
+  - `prune`
+  - `export`
 - SQLite persistence (`sessions`, `events`, `skills`)
 - Markdown sync outputs:
   - `knowledge/Daily/`

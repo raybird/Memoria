@@ -64,6 +64,8 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 ./cli doctor
 ./cli verify
 ./cli verify --json
+./cli prune --all --dry-run
+./cli export --type all --format json
 ```
 
 ## 安裝完成定義

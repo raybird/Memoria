@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Documented MCP failure policy via `MEMORIA_MCP_STRICT`.
 - Container installation baseline with `Dockerfile` and `.dockerignore`.
 - Standardized release playbook in `RELEASE.md`.
+- New CLI commands: `memoria prune` and `memoria export`.
 
 ### Changed
 - README paths/examples synchronized with current repository layout and install options.
