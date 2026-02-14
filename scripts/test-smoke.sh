@@ -19,6 +19,9 @@ MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" init
 echo "[smoke] sync"
 MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" sync "$SESSION_FILE"
 
+echo "[smoke] verify"
+MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" verify
+
 if [ ! -f "$TMP_MEMORIA_HOME/.memory/sessions.db" ]; then
   echo "sessions.db was not created"
   exit 1

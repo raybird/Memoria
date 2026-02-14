@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-import { existsSync as fsExistsSync } from 'node:fs'
+import { existsSync as fsExistsSync, constants as fsConstants } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -57,6 +57,14 @@ type MemoriaPaths = {
   dbPath: string
   sessionsPath: string
   configPath: string
+}
+
+type VerifyStatus = 'pass' | 'fail'
+
+type VerifyCheck = {
+  id: string
+  status: VerifyStatus
+  detail: string
 }
 
 function getMemoriaHome(): string {
@@ -522,6 +530,118 @@ function stats(paths: MemoriaPaths): void {
   }
 }
 
+async function canWrite(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath, fsConstants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function collectMissingColumns(db: Database.Database, table: string, expected: string[]): string[] {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+  const actual = new Set(rows.map((r) => r.name))
+  return expected.filter((c) => !actual.has(c))
+}
+
+async function verify(paths: MemoriaPaths, asJson: boolean): Promise<boolean> {
+  const checks: VerifyCheck[] = []
+  const add = (id: string, status: VerifyStatus, detail: string) => {
+    checks.push({ id, status, detail })
+  }
+
+  const pathChecks: Array<{ id: string; p: string; label: string }> = [
+    { id: 'memory_dir_exists', p: paths.memoryDir, label: 'memory dir' },
+    { id: 'knowledge_dir_exists', p: paths.knowledgeDir, label: 'knowledge dir' },
+    { id: 'sessions_path_exists', p: paths.sessionsPath, label: 'sessions path' },
+    { id: 'config_path_exists', p: paths.configPath, label: 'config path' }
+  ]
+
+  for (const item of pathChecks) {
+    add(item.id, existsSync(item.p) ? 'pass' : 'fail', `${item.label}: ${item.p}`)
+  }
+
+  const writableChecks: Array<{ id: string; p: string; label: string }> = [
+    { id: 'memory_dir_writable', p: paths.memoryDir, label: 'memory dir writable' },
+    { id: 'knowledge_dir_writable', p: paths.knowledgeDir, label: 'knowledge dir writable' },
+    { id: 'sessions_path_writable', p: paths.sessionsPath, label: 'sessions path writable' },
+    { id: 'config_path_writable', p: paths.configPath, label: 'config path writable' }
+  ]
+
+  for (const item of writableChecks) {
+    const ok = (await canWrite(item.p)) || (existsSync(item.p) ? false : await canWrite(path.dirname(item.p)))
+    add(item.id, ok ? 'pass' : 'fail', `${item.label}: ${item.p}`)
+  }
+
+  if (!existsSync(paths.dbPath)) {
+    add('db_exists', 'fail', `sessions.db missing: ${paths.dbPath}`)
+  }
+
+  let db: Database.Database | null = null
+  try {
+    db = new Database(paths.dbPath, { readonly: true, fileMustExist: true })
+    add('db_connect', 'pass', `connected: ${paths.dbPath}`)
+
+    const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[]
+    const tableSet = new Set(tableRows.map((r) => r.name))
+
+    const requiredTables = ['sessions', 'events', 'skills']
+    for (const table of requiredTables) {
+      add(`table_${table}`, tableSet.has(table) ? 'pass' : 'fail', `table ${table}`)
+    }
+
+    const requiredColumns: Record<string, string[]> = {
+      sessions: ['id', 'timestamp', 'project', 'event_count', 'summary'],
+      events: ['id', 'session_id', 'timestamp', 'event_type', 'content', 'metadata'],
+      skills: ['id', 'name', 'category', 'created_date', 'success_rate', 'use_count', 'filepath']
+    }
+
+    for (const [table, columns] of Object.entries(requiredColumns)) {
+      if (!tableSet.has(table)) continue
+      const missing = collectMissingColumns(db, table, columns)
+      add(
+        `columns_${table}`,
+        missing.length === 0 ? 'pass' : 'fail',
+        missing.length === 0 ? `columns ${table} ok` : `columns ${table} missing: ${missing.join(', ')}`
+      )
+    }
+
+    const quickCheck = db.prepare('PRAGMA quick_check').get() as { quick_check?: string }
+    const integrityOk = quickCheck?.quick_check === 'ok'
+    add('db_integrity', integrityOk ? 'pass' : 'fail', integrityOk ? 'PRAGMA quick_check=ok' : 'PRAGMA quick_check failed')
+  } catch (error) {
+    add('db_connect', 'fail', `connect error: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    db?.close()
+  }
+
+  const ok = checks.every((c) => c.status === 'pass')
+
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        {
+          ok,
+          paths,
+          checks
+        },
+        null,
+        2
+      )
+    )
+  } else {
+    console.log('🔎 Memoria Verify')
+    console.log(`- ok: ${ok ? 'yes' : 'no'}`)
+    console.log(`- db path: ${paths.dbPath}`)
+    for (const check of checks) {
+      console.log(`${check.status === 'pass' ? '✓' : '✗'} ${check.id}: ${check.detail}`)
+    }
+  }
+
+  return ok
+}
+
 async function run(): Promise<void> {
   const paths = resolveMemoriaPaths()
 
@@ -581,6 +701,15 @@ async function run(): Promise<void> {
     .description('Check local runtime and directory health')
     .action(async () => {
       await doctor(paths)
+    })
+
+  program
+    .command('verify')
+    .description('Run runtime, schema, and writeability verification checks')
+    .option('--json', 'Output machine-readable JSON report')
+    .action(async (options: { json?: boolean }) => {
+      const ok = await verify(paths, Boolean(options.json))
+      if (!ok) process.exitCode = 1
     })
 
   await program.parseAsync(process.argv)

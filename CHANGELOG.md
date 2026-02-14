@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - `memoria sync --dry-run` for validation and write-preview without mutating files.
 - `memoria stats` command for sessions/events/skills summary and top skills.
+- `memoria verify` command for runtime/schema/writeability validation with `--json` output.
 - Agent Skill at `skills/memoria-memory-sync/SKILL.md` with references, resources, and helper scripts.
 - Hybrid MCP bridge automation (`run-sync-with-enhancement.sh`) for optional `mcp-memory-libsql` ingestion.
 - Installer preflight checks for common container tools (`node`, `pnpm`, `npm`, `git`, `unzip`, `python3`).

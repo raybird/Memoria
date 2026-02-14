@@ -96,7 +96,10 @@ MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
 # 7. 先預覽同步結果（不寫入檔案）
 MEMORIA_HOME=$(pwd) ./cli sync --dry-run examples/session.sample.json
 
-# 8. （可選）啟用 MCP/libSQL 自動增強同步
+# 8. 驗證執行環境與資料庫狀態
+MEMORIA_HOME=$(pwd) ./cli verify
+
+# 9. （可選）啟用 MCP/libSQL 自動增強同步
 LIBSQL_URL="file:/path/to/memory-tool.db" \
   bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh \
   examples/session.sample.json
@@ -138,6 +141,7 @@ export MEMORIA_CONFIG_PATH="/etc/memoria"
 
 ./cli init
 ./cli doctor
+./cli verify
 ```
 
 ### Gemini CLI
@@ -410,6 +414,12 @@ du -sh $MEMORIA_HOME
 
 # 檢查最近活動
 ls -lt $MEMORIA_HOME/knowledge/Daily/ | head -5
+
+# 一次驗證執行可用性（含 schema 與寫入權限）
+MEMORIA_HOME=$MEMORIA_HOME ./cli verify
+
+# 機器可讀輸出（CI/腳本）
+MEMORIA_HOME=$MEMORIA_HOME ./cli verify --json
 ```
 
 ---
@@ -470,6 +480,9 @@ pnpm install
 
 # 先做 dry-run 驗證輸入
 MEMORIA_HOME=$MEMORIA_HOME ./cli sync --dry-run examples/session.sample.json
+
+# 驗證路徑、DB、schema 與寫入權限
+MEMORIA_HOME=$MEMORIA_HOME ./cli verify
 ```
 
 ### 問題：MCP/libSQL 自動增強失敗

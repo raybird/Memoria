@@ -146,7 +146,7 @@ Before opening PRs, mirror CI locally in this order:
 
 ## What Not to Change Implicitly
 
-- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`) without request.
+- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`) without request.
 - Do not change persisted table names/columns without migration plan.
 - Do not alter sample file formats unless all readers are updated.
 
