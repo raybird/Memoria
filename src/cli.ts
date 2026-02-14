@@ -50,6 +50,15 @@ const sessionSchema = z
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+type MemoriaPaths = {
+  memoriaHome: string
+  memoryDir: string
+  knowledgeDir: string
+  dbPath: string
+  sessionsPath: string
+  configPath: string
+}
+
 function getMemoriaHome(): string {
   const envHome = process.env.MEMORIA_HOME
   if (envHome) return path.resolve(envHome)
@@ -60,6 +69,34 @@ function getMemoriaHome(): string {
   if (existsSync(cwdHasMemory) || existsSync(cwdHasKnowledge)) return cwd
 
   return path.resolve(__dirname, '..')
+}
+
+function resolvePathFromEnv(raw: string | undefined): string | undefined {
+  if (!raw || !raw.trim()) return undefined
+  return path.resolve(raw)
+}
+
+function resolveMemoriaPaths(): MemoriaPaths {
+  const memoriaHome = getMemoriaHome()
+
+  const dbPathFromEnv = resolvePathFromEnv(process.env.MEMORIA_DB_PATH)
+  const dbPath = dbPathFromEnv ?? path.join(memoriaHome, '.memory', 'sessions.db')
+  const memoryDir = path.dirname(dbPath)
+
+  const sessionsPath =
+    resolvePathFromEnv(process.env.MEMORIA_SESSIONS_PATH) ?? path.join(memoryDir, 'sessions')
+
+  const configPath =
+    resolvePathFromEnv(process.env.MEMORIA_CONFIG_PATH) ?? path.join(memoriaHome, 'configs')
+
+  return {
+    memoriaHome,
+    memoryDir,
+    knowledgeDir: path.join(memoriaHome, 'knowledge'),
+    dbPath,
+    sessionsPath,
+    configPath
+  }
 }
 
 function existsSync(targetPath: string): boolean {
@@ -80,19 +117,20 @@ function slugify(input: string): string {
   return cleaned || 'untitled'
 }
 
-async function ensureBaseDirs(memoriaHome: string): Promise<void> {
+async function ensureBaseDirs(paths: MemoriaPaths): Promise<void> {
   const dirs = [
-    '.memory',
-    '.memory/sessions',
-    '.memory/checkpoints',
-    '.memory/exports',
-    'knowledge',
-    'knowledge/Daily',
-    'knowledge/Skills',
-    'knowledge/Decisions'
+    paths.memoryDir,
+    paths.sessionsPath,
+    path.join(paths.memoryDir, 'checkpoints'),
+    path.join(paths.memoryDir, 'exports'),
+    paths.knowledgeDir,
+    path.join(paths.knowledgeDir, 'Daily'),
+    path.join(paths.knowledgeDir, 'Skills'),
+    path.join(paths.knowledgeDir, 'Decisions'),
+    paths.configPath
   ]
 
-  await Promise.all(dirs.map((d) => fs.mkdir(path.join(memoriaHome, d), { recursive: true })))
+  await Promise.all(dirs.map((d) => fs.mkdir(d, { recursive: true })))
 }
 
 function initDatabase(dbPath: string): void {
@@ -211,13 +249,13 @@ function getEventContentObject(event: SessionEvent): Json {
   return {}
 }
 
-function previewSync(memoriaHome: string, sessionFile: string, sessionData: SessionData): void {
+function previewSync(paths: MemoriaPaths, sessionFile: string, sessionData: SessionData): void {
   const sessionId = sessionData.id?.trim() || `session_${Date.now()}`
   const timestamp = safeDate(sessionData.timestamp).toISOString()
   const events = sessionData.events ?? []
   const date = safeDate(timestamp).toISOString().slice(0, 10)
-  const dailyPath = path.join(memoriaHome, 'knowledge', 'Daily', `${date}.md`)
-  const dbPath = path.join(memoriaHome, '.memory', 'sessions.db')
+  const dailyPath = path.join(paths.knowledgeDir, 'Daily', `${date}.md`)
+  const dbPath = paths.dbPath
 
   const decisionPaths = events
     .filter((e) => getEventType(e) === 'DecisionMade')
@@ -227,7 +265,7 @@ function previewSync(memoriaHome: string, sessionFile: string, sessionData: Sess
         typeof content.decision === 'string' && content.decision.trim() ? content.decision.trim() : 'Untitled Decision'
       const eventId = event.id?.trim() || `dryrun_${idx + 1}`
       const filename = `${date}_${slugify(decisionTitle).slice(0, 40)}_${slugify(eventId).slice(0, 8)}.md`
-      return path.join(memoriaHome, 'knowledge', 'Decisions', filename)
+      return path.join(paths.knowledgeDir, 'Decisions', filename)
     })
 
   const skillPaths = events
@@ -236,7 +274,7 @@ function previewSync(memoriaHome: string, sessionFile: string, sessionData: Sess
       const content = getEventContentObject(event)
       const skillName =
         typeof content.skill_name === 'string' && content.skill_name.trim() ? content.skill_name.trim() : 'Untitled Skill'
-      return path.join(memoriaHome, 'knowledge', 'Skills', `${slugify(skillName)}.md`)
+      return path.join(paths.knowledgeDir, 'Skills', `${slugify(skillName)}.md`)
     })
 
   console.log('🧪 Dry run (no files written)')
@@ -420,27 +458,34 @@ ${examples}
   }
 }
 
-async function doctor(memoriaHome: string): Promise<void> {
-  const memoryDir = path.join(memoriaHome, '.memory')
-  const knowledgeDir = path.join(memoriaHome, 'knowledge')
-  const dbPath = path.join(memoryDir, 'sessions.db')
-
+async function doctor(paths: MemoriaPaths): Promise<void> {
   const checks = [
-    { name: 'MEMORIA_HOME', ok: Boolean(process.env.MEMORIA_HOME), value: process.env.MEMORIA_HOME ?? '(fallback)' },
-    { name: '.memory dir', ok: existsSync(memoryDir), value: memoryDir },
-    { name: 'knowledge dir', ok: existsSync(knowledgeDir), value: knowledgeDir },
-    { name: 'sessions.db', ok: existsSync(dbPath), value: dbPath }
+    { name: 'MEMORIA_HOME', ok: true, value: paths.memoriaHome },
+    { name: 'memory dir', ok: existsSync(paths.memoryDir), value: paths.memoryDir },
+    { name: 'knowledge dir', ok: existsSync(paths.knowledgeDir), value: paths.knowledgeDir },
+    { name: 'sessions path', ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
+    { name: 'config path', ok: existsSync(paths.configPath), value: paths.configPath },
+    { name: 'sessions.db', ok: existsSync(paths.dbPath), value: paths.dbPath }
   ]
+
+  const envDetails = [
+    `- MEMORIA_DB_PATH=${process.env.MEMORIA_DB_PATH ?? '(not set)'}`,
+    `- MEMORIA_SESSIONS_PATH=${process.env.MEMORIA_SESSIONS_PATH ?? '(not set)'}`,
+    `- MEMORIA_CONFIG_PATH=${process.env.MEMORIA_CONFIG_PATH ?? '(not set)'}`
+  ]
+
+  console.log('Resolved path envs:')
+  for (const line of envDetails) console.log(line)
 
   for (const c of checks) {
     console.log(`${c.ok ? '✓' : '✗'} ${c.name}: ${c.value}`)
   }
 }
 
-function stats(memoriaHome: string): void {
-  const dbPath = path.join(memoriaHome, '.memory', 'sessions.db')
-  if (!existsSync(dbPath)) {
-    console.log(`✗ sessions.db not found: ${dbPath}`)
+function stats(paths: MemoriaPaths): void {
+  const dbPath = paths.dbPath
+  if (!existsSync(paths.dbPath)) {
+    console.log(`✗ sessions.db not found: ${paths.dbPath}`)
     console.log('Run `memoria init` first.')
     return
   }
@@ -459,6 +504,7 @@ function stats(memoriaHome: string): void {
       .all() as { name: string; use_count: number; success_rate: number }[]
 
     console.log('📊 Memoria Stats')
+    console.log(`- db path: ${dbPath}`)
     console.log(`- sessions: ${totalSessions}`)
     console.log(`- events: ${totalEvents}`)
     console.log(`- skills: ${totalSkills}`)
@@ -477,9 +523,7 @@ function stats(memoriaHome: string): void {
 }
 
 async function run(): Promise<void> {
-  const memoriaHome = getMemoriaHome()
-  const memoryPath = path.join(memoriaHome, '.memory')
-  const dbPath = path.join(memoryPath, 'sessions.db')
+  const paths = resolveMemoriaPaths()
 
   const program = new Command()
     .name('memoria')
@@ -490,9 +534,12 @@ async function run(): Promise<void> {
     .command('init')
     .description('Initialize memory database and directories')
     .action(async () => {
-      await ensureBaseDirs(memoriaHome)
-      initDatabase(dbPath)
-      console.log(`✓ 初始化完成: ${memoriaHome}`)
+      await ensureBaseDirs(paths)
+      initDatabase(paths.dbPath)
+      console.log(`✓ 初始化完成: ${paths.memoriaHome}`)
+      console.log(`- db path: ${paths.dbPath}`)
+      console.log(`- sessions path: ${paths.sessionsPath}`)
+      console.log(`- config path: ${paths.configPath}`)
     })
 
   program
@@ -505,18 +552,18 @@ async function run(): Promise<void> {
       const sessionData = await readSession(absSessionPath)
 
       if (options.dryRun) {
-        previewSync(memoriaHome, absSessionPath, sessionData)
+        previewSync(paths, absSessionPath, sessionData)
         return
       }
 
-      await ensureBaseDirs(memoriaHome)
-      initDatabase(dbPath)
+      await ensureBaseDirs(paths)
+      initDatabase(paths.dbPath)
 
-      const sessionId = importSession(dbPath, sessionData)
+      const sessionId = importSession(paths.dbPath, sessionData)
 
-      await syncDailyNote(memoriaHome, dbPath, sessionId)
-      await extractDecisions(memoriaHome, dbPath, sessionId)
-      await extractSkills(memoriaHome, dbPath, sessionId)
+      await syncDailyNote(paths.memoriaHome, paths.dbPath, sessionId)
+      await extractDecisions(paths.memoriaHome, paths.dbPath, sessionId)
+      await extractSkills(paths.memoriaHome, paths.dbPath, sessionId)
 
       console.log(`✓ 已導入會話: ${sessionId}`)
       console.log('✅ 同步完成!')
@@ -526,14 +573,14 @@ async function run(): Promise<void> {
     .command('stats')
     .description('Show session, event, and skill statistics')
     .action(() => {
-      stats(memoriaHome)
+      stats(paths)
     })
 
   program
     .command('doctor')
     .description('Check local runtime and directory health')
     .action(async () => {
-      await doctor(memoriaHome)
+      await doctor(paths)
     })
 
   await program.parseAsync(process.argv)

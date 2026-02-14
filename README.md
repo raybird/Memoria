@@ -63,6 +63,9 @@ cd Memoria
 # 2. 執行安裝
 ./install.sh
 
+# 若是極簡容器（無 git）
+./install.sh --minimal
+
 # 3. 完成！系統已就緒
 ```
 
@@ -110,6 +113,32 @@ LIBSQL_URL="file:/path/to/memory-tool.db" \
 > export MEMORIA_HOME="/path/to/Memoria"  # 替換為實際路徑
 > source ~/.zshrc  # 或 source ~/.bashrc
 > ```
+
+### 路徑覆寫（容器/外部整合推薦）
+
+Memoria 路徑優先序：
+
+1. 顯式 env（最高優先）
+2. `MEMORIA_HOME` 推導
+3. 內建 fallback
+
+可用環境變數：
+
+- `MEMORIA_DB_PATH`：指定 SQLite 檔案路徑（例如 `/data/memoria/sessions.db`）
+- `MEMORIA_SESSIONS_PATH`：指定會話匯出資料夾
+- `MEMORIA_CONFIG_PATH`：指定配置資料夾
+
+範例：
+
+```bash
+export MEMORIA_HOME="/workspace/Memoria"
+export MEMORIA_DB_PATH="/data/memoria/sessions.db"
+export MEMORIA_SESSIONS_PATH="/data/memoria/sessions"
+export MEMORIA_CONFIG_PATH="/etc/memoria"
+
+./cli init
+./cli doctor
+```
 
 ### Gemini CLI
 

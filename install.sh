@@ -1,7 +1,40 @@
 #!/bin/bash
 # AI Agent 持久化記憶系統 - 快速安裝腳本
 
-set -e  # 遇到錯誤立即退出
+set -euo pipefail
+
+NO_GIT=0
+MINIMAL_MODE=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --no-git)
+            NO_GIT=1
+            ;;
+        --minimal)
+            MINIMAL_MODE=1
+            NO_GIT=1
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: ./install.sh [--no-git] [--minimal]"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+has_cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+tool_version() {
+    if has_cmd "$1"; then
+        "$1" --version 2>/dev/null | head -n1 || echo "available"
+    else
+        echo "missing"
+    fi
+}
 
 echo "=================================="
 echo "AI Agent 持久化記憶系統"
@@ -29,6 +62,21 @@ esac
 echo "檢測到系統: $OS_TYPE"
 echo ""
 
+echo "[preflight] 依賴檢查"
+echo "- node:   $(tool_version node)"
+echo "- pnpm:   $(tool_version pnpm)"
+echo "- npm:    $(tool_version npm)"
+echo "- git:    $(tool_version git)"
+echo "- unzip:  $(tool_version unzip)"
+echo "- python3:$(tool_version python3)"
+echo ""
+
+if ! has_cmd node; then
+    echo "✗ 缺少 Node.js，無法安裝 Memoria CLI"
+    echo "  下一步：安裝 Node.js >= 18 後，重新執行 ./install.sh"
+    exit 1
+fi
+
 # 步驟 1: 創建目錄結構
 echo "[1/7] 創建目錄結構..."
 mkdir -p "$MEMORY_DIR"/{sessions,checkpoints,exports}
@@ -42,7 +90,10 @@ echo ""
 # 步驟 2: 初始化 Git
 echo "[2/7] 初始化 Git 倉庫..."
 cd "$INSTALL_DIR"
-if [ ! -d ".git" ]; then
+if [ "$NO_GIT" -eq 1 ] || ! has_cmd git; then
+    echo "⚠ 跳過 Git 初始化（--no-git 或系統無 git）"
+    echo "  你可稍後手動執行: git init"
+elif [ ! -d ".git" ]; then
     git init
     
     # 創建 .gitignore
@@ -62,7 +113,7 @@ configs/secrets.yaml
 **/secrets/
 
 # 忽略導出文件
-.memory/exports/*.json
+.memory/exports/**/*.json
 
 # Node 依賴
 node_modules/
@@ -168,16 +219,29 @@ echo ""
 # 步驟 5: 設置 CLI 运行時（TypeScript）
 echo "[5/7] 設置 CLI 运行時..."
 
-if command -v node &> /dev/null && command -v pnpm &> /dev/null; then
+if has_cmd pnpm; then
     echo "- 檢測到 Node.js + pnpm，安裝 TypeScript CLI 依賴..."
     pnpm install
-    chmod +x "$INSTALL_DIR/cli" || true
-    echo "✓ TypeScript CLI 已就緒"
+    INSTALLER_PM="pnpm"
+elif has_cmd npm; then
+    echo "- 未檢測到 pnpm，改用 npm 安裝依賴（fallback）..."
+    npm install
+    INSTALLER_PM="npm"
+    echo "⚠ 建議之後安裝 pnpm：corepack enable && corepack prepare pnpm@10 --activate"
 else
-    echo "✗ 未檢測到 Node.js 或 pnpm，無法安裝 TypeScript CLI"
-    echo "  請先安裝 Node.js (>=18) 與 pnpm，然後重新執行 install.sh"
+    echo "✗ 找不到 pnpm 或 npm，無法安裝 TypeScript CLI 依賴"
+    echo "  下一步：安裝 npm（通常跟隨 Node.js）或安裝 pnpm"
     exit 1
 fi
+
+if [ "$MINIMAL_MODE" -eq 1 ]; then
+    echo "⚠ minimal 模式：僅保證最小可用流程（init/sync/stats/doctor）"
+fi
+
+if [ -f "$INSTALL_DIR/cli" ]; then
+    chmod +x "$INSTALL_DIR/cli" || true
+fi
+echo "✓ TypeScript CLI 已就緒"
 # 步驟 6: 創建自動化 hooks
 echo "[6/7] 創建自動化 hooks..."
 
@@ -193,7 +257,7 @@ LATEST_SESSION=$(ls -t "$MEMORIA_HOME"/.memory/sessions/*.json 2>/dev/null | hea
 if [ -n "$LATEST_SESSION" ]; then
     echo "正在同步最新會話: $LATEST_SESSION"
 
-    if [ -x "$MEMORIA_HOME/cli" ] && command -v pnpm &> /dev/null; then
+    if [ -x "$MEMORIA_HOME/cli" ]; then
         (cd "$MEMORIA_HOME" && MEMORIA_HOME="$MEMORIA_HOME" ./cli sync "$LATEST_SESSION")
     else
         echo "✗ 找不到可執行的 TypeScript CLI，無法同步"
@@ -201,9 +265,11 @@ if [ -n "$LATEST_SESSION" ]; then
     fi
     
     # Git 提交
-    cd "$MEMORIA_HOME"
-    git add .
-    git commit -m "Auto-sync: $(date '+%Y-%m-%d %H:%M:%S')" || true
+    if command -v git >/dev/null 2>&1 && [ -d "$MEMORIA_HOME/.git" ]; then
+        cd "$MEMORIA_HOME"
+        git add .
+        git commit -m "Auto-sync: $(date '+%Y-%m-%d %H:%M:%S')" || true
+    fi
     
     echo "✓ 同步完成"
 else
@@ -217,7 +283,7 @@ echo ""
 
 # 步驟 7: 初始化資料庫
 echo "[7/7] 初始化資料庫..."
-if [ -x "$INSTALL_DIR/cli" ] && command -v pnpm &> /dev/null; then
+if [ -x "$INSTALL_DIR/cli" ]; then
     (cd "$INSTALL_DIR" && MEMORIA_HOME="$INSTALL_DIR" ./cli init)
     echo "✓ (TypeScript) 資料庫已初始化"
 else
@@ -246,6 +312,7 @@ echo ""
 echo "3. 開始使用 AI Agent:"
 echo "   - Gemini CLI: gemini"
 echo "   - OpenCode: 配置 config.toml 指向 $MEMORY_DIR"
+echo "   - 依賴安裝器: $INSTALLER_PM"
 echo ""
 echo "4. 測試記憶系統:"
 echo "   與 AI 對話並說 '記住：我偏好 TypeScript CLI'"

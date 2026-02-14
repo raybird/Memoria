@@ -1,2 +1,20 @@
-#!/usr/bin/env -S pnpm tsx
-import './src/cli.ts'
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if command -v pnpm >/dev/null 2>&1; then
+  exec pnpm --dir "$ROOT_DIR" exec tsx "$ROOT_DIR/src/cli.ts" "$@"
+fi
+
+if command -v npm >/dev/null 2>&1; then
+  exec npm --prefix "$ROOT_DIR" exec -- tsx "$ROOT_DIR/src/cli.ts" "$@"
+fi
+
+echo "❌ Missing package manager: install pnpm (recommended) or npm." >&2
+echo "Next steps:" >&2
+echo "  1) Install Node.js >= 18" >&2
+echo "  2) Enable pnpm: corepack enable && corepack prepare pnpm@10 --activate" >&2
+echo "  3) Install deps: pnpm install" >&2
+exit 1

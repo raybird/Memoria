@@ -24,6 +24,10 @@ If local docs disagree with CI, follow CI.
 - Node.js `>=18` (CI runs Node 22).
 - `pnpm` available on PATH.
 - Optional but common: `MEMORIA_HOME` pointing at repo root.
+- Optional explicit path overrides:
+  - `MEMORIA_DB_PATH`
+  - `MEMORIA_SESSIONS_PATH`
+  - `MEMORIA_CONFIG_PATH`
 
 ## Setup Commands
 
