@@ -581,6 +581,7 @@ source ~/.zshrc
 - **系統規格**: `PERSISTENT_MEMORY_SYSTEM_SPEC.md`
 - **安全政策**: `SECURITY.md`
 - **變更記錄**: `CHANGELOG.md`
+- **發版流程**: `RELEASE.md`
 - **授權條款**: `LICENSE`
 - **API 文檔**: 見 `docs/API.md`（如有）
 - **架構設計**: 見 `docs/ARCHITECTURE.md`（如有）
