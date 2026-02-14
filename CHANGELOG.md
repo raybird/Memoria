@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 - Container installation baseline with `Dockerfile` and `.dockerignore`.
 - Standardized release playbook in `RELEASE.md`.
 
+### Changed
+- README paths/examples synchronized with current repository layout and install options.
+- README was streamlined and split into focused docs under `docs/`.
+
 ## [1.2.0] - 2026-02-14
 
 ### Added
