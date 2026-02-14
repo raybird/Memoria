@@ -67,6 +67,9 @@ type VerifyCheck = {
   detail: string
 }
 
+type ExportType = 'all' | 'decisions' | 'skills'
+type ExportFormat = 'json' | 'markdown'
+
 function getMemoriaHome(): string {
   const envHome = process.env.MEMORIA_HOME
   if (envHome) return path.resolve(envHome)
@@ -602,6 +605,351 @@ function stats(paths: MemoriaPaths): void {
   }
 }
 
+function parseDaysOption(raw: string | undefined, optionName: string): number | undefined {
+  if (raw === undefined) return undefined
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid ${optionName}: expected non-negative number, got '${raw}'`)
+  }
+  return value
+}
+
+function parseBoundaryDate(raw: string | undefined, optionName: string): Date | undefined {
+  if (!raw) return undefined
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`Invalid ${optionName}: expected ISO date/time, got '${raw}'`)
+  }
+  return d
+}
+
+async function collectFilesRecursively(dirPath: string): Promise<string[]> {
+  if (!existsSync(dirPath)) return []
+  const entries = await fs.readdir(dirPath, { withFileTypes: true })
+  const files: string[] = []
+
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...(await collectFilesRecursively(fullPath)))
+    } else if (entry.isFile()) {
+      files.push(fullPath)
+    }
+  }
+
+  return files
+}
+
+async function pruneFilesByAge(
+  label: string,
+  dirPath: string,
+  olderThanDays: number,
+  dryRun: boolean
+): Promise<{ label: string; matched: number; removed: number; bytes: number }> {
+  const cutoffMs = Date.now() - olderThanDays * 24 * 60 * 60 * 1000
+  const files = await collectFilesRecursively(dirPath)
+
+  let matched = 0
+  let removed = 0
+  let bytes = 0
+
+  for (const filePath of files) {
+    const stat = await fs.stat(filePath)
+    if (stat.mtimeMs >= cutoffMs) continue
+    matched += 1
+    bytes += stat.size
+    if (!dryRun) {
+      await fs.unlink(filePath)
+      removed += 1
+    }
+  }
+
+  return { label, matched, removed: dryRun ? 0 : removed, bytes }
+}
+
+type PruneOptions = {
+  exportsDays?: string
+  checkpointsDays?: string
+  dedupeSkills?: boolean
+  all?: boolean
+  dryRun?: boolean
+}
+
+function normalizeSkillKey(name: string): string {
+  return slugify(name).toLowerCase()
+}
+
+function parseCreatedAt(raw: string | undefined): number {
+  if (!raw) return 0
+  const d = new Date(raw)
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime()
+}
+
+function pruneSkillsDuplicates(dbPath: string, dryRun: boolean): { duplicateGroups: number; removed: number } {
+  if (!existsSync(dbPath)) return { duplicateGroups: 0, removed: 0 }
+
+  const db = new Database(dbPath)
+  try {
+    const rows = db
+      .prepare('SELECT id, name, created_date, use_count FROM skills')
+      .all() as { id: string; name: string; created_date: string; use_count: number }[]
+
+    const groups = new Map<string, { id: string; name: string; created_date: string; use_count: number }[]>()
+    for (const row of rows) {
+      const key = normalizeSkillKey(row.name)
+      const list = groups.get(key) ?? []
+      list.push(row)
+      groups.set(key, list)
+    }
+
+    const deleteIds: string[] = []
+    let duplicateGroups = 0
+
+    for (const [, list] of groups) {
+      if (list.length <= 1) continue
+      duplicateGroups += 1
+      list.sort((a, b) => {
+        const tDiff = parseCreatedAt(b.created_date) - parseCreatedAt(a.created_date)
+        if (tDiff !== 0) return tDiff
+        const uDiff = (b.use_count ?? 0) - (a.use_count ?? 0)
+        if (uDiff !== 0) return uDiff
+        return a.id.localeCompare(b.id)
+      })
+      for (const row of list.slice(1)) {
+        deleteIds.push(row.id)
+      }
+    }
+
+    if (!dryRun && deleteIds.length > 0) {
+      const del = db.prepare('DELETE FROM skills WHERE id = ?')
+      const tx = db.transaction((ids: string[]) => {
+        for (const id of ids) del.run(id)
+      })
+      tx(deleteIds)
+    }
+
+    return { duplicateGroups, removed: dryRun ? 0 : deleteIds.length }
+  } finally {
+    db.close()
+  }
+}
+
+async function prune(paths: MemoriaPaths, options: PruneOptions): Promise<void> {
+  const dryRun = Boolean(options.dryRun)
+  const all = Boolean(options.all)
+
+  const exportsDays = parseDaysOption(options.exportsDays, '--exports-days') ?? (all ? 30 : undefined)
+  const checkpointsDays = parseDaysOption(options.checkpointsDays, '--checkpoints-days') ?? (all ? 30 : undefined)
+  const dedupeSkills = Boolean(options.dedupeSkills) || all
+
+  if (exportsDays === undefined && checkpointsDays === undefined && !dedupeSkills) {
+    throw new Error('No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills')
+  }
+
+  const results: Array<{ label: string; matched: number; removed: number; bytes: number }> = []
+
+  if (exportsDays !== undefined) {
+    results.push(await pruneFilesByAge('exports', path.join(paths.memoryDir, 'exports'), exportsDays, dryRun))
+  }
+
+  if (checkpointsDays !== undefined) {
+    results.push(await pruneFilesByAge('checkpoints', path.join(paths.memoryDir, 'checkpoints'), checkpointsDays, dryRun))
+  }
+
+  const dedupe = dedupeSkills ? pruneSkillsDuplicates(paths.dbPath, dryRun) : null
+
+  console.log(`🧹 Memoria Prune${dryRun ? ' (dry-run)' : ''}`)
+  for (const result of results) {
+    console.log(
+      `- ${result.label}: matched=${result.matched}, ${dryRun ? 'would_remove' : 'removed'}=${
+        dryRun ? result.matched : result.removed
+      }, bytes=${result.bytes}`
+    )
+  }
+
+  if (dedupe) {
+    console.log(
+      `- dedupe-skills: groups=${dedupe.duplicateGroups}, ${dryRun ? 'would_remove' : 'removed'}=${
+        dryRun ? dedupe.removed : dedupe.removed
+      }`
+    )
+  }
+}
+
+type ExportOptions = {
+  from?: string
+  to?: string
+  project?: string
+  type?: ExportType
+  format?: ExportFormat
+  out?: string
+}
+
+type ExportDecision = {
+  id: string
+  session_id: string
+  timestamp: string
+  project: string
+  decision: string
+  rationale: string
+  impact_level: string
+}
+
+type ExportSkill = {
+  id: string
+  session_id: string
+  timestamp: string
+  project: string
+  skill_name: string
+  category: string
+  pattern: string
+}
+
+function inDateRange(ts: string, from?: Date, to?: Date): boolean {
+  const t = new Date(ts)
+  if (Number.isNaN(t.getTime())) return false
+  if (from && t < from) return false
+  if (to && t > to) return false
+  return true
+}
+
+async function exportMemory(paths: MemoriaPaths, options: ExportOptions): Promise<void> {
+  if (!existsSync(paths.dbPath)) {
+    throw new Error(`sessions.db not found: ${paths.dbPath}. Run 'memoria init' first.`)
+  }
+
+  const from = parseBoundaryDate(options.from, '--from')
+  const to = parseBoundaryDate(options.to, '--to')
+  const projectFilter = options.project?.trim()
+  const type = (options.type ?? 'all') as ExportType
+  const format = (options.format ?? 'json') as ExportFormat
+  const outDir = options.out ? path.resolve(options.out) : path.join(paths.memoryDir, 'exports')
+
+  const db = new Database(paths.dbPath, { readonly: true })
+  try {
+    const decisionsRows =
+      type === 'all' || type === 'decisions'
+        ? (db
+            .prepare(
+              `
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+          FROM events e
+          JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'DecisionMade'
+        `
+            )
+            .all() as { id: string; session_id: string; timestamp: string; content: string; project: string }[])
+        : []
+
+    const skillsRows =
+      type === 'all' || type === 'skills'
+        ? (db
+            .prepare(
+              `
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+          FROM events e
+          JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'SkillLearned'
+        `
+            )
+            .all() as { id: string; session_id: string; timestamp: string; content: string; project: string }[])
+        : []
+
+    const decisions: ExportDecision[] = decisionsRows
+      .filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to))
+      .map((r) => {
+        const content = maybeParseJson(r.content)
+        const contentObj = content && typeof content === 'object' && !Array.isArray(content) ? (content as Json) : {}
+        return {
+          id: r.id,
+          session_id: r.session_id,
+          timestamp: r.timestamp,
+          project: r.project,
+          decision: String(contentObj.decision ?? ''),
+          rationale: String(contentObj.rationale ?? ''),
+          impact_level: String(contentObj.impact_level ?? 'medium')
+        }
+      })
+
+    const skills: ExportSkill[] = skillsRows
+      .filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to))
+      .map((r) => {
+        const content = maybeParseJson(r.content)
+        const contentObj = content && typeof content === 'object' && !Array.isArray(content) ? (content as Json) : {}
+        return {
+          id: r.id,
+          session_id: r.session_id,
+          timestamp: r.timestamp,
+          project: r.project,
+          skill_name: String(contentObj.skill_name ?? ''),
+          category: String(contentObj.category ?? 'general'),
+          pattern: String(contentObj.pattern ?? '')
+        }
+      })
+
+    const payload = {
+      generated_at: new Date().toISOString(),
+      filters: {
+        from: options.from ?? null,
+        to: options.to ?? null,
+        project: projectFilter ?? null,
+        type,
+        format
+      },
+      counts: {
+        decisions: decisions.length,
+        skills: skills.length
+      },
+      decisions,
+      skills
+    }
+
+    await fs.mkdir(outDir, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const projectPart = projectFilter ? `_${slugify(projectFilter).slice(0, 30)}` : ''
+    const ext = format === 'json' ? 'json' : 'md'
+    const filePath = path.join(outDir, `memoria-export_${type}${projectPart}_${stamp}.${ext}`)
+
+    if (format === 'json') {
+      await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8')
+    } else {
+      const decisionBlock = decisions
+        .map(
+          (d) =>
+            `- [${d.timestamp}] (${d.project}) ${d.decision || '(untitled)'} | impact=${d.impact_level} | session=${d.session_id}`
+        )
+        .join('\n')
+
+      const skillBlock = skills
+        .map((s) => `- [${s.timestamp}] (${s.project}) ${s.skill_name || '(untitled)'} | category=${s.category}`)
+        .join('\n')
+
+      const md = `# Memoria Export\n\nGenerated: ${payload.generated_at}\n\n## Filters\n- from: ${payload.filters.from ?? '(none)'}\n- to: ${
+        payload.filters.to ?? '(none)'
+      }\n- project: ${payload.filters.project ?? '(none)'}\n- type: ${type}\n\n## Counts\n- decisions: ${decisions.length}\n- skills: ${
+        skills.length
+      }\n\n## Decisions\n${decisionBlock || '- (none)'}\n\n## Skills\n${skillBlock || '- (none)'}\n`
+
+      await fs.writeFile(filePath, md, 'utf8')
+    }
+
+    console.log('📦 Memoria Export complete')
+    console.log(`- file: ${filePath}`)
+    console.log(`- decisions: ${decisions.length}`)
+    console.log(`- skills: ${skills.length}`)
+  } finally {
+    db.close()
+  }
+}
+
+function maybeParseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
 async function canWrite(targetPath: string): Promise<boolean> {
   try {
     await fs.access(targetPath, fsConstants.W_OK)
@@ -782,6 +1130,39 @@ async function run(): Promise<void> {
     .action(async (options: { json?: boolean }) => {
       const ok = await verify(paths, Boolean(options.json))
       if (!ok) process.exitCode = 1
+    })
+
+  program
+    .command('prune')
+    .description('Prune old runtime artifacts and optional duplicate skills')
+    .option('--exports-days <days>', 'Remove export files older than N days')
+    .option('--checkpoints-days <days>', 'Remove checkpoints older than N days')
+    .option('--dedupe-skills', 'Delete duplicate skills by normalized skill name')
+    .option('--all', 'Apply default pruning targets (30 days + dedupe skills)')
+    .option('--dry-run', 'Preview prune actions without deleting')
+    .action(async (options: PruneOptions) => {
+      await prune(paths, options)
+    })
+
+  program
+    .command('export')
+    .description('Export decisions/skills by time range and project')
+    .option('--from <isoDate>', 'Include records at/after this ISO date')
+    .option('--to <isoDate>', 'Include records at/before this ISO date')
+    .option('--project <name>', 'Filter by project name')
+    .option('--type <type>', 'Export type: all|decisions|skills', 'all')
+    .option('--format <fmt>', 'Output format: json|markdown', 'json')
+    .option('--out <path>', 'Output directory (default: .memory/exports)')
+    .action(async (options: ExportOptions) => {
+      const type = (options.type ?? 'all') as ExportType
+      const format = (options.format ?? 'json') as ExportFormat
+      if (!['all', 'decisions', 'skills'].includes(type)) {
+        throw new Error(`Invalid --type '${options.type}'. Use: all|decisions|skills`)
+      }
+      if (!['json', 'markdown'].includes(format)) {
+        throw new Error(`Invalid --format '${options.format}'. Use: json|markdown`)
+      }
+      await exportMemory(paths, { ...options, type, format })
     })
 
   await program.parseAsync(process.argv)
