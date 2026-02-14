@@ -234,6 +234,23 @@ else
     exit 1
 fi
 
+CLI_RUNTIME_MODE="source"
+if [ "$INSTALLER_PM" = "pnpm" ]; then
+    if pnpm run build; then
+        CLI_RUNTIME_MODE="dist"
+        echo "✓ 已產出 dist/cli.mjs（可脫離 pnpm/tsx 執行）"
+    else
+        echo "⚠ 建置 dist 失敗，將使用 source 模式執行"
+    fi
+else
+    if npm run build; then
+        CLI_RUNTIME_MODE="dist"
+        echo "✓ 已產出 dist/cli.mjs（可脫離 pnpm/tsx 執行）"
+    else
+        echo "⚠ 建置 dist 失敗，將使用 source 模式執行"
+    fi
+fi
+
 if [ "$MINIMAL_MODE" -eq 1 ]; then
     echo "⚠ minimal 模式：僅保證最小可用流程（init/sync/stats/doctor）"
 fi
@@ -313,6 +330,7 @@ echo "3. 開始使用 AI Agent:"
 echo "   - Gemini CLI: gemini"
 echo "   - OpenCode: 配置 config.toml 指向 $MEMORY_DIR"
 echo "   - 依賴安裝器: $INSTALLER_PM"
+echo "   - CLI 執行模式: $CLI_RUNTIME_MODE"
 echo ""
 echo "4. 測試記憶系統:"
 echo "   與 AI 對話並說 '記住：我偏好 TypeScript CLI'"

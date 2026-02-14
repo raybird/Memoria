@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Hybrid MCP bridge automation (`run-sync-with-enhancement.sh`) for optional `mcp-memory-libsql` ingestion.
 - Installer preflight checks for common container tools (`node`, `pnpm`, `npm`, `git`, `unzip`, `python3`).
 - Explicit path env support: `MEMORIA_DB_PATH`, `MEMORIA_SESSIONS_PATH`, `MEMORIA_CONFIG_PATH`.
+- Bundled CLI build output at `dist/cli.mjs` with `pnpm run build`.
 
 ### Changed
 - Session JSON parsing now validates schema with clearer error messages.
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Documentation now includes agentskills integration and MCP/libSQL auto-ingest workflow.
 - Installer now supports npm fallback and `--minimal`/`--no-git` modes.
 - CLI launcher now works with pnpm or npm (no hard pnpm requirement at runtime).
+- `./cli` now prefers built artifact (`dist/cli.mjs`) when available.
 
 ## [1.1.1] - 2026-02-13
 

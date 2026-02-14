@@ -84,6 +84,9 @@ mkdir -p scripts configs/{gemini,opencode,global}
 # 3. 安裝 CLI 依賴（TS 模式）
 pnpm install
 
+# 3.1 產出發佈用 CLI（可在無 pnpm/tsx 環境執行）
+pnpm run build
+
 # 4. 初始化（TypeScript CLI）
 MEMORIA_HOME=$(pwd) ./cli init
 
@@ -143,6 +146,24 @@ export MEMORIA_CONFIG_PATH="/etc/memoria"
 ./cli doctor
 ./cli verify
 ```
+
+### 發佈模式（無 pnpm/tsx 執行）
+
+若你在受限環境（僅有 Node.js）部署，可先在建置階段產出 dist：
+
+```bash
+pnpm install
+pnpm run build
+```
+
+之後執行時可直接用：
+
+```bash
+node dist/cli.mjs --help
+node dist/cli.mjs init
+```
+
+`./cli` 也會優先使用 `dist/cli.mjs`（若存在）。
 
 ### Gemini CLI
 

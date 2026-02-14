@@ -37,10 +37,11 @@ If local docs disagree with CI, follow CI.
 
 ## Build, Lint, and Test Commands
 
-There is no separate transpile build step and no dedicated ESLint/Prettier config.
+There is an optional distribution build step and no dedicated ESLint/Prettier config.
 
 - Type check (primary static check): `pnpm run check`
 - Direct type check equivalent: `pnpm exec tsc --noEmit`
+- Build distributable CLI artifact: `pnpm run build`
 - Validate shell script syntax: `bash -n install.sh`
 - Smoke/integration test: `bash scripts/test-smoke.sh`
 
