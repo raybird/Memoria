@@ -108,6 +108,27 @@ LIBSQL_URL="file:/path/to/memory-tool.db" \
   examples/session.sample.json
 ```
 
+### 方法三：容器安裝（最小範本）
+
+```bash
+# 建置映像
+docker build -t memoria:local .
+
+# 驗證安裝（會執行 verify + dist help）
+docker run --rm memoria:local
+
+# 互動使用
+docker run --rm -it -v "$(pwd)":/workspace -w /workspace memoria:local bash
+```
+
+若你要在容器內用本地專案直接初始化：
+
+```bash
+./install.sh --minimal
+./cli init
+./cli verify
+```
+
 ---
 
 ## 🔧 工具配置

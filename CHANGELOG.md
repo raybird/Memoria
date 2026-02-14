@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Optional MCP end-to-end check script: `scripts/test-mcp-e2e.sh`.
 - Installation completion checklist and compatibility matrix in `README.md`.
 - Documented MCP failure policy via `MEMORIA_MCP_STRICT`.
+- Container installation baseline with `Dockerfile` and `.dockerignore`.
 
 ## [1.2.0] - 2026-02-14
 
