@@ -6,6 +6,23 @@
 - SQLite 本地真實資料層 + Markdown 知識輸出
 - 可選 MCP/libSQL 語意增強（`mcp-memory-libsql`）
 
+## Implemented vs Planned
+
+| 項目 | 狀態 | 說明 |
+|---|---|---|
+| CLI 匯入與同步（`init/sync/stats/doctor/verify`） | Implemented | 目前主流程，已在 CI 驗證 |
+| SQLite + Markdown 持久化 | Implemented | `sessions/events/skills` + Daily/Decisions/Skills |
+| MCP/libSQL 增強流程 | Implemented (Optional) | bridge + request bundle + auto-ingest |
+| 上下文壓縮引擎（core 內建） | Planned | 目前未作為核心 CLI 功能 |
+| 內建語意檢索引擎（core 內建） | Planned | 目前主要透過 MCP 增強 |
+| OpenCode plugin（repo 內） | Planned | 目前提供配置模板與整合指引 |
+
+對照文件：
+
+- 已落地規格：`SPEC.md`
+- 規劃/RFC：`RFC.md`
+- 歷史願景規格：`PERSISTENT_MEMORY_SYSTEM_SPEC.md`
+
 ## Quick Start
 
 ### 1) 安裝
@@ -67,6 +84,8 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 - Agent Skill 使用：`docs/SKILL_USAGE.md`
 - 日常維運與驗證：`docs/OPERATIONS.md`
 - 發版流程：`RELEASE.md`
+- 已落地規格：`SPEC.md`
+- 規劃與 RFC：`RFC.md`
 - 變更記錄：`CHANGELOG.md`
 - 安全政策：`SECURITY.md`
 

@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - README paths/examples synchronized with current repository layout and install options.
 - README was streamlined and split into focused docs under `docs/`.
+- Session/event fallback IDs are now deterministic for idempotent repeated syncs.
+- Added SQLite indexes for common session/event/skill query patterns.
+- Added explicit implemented-vs-planned documentation split (`SPEC.md`, `RFC.md`).
 
 ## [1.2.0] - 2026-02-14
 
