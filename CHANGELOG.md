@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-02-14
+
 ### Added
 - `memoria sync --dry-run` for validation and write-preview without mutating files.
 - `memoria stats` command for sessions/events/skills summary and top skills.

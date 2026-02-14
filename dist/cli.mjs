@@ -17745,7 +17745,7 @@ async function verify(paths, asJson) {
 }
 async function run() {
   const paths = resolveMemoriaPaths();
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.1.0");
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.2.0");
   program2.command("init").description("Initialize memory database and directories").action(async () => {
     await ensureBaseDirs(paths);
     initDatabase(paths.dbPath);
