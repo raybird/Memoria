@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import { existsSync as fsExistsSync, constants as fsConstants } from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { Command } from 'commander'
 import Database from 'better-sqlite3'
@@ -125,6 +125,62 @@ function slugify(input: string): string {
   return cleaned || 'untitled'
 }
 
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value)
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  }
+
+  const obj = value as Record<string, unknown>
+  const keys = Object.keys(obj).sort()
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`)
+  return `{${entries.join(',')}}`
+}
+
+function shortHash(input: string, length = 16): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, length)
+}
+
+function resolveSessionId(sessionData: SessionData): string {
+  const explicit = sessionData.id?.trim()
+  if (explicit) return explicit
+
+  const events = (sessionData.events ?? []).map((event) => ({
+    timestamp: event.timestamp ?? '',
+    event_type: event.type ?? event.event_type ?? 'UnknownEvent',
+    content: event.content ?? '',
+    metadata: event.metadata ?? {}
+  }))
+
+  const fingerprint = stableStringify({
+    timestamp: sessionData.timestamp ?? '',
+    project: sessionData.project ?? 'default',
+    summary: sessionData.summary ?? '',
+    events
+  })
+
+  return `session_${shortHash(fingerprint)}`
+}
+
+function resolveEventId(event: SessionEvent, sessionId: string, index: number): string {
+  const explicit = event.id?.trim()
+  if (explicit) return explicit
+
+  const fingerprint = stableStringify({
+    session_id: sessionId,
+    index,
+    timestamp: event.timestamp ?? '',
+    event_type: event.type ?? event.event_type ?? 'UnknownEvent',
+    content: event.content ?? '',
+    metadata: event.metadata ?? {}
+  })
+
+  return `evt_${shortHash(fingerprint)}`
+}
+
 async function ensureBaseDirs(paths: MemoriaPaths): Promise<void> {
   const dirs = [
     paths.memoryDir,
@@ -172,6 +228,21 @@ function initDatabase(dbPath: string): void {
         use_count INTEGER,
         filepath TEXT
       );
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_timestamp
+      ON sessions(timestamp);
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_project_timestamp
+      ON sessions(project, timestamp);
+
+      CREATE INDEX IF NOT EXISTS idx_events_event_type
+      ON events(event_type);
+
+      CREATE INDEX IF NOT EXISTS idx_events_session_event_time
+      ON events(session_id, event_type, timestamp);
+
+      CREATE INDEX IF NOT EXISTS idx_skills_category_created
+      ON skills(category, created_date);
     `)
   } finally {
     db.close()
@@ -208,7 +279,7 @@ async function readSession(sessionFile: string): Promise<SessionData> {
 function importSession(dbPath: string, sessionData: SessionData): string {
   const db = new Database(dbPath)
   const nowIso = new Date().toISOString()
-  const sessionId = sessionData.id?.trim() || `session_${Date.now()}`
+  const sessionId = resolveSessionId(sessionData)
   const timestamp = safeDate(sessionData.timestamp).toISOString()
   const events = sessionData.events ?? []
 
@@ -231,8 +302,8 @@ function importSession(dbPath: string, sessionData: SessionData): string {
       VALUES (?, ?, ?, ?, ?, ?)
     `)
 
-    for (const event of events) {
-      const eventId = event.id?.trim() || randomUUID()
+    for (const [index, event] of events.entries()) {
+      const eventId = resolveEventId(event, sessionId, index)
       const eventTime = safeDate(event.timestamp ?? nowIso).toISOString()
       const eventType = event.type ?? event.event_type ?? 'UnknownEvent'
       const content = JSON.stringify(event.content ?? '')
@@ -258,7 +329,7 @@ function getEventContentObject(event: SessionEvent): Json {
 }
 
 function previewSync(paths: MemoriaPaths, sessionFile: string, sessionData: SessionData): void {
-  const sessionId = sessionData.id?.trim() || `session_${Date.now()}`
+  const sessionId = resolveSessionId(sessionData)
   const timestamp = safeDate(sessionData.timestamp).toISOString()
   const events = sessionData.events ?? []
   const date = safeDate(timestamp).toISOString().slice(0, 10)
@@ -266,12 +337,13 @@ function previewSync(paths: MemoriaPaths, sessionFile: string, sessionData: Sess
   const dbPath = paths.dbPath
 
   const decisionPaths = events
-    .filter((e) => getEventType(e) === 'DecisionMade')
-    .map((event, idx) => {
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => getEventType(event) === 'DecisionMade')
+    .map(({ event, index }) => {
       const content = getEventContentObject(event)
       const decisionTitle =
         typeof content.decision === 'string' && content.decision.trim() ? content.decision.trim() : 'Untitled Decision'
-      const eventId = event.id?.trim() || `dryrun_${idx + 1}`
+      const eventId = resolveEventId(event, sessionId, index)
       const filename = `${date}_${slugify(decisionTitle).slice(0, 40)}_${slugify(eventId).slice(0, 8)}.md`
       return path.join(paths.knowledgeDir, 'Decisions', filename)
     })
