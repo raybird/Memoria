@@ -30,8 +30,17 @@ jobs:
       - name: Type check
         run: pnpm run check
 
+      - name: Build dist artifact
+        run: pnpm run build
+
+      - name: Verify dist CLI entrypoint
+        run: node dist/cli.mjs --help
+
       - name: Validate install script syntax
         run: bash -n install.sh
 
       - name: Run smoke test
         run: bash scripts/test-smoke.sh
+
+      - name: Run MCP end-to-end test
+        run: bash scripts/test-mcp-e2e.sh

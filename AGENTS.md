@@ -62,8 +62,11 @@ Before opening PRs, mirror CI locally in this order:
 
 1. `pnpm install`
 2. `pnpm run check`
-3. `bash -n install.sh`
-4. `bash scripts/test-smoke.sh`
+3. `pnpm run build`
+4. `node dist/cli.mjs --help`
+5. `bash -n install.sh`
+6. `bash scripts/test-smoke.sh`
+7. `bash scripts/test-mcp-e2e.sh`
 
 ## Repository Layout
 
