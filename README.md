@@ -2,111 +2,164 @@
 
 讓 AI Agent 擁有跨會話、可追溯、可自託管的持久記憶。
 
-- TypeScript CLI（`init`, `sync`, `stats`, `doctor`, `verify`）
-- SQLite 本地真實資料層 + Markdown 知識輸出
-- 可選 MCP/libSQL 語意增強（`mcp-memory-libsql`）
+## 🤖 AI Agent Quick Install
 
-## Implemented vs Planned
-
-| 項目 | 狀態 | 說明 |
-|---|---|---|
-| CLI 匯入與同步（`init/sync/stats/doctor/verify`） | Implemented | 目前主流程，已在 CI 驗證 |
-| SQLite + Markdown 持久化 | Implemented | `sessions/events/skills` + Daily/Decisions/Skills |
-| MCP/libSQL 增強流程 | Implemented (Optional) | bridge + request bundle + auto-ingest |
-| 上下文壓縮引擎（core 內建） | Planned | 目前未作為核心 CLI 功能 |
-| 內建語意檢索引擎（core 內建） | Planned | 目前主要透過 MCP 增強 |
-| OpenCode plugin（repo 內） | Planned | 目前提供配置模板與整合指引 |
-
-對照文件：
-
-- 已落地規格：`SPEC.md`
-- 規劃/RFC：`RFC.md`
-- 歷史願景規格：`PERSISTENT_MEMORY_SYSTEM_SPEC.md`
-
-## Quick Start
-
-### 1) 安裝
+> **Agent 看到這裡就夠了。** 三步完成安裝與啟動：
 
 ```bash
-git clone https://github.com/raybird/Memoria Memoria
-cd Memoria
-./install.sh
+# 1. Clone
+git clone https://github.com/raybird/Memoria && cd Memoria
+
+# 2. 一鍵安裝（preflight → install → init → verify → serve）
+./cli setup --serve --json
+# 輸出 JSON lines，每步一行：
+# {"step":"preflight","ok":true,"ms":120}
+# {"step":"install","ok":true,"ms":3400}
+# {"step":"init","ok":true,"ms":85}
+# {"step":"verify","ok":true,"ms":42}
+# {"step":"serve","ok":true,"port":3917}
+
+# 3. 確認就緒
+curl -sf http://localhost:3917/v1/health
+# → {"ok":true,"data":{"ok":true,"db":"ok","dirs":"ok",...}}
 ```
 
-極簡容器（例如無 git）可用：
+安裝成功後即可透過 HTTP API 使用：
 
 ```bash
-./install.sh --minimal
+# 寫入記憶
+curl -X POST http://localhost:3917/v1/remember \
+  -H 'Content-Type: application/json' \
+  -d @examples/session.sample.json
+
+# 檢索記憶
+curl -X POST http://localhost:3917/v1/recall \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"SQLite migration","top_k":5}'
+
+# 查看統計
+curl http://localhost:3917/v1/stats
 ```
 
-### 2) 初始化與同步
+**前置需求**：Node.js ≥ 18、pnpm（檢查：`./cli preflight --json`）
+
+**完整 Agent 整合指南**：[AGENTS.md](AGENTS.md)（含 Core Architecture / HTTP API / Bootstrap 章節）
+
+---
+
+## 功能概覽
+
+| 功能 | 狀態 |
+|------|------|
+| CLI（init/sync/stats/doctor/verify/prune/export） | ✅ Implemented |
+| Core 模組 API（remember/recall/summarizeSession/health/stats） | ✅ Implemented |
+| HTTP API Server（5 端點，port 3917） | ✅ Implemented |
+| Node.js SDK（`MemoriaClient`） | ✅ Implemented |
+| Agent Adapter（Gemini / OpenCode 參考實作） | ✅ Implemented |
+| Bootstrap 指令（preflight/setup）| ✅ Implemented |
+| 所有指令 `--json` 機器可讀輸出 | ✅ Implemented |
+| SQLite + Markdown 持久化 | ✅ Implemented |
+| MCP/libSQL 語意增強（optional） | ✅ Implemented |
+| Policy 引擎（PII 過濾 / 讀寫策略） | 🔜 Planned |
+| Metrics 模組（命中率 / 延遲追蹤） | 🔜 Planned |
+
+## HTTP API
+
+啟動：`./cli serve` (port 3917，可用 `MEMORIA_PORT` 覆寫)
+
+| Method | Path | 說明 |
+|--------|------|------|
+| `GET`  | `/v1/health` | 健康檢查 |
+| `GET`  | `/v1/stats` | 統計 |
+| `POST` | `/v1/remember` | 寫入記憶 (body: SessionData) |
+| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?}`) |
+| `GET`  | `/v1/sessions/:id/summary` | 會話摘要 |
+
+所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
+
+## CLI 常用命令
 
 ```bash
-MEMORIA_HOME=$(pwd) ./cli init
-MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
-MEMORIA_HOME=$(pwd) ./cli verify
+./cli init                           # 初始化 DB + 目錄
+./cli sync <session.json>            # 匯入 session
+./cli sync --dry-run <session.json>  # 預覽不寫入
+./cli stats [--json]                 # 統計
+./cli doctor [--json]                # 本地健康檢查
+./cli verify [--json]                # 完整驗證
+./cli prune --all --dry-run          # 清理預覽
+./cli export --type all --format json # 匯出
+./cli serve [--port 3917]            # HTTP API Server
+./cli preflight [--json]             # 前置條件檢查
+./cli setup [--serve] [--json]       # 一鍵安裝
 ```
 
-### 3) 可選：MCP/libSQL 增強
+## Node.js SDK
 
-```bash
-export LIBSQL_URL="file:/path/to/memory-tool.db"
-bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
+```typescript
+import { MemoriaClient } from './src/sdk.js'
+
+const client = new MemoriaClient()         // default http://localhost:3917
+await client.waitUntilReady()              // poll /v1/health 直到就緒
+
+const r = await client.remember(sessionData)
+const hits = await client.recall({ query: 'migration', top_k: 3 })
+const summary = await client.summarizeSession('session_abc')
 ```
 
-## 常用命令
+## Agent Adapter
 
-```bash
-./cli init
-./cli sync <session.json>
-./cli sync --dry-run <session.json>
-./cli stats
-./cli doctor
-./cli verify
-./cli verify --json
-./cli prune --all --dry-run
-./cli export --type all --format json
+```typescript
+import { GeminiAdapter } from './src/adapter/index.js'
+
+const adapter = new GeminiAdapter({ client, project: 'my-project' })
+
+// Before prompt: 注入歷史記憶
+const context = await adapter.beforePrompt({ userMessage, conversationId })
+
+// After response: 儲存記憶（自動 throttle + dedupe + fail-open）
+await adapter.afterResponse({ response, conversationId, userMessage })
 ```
 
-## 安裝完成定義
+參考實作：`src/adapter/gemini-adapter.ts`、`src/adapter/opencode-adapter.ts`
 
-滿足以下條件可視為完成安裝：
-
-- `./cli init` 成功
-- `./cli sync examples/session.sample.json` 成功
-- `./cli verify` 回報 `ok: yes`
-- `./cli verify --json` 可輸出機器可讀結果
-- （若啟用 MCP）`bash scripts/test-mcp-e2e.sh` 成功
-
-## 文件導覽
-
-- 安裝與路徑設定：`docs/INSTALL.md`
-- 容器部署：`docs/CONTAINER.md`
-- MCP/libSQL 整合：`docs/MCP_INTEGRATION.md`
-- Agent Skill 使用：`docs/SKILL_USAGE.md`
-- 日常維運與驗證：`docs/OPERATIONS.md`
-- 發版流程：`RELEASE.md`
-- 已落地規格：`SPEC.md`
-- 規劃與 RFC：`RFC.md`
-- 變更記錄：`CHANGELOG.md`
-- 安全政策：`SECURITY.md`
-
-## 專案結構（精簡）
+## 專案結構
 
 ```text
 .
-├── src/cli.ts
-├── cli
-├── dist/cli.mjs
-├── install.sh
+├── src/
+│   ├── cli.ts              # CLI 薄殼（~350 行）
+│   ├── server.ts           # HTTP API Server (node:http)
+│   ├── sdk.ts              # Node.js SDK client
+│   ├── core/               # 核心模組
+│   │   ├── types.ts        # MemoriaResult 等型別
+│   │   ├── paths.ts        # 路徑解析
+│   │   ├── utils.ts        # 工具函式
+│   │   ├── db.ts           # SQLite 操作層
+│   │   ├── memoria.ts      # MemoriaCore class
+│   │   └── index.ts        # 統一匯出
+│   └── adapter/            # Agent Adapter
+│       ├── adapter.ts      # BaseAdapter 抽象基底
+│       ├── gemini-adapter.ts
+│       ├── opencode-adapter.ts
+│       └── index.ts
 ├── scripts/
-│   ├── test-smoke.sh
-│   └── test-mcp-e2e.sh
+│   ├── test-smoke.sh       # CLI 全流程測試
+│   └── test-bootstrap.sh   # Agent 自主安裝測試
 ├── skills/memoria-memory-sync/
-├── docs/
-├── RELEASE.md
-└── CHANGELOG.md
+├── examples/session.sample.json
+├── AGENTS.md               # Agent 整合指南
+├── SPEC.md                 # 已實作規格
+└── RFC.md                  # 規劃 / 未來方向
 ```
+
+## 文件導覽
+
+| 文件 | 對象 | 說明 |
+|------|------|------|
+| [AGENTS.md](AGENTS.md) | AI Agent | 架構、API、Bootstrap、開發約定 |
+| [SPEC.md](SPEC.md) | 開發者 | 已落地功能規格 |
+| [RFC.md](RFC.md) | 開發者 | 規劃與未來方向 |
+| [docs/](docs/) | 維運 | 安裝、容器、MCP 整合等 |
 
 ## 授權
 

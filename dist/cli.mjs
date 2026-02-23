@@ -11,6 +11,9 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __commonJS = (cb, mod) => function __require2() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
@@ -1198,8 +1201,8 @@ var require_command = __commonJS({
   "node_modules/.pnpm/commander@14.0.3/node_modules/commander/lib/command.js"(exports) {
     var EventEmitter = __require("node:events").EventEmitter;
     var childProcess = __require("node:child_process");
-    var path2 = __require("node:path");
-    var fs2 = __require("node:fs");
+    var path5 = __require("node:path");
+    var fs4 = __require("node:fs");
     var process3 = __require("node:process");
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -2193,7 +2196,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs2.existsSync(executableFile)) return;
+        if (fs4.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -2211,11 +2214,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = path2.resolve(baseDir, baseName);
-          if (fs2.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path2.extname(baseName))) return void 0;
+          const localBin = path5.resolve(baseDir, baseName);
+          if (fs4.existsSync(localBin)) return localBin;
+          if (sourceExt.includes(path5.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs2.existsSync(`${localBin}${ext}`)
+            (ext) => fs4.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -2227,21 +2230,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs2.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs4.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = path2.resolve(
-            path2.dirname(resolvedScriptPath),
+          executableDir = path5.resolve(
+            path5.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = path2.basename(
+            const legacyName = path5.basename(
               this._scriptPath,
-              path2.extname(this._scriptPath)
+              path5.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -2252,7 +2255,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        launchWithNode = sourceExt.includes(path2.extname(executableFile));
+        launchWithNode = sourceExt.includes(path5.extname(executableFile));
         let proc;
         if (process3.platform !== "win32") {
           if (launchWithNode) {
@@ -3167,7 +3170,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = path2.basename(filename, path2.extname(filename));
+        this._name = path5.basename(filename, path5.extname(filename));
         return this;
       }
       /**
@@ -3181,9 +3184,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} [path]
        * @return {(string|null|Command)}
        */
-      executableDir(path3) {
-        if (path3 === void 0) return this._executableDir;
-        this._executableDir = path3;
+      executableDir(path6) {
+        if (path6 === void 0) return this._executableDir;
+        this._executableDir = path6;
         return this;
       }
       /**
@@ -3461,32 +3464,1118 @@ var require_commander = __commonJS({
   }
 });
 
-// src/cli.ts
-import fs from "node:fs/promises";
-import { existsSync as fsExistsSync, constants as fsConstants } from "node:fs";
+// src/core/paths.ts
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { existsSync as fsExistsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+function existsSync(targetPath) {
+  return fsExistsSync(targetPath);
+}
+function getMemoriaHome() {
+  const envHome = process.env.MEMORIA_HOME;
+  if (envHome) return path.resolve(envHome);
+  const cwd = process.cwd();
+  if (existsSync(path.join(cwd, ".memory")) || existsSync(path.join(cwd, "knowledge"))) return cwd;
+  return path.resolve(__dirname, "..", "..");
+}
+function resolvePathFromEnv(raw) {
+  if (!raw || !raw.trim()) return void 0;
+  return path.resolve(raw);
+}
+function resolveMemoriaPaths(memoriaHomeOverride) {
+  const memoriaHome = memoriaHomeOverride ?? getMemoriaHome();
+  const dbPathFromEnv = resolvePathFromEnv(process.env.MEMORIA_DB_PATH);
+  const dbPath = dbPathFromEnv ?? path.join(memoriaHome, ".memory", "sessions.db");
+  const memoryDir = path.dirname(dbPath);
+  const sessionsPath = resolvePathFromEnv(process.env.MEMORIA_SESSIONS_PATH) ?? path.join(memoryDir, "sessions");
+  const configPath = resolvePathFromEnv(process.env.MEMORIA_CONFIG_PATH) ?? path.join(memoriaHome, "configs");
+  return {
+    memoriaHome,
+    memoryDir,
+    knowledgeDir: path.join(memoriaHome, "knowledge"),
+    dbPath,
+    sessionsPath,
+    configPath
+  };
+}
+var __filename, __dirname;
+var init_paths = __esm({
+  "src/core/paths.ts"() {
+    "use strict";
+    __filename = fileURLToPath(import.meta.url);
+    __dirname = path.dirname(__filename);
+  }
+});
 
-// node_modules/.pnpm/commander@14.0.3/node_modules/commander/esm.mjs
-var import_index = __toESM(require_commander(), 1);
-var {
-  program,
-  createCommand,
-  createArgument,
-  createOption,
-  CommanderError,
-  InvalidArgumentError,
-  InvalidOptionArgumentError,
-  // deprecated old name
-  Command,
-  Argument,
-  Option,
-  Help
-} = import_index.default;
+// src/core/utils.ts
+import { createHash } from "node:crypto";
+function safeDate(raw) {
+  const d = raw ? new Date(raw) : /* @__PURE__ */ new Date();
+  return Number.isNaN(d.getTime()) ? /* @__PURE__ */ new Date() : d;
+}
+function slugify2(input) {
+  const cleaned = input.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned || "untitled";
+}
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const obj = value;
+  const keys = Object.keys(obj).sort();
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`);
+  return `{${entries.join(",")}}`;
+}
+function shortHash(input, length = 16) {
+  return createHash("sha256").update(input).digest("hex").slice(0, length);
+}
+function resolveSessionId(sessionData) {
+  const explicit = sessionData.id?.trim();
+  if (explicit) return explicit;
+  const events = (sessionData.events ?? []).map((event) => ({
+    timestamp: event.timestamp ?? "",
+    event_type: event.type ?? event.event_type ?? "UnknownEvent",
+    content: event.content ?? "",
+    metadata: event.metadata ?? {}
+  }));
+  const fingerprint = stableStringify({
+    timestamp: sessionData.timestamp ?? "",
+    project: sessionData.project ?? "default",
+    summary: sessionData.summary ?? "",
+    events
+  });
+  return `session_${shortHash(fingerprint)}`;
+}
+function resolveEventId(event, sessionId, index) {
+  const explicit = event.id?.trim();
+  if (explicit) return explicit;
+  const fingerprint = stableStringify({
+    session_id: sessionId,
+    index,
+    timestamp: event.timestamp ?? "",
+    event_type: event.type ?? event.event_type ?? "UnknownEvent",
+    content: event.content ?? "",
+    metadata: event.metadata ?? {}
+  });
+  return `evt_${shortHash(fingerprint)}`;
+}
+function getEventType(event) {
+  return event.type ?? event.event_type ?? "UnknownEvent";
+}
+function getEventContentObject(event) {
+  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
+    return event.content;
+  }
+  return {};
+}
+function maybeParseJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+function normalizeSkillKey(name) {
+  return slugify2(name).toLowerCase();
+}
+function parseDaysOption(raw, optionName) {
+  if (raw === void 0) return void 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid ${optionName}: expected non-negative number, got '${raw}'`);
+  }
+  return value;
+}
+function parseBoundaryDate(raw, optionName) {
+  if (!raw) return void 0;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`Invalid ${optionName}: expected ISO date/time, got '${raw}'`);
+  }
+  return d;
+}
+function inDateRange(ts, from, to) {
+  const t = new Date(ts);
+  if (Number.isNaN(t.getTime())) return false;
+  if (from && t < from) return false;
+  if (to && t > to) return false;
+  return true;
+}
+function parseCreatedAt(raw) {
+  if (!raw) return 0;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+var init_utils = __esm({
+  "src/core/utils.ts"() {
+    "use strict";
+  }
+});
+
+// src/core/db.ts
+import fs from "node:fs/promises";
+import path2 from "node:path";
+import Database from "better-sqlite3";
+function initDatabase(dbPath) {
+  const db = new Database(dbPath);
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        timestamp DATETIME,
+        project TEXT,
+        event_count INTEGER,
+        summary TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS events (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        timestamp DATETIME,
+        event_type TEXT,
+        content TEXT,
+        metadata TEXT,
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        category TEXT,
+        created_date DATETIME,
+        success_rate REAL,
+        use_count INTEGER,
+        filepath TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_timestamp
+      ON sessions(timestamp);
+
+      CREATE INDEX IF NOT EXISTS idx_sessions_project_timestamp
+      ON sessions(project, timestamp);
+
+      CREATE INDEX IF NOT EXISTS idx_events_event_type
+      ON events(event_type);
+
+      CREATE INDEX IF NOT EXISTS idx_events_session_event_time
+      ON events(session_id, event_type, timestamp);
+
+      CREATE INDEX IF NOT EXISTS idx_skills_category_created
+      ON skills(category, created_date);
+    `);
+  } finally {
+    db.close();
+  }
+}
+function importSession(dbPath, sessionData) {
+  const db = new Database(dbPath);
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const sessionId = resolveSessionId(sessionData);
+  const timestamp = safeDate(sessionData.timestamp).toISOString();
+  const events = sessionData.events ?? [];
+  try {
+    const upsertSession = db.prepare(`
+      INSERT OR REPLACE INTO sessions (id, timestamp, project, event_count, summary)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    upsertSession.run(
+      sessionId,
+      timestamp,
+      sessionData.project ?? "default",
+      events.length,
+      sessionData.summary ?? ""
+    );
+    const upsertEvent = db.prepare(`
+      INSERT OR REPLACE INTO events (id, session_id, timestamp, event_type, content, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const [index, event] of events.entries()) {
+      const eventId = resolveEventId(event, sessionId, index);
+      const eventTime = safeDate(event.timestamp ?? nowIso).toISOString();
+      const eventType = event.type ?? event.event_type ?? "UnknownEvent";
+      const content = JSON.stringify(event.content ?? "");
+      const metadata = JSON.stringify(event.metadata ?? {});
+      upsertEvent.run(eventId, sessionId, eventTime, eventType, content, metadata);
+    }
+  } finally {
+    db.close();
+  }
+  return sessionId;
+}
+async function syncDailyNote(memoriaHome, dbPath, sessionId) {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const row = db.prepare("SELECT timestamp, project, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
+    if (!row) return;
+    const d = safeDate(row.timestamp);
+    const date5 = d.toISOString().slice(0, 10);
+    const time3 = d.toISOString().slice(11, 16);
+    const notePath = path2.join(memoriaHome, "knowledge", "Daily", `${date5}.md`);
+    const newEntry = `
+## ${time3} - ${row.project}
+
+${row.summary ?? ""}
+
+\u4E8B\u4EF6\u6578: ${row.event_count} | Session ID: \`${sessionId}\`
+`;
+    let content = `# ${date5}
+
+${newEntry}`;
+    if (existsSync(notePath)) {
+      const oldContent = await fs.readFile(notePath, "utf8");
+      content = `${oldContent}${newEntry}`;
+    }
+    await fs.writeFile(notePath, content, "utf8");
+  } finally {
+    db.close();
+  }
+}
+async function extractDecisions(memoriaHome, dbPath, sessionId) {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const rows = db.prepare(`
+        SELECT id, timestamp, content
+        FROM events
+        WHERE session_id = ? AND event_type = 'DecisionMade'
+      `).all(sessionId);
+    for (const row of rows) {
+      let contentData = {};
+      try {
+        contentData = JSON.parse(row.content);
+      } catch {
+        contentData = {};
+      }
+      const decisionTitle = typeof contentData.decision === "string" && contentData.decision.trim() ? contentData.decision.trim() : "Untitled Decision";
+      const date5 = safeDate(row.timestamp).toISOString().slice(0, 10);
+      const filename = `${date5}_${slugify2(decisionTitle).slice(0, 40)}_${slugify2(row.id).slice(0, 8)}.md`;
+      const filePath = path2.join(memoriaHome, "knowledge", "Decisions", filename);
+      const alternatives = Array.isArray(contentData.alternatives_considered) ? contentData.alternatives_considered.map((a) => `- ${String(a)}`).join("\n") : "- (none)";
+      const decisionDoc = `# ${decisionTitle}
+
+## \u5143\u6578\u64DA
+- **\u65E5\u671F**: ${row.timestamp}
+- **Session ID**: \`${sessionId}\`
+
+## \u6C7A\u7B56\u5167\u5BB9
+${typeof contentData.decision === "string" ? contentData.decision : ""}
+
+## \u7406\u7531
+${typeof contentData.rationale === "string" ? contentData.rationale : ""}
+
+## \u8003\u616E\u7684\u66FF\u4EE3\u65B9\u6848
+${alternatives}
+
+## \u5F71\u97FF\u7B49\u7D1A
+${typeof contentData.impact_level === "string" ? contentData.impact_level : "medium"}
+
+## \u76F8\u95DC\u9023\u7D50
+[[${date5}]]
+`;
+      await fs.writeFile(filePath, decisionDoc, "utf8");
+    }
+  } finally {
+    db.close();
+  }
+}
+async function extractSkills(memoriaHome, dbPath, sessionId) {
+  const db = new Database(dbPath);
+  try {
+    const rows = db.prepare(`
+        SELECT id, timestamp, content
+        FROM events
+        WHERE session_id = ? AND event_type = 'SkillLearned'
+      `).all(sessionId);
+    const upsertSkill = db.prepare(`
+      INSERT OR REPLACE INTO skills
+      (id, name, category, created_date, success_rate, use_count, filepath)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      let contentData = {};
+      try {
+        contentData = JSON.parse(row.content);
+      } catch {
+        contentData = {};
+      }
+      const skillName = typeof contentData.skill_name === "string" && contentData.skill_name.trim() ? contentData.skill_name.trim() : "Untitled Skill";
+      const successRateRaw = typeof contentData.success_rate === "number" ? contentData.success_rate : Number(contentData.success_rate ?? 0);
+      const successRate = Number.isFinite(successRateRaw) ? successRateRaw : 0;
+      const category = typeof contentData.category === "string" ? contentData.category : "general";
+      const date5 = safeDate(row.timestamp).toISOString().slice(0, 10);
+      const filename = `${slugify2(skillName)}.md`;
+      const filePath = path2.join(memoriaHome, "knowledge", "Skills", filename);
+      const examples = Array.isArray(contentData.examples) ? contentData.examples.map((e) => `- ${String(e)}`).join("\n") : "- (none)";
+      const skillDoc = `# ${skillName}
+
+## \u5143\u6578\u64DA
+- **\u5275\u5EFA\u65E5\u671F**: ${row.timestamp}
+- **\u985E\u5225**: ${category}
+- **\u6210\u529F\u7387**: ${(successRate * 100).toFixed(1)}%
+- **\u4F7F\u7528\u6B21\u6578**: 1
+
+## \u6A21\u5F0F\u63CF\u8FF0
+${typeof contentData.pattern === "string" ? contentData.pattern : ""}
+
+## \u5BE6\u969B\u6848\u4F8B
+${examples}
+
+## \u7248\u672C\u6B77\u53F2
+- v1.0 (${date5}): \u521D\u59CB\u7248\u672C
+`;
+      await fs.writeFile(filePath, skillDoc, "utf8");
+      upsertSkill.run(
+        slugify2(skillName).toLowerCase(),
+        skillName,
+        category,
+        row.timestamp,
+        successRate,
+        1,
+        filePath
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
+function queryStats(dbPath) {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const sessions = Number(db.prepare("SELECT COUNT(*) AS c FROM sessions").get().c);
+    const events = Number(db.prepare("SELECT COUNT(*) AS c FROM events").get().c);
+    const skills = Number(db.prepare("SELECT COUNT(*) AS c FROM skills").get().c);
+    const lastSession = db.prepare("SELECT id, timestamp, project FROM sessions ORDER BY timestamp DESC LIMIT 1").get();
+    const topSkills = db.prepare("SELECT name, use_count, success_rate FROM skills ORDER BY use_count DESC, name ASC LIMIT 5").all();
+    return { sessions, events, skills, lastSession, topSkills };
+  } finally {
+    db.close();
+  }
+}
+async function canWrite(targetPath) {
+  try {
+    const { constants: fsConstants, access } = await import("node:fs/promises");
+    await access(targetPath, fsConstants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function collectMissingColumns(db, table, expected) {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+  const actual = new Set(rows.map((r) => r.name));
+  return expected.filter((c) => !actual.has(c));
+}
+async function runVerify(paths) {
+  const checks = [];
+  const add = (id, status, detail) => {
+    checks.push({ id, status, detail });
+  };
+  const pathChecks = [
+    { id: "memory_dir_exists", p: paths.memoryDir, label: "memory dir" },
+    { id: "knowledge_dir_exists", p: paths.knowledgeDir, label: "knowledge dir" },
+    { id: "sessions_path_exists", p: paths.sessionsPath, label: "sessions path" },
+    { id: "config_path_exists", p: paths.configPath, label: "config path" }
+  ];
+  for (const item of pathChecks) {
+    add(item.id, existsSync(item.p) ? "pass" : "fail", `${item.label}: ${item.p}`);
+  }
+  for (const item of pathChecks) {
+    const id = item.id.replace("_exists", "_writable");
+    const ok = await canWrite(item.p) || (existsSync(item.p) ? false : await canWrite(path2.dirname(item.p)));
+    add(id, ok ? "pass" : "fail", `${item.label} writable: ${item.p}`);
+  }
+  if (!existsSync(paths.dbPath)) {
+    add("db_exists", "fail", `sessions.db missing: ${paths.dbPath}`);
+    return { ok: false, checks };
+  }
+  let db = null;
+  try {
+    db = new Database(paths.dbPath, { readonly: true, fileMustExist: true });
+    add("db_connect", "pass", `connected: ${paths.dbPath}`);
+    const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all();
+    const tableSet = new Set(tableRows.map((r) => r.name));
+    const requiredTables = ["sessions", "events", "skills"];
+    for (const table of requiredTables) {
+      add(`table_${table}`, tableSet.has(table) ? "pass" : "fail", `table ${table}`);
+    }
+    const requiredColumns = {
+      sessions: ["id", "timestamp", "project", "event_count", "summary"],
+      events: ["id", "session_id", "timestamp", "event_type", "content", "metadata"],
+      skills: ["id", "name", "category", "created_date", "success_rate", "use_count", "filepath"]
+    };
+    for (const [table, columns] of Object.entries(requiredColumns)) {
+      if (!tableSet.has(table)) continue;
+      const missing = collectMissingColumns(db, table, columns);
+      add(
+        `columns_${table}`,
+        missing.length === 0 ? "pass" : "fail",
+        missing.length === 0 ? `columns ${table} ok` : `columns ${table} missing: ${missing.join(", ")}`
+      );
+    }
+    const quickCheck = db.prepare("PRAGMA quick_check").get();
+    const integrityOk = quickCheck?.quick_check === "ok";
+    add("db_integrity", integrityOk ? "pass" : "fail", integrityOk ? "PRAGMA quick_check=ok" : "PRAGMA quick_check failed");
+  } catch (error48) {
+    add("db_connect", "fail", `connect error: ${error48 instanceof Error ? error48.message : String(error48)}`);
+  } finally {
+    db?.close();
+  }
+  return { ok: checks.every((c) => c.status === "pass"), checks };
+}
+async function collectFilesRecursively(dirPath) {
+  if (!existsSync(dirPath)) return [];
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path2.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await collectFilesRecursively(fullPath));
+    } else if (entry.isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+async function pruneFilesByAge(label, dirPath, olderThanDays, dryRun) {
+  const cutoffMs = Date.now() - olderThanDays * 24 * 60 * 60 * 1e3;
+  const files = await collectFilesRecursively(dirPath);
+  let matched = 0, removed = 0, bytes = 0;
+  for (const filePath of files) {
+    const stat = await fs.stat(filePath);
+    if (stat.mtimeMs >= cutoffMs) continue;
+    matched += 1;
+    bytes += stat.size;
+    if (!dryRun) {
+      await fs.unlink(filePath);
+      removed += 1;
+    }
+  }
+  return { label, matched, removed: dryRun ? 0 : removed, bytes };
+}
+function pruneSkillsDuplicates(dbPath, dryRun) {
+  if (!existsSync(dbPath)) return { duplicateGroups: 0, removed: 0 };
+  const db = new Database(dbPath);
+  try {
+    const rows = db.prepare("SELECT id, name, created_date, use_count FROM skills").all();
+    const groups = /* @__PURE__ */ new Map();
+    for (const row of rows) {
+      const key = normalizeSkillKey(row.name);
+      const list = groups.get(key) ?? [];
+      list.push(row);
+      groups.set(key, list);
+    }
+    const deleteIds = [];
+    let duplicateGroups = 0;
+    for (const [, list] of groups) {
+      if (list.length <= 1) continue;
+      duplicateGroups += 1;
+      list.sort((a, b) => {
+        const tDiff = parseCreatedAt(b.created_date) - parseCreatedAt(a.created_date);
+        if (tDiff !== 0) return tDiff;
+        const uDiff = (b.use_count ?? 0) - (a.use_count ?? 0);
+        if (uDiff !== 0) return uDiff;
+        return a.id.localeCompare(b.id);
+      });
+      for (const row of list.slice(1)) deleteIds.push(row.id);
+    }
+    if (!dryRun && deleteIds.length > 0) {
+      const del = db.prepare("DELETE FROM skills WHERE id = ?");
+      const tx = db.transaction((ids) => {
+        for (const id of ids) del.run(id);
+      });
+      tx(deleteIds);
+    }
+    return { duplicateGroups, removed: dryRun ? 0 : deleteIds.length };
+  } finally {
+    db.close();
+  }
+}
+async function runPrune(paths, options) {
+  const dryRun = Boolean(options.dryRun);
+  const all = Boolean(options.all);
+  const exportsDays = parseDaysOption(options.exportsDays, "--exports-days") ?? (all ? 30 : void 0);
+  const checkpointsDays = parseDaysOption(options.checkpointsDays, "--checkpoints-days") ?? (all ? 30 : void 0);
+  const dedupeSkills = Boolean(options.dedupeSkills) || all;
+  if (exportsDays === void 0 && checkpointsDays === void 0 && !dedupeSkills) {
+    throw new Error("No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills");
+  }
+  const result = {};
+  if (exportsDays !== void 0) {
+    const r = await pruneFilesByAge("exports", path2.join(paths.memoryDir, "exports"), exportsDays, dryRun);
+    result.exports = { matched: r.matched, removed: r.removed, bytes: r.bytes };
+  }
+  if (checkpointsDays !== void 0) {
+    const r = await pruneFilesByAge("checkpoints", path2.join(paths.memoryDir, "checkpoints"), checkpointsDays, dryRun);
+    result.checkpoints = { matched: r.matched, removed: r.removed, bytes: r.bytes };
+  }
+  if (dedupeSkills) {
+    result.dedupe = pruneSkillsDuplicates(paths.dbPath, dryRun);
+  }
+  return result;
+}
+async function exportMemory(paths, options) {
+  if (!existsSync(paths.dbPath)) {
+    throw new Error(`sessions.db not found: ${paths.dbPath}. Run 'memoria init' first.`);
+  }
+  const from = parseBoundaryDate(options.from, "--from");
+  const to = parseBoundaryDate(options.to, "--to");
+  const projectFilter = options.project?.trim();
+  const type = options.type ?? "all";
+  const format = options.format ?? "json";
+  const outDir = options.out ? path2.resolve(options.out) : path2.join(paths.memoryDir, "exports");
+  const db = new Database(paths.dbPath, { readonly: true });
+  try {
+    const decisionsRows = type === "all" || type === "decisions" ? db.prepare(`
+            SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+            FROM events e JOIN sessions s ON s.id = e.session_id
+            WHERE e.event_type = 'DecisionMade'
+          `).all() : [];
+    const skillsRows = type === "all" || type === "skills" ? db.prepare(`
+            SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+            FROM events e JOIN sessions s ON s.id = e.session_id
+            WHERE e.event_type = 'SkillLearned'
+          `).all() : [];
+    const decisions = decisionsRows.filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
+      const content = maybeParseJson(r.content);
+      const c = content && typeof content === "object" && !Array.isArray(content) ? content : {};
+      return {
+        id: r.id,
+        session_id: r.session_id,
+        timestamp: r.timestamp,
+        project: r.project,
+        decision: String(c.decision ?? ""),
+        rationale: String(c.rationale ?? ""),
+        impact_level: String(c.impact_level ?? "medium")
+      };
+    });
+    const skills = skillsRows.filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
+      const content = maybeParseJson(r.content);
+      const c = content && typeof content === "object" && !Array.isArray(content) ? content : {};
+      return {
+        id: r.id,
+        session_id: r.session_id,
+        timestamp: r.timestamp,
+        project: r.project,
+        skill_name: String(c.skill_name ?? ""),
+        category: String(c.category ?? "general"),
+        pattern: String(c.pattern ?? "")
+      };
+    });
+    await fs.mkdir(outDir, { recursive: true });
+    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+    const projectPart = projectFilter ? `_${slugify2(projectFilter).slice(0, 30)}` : "";
+    const ext = format === "json" ? "json" : "md";
+    const filePath = path2.join(outDir, `memoria-export_${type}${projectPart}_${stamp}.${ext}`);
+    const payload = {
+      generated_at: (/* @__PURE__ */ new Date()).toISOString(),
+      filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, type, format },
+      counts: { decisions: decisions.length, skills: skills.length },
+      decisions,
+      skills
+    };
+    if (format === "json") {
+      await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
+    } else {
+      const decisionBlock = decisions.map((d) => `- [${d.timestamp}] (${d.project}) ${d.decision || "(untitled)"} | impact=${d.impact_level} | session=${d.session_id}`).join("\n");
+      const skillBlock = skills.map((s) => `- [${s.timestamp}] (${s.project}) ${s.skill_name || "(untitled)"} | category=${s.category}`).join("\n");
+      const md = `# Memoria Export
+
+Generated: ${payload.generated_at}
+
+## Filters
+- from: ${payload.filters.from ?? "(none)"}
+- to: ${payload.filters.to ?? "(none)"}
+- project: ${payload.filters.project ?? "(none)"}
+- type: ${type}
+
+## Counts
+- decisions: ${decisions.length}
+- skills: ${skills.length}
+
+## Decisions
+${decisionBlock || "- (none)"}
+
+## Skills
+${skillBlock || "- (none)"}
+`;
+      await fs.writeFile(filePath, md, "utf8");
+    }
+    return { filePath, decisions, skills };
+  } finally {
+    db.close();
+  }
+}
+function recallKeyword(dbPath, query, projectFilter, topK = 5, afterDate) {
+  const db = new Database(dbPath, { readonly: true });
+  const q = `%${query.toLowerCase()}%`;
+  try {
+    const decisionRows = db.prepare(`
+      SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+      FROM events e JOIN sessions s ON s.id = e.session_id
+      WHERE e.event_type = 'DecisionMade'
+        AND LOWER(e.content) LIKE ?
+        ${projectFilter ? "AND s.project = ?" : ""}
+        ${afterDate ? "AND e.timestamp >= ?" : ""}
+      ORDER BY e.timestamp DESC
+      LIMIT ?
+    `).all(...[q, ...projectFilter ? [projectFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
+    const skillRows = db.prepare(`
+      SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+      FROM events e JOIN sessions s ON s.id = e.session_id
+      WHERE e.event_type = 'SkillLearned'
+        AND LOWER(e.content) LIKE ?
+        ${projectFilter ? "AND s.project = ?" : ""}
+        ${afterDate ? "AND e.timestamp >= ?" : ""}
+      ORDER BY e.timestamp DESC
+      LIMIT ?
+    `).all(...[q, ...projectFilter ? [projectFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
+    const sessionRows = db.prepare(`
+      SELECT id, id AS session_id, timestamp, COALESCE(summary, '') AS content, project
+      FROM sessions
+      WHERE (LOWER(summary) LIKE ? OR LOWER(project) LIKE ?)
+        ${projectFilter ? "AND project = ?" : ""}
+        ${afterDate ? "AND timestamp >= ?" : ""}
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(...[q, q, ...projectFilter ? [projectFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
+    const all = [
+      ...decisionRows.map((r) => ({ type: "decision", ...r })),
+      ...skillRows.map((r) => ({ type: "skill", ...r })),
+      ...sessionRows.map((r) => ({ type: "session", ...r }))
+    ];
+    return all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, topK).map((r) => {
+      const parsed = maybeParseJson(r.content);
+      const snippet = typeof parsed === "object" && parsed !== null ? JSON.stringify(parsed).slice(0, 200) : String(r.content).slice(0, 200);
+      return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet };
+    });
+  } finally {
+    db.close();
+  }
+}
+function querySessionSummary(dbPath, sessionId) {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const session = db.prepare("SELECT id, timestamp, project, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
+    if (!session) return null;
+    const decisionEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'DecisionMade'`).all(sessionId);
+    const skillEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'SkillLearned'`).all(sessionId);
+    const decisions = decisionEvents.map((row) => {
+      const c = maybeParseJson(row.content);
+      const obj = c && typeof c === "object" && !Array.isArray(c) ? c : {};
+      return {
+        id: row.id,
+        decision: String(obj.decision ?? ""),
+        impact_level: String(obj.impact_level ?? "medium")
+      };
+    });
+    const skills = skillEvents.map((row) => {
+      const c = maybeParseJson(row.content);
+      const obj = c && typeof c === "object" && !Array.isArray(c) ? c : {};
+      return {
+        id: row.id,
+        skill_name: String(obj.skill_name ?? ""),
+        category: String(obj.category ?? "general")
+      };
+    });
+    return { session, decisions, skills };
+  } finally {
+    db.close();
+  }
+}
+var init_db = __esm({
+  "src/core/db.ts"() {
+    "use strict";
+    init_paths();
+    init_utils();
+  }
+});
+
+// src/core/memoria.ts
+import fs2 from "node:fs/promises";
+import path3 from "node:path";
+var MemoriaCore;
+var init_memoria = __esm({
+  "src/core/memoria.ts"() {
+    "use strict";
+    init_paths();
+    init_db();
+    MemoriaCore = class {
+      paths;
+      constructor(paths) {
+        this.paths = paths;
+      }
+      // ─── Init ────────────────────────────────────────────────────────────────
+      async init() {
+        const dirs = [
+          this.paths.memoryDir,
+          this.paths.sessionsPath,
+          path3.join(this.paths.memoryDir, "checkpoints"),
+          path3.join(this.paths.memoryDir, "exports"),
+          this.paths.knowledgeDir,
+          path3.join(this.paths.knowledgeDir, "Daily"),
+          path3.join(this.paths.knowledgeDir, "Skills"),
+          path3.join(this.paths.knowledgeDir, "Decisions"),
+          this.paths.configPath
+        ];
+        await Promise.all(dirs.map((d) => fs2.mkdir(d, { recursive: true })));
+        initDatabase(this.paths.dbPath);
+      }
+      // ─── remember() ──────────────────────────────────────────────────────────
+      async remember(data) {
+        const start = Date.now();
+        try {
+          await this.init();
+          const sessionId = importSession(this.paths.dbPath, data);
+          await syncDailyNote(this.paths.memoriaHome, this.paths.dbPath, sessionId);
+          await extractDecisions(this.paths.memoriaHome, this.paths.dbPath, sessionId);
+          await extractSkills(this.paths.memoriaHome, this.paths.dbPath, sessionId);
+          return {
+            ok: true,
+            data: { sessionId },
+            meta: {
+              source: "sqlite",
+              evidence: [sessionId],
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      // ─── recall() ────────────────────────────────────────────────────────────
+      async recall(filter) {
+        const start = Date.now();
+        try {
+          if (!existsSync(this.paths.dbPath)) {
+            return {
+              ok: true,
+              data: [],
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 0,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
+          const topK = filter.top_k ?? 5;
+          let afterDate;
+          if (filter.time_window) {
+            const match = /^P(\d+)D$/.exec(filter.time_window);
+            if (match) {
+              const days = Number(match[1]);
+              afterDate = new Date(Date.now() - days * 24 * 60 * 60 * 1e3);
+            }
+          }
+          const raw = recallKeyword(this.paths.dbPath, filter.query, filter.project, topK, afterDate);
+          const hits = raw.map((r, i) => ({
+            type: r.type,
+            id: r.id,
+            session_id: r.session_id,
+            timestamp: r.timestamp,
+            project: r.project,
+            snippet: r.snippet,
+            // Score based on recency: most recent → score 1.0
+            score: raw.length === 1 ? 1 : 1 - i / (raw.length - 1)
+          }));
+          return {
+            ok: true,
+            data: hits,
+            meta: {
+              source: "sqlite",
+              evidence: hits.map((h) => h.id),
+              confidence: hits.length > 0 ? hits[0].score : 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      // ─── summarizeSession() ──────────────────────────────────────────────────
+      async summarizeSession(sessionId) {
+        const start = Date.now();
+        try {
+          if (!existsSync(this.paths.dbPath)) {
+            return {
+              ok: false,
+              error: "Database not found. Run init first.",
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 0,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
+          const raw = querySessionSummary(this.paths.dbPath, sessionId);
+          if (!raw) {
+            return {
+              ok: false,
+              error: `Session not found: ${sessionId}`,
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 0,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
+          const summary = {
+            sessionId: raw.session.id,
+            timestamp: raw.session.timestamp,
+            project: raw.session.project,
+            eventCount: raw.session.event_count,
+            summary: raw.session.summary,
+            decisions: raw.decisions,
+            skills: raw.skills
+          };
+          return {
+            ok: true,
+            data: summary,
+            meta: {
+              source: "sqlite",
+              evidence: [sessionId],
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      // ─── health() ────────────────────────────────────────────────────────────
+      async health() {
+        const start = Date.now();
+        try {
+          const { ok, checks } = await runVerify(this.paths);
+          const dbOk = checks.find((c) => c.id === "db_connect")?.status === "pass" ? "ok" : existsSync(this.paths.dbPath) ? "error" : "missing";
+          const dirsOk = checks.filter((c) => c.id.endsWith("_exists")).every((c) => c.status === "pass") ? "ok" : checks.some((c) => c.id.endsWith("_exists") && c.status === "pass") ? "partial" : "missing";
+          const status = { ok, db: dbOk, dirs: dirsOk, checks };
+          return {
+            ok: true,
+            data: status,
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      // ─── stats() ─────────────────────────────────────────────────────────────
+      async stats() {
+        const start = Date.now();
+        try {
+          if (!existsSync(this.paths.dbPath)) {
+            return {
+              ok: false,
+              error: "Database not found. Run init first.",
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 0,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
+          const data = queryStats(this.paths.dbPath);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+    };
+  }
+});
+
+// src/core/index.ts
+var init_core = __esm({
+  "src/core/index.ts"() {
+    "use strict";
+    init_memoria();
+    init_paths();
+    init_db();
+    init_utils();
+  }
+});
+
+// src/server.ts
+var server_exports = {};
+__export(server_exports, {
+  createServer: () => createServer,
+  startServer: () => startServer
+});
+import http from "node:http";
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+function send(res, status, body) {
+  const json2 = JSON.stringify(body, null, 2);
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(json2);
+}
+function sendError(res, status, message) {
+  send(res, status, { ok: false, error: message });
+}
+function createServer(core) {
+  return http.createServer(async (req, res) => {
+    const method = req.method ?? "GET";
+    const url2 = req.url ?? "/";
+    try {
+      if (method === "GET" && url2 === "/v1/health") {
+        const result = await core.health();
+        send(res, result.ok ? 200 : 503, result);
+        return;
+      }
+      if (method === "GET" && url2 === "/v1/stats") {
+        const result = await core.stats();
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      if (method === "POST" && url2 === "/v1/remember") {
+        const raw = await readBody(req);
+        let body;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          sendError(res, 400, "Invalid JSON body");
+          return;
+        }
+        const result = await core.remember(body);
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      if (method === "POST" && url2 === "/v1/recall") {
+        const raw = await readBody(req);
+        let body;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          sendError(res, 400, "Invalid JSON body");
+          return;
+        }
+        if (typeof body !== "object" || body === null || !("query" in body)) {
+          sendError(res, 400, 'Body must include "query" field');
+          return;
+        }
+        const result = await core.recall(body);
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      const sessionMatch = /^\/v1\/sessions\/([^/]+)\/summary$/.exec(url2);
+      if (method === "GET" && sessionMatch) {
+        const sessionId = decodeURIComponent(sessionMatch[1]);
+        const result = await core.summarizeSession(sessionId);
+        send(res, result.ok ? 200 : result.error?.includes("not found") ? 404 : 500, result);
+        return;
+      }
+      sendError(res, 404, `Not found: ${method} ${url2}`);
+    } catch (error48) {
+      sendError(res, 500, error48 instanceof Error ? error48.message : String(error48));
+    }
+  });
+}
+async function startServer(port) {
+  const paths = resolveMemoriaPaths();
+  const core = new MemoriaCore(paths);
+  const actualPort = port ?? Number(process.env.MEMORIA_PORT ?? DEFAULT_PORT);
+  const server = createServer(core);
+  await new Promise((resolve) => server.listen(actualPort, resolve));
+  return { server, port: server.address().port };
+}
+var DEFAULT_PORT;
+var init_server = __esm({
+  "src/server.ts"() {
+    "use strict";
+    init_core();
+    init_core();
+    DEFAULT_PORT = 3917;
+  }
+});
 
 // src/cli.ts
-import Database from "better-sqlite3";
+import fs3 from "node:fs/promises";
+import path4 from "node:path";
 
 // node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -4255,10 +5344,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path2) {
-  if (!path2)
+function getElementAtPath(obj, path5) {
+  if (!path5)
     return obj;
-  return path2.reduce((acc, key) => acc?.[key], obj);
+  return path5.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -4641,11 +5730,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path2, issues) {
+function prefixIssues(path5, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path2);
+    iss.path.unshift(path5);
     return iss;
   });
 }
@@ -4828,7 +5917,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path2 = []) => {
+  const processError = (error49, path5 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -4838,7 +5927,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path2, ...issue2.path];
+        const fullpath = [...path5, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -4870,8 +5959,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path2 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path2) {
+  const path5 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path5) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -16848,13 +17937,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path2 = ref.slice(1).split("/").filter(Boolean);
-  if (path2.length === 0) {
+  const path5 = ref.slice(1).split("/").filter(Boolean);
+  if (path5.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path2[0] === defsKey) {
-    const key = path2[1];
+  if (path5[0] === defsKey) {
+    const key = path5[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -17256,7 +18345,25 @@ function date4(params) {
 // node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/external.js
 config(en_default());
 
+// node_modules/.pnpm/commander@14.0.3/node_modules/commander/esm.mjs
+var import_index = __toESM(require_commander(), 1);
+var {
+  program,
+  createCommand,
+  createArgument,
+  createOption,
+  CommanderError,
+  InvalidArgumentError,
+  InvalidOptionArgumentError,
+  // deprecated old name
+  Command,
+  Argument,
+  Option,
+  Help
+} = import_index.default;
+
 // src/cli.ts
+init_core();
 var sessionEventSchema = external_exports.object({
   id: external_exports.string().optional(),
   timestamp: external_exports.string().optional(),
@@ -17272,160 +18379,8 @@ var sessionSchema = external_exports.object({
   summary: external_exports.string().optional(),
   events: external_exports.array(sessionEventSchema).default([])
 }).passthrough();
-var __filename = fileURLToPath(import.meta.url);
-var __dirname = path.dirname(__filename);
-function getMemoriaHome() {
-  const envHome = process.env.MEMORIA_HOME;
-  if (envHome) return path.resolve(envHome);
-  const cwd = process.cwd();
-  const cwdHasMemory = path.join(cwd, ".memory");
-  const cwdHasKnowledge = path.join(cwd, "knowledge");
-  if (existsSync(cwdHasMemory) || existsSync(cwdHasKnowledge)) return cwd;
-  return path.resolve(__dirname, "..");
-}
-function resolvePathFromEnv(raw) {
-  if (!raw || !raw.trim()) return void 0;
-  return path.resolve(raw);
-}
-function resolveMemoriaPaths() {
-  const memoriaHome = getMemoriaHome();
-  const dbPathFromEnv = resolvePathFromEnv(process.env.MEMORIA_DB_PATH);
-  const dbPath = dbPathFromEnv ?? path.join(memoriaHome, ".memory", "sessions.db");
-  const memoryDir = path.dirname(dbPath);
-  const sessionsPath = resolvePathFromEnv(process.env.MEMORIA_SESSIONS_PATH) ?? path.join(memoryDir, "sessions");
-  const configPath = resolvePathFromEnv(process.env.MEMORIA_CONFIG_PATH) ?? path.join(memoriaHome, "configs");
-  return {
-    memoriaHome,
-    memoryDir,
-    knowledgeDir: path.join(memoriaHome, "knowledge"),
-    dbPath,
-    sessionsPath,
-    configPath
-  };
-}
-function existsSync(targetPath) {
-  return fsExistsSync(targetPath);
-}
-function safeDate(raw) {
-  const d = raw ? new Date(raw) : /* @__PURE__ */ new Date();
-  return Number.isNaN(d.getTime()) ? /* @__PURE__ */ new Date() : d;
-}
-function slugify2(input) {
-  const cleaned = input.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
-  return cleaned || "untitled";
-}
-function stableStringify(value) {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-  const obj = value;
-  const keys = Object.keys(obj).sort();
-  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`);
-  return `{${entries.join(",")}}`;
-}
-function shortHash(input, length = 16) {
-  return createHash("sha256").update(input).digest("hex").slice(0, length);
-}
-function resolveSessionId(sessionData) {
-  const explicit = sessionData.id?.trim();
-  if (explicit) return explicit;
-  const events = (sessionData.events ?? []).map((event) => ({
-    timestamp: event.timestamp ?? "",
-    event_type: event.type ?? event.event_type ?? "UnknownEvent",
-    content: event.content ?? "",
-    metadata: event.metadata ?? {}
-  }));
-  const fingerprint = stableStringify({
-    timestamp: sessionData.timestamp ?? "",
-    project: sessionData.project ?? "default",
-    summary: sessionData.summary ?? "",
-    events
-  });
-  return `session_${shortHash(fingerprint)}`;
-}
-function resolveEventId(event, sessionId, index) {
-  const explicit = event.id?.trim();
-  if (explicit) return explicit;
-  const fingerprint = stableStringify({
-    session_id: sessionId,
-    index,
-    timestamp: event.timestamp ?? "",
-    event_type: event.type ?? event.event_type ?? "UnknownEvent",
-    content: event.content ?? "",
-    metadata: event.metadata ?? {}
-  });
-  return `evt_${shortHash(fingerprint)}`;
-}
-async function ensureBaseDirs(paths) {
-  const dirs = [
-    paths.memoryDir,
-    paths.sessionsPath,
-    path.join(paths.memoryDir, "checkpoints"),
-    path.join(paths.memoryDir, "exports"),
-    paths.knowledgeDir,
-    path.join(paths.knowledgeDir, "Daily"),
-    path.join(paths.knowledgeDir, "Skills"),
-    path.join(paths.knowledgeDir, "Decisions"),
-    paths.configPath
-  ];
-  await Promise.all(dirs.map((d) => fs.mkdir(d, { recursive: true })));
-}
-function initDatabase(dbPath) {
-  const db = new Database(dbPath);
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        timestamp DATETIME,
-        project TEXT,
-        event_count INTEGER,
-        summary TEXT
-      );
-
-      CREATE TABLE IF NOT EXISTS events (
-        id TEXT PRIMARY KEY,
-        session_id TEXT,
-        timestamp DATETIME,
-        event_type TEXT,
-        content TEXT,
-        metadata TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS skills (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        category TEXT,
-        created_date DATETIME,
-        success_rate REAL,
-        use_count INTEGER,
-        filepath TEXT
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_sessions_timestamp
-      ON sessions(timestamp);
-
-      CREATE INDEX IF NOT EXISTS idx_sessions_project_timestamp
-      ON sessions(project, timestamp);
-
-      CREATE INDEX IF NOT EXISTS idx_events_event_type
-      ON events(event_type);
-
-      CREATE INDEX IF NOT EXISTS idx_events_session_event_time
-      ON events(session_id, event_type, timestamp);
-
-      CREATE INDEX IF NOT EXISTS idx_skills_category_created
-      ON skills(category, created_date);
-    `);
-  } finally {
-    db.close();
-  }
-}
 async function readSession(sessionFile) {
-  const raw = await fs.readFile(sessionFile, "utf8");
+  const raw = await fs3.readFile(sessionFile, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -17434,7 +18389,7 @@ async function readSession(sessionFile) {
   }
   const validated = sessionSchema.safeParse(parsed);
   if (!validated.success) {
-    const details = validated.error.issues.map((issue2) => `${issue2.path.join(".") || "(root)"}: ${issue2.message}`).join("; ");
+    const details = validated.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
     throw new Error(`Session schema validation failed: ${details}`);
   }
   const data = validated.data;
@@ -17446,655 +18401,200 @@ async function readSession(sessionFile) {
     events: Array.isArray(data.events) ? data.events : []
   };
 }
-function importSession(dbPath, sessionData) {
-  const db = new Database(dbPath);
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const sessionId = resolveSessionId(sessionData);
-  const timestamp = safeDate(sessionData.timestamp).toISOString();
-  const events = sessionData.events ?? [];
-  try {
-    const upsertSession = db.prepare(`
-      INSERT OR REPLACE INTO sessions (id, timestamp, project, event_count, summary)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    upsertSession.run(
-      sessionId,
-      timestamp,
-      sessionData.project ?? "default",
-      events.length,
-      sessionData.summary ?? ""
-    );
-    const upsertEvent = db.prepare(`
-      INSERT OR REPLACE INTO events (id, session_id, timestamp, event_type, content, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    for (const [index, event] of events.entries()) {
-      const eventId = resolveEventId(event, sessionId, index);
-      const eventTime = safeDate(event.timestamp ?? nowIso).toISOString();
-      const eventType = event.type ?? event.event_type ?? "UnknownEvent";
-      const content = JSON.stringify(event.content ?? "");
-      const metadata = JSON.stringify(event.metadata ?? {});
-      upsertEvent.run(eventId, sessionId, eventTime, eventType, content, metadata);
-    }
-  } finally {
-    db.close();
-  }
-  return sessionId;
-}
-function getEventType(event) {
-  return event.type ?? event.event_type ?? "UnknownEvent";
-}
-function getEventContentObject(event) {
-  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
-    return event.content;
-  }
-  return {};
-}
 function previewSync(paths, sessionFile, sessionData) {
   const sessionId = resolveSessionId(sessionData);
   const timestamp = safeDate(sessionData.timestamp).toISOString();
   const events = sessionData.events ?? [];
   const date5 = safeDate(timestamp).toISOString().slice(0, 10);
-  const dailyPath = path.join(paths.knowledgeDir, "Daily", `${date5}.md`);
-  const dbPath = paths.dbPath;
+  const dailyPath = path4.join(paths.knowledgeDir, "Daily", `${date5}.md`);
   const decisionPaths = events.map((event, index) => ({ event, index })).filter(({ event }) => getEventType(event) === "DecisionMade").map(({ event, index }) => {
     const content = getEventContentObject(event);
     const decisionTitle = typeof content.decision === "string" && content.decision.trim() ? content.decision.trim() : "Untitled Decision";
     const eventId = resolveEventId(event, sessionId, index);
     const filename = `${date5}_${slugify2(decisionTitle).slice(0, 40)}_${slugify2(eventId).slice(0, 8)}.md`;
-    return path.join(paths.knowledgeDir, "Decisions", filename);
+    return path4.join(paths.knowledgeDir, "Decisions", filename);
   });
   const skillPaths = events.filter((e) => getEventType(e) === "SkillLearned").map((event) => {
     const content = getEventContentObject(event);
     const skillName = typeof content.skill_name === "string" && content.skill_name.trim() ? content.skill_name.trim() : "Untitled Skill";
-    return path.join(paths.knowledgeDir, "Skills", `${slugify2(skillName)}.md`);
+    return path4.join(paths.knowledgeDir, "Skills", `${slugify2(skillName)}.md`);
   });
   console.log("\u{1F9EA} Dry run (no files written)");
   console.log(`- session file: ${sessionFile}`);
   console.log(`- session id: ${sessionId}`);
   console.log(`- project: ${sessionData.project ?? "default"}`);
   console.log(`- events: ${events.length}`);
-  console.log(`- database upsert: ${dbPath}`);
+  console.log(`- database upsert: ${paths.dbPath}`);
   console.log(`- daily note append: ${dailyPath}`);
   console.log(`- decisions to write: ${decisionPaths.length}`);
   for (const p of decisionPaths.slice(0, 5)) console.log(`  - ${p}`);
   console.log(`- skills to write: ${skillPaths.length}`);
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`);
 }
-async function syncDailyNote(memoriaHome, dbPath, sessionId) {
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const row = db.prepare("SELECT timestamp, project, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
-    if (!row) return;
-    const d = safeDate(row.timestamp);
-    const date5 = d.toISOString().slice(0, 10);
-    const time3 = d.toISOString().slice(11, 16);
-    const notePath = path.join(memoriaHome, "knowledge", "Daily", `${date5}.md`);
-    const newEntry = `
-## ${time3} - ${row.project}
-
-${row.summary ?? ""}
-
-\u4E8B\u4EF6\u6578: ${row.event_count} | Session ID: \`${sessionId}\`
-`;
-    let content = `# ${date5}
-
-${newEntry}`;
-    if (existsSync(notePath)) {
-      const oldContent = await fs.readFile(notePath, "utf8");
-      content = `${oldContent}${newEntry}`;
-    }
-    await fs.writeFile(notePath, content, "utf8");
-  } finally {
-    db.close();
-  }
-}
-async function extractDecisions(memoriaHome, dbPath, sessionId) {
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const rows = db.prepare(`
-        SELECT id, timestamp, content
-        FROM events
-        WHERE session_id = ? AND event_type = 'DecisionMade'
-      `).all(sessionId);
-    for (const row of rows) {
-      let contentData = {};
-      try {
-        contentData = JSON.parse(row.content);
-      } catch {
-        contentData = {};
-      }
-      const decisionTitle = typeof contentData.decision === "string" && contentData.decision.trim() ? contentData.decision.trim() : "Untitled Decision";
-      const date5 = safeDate(row.timestamp).toISOString().slice(0, 10);
-      const filename = `${date5}_${slugify2(decisionTitle).slice(0, 40)}_${slugify2(row.id).slice(0, 8)}.md`;
-      const filePath = path.join(memoriaHome, "knowledge", "Decisions", filename);
-      const alternatives = Array.isArray(contentData.alternatives_considered) ? contentData.alternatives_considered.map((a) => `- ${String(a)}`).join("\n") : "- (none)";
-      const decisionDoc = `# ${decisionTitle}
-
-## \u5143\u6578\u64DA
-- **\u65E5\u671F**: ${row.timestamp}
-- **Session ID**: \`${sessionId}\`
-
-## \u6C7A\u7B56\u5167\u5BB9
-${typeof contentData.decision === "string" ? contentData.decision : ""}
-
-## \u7406\u7531
-${typeof contentData.rationale === "string" ? contentData.rationale : ""}
-
-## \u8003\u616E\u7684\u66FF\u4EE3\u65B9\u6848
-${alternatives}
-
-## \u5F71\u97FF\u7B49\u7D1A
-${typeof contentData.impact_level === "string" ? contentData.impact_level : "medium"}
-
-## \u76F8\u95DC\u9023\u7D50
-[[${date5}]]
-`;
-      await fs.writeFile(filePath, decisionDoc, "utf8");
-    }
-  } finally {
-    db.close();
-  }
-}
-async function extractSkills(memoriaHome, dbPath, sessionId) {
-  const db = new Database(dbPath);
-  try {
-    const rows = db.prepare(`
-        SELECT id, timestamp, content
-        FROM events
-        WHERE session_id = ? AND event_type = 'SkillLearned'
-      `).all(sessionId);
-    const upsertSkill = db.prepare(`
-      INSERT OR REPLACE INTO skills
-      (id, name, category, created_date, success_rate, use_count, filepath)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const row of rows) {
-      let contentData = {};
-      try {
-        contentData = JSON.parse(row.content);
-      } catch {
-        contentData = {};
-      }
-      const skillName = typeof contentData.skill_name === "string" && contentData.skill_name.trim() ? contentData.skill_name.trim() : "Untitled Skill";
-      const successRateRaw = typeof contentData.success_rate === "number" ? contentData.success_rate : Number(contentData.success_rate ?? 0);
-      const successRate = Number.isFinite(successRateRaw) ? successRateRaw : 0;
-      const category = typeof contentData.category === "string" ? contentData.category : "general";
-      const date5 = safeDate(row.timestamp).toISOString().slice(0, 10);
-      const filename = `${slugify2(skillName)}.md`;
-      const filePath = path.join(memoriaHome, "knowledge", "Skills", filename);
-      const examples = Array.isArray(contentData.examples) ? contentData.examples.map((e) => `- ${String(e)}`).join("\n") : "- (none)";
-      const skillDoc = `# ${skillName}
-
-## \u5143\u6578\u64DA
-- **\u5275\u5EFA\u65E5\u671F**: ${row.timestamp}
-- **\u985E\u5225**: ${category}
-- **\u6210\u529F\u7387**: ${(successRate * 100).toFixed(1)}%
-- **\u4F7F\u7528\u6B21\u6578**: 1
-
-## \u6A21\u5F0F\u63CF\u8FF0
-${typeof contentData.pattern === "string" ? contentData.pattern : ""}
-
-## \u5BE6\u969B\u6848\u4F8B
-${examples}
-
-## \u7248\u672C\u6B77\u53F2
-- v1.0 (${date5}): \u521D\u59CB\u7248\u672C
-`;
-      await fs.writeFile(filePath, skillDoc, "utf8");
-      upsertSkill.run(
-        slugify2(skillName).toLowerCase(),
-        skillName,
-        category,
-        row.timestamp,
-        successRate,
-        1,
-        filePath
-      );
-    }
-  } finally {
-    db.close();
-  }
-}
-async function doctor(paths) {
-  const checks = [
-    { name: "MEMORIA_HOME", ok: true, value: paths.memoriaHome },
-    { name: "memory dir", ok: existsSync(paths.memoryDir), value: paths.memoryDir },
-    { name: "knowledge dir", ok: existsSync(paths.knowledgeDir), value: paths.knowledgeDir },
-    { name: "sessions path", ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
-    { name: "config path", ok: existsSync(paths.configPath), value: paths.configPath },
-    { name: "sessions.db", ok: existsSync(paths.dbPath), value: paths.dbPath }
-  ];
-  const envDetails = [
-    `- MEMORIA_DB_PATH=${process.env.MEMORIA_DB_PATH ?? "(not set)"}`,
-    `- MEMORIA_SESSIONS_PATH=${process.env.MEMORIA_SESSIONS_PATH ?? "(not set)"}`,
-    `- MEMORIA_CONFIG_PATH=${process.env.MEMORIA_CONFIG_PATH ?? "(not set)"}`
-  ];
-  console.log("Resolved path envs:");
-  for (const line of envDetails) console.log(line);
-  for (const c of checks) {
-    console.log(`${c.ok ? "\u2713" : "\u2717"} ${c.name}: ${c.value}`);
-  }
-}
-function stats(paths) {
-  const dbPath = paths.dbPath;
-  if (!existsSync(paths.dbPath)) {
-    console.log(`\u2717 sessions.db not found: ${paths.dbPath}`);
-    console.log("Run `memoria init` first.");
-    return;
-  }
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const totalSessions = Number(db.prepare("SELECT COUNT(*) AS c FROM sessions").get().c);
-    const totalEvents = Number(db.prepare("SELECT COUNT(*) AS c FROM events").get().c);
-    const totalSkills = Number(db.prepare("SELECT COUNT(*) AS c FROM skills").get().c);
-    const lastSession = db.prepare("SELECT id, timestamp, project FROM sessions ORDER BY timestamp DESC LIMIT 1").get();
-    const topSkills = db.prepare("SELECT name, use_count, success_rate FROM skills ORDER BY use_count DESC, name ASC LIMIT 5").all();
-    console.log("\u{1F4CA} Memoria Stats");
-    console.log(`- db path: ${dbPath}`);
-    console.log(`- sessions: ${totalSessions}`);
-    console.log(`- events: ${totalEvents}`);
-    console.log(`- skills: ${totalSkills}`);
-    if (lastSession) {
-      console.log(`- last session: ${lastSession.id} (${lastSession.project}, ${lastSession.timestamp})`);
-    }
-    if (topSkills.length > 0) {
-      console.log("- top skills:");
-      for (const skill of topSkills) {
-        console.log(`  - ${skill.name}: uses=${skill.use_count}, success=${(skill.success_rate * 100).toFixed(1)}%`);
-      }
-    }
-  } finally {
-    db.close();
-  }
-}
-function parseDaysOption(raw, optionName) {
-  if (raw === void 0) return void 0;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Invalid ${optionName}: expected non-negative number, got '${raw}'`);
-  }
-  return value;
-}
-function parseBoundaryDate(raw, optionName) {
-  if (!raw) return void 0;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`Invalid ${optionName}: expected ISO date/time, got '${raw}'`);
-  }
-  return d;
-}
-async function collectFilesRecursively(dirPath) {
-  if (!existsSync(dirPath)) return [];
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await collectFilesRecursively(fullPath));
-    } else if (entry.isFile()) {
-      files.push(fullPath);
-    }
-  }
-  return files;
-}
-async function pruneFilesByAge(label, dirPath, olderThanDays, dryRun) {
-  const cutoffMs = Date.now() - olderThanDays * 24 * 60 * 60 * 1e3;
-  const files = await collectFilesRecursively(dirPath);
-  let matched = 0;
-  let removed = 0;
-  let bytes = 0;
-  for (const filePath of files) {
-    const stat = await fs.stat(filePath);
-    if (stat.mtimeMs >= cutoffMs) continue;
-    matched += 1;
-    bytes += stat.size;
-    if (!dryRun) {
-      await fs.unlink(filePath);
-      removed += 1;
-    }
-  }
-  return { label, matched, removed: dryRun ? 0 : removed, bytes };
-}
-function normalizeSkillKey(name) {
-  return slugify2(name).toLowerCase();
-}
-function parseCreatedAt(raw) {
-  if (!raw) return 0;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
-}
-function pruneSkillsDuplicates(dbPath, dryRun) {
-  if (!existsSync(dbPath)) return { duplicateGroups: 0, removed: 0 };
-  const db = new Database(dbPath);
-  try {
-    const rows = db.prepare("SELECT id, name, created_date, use_count FROM skills").all();
-    const groups = /* @__PURE__ */ new Map();
-    for (const row of rows) {
-      const key = normalizeSkillKey(row.name);
-      const list = groups.get(key) ?? [];
-      list.push(row);
-      groups.set(key, list);
-    }
-    const deleteIds = [];
-    let duplicateGroups = 0;
-    for (const [, list] of groups) {
-      if (list.length <= 1) continue;
-      duplicateGroups += 1;
-      list.sort((a, b) => {
-        const tDiff = parseCreatedAt(b.created_date) - parseCreatedAt(a.created_date);
-        if (tDiff !== 0) return tDiff;
-        const uDiff = (b.use_count ?? 0) - (a.use_count ?? 0);
-        if (uDiff !== 0) return uDiff;
-        return a.id.localeCompare(b.id);
-      });
-      for (const row of list.slice(1)) {
-        deleteIds.push(row.id);
-      }
-    }
-    if (!dryRun && deleteIds.length > 0) {
-      const del = db.prepare("DELETE FROM skills WHERE id = ?");
-      const tx = db.transaction((ids) => {
-        for (const id of ids) del.run(id);
-      });
-      tx(deleteIds);
-    }
-    return { duplicateGroups, removed: dryRun ? 0 : deleteIds.length };
-  } finally {
-    db.close();
-  }
-}
-async function prune(paths, options) {
-  const dryRun = Boolean(options.dryRun);
-  const all = Boolean(options.all);
-  const exportsDays = parseDaysOption(options.exportsDays, "--exports-days") ?? (all ? 30 : void 0);
-  const checkpointsDays = parseDaysOption(options.checkpointsDays, "--checkpoints-days") ?? (all ? 30 : void 0);
-  const dedupeSkills = Boolean(options.dedupeSkills) || all;
-  if (exportsDays === void 0 && checkpointsDays === void 0 && !dedupeSkills) {
-    throw new Error("No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills");
-  }
-  const results = [];
-  if (exportsDays !== void 0) {
-    results.push(await pruneFilesByAge("exports", path.join(paths.memoryDir, "exports"), exportsDays, dryRun));
-  }
-  if (checkpointsDays !== void 0) {
-    results.push(await pruneFilesByAge("checkpoints", path.join(paths.memoryDir, "checkpoints"), checkpointsDays, dryRun));
-  }
-  const dedupe = dedupeSkills ? pruneSkillsDuplicates(paths.dbPath, dryRun) : null;
-  console.log(`\u{1F9F9} Memoria Prune${dryRun ? " (dry-run)" : ""}`);
-  for (const result of results) {
-    console.log(
-      `- ${result.label}: matched=${result.matched}, ${dryRun ? "would_remove" : "removed"}=${dryRun ? result.matched : result.removed}, bytes=${result.bytes}`
-    );
-  }
-  if (dedupe) {
-    console.log(
-      `- dedupe-skills: groups=${dedupe.duplicateGroups}, ${dryRun ? "would_remove" : "removed"}=${dryRun ? dedupe.removed : dedupe.removed}`
-    );
-  }
-}
-function inDateRange(ts, from, to) {
-  const t = new Date(ts);
-  if (Number.isNaN(t.getTime())) return false;
-  if (from && t < from) return false;
-  if (to && t > to) return false;
-  return true;
-}
-async function exportMemory(paths, options) {
-  if (!existsSync(paths.dbPath)) {
-    throw new Error(`sessions.db not found: ${paths.dbPath}. Run 'memoria init' first.`);
-  }
-  const from = parseBoundaryDate(options.from, "--from");
-  const to = parseBoundaryDate(options.to, "--to");
-  const projectFilter = options.project?.trim();
-  const type = options.type ?? "all";
-  const format = options.format ?? "json";
-  const outDir = options.out ? path.resolve(options.out) : path.join(paths.memoryDir, "exports");
-  const db = new Database(paths.dbPath, { readonly: true });
-  try {
-    const decisionsRows = type === "all" || type === "decisions" ? db.prepare(
-      `
-          SELECT e.id, e.session_id, e.timestamp, e.content, s.project
-          FROM events e
-          JOIN sessions s ON s.id = e.session_id
-          WHERE e.event_type = 'DecisionMade'
-        `
-    ).all() : [];
-    const skillsRows = type === "all" || type === "skills" ? db.prepare(
-      `
-          SELECT e.id, e.session_id, e.timestamp, e.content, s.project
-          FROM events e
-          JOIN sessions s ON s.id = e.session_id
-          WHERE e.event_type = 'SkillLearned'
-        `
-    ).all() : [];
-    const decisions = decisionsRows.filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
-      const content = maybeParseJson(r.content);
-      const contentObj = content && typeof content === "object" && !Array.isArray(content) ? content : {};
-      return {
-        id: r.id,
-        session_id: r.session_id,
-        timestamp: r.timestamp,
-        project: r.project,
-        decision: String(contentObj.decision ?? ""),
-        rationale: String(contentObj.rationale ?? ""),
-        impact_level: String(contentObj.impact_level ?? "medium")
-      };
-    });
-    const skills = skillsRows.filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
-      const content = maybeParseJson(r.content);
-      const contentObj = content && typeof content === "object" && !Array.isArray(content) ? content : {};
-      return {
-        id: r.id,
-        session_id: r.session_id,
-        timestamp: r.timestamp,
-        project: r.project,
-        skill_name: String(contentObj.skill_name ?? ""),
-        category: String(contentObj.category ?? "general"),
-        pattern: String(contentObj.pattern ?? "")
-      };
-    });
-    const payload = {
-      generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-      filters: {
-        from: options.from ?? null,
-        to: options.to ?? null,
-        project: projectFilter ?? null,
-        type,
-        format
-      },
-      counts: {
-        decisions: decisions.length,
-        skills: skills.length
-      },
-      decisions,
-      skills
-    };
-    await fs.mkdir(outDir, { recursive: true });
-    const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-    const projectPart = projectFilter ? `_${slugify2(projectFilter).slice(0, 30)}` : "";
-    const ext = format === "json" ? "json" : "md";
-    const filePath = path.join(outDir, `memoria-export_${type}${projectPart}_${stamp}.${ext}`);
-    if (format === "json") {
-      await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
-    } else {
-      const decisionBlock = decisions.map(
-        (d) => `- [${d.timestamp}] (${d.project}) ${d.decision || "(untitled)"} | impact=${d.impact_level} | session=${d.session_id}`
-      ).join("\n");
-      const skillBlock = skills.map((s) => `- [${s.timestamp}] (${s.project}) ${s.skill_name || "(untitled)"} | category=${s.category}`).join("\n");
-      const md = `# Memoria Export
-
-Generated: ${payload.generated_at}
-
-## Filters
-- from: ${payload.filters.from ?? "(none)"}
-- to: ${payload.filters.to ?? "(none)"}
-- project: ${payload.filters.project ?? "(none)"}
-- type: ${type}
-
-## Counts
-- decisions: ${decisions.length}
-- skills: ${skills.length}
-
-## Decisions
-${decisionBlock || "- (none)"}
-
-## Skills
-${skillBlock || "- (none)"}
-`;
-      await fs.writeFile(filePath, md, "utf8");
-    }
-    console.log("\u{1F4E6} Memoria Export complete");
-    console.log(`- file: ${filePath}`);
-    console.log(`- decisions: ${decisions.length}`);
-    console.log(`- skills: ${skills.length}`);
-  } finally {
-    db.close();
-  }
-}
-function maybeParseJson(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-}
-async function canWrite(targetPath) {
-  try {
-    await fs.access(targetPath, fsConstants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function collectMissingColumns(db, table, expected) {
-  const rows = db.prepare(`PRAGMA table_info(${table})`).all();
-  const actual = new Set(rows.map((r) => r.name));
-  return expected.filter((c) => !actual.has(c));
-}
-async function verify(paths, asJson) {
+async function runPreflight(memoriaHome) {
   const checks = [];
-  const add = (id, status, detail) => {
-    checks.push({ id, status, detail });
-  };
-  const pathChecks = [
-    { id: "memory_dir_exists", p: paths.memoryDir, label: "memory dir" },
-    { id: "knowledge_dir_exists", p: paths.knowledgeDir, label: "knowledge dir" },
-    { id: "sessions_path_exists", p: paths.sessionsPath, label: "sessions path" },
-    { id: "config_path_exists", p: paths.configPath, label: "config path" }
-  ];
-  for (const item of pathChecks) {
-    add(item.id, existsSync(item.p) ? "pass" : "fail", `${item.label}: ${item.p}`);
-  }
-  const writableChecks = [
-    { id: "memory_dir_writable", p: paths.memoryDir, label: "memory dir writable" },
-    { id: "knowledge_dir_writable", p: paths.knowledgeDir, label: "knowledge dir writable" },
-    { id: "sessions_path_writable", p: paths.sessionsPath, label: "sessions path writable" },
-    { id: "config_path_writable", p: paths.configPath, label: "config path writable" }
-  ];
-  for (const item of writableChecks) {
-    const ok2 = await canWrite(item.p) || (existsSync(item.p) ? false : await canWrite(path.dirname(item.p)));
-    add(item.id, ok2 ? "pass" : "fail", `${item.label}: ${item.p}`);
-  }
-  if (!existsSync(paths.dbPath)) {
-    add("db_exists", "fail", `sessions.db missing: ${paths.dbPath}`);
-  }
-  let db = null;
+  const nodeVer = process.versions.node;
+  const [major] = nodeVer.split(".").map(Number);
+  checks.push({
+    id: "node_version",
+    status: major >= 18 ? "pass" : "fail",
+    detail: `v${nodeVer}`,
+    fix: major < 18 ? "Install Node.js >= 18 via nvm/fnm: https://github.com/nvm-sh/nvm" : void 0
+  });
   try {
-    db = new Database(paths.dbPath, { readonly: true, fileMustExist: true });
-    add("db_connect", "pass", `connected: ${paths.dbPath}`);
-    const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all();
-    const tableSet = new Set(tableRows.map((r) => r.name));
-    const requiredTables = ["sessions", "events", "skills"];
-    for (const table of requiredTables) {
-      add(`table_${table}`, tableSet.has(table) ? "pass" : "fail", `table ${table}`);
-    }
-    const requiredColumns = {
-      sessions: ["id", "timestamp", "project", "event_count", "summary"],
-      events: ["id", "session_id", "timestamp", "event_type", "content", "metadata"],
-      skills: ["id", "name", "category", "created_date", "success_rate", "use_count", "filepath"]
-    };
-    for (const [table, columns] of Object.entries(requiredColumns)) {
-      if (!tableSet.has(table)) continue;
-      const missing = collectMissingColumns(db, table, columns);
-      add(
-        `columns_${table}`,
-        missing.length === 0 ? "pass" : "fail",
-        missing.length === 0 ? `columns ${table} ok` : `columns ${table} missing: ${missing.join(", ")}`
-      );
-    }
-    const quickCheck = db.prepare("PRAGMA quick_check").get();
-    const integrityOk = quickCheck?.quick_check === "ok";
-    add("db_integrity", integrityOk ? "pass" : "fail", integrityOk ? "PRAGMA quick_check=ok" : "PRAGMA quick_check failed");
-  } catch (error48) {
-    add("db_connect", "fail", `connect error: ${error48 instanceof Error ? error48.message : String(error48)}`);
-  } finally {
-    db?.close();
+    const { execSync } = await import("node:child_process");
+    const pnpmVer = execSync("pnpm --version", { stdio: "pipe" }).toString().trim();
+    checks.push({ id: "pnpm", status: "pass", detail: pnpmVer });
+  } catch {
+    checks.push({
+      id: "pnpm",
+      status: "fail",
+      detail: "not found",
+      fix: "Install pnpm: npm install -g pnpm"
+    });
   }
-  const ok = checks.every((c) => c.status === "pass");
-  if (asJson) {
-    console.log(
-      JSON.stringify(
-        {
-          ok,
-          paths,
-          checks
-        },
-        null,
-        2
-      )
-    );
-  } else {
-    console.log("\u{1F50E} Memoria Verify");
-    console.log(`- ok: ${ok ? "yes" : "no"}`);
-    console.log(`- db path: ${paths.dbPath}`);
-    for (const check2 of checks) {
-      console.log(`${check2.status === "pass" ? "\u2713" : "\u2717"} ${check2.id}: ${check2.detail}`);
-    }
+  try {
+    const { statfs } = await import("node:fs/promises");
+    const st = await statfs(memoriaHome);
+    const availMB = Math.floor(st.bavail * st.bsize / (1024 * 1024));
+    checks.push({
+      id: "disk_space",
+      status: availMB >= 100 ? "pass" : "fail",
+      detail: `${availMB}MB available`,
+      fix: availMB < 100 ? "Free up disk space." : void 0
+    });
+  } catch {
+    checks.push({ id: "disk_space", status: "pass", detail: "unknown (skipping check)" });
   }
-  return ok;
+  try {
+    const testPath = path4.join(memoriaHome, `.memoria_preflight_${Date.now()}`);
+    await fs3.writeFile(testPath, "");
+    await fs3.unlink(testPath);
+    checks.push({ id: "write_permission", status: "pass", detail: memoriaHome });
+  } catch {
+    checks.push({
+      id: "write_permission",
+      status: "fail",
+      detail: `Cannot write to ${memoriaHome}`,
+      fix: `Fix permissions: chmod u+w "${memoriaHome}"`
+    });
+  }
+  return { ok: checks.every((c) => c.status === "pass"), checks };
 }
 async function run() {
   const paths = resolveMemoriaPaths();
+  const core = new MemoriaCore(paths);
   const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.2.0");
-  program2.command("init").description("Initialize memory database and directories").action(async () => {
-    await ensureBaseDirs(paths);
-    initDatabase(paths.dbPath);
-    console.log(`\u2713 \u521D\u59CB\u5316\u5B8C\u6210: ${paths.memoriaHome}`);
-    console.log(`- db path: ${paths.dbPath}`);
-    console.log(`- sessions path: ${paths.sessionsPath}`);
-    console.log(`- config path: ${paths.configPath}`);
+  program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
+    await core.init();
+    if (opts.json) {
+      console.log(JSON.stringify({ ok: true, step: "init", paths: { memoriaHome: paths.memoriaHome, db: paths.dbPath } }));
+    } else {
+      console.log(`\u2713 \u521D\u59CB\u5316\u5B8C\u6210: ${paths.memoriaHome}`);
+      console.log(`- db path: ${paths.dbPath}`);
+      console.log(`- sessions path: ${paths.sessionsPath}`);
+      console.log(`- config path: ${paths.configPath}`);
+    }
   });
-  program2.command("sync").description("Import session JSON and sync notes").argument("<sessionFile>", "Path to session JSON file").option("--dry-run", "Validate and preview without writing files").action(async (sessionFile, options) => {
-    const absSessionPath = path.resolve(sessionFile);
+  program2.command("sync").description("Import session JSON and sync notes").argument("<sessionFile>", "Path to session JSON file").option("--dry-run", "Validate and preview without writing files").option("--json", "Machine-readable JSON output").action(async (sessionFile, options) => {
+    const absSessionPath = path4.resolve(sessionFile);
     const sessionData = await readSession(absSessionPath);
     if (options.dryRun) {
       previewSync(paths, absSessionPath, sessionData);
       return;
     }
-    await ensureBaseDirs(paths);
-    initDatabase(paths.dbPath);
-    const sessionId = importSession(paths.dbPath, sessionData);
-    await syncDailyNote(paths.memoriaHome, paths.dbPath, sessionId);
-    await extractDecisions(paths.memoriaHome, paths.dbPath, sessionId);
-    await extractSkills(paths.memoriaHome, paths.dbPath, sessionId);
-    console.log(`\u2713 \u5DF2\u5C0E\u5165\u6703\u8A71: ${sessionId}`);
-    console.log("\u2705 \u540C\u6B65\u5B8C\u6210!");
+    const result = await core.remember(sessionData);
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify({ ok: true, step: "sync", sessionId: result.data?.sessionId, meta: result.meta }));
+    } else {
+      console.log(`\u2713 \u5DF2\u5C0E\u5165\u6703\u8A71: ${result.data?.sessionId}`);
+      console.log("\u2705 \u540C\u6B65\u5B8C\u6210!");
+    }
   });
-  program2.command("stats").description("Show session, event, and skill statistics").action(() => {
-    stats(paths);
+  program2.command("stats").description("Show session, event, and skill statistics").option("--json", "Machine-readable JSON output").action(async (opts) => {
+    const result = await core.stats();
+    if (!result.ok) throw new Error(result.error);
+    const s = result.data;
+    if (opts.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log("\u{1F4CA} Memoria Stats");
+      console.log(`- db path: ${paths.dbPath}`);
+      console.log(`- sessions: ${s.sessions}`);
+      console.log(`- events: ${s.events}`);
+      console.log(`- skills: ${s.skills}`);
+      if (s.lastSession) {
+        console.log(`- last session: ${s.lastSession.id} (${s.lastSession.project}, ${s.lastSession.timestamp})`);
+      }
+      if (s.topSkills.length > 0) {
+        console.log("- top skills:");
+        for (const skill of s.topSkills) {
+          console.log(`  - ${skill.name}: uses=${skill.use_count}, success=${(skill.success_rate * 100).toFixed(1)}%`);
+        }
+      }
+    }
   });
-  program2.command("doctor").description("Check local runtime and directory health").action(async () => {
-    await doctor(paths);
+  program2.command("doctor").description("Check local runtime and directory health").option("--json", "Machine-readable JSON output").action(async (opts) => {
+    const envDetails = [
+      `- MEMORIA_DB_PATH=${process.env.MEMORIA_DB_PATH ?? "(not set)"}`,
+      `- MEMORIA_SESSIONS_PATH=${process.env.MEMORIA_SESSIONS_PATH ?? "(not set)"}`,
+      `- MEMORIA_CONFIG_PATH=${process.env.MEMORIA_CONFIG_PATH ?? "(not set)"}`
+    ];
+    const checks = [
+      { name: "MEMORIA_HOME", ok: true, value: paths.memoriaHome },
+      { name: "memory dir", ok: existsSync(paths.memoryDir), value: paths.memoryDir },
+      { name: "knowledge dir", ok: existsSync(paths.knowledgeDir), value: paths.knowledgeDir },
+      { name: "sessions path", ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
+      { name: "config path", ok: existsSync(paths.configPath), value: paths.configPath },
+      { name: "sessions.db", ok: existsSync(paths.dbPath), value: paths.dbPath }
+    ];
+    if (opts.json) {
+      console.log(JSON.stringify({ ok: checks.every((c) => c.ok), paths, checks }));
+    } else {
+      console.log("Resolved path envs:");
+      for (const line of envDetails) console.log(line);
+      for (const c of checks) {
+        console.log(`${c.ok ? "\u2713" : "\u2717"} ${c.name}: ${c.value}`);
+      }
+    }
   });
   program2.command("verify").description("Run runtime, schema, and writeability verification checks").option("--json", "Output machine-readable JSON report").action(async (options) => {
-    const ok = await verify(paths, Boolean(options.json));
+    const { ok, checks } = await runVerify(paths);
+    if (options.json) {
+      console.log(JSON.stringify({ ok, paths, checks }, null, 2));
+    } else {
+      console.log("\u{1F50E} Memoria Verify");
+      console.log(`- ok: ${ok ? "yes" : "no"}`);
+      console.log(`- db path: ${paths.dbPath}`);
+      for (const check2 of checks) {
+        console.log(`${check2.status === "pass" ? "\u2713" : "\u2717"} ${check2.id}: ${check2.detail}`);
+      }
+    }
     if (!ok) process.exitCode = 1;
   });
-  program2.command("prune").description("Prune old runtime artifacts and optional duplicate skills").option("--exports-days <days>", "Remove export files older than N days").option("--checkpoints-days <days>", "Remove checkpoints older than N days").option("--dedupe-skills", "Delete duplicate skills by normalized skill name").option("--all", "Apply default pruning targets (30 days + dedupe skills)").option("--dry-run", "Preview prune actions without deleting").action(async (options) => {
-    await prune(paths, options);
+  program2.command("prune").description("Prune old runtime artifacts and optional duplicate skills").option("--exports-days <days>", "Remove export files older than N days").option("--checkpoints-days <days>", "Remove checkpoints older than N days").option("--dedupe-skills", "Delete duplicate skills by normalized skill name").option("--all", "Apply default pruning targets (30 days + dedupe skills)").option("--dry-run", "Preview prune actions without deleting").option("--json", "Machine-readable JSON output").action(async (options) => {
+    const dryRun = Boolean(options.dryRun);
+    const result = await runPrune(paths, options);
+    if (options.json) {
+      console.log(JSON.stringify({ ok: true, dryRun, ...result }));
+    } else {
+      console.log(`\u{1F9F9} Memoria Prune${dryRun ? " (dry-run)" : ""}`);
+      if (result.exports) {
+        const r = result.exports;
+        console.log(`- exports: matched=${r.matched}, ${dryRun ? "would_remove" : "removed"}=${dryRun ? r.matched : r.removed}, bytes=${r.bytes}`);
+      }
+      if (result.checkpoints) {
+        const r = result.checkpoints;
+        console.log(`- checkpoints: matched=${r.matched}, ${dryRun ? "would_remove" : "removed"}=${dryRun ? r.matched : r.removed}, bytes=${r.bytes}`);
+      }
+      if (result.dedupe) {
+        const r = result.dedupe;
+        console.log(`- dedupe-skills: groups=${r.duplicateGroups}, ${dryRun ? "would_remove" : "removed"}=${r.removed}`);
+      }
+    }
   });
-  program2.command("export").description("Export decisions/skills by time range and project").option("--from <isoDate>", "Include records at/after this ISO date").option("--to <isoDate>", "Include records at/before this ISO date").option("--project <name>", "Filter by project name").option("--type <type>", "Export type: all|decisions|skills", "all").option("--format <fmt>", "Output format: json|markdown", "json").option("--out <path>", "Output directory (default: .memory/exports)").action(async (options) => {
+  program2.command("export").description("Export decisions/skills by time range and project").option("--from <isoDate>", "Include records at/after this ISO date").option("--to <isoDate>", "Include records at/before this ISO date").option("--project <name>", "Filter by project name").option("--type <type>", "Export type: all|decisions|skills", "all").option("--format <fmt>", "Output format: json|markdown", "json").option("--out <path>", "Output directory (default: .memory/exports)").option("--json", "Machine-readable summary output").action(async (options) => {
     const type = options.type ?? "all";
     const format = options.format ?? "json";
     if (!["all", "decisions", "skills"].includes(type)) {
@@ -18103,7 +18603,121 @@ async function run() {
     if (!["json", "markdown"].includes(format)) {
       throw new Error(`Invalid --format '${options.format}'. Use: json|markdown`);
     }
-    await exportMemory(paths, { ...options, type, format });
+    const result = await exportMemory(paths, { ...options, type, format });
+    if (options.json) {
+      console.log(JSON.stringify({ ok: true, filePath: result.filePath, decisions: result.decisions.length, skills: result.skills.length }));
+    } else {
+      console.log("\u{1F4E6} Memoria Export complete");
+      console.log(`- file: ${result.filePath}`);
+      console.log(`- decisions: ${result.decisions.length}`);
+      console.log(`- skills: ${result.skills.length}`);
+    }
+  });
+  program2.command("serve").description("Start Memoria HTTP API server").option("--port <port>", "Port to listen on (default: 3917 or MEMORIA_PORT)").option("--json", "Emit JSON status line on startup").action(async (opts) => {
+    const { startServer: startServer2 } = await Promise.resolve().then(() => (init_server(), server_exports));
+    const port = opts.port ? Number(opts.port) : void 0;
+    const { server, port: actualPort } = await startServer2(port);
+    if (opts.json) {
+      console.log(JSON.stringify({ ok: true, step: "serve", port: actualPort }));
+    } else {
+      console.log(`\u{1F680} Memoria server listening on http://localhost:${actualPort}`);
+      console.log("   GET  /v1/health");
+      console.log("   GET  /v1/stats");
+      console.log("   POST /v1/remember");
+      console.log("   POST /v1/recall");
+      console.log("   GET  /v1/sessions/:id/summary");
+      console.log("   Ctrl+C to stop");
+    }
+    const shutdown = () => {
+      server.close();
+      process.exit(0);
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+  });
+  program2.command("preflight").description("Check prerequisites (Node.js, pnpm, disk space, write permission)").option("--json", "Machine-readable JSON output").action(async (opts) => {
+    const { ok, checks } = await runPreflight(paths.memoriaHome);
+    if (opts.json) {
+      console.log(JSON.stringify({ ok, checks }));
+    } else {
+      for (const c of checks) {
+        const icon = c.status === "pass" ? "\u2713" : "\u2717";
+        console.log(`${icon} ${c.id}: ${c.detail}`);
+        if (c.status === "fail" && c.fix) console.log(`  \u2192 Fix: ${c.fix}`);
+      }
+      if (ok) {
+        console.log("\u2705 Preflight passed.");
+      } else {
+        console.log("\u274C Preflight failed. Fix the issues above and retry.");
+      }
+    }
+    if (!ok) process.exitCode = 1;
+  });
+  program2.command("setup").description("One-shot setup: preflight \u2192 install deps \u2192 init \u2192 (optional serve)").option("--serve", "Start HTTP server after setup").option("--port <port>", "Port for serve (default: 3917)").option("--json", "Emit JSON step logs for machine consumption").action(async (opts) => {
+    const jsonOut = Boolean(opts.json);
+    function stepLog(step, ok, extra = {}) {
+      const ms = Date.now() - stepStart;
+      if (jsonOut) {
+        console.log(JSON.stringify({ step, ok, ms, ...extra }));
+      } else {
+        const icon = ok ? "\u2713" : "\u2717";
+        console.log(`${icon} [${step}] ${JSON.stringify(extra)}`);
+      }
+    }
+    let stepStart = Date.now();
+    stepStart = Date.now();
+    const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome);
+    if (!preflightOk) {
+      stepLog("preflight", false, { checks });
+      process.exitCode = 1;
+      return;
+    }
+    stepLog("preflight", true);
+    const pkgDir = path4.resolve(paths.memoriaHome);
+    if (!existsSync(path4.join(pkgDir, "node_modules"))) {
+      stepStart = Date.now();
+      try {
+        const { execSync } = await import("node:child_process");
+        execSync("pnpm install", { cwd: pkgDir, stdio: "pipe" });
+        stepLog("install", true);
+      } catch (error48) {
+        stepLog("install", false, { error: error48 instanceof Error ? error48.message : String(error48) });
+        process.exitCode = 1;
+        return;
+      }
+    }
+    stepStart = Date.now();
+    try {
+      await core.init();
+      stepLog("init", true);
+    } catch (error48) {
+      stepLog("init", false, { error: error48 instanceof Error ? error48.message : String(error48) });
+      process.exitCode = 1;
+      return;
+    }
+    stepStart = Date.now();
+    const { ok: verifyOk, checks: verifyChecks } = await runVerify(paths);
+    stepLog("verify", verifyOk, verifyOk ? {} : { checks: verifyChecks.filter((c) => c.status === "fail") });
+    if (!verifyOk) {
+      process.exitCode = 1;
+      return;
+    }
+    if (opts.serve) {
+      stepStart = Date.now();
+      const { startServer: startServer2 } = await Promise.resolve().then(() => (init_server(), server_exports));
+      const port = opts.port ? Number(opts.port) : void 0;
+      const { server, port: actualPort } = await startServer2(port);
+      stepLog("serve", true, { port: actualPort });
+      const shutdown = () => {
+        server.close();
+        process.exit(0);
+      };
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+    } else if (!jsonOut) {
+      console.log("\n\u2705 Memoria setup complete!");
+      console.log(`   Run: MEMORIA_HOME="${paths.memoriaHome}" ./cli serve`);
+    }
   });
   await program2.parseAsync(process.argv);
 }

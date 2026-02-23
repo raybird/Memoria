@@ -37,6 +37,17 @@ bash scripts/test-smoke.sh
 bash scripts/test-mcp-e2e.sh
 ```
 
+## Added in Phase 1 & 1.5 (2026-02-23)
+
+- `src/core/` library: `types`, `paths`, `utils`, `db`, `memoria`, `index`
+- `MemoriaCore` class: `remember()`, `recall()`, `summarizeSession()`, `health()`, `stats()`
+- `MemoriaResult<T>` response envelope with `evidence[]`, `confidence`, `source`, `latency_ms`
+- HTTP API server (`src/server.ts`, node:http): 5 endpoints on default port 3917
+- Node.js SDK client (`src/sdk.ts`): `MemoriaClient` with `waitUntilReady()`
+- CLI refactored to thin shell; new commands: `serve`, `preflight`, `setup`
+- `--json` flag added to all major commands
+- Bootstrap test: `scripts/test-bootstrap.sh`
+
 ## Out of Scope (Current)
 
 - Built-in context condensation engine

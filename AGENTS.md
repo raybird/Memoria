@@ -70,13 +70,84 @@ Before opening PRs, mirror CI locally in this order:
 
 ## Repository Layout
 
-- `src/cli.ts`: TypeScript CLI implementation.
+- `src/cli.ts`: CLI thin shell (~350 lines); calls `src/core/`.
+- `src/core/`: Core library (types / paths / utils / db / memoria / index).
+- `src/server.ts`: HTTP API server (node:http, zero extra deps).
+- `src/sdk.ts`: Node.js SDK client (`MemoriaClient`).
 - `cli`: executable shim (`pnpm tsx`).
-- `scripts/test-smoke.sh`: smoke test.
+- `dist/cli.mjs`: esbuild bundle (production).
+- `scripts/test-smoke.sh`: smoke test (CLI full flow).
+- `scripts/test-bootstrap.sh`: bootstrap test (AI Agent self-install flow).
 - `skills/memoria-memory-sync/SKILL.md`: Agent Skill entrypoint.
-- `skills/memoria-memory-sync/scripts/`: hybrid sync and MCP bridge scripts.
 - `examples/session.sample.json`: sample input for sync flow.
 - `.github/workflows/ci.yml`: canonical validation pipeline.
+
+## Core Architecture (Phase 1)
+
+All business logic lives in `src/core/`. The CLI is a thin commander shell.
+
+```
+src/core/
+  types.ts     – MemoriaResult<T> envelope, RecallFilter, RecallHit, HealthStatus …
+  paths.ts     – resolveMemoriaPaths(), getMemoriaHome()
+  utils.ts     – slugify, shortHash, safeDate, resolveSessionId …
+  db.ts        – all SQLite operations (init, import, sync, verify, recall …)
+  memoria.ts   – MemoriaCore class (remember/recall/summarizeSession/health/stats)
+  index.ts     – unified re-export
+```
+
+**MemoriaCore API** (all return `MemoriaResult<T>`):
+- `remember(sessionData)` – import + sync daily/decisions/skills
+- `recall(filter)` – keyword search against sessions/events/skills
+- `summarizeSession(id)` – structured session + decisions + skills
+- `health()` – verify DB + dirs
+- `stats()` – session/event/skill counts
+
+## HTTP API (Phase 1)
+
+Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/v1/health` | Health check |
+| `GET`  | `/v1/stats` | Stats |
+| `POST` | `/v1/remember` | Write session memory |
+| `POST` | `/v1/recall` | Recall memories |
+| `GET`  | `/v1/sessions/:id/summary` | Session summary |
+
+All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
+
+## Bootstrap Flow for AI Agents (Phase 1.5)
+
+Agents can self-install Memoria without human intervention:
+
+```bash
+# 1. Clone repo
+git clone https://github.com/raybird/Memoria && cd Memoria
+
+# 2. One-shot setup (preflight → install → init → verify)
+./cli setup --json
+
+# 3. Or: setup + start server in one step
+./cli setup --serve --port 3917 --json
+
+# 4. Poll until ready (SDK)
+# const client = new MemoriaClient()
+# await client.waitUntilReady()
+```
+
+Machine-readable step log (JSON lines):
+```
+{"step":"preflight","ok":true,"ms":120}
+{"step":"install","ok":true,"ms":3400}
+{"step":"init","ok":true,"ms":85}
+{"step":"verify","ok":true,"ms":42}
+{"step":"serve","ok":true,"port":3917}
+```
+
+Preflight checks: `./cli preflight --json` → Node.js version, pnpm, disk space, write permission.
+
+Test the bootstrap flow: `bash scripts/test-bootstrap.sh`
 
 ## Agent Skill and MCP Notes
 
