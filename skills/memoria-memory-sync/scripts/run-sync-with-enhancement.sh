@@ -4,7 +4,7 @@ set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
   echo "Usage: bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh <session-json> [memoria-home]"
-  echo "Optional env: MEMORIA_MCP_ENHANCE_CMD, LIBSQL_URL, LIBSQL_AUTH_TOKEN, MEMORIA_MCP_STRICT"
+  echo "Optional env: MEMORIA_MCP_ENHANCE_CMD, LIBSQL_URL, LIBSQL_AUTH_TOKEN, MEMORIA_MCP_STRICT, MEMORIA_MCP_SYNC_TARGET, MEMORIA_MCP_PAYLOAD_MODE"
   exit 1
 fi
 
@@ -26,6 +26,13 @@ MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" ./cli sync "$SESSION_JSON"
 echo "[memoria] stats"
 MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" ./cli stats
 
+commit_sync_cursor() {
+  if [ -z "${MEMORIA_MCP_PAYLOAD:-}" ]; then
+    return 0
+  fi
+  node skills/memoria-memory-sync/scripts/update-mcp-sync-state.mjs --payload "$MEMORIA_MCP_PAYLOAD"
+}
+
 if [ -n "${LIBSQL_URL:-}" ]; then
   echo "[enhance] building MCP bridge payload"
   MCP_PAYLOAD_PATH="$(node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs --memoria-home "$MEMORIA_HOME_OVERRIDE")"
@@ -39,6 +46,7 @@ if [ -n "${LIBSQL_URL:-}" ]; then
   if [ -n "${MEMORIA_MCP_ENHANCE_CMD:-}" ]; then
     echo "[enhance] running MCP/libSQL enhancement command"
     if eval "$MEMORIA_MCP_ENHANCE_CMD"; then
+      commit_sync_cursor
       echo "[enhance] completed"
     elif [ "$MCP_STRICT" = "1" ]; then
       echo "[enhance] failed (strict mode), exiting"
@@ -49,6 +57,7 @@ if [ -n "${LIBSQL_URL:-}" ]; then
   else
     echo "[enhance] command not set; using built-in MCP ingest"
     if node skills/memoria-memory-sync/scripts/ingest-mcp-libsql.mjs --requests "$MEMORIA_MCP_REQUESTS"; then
+      commit_sync_cursor
       echo "[enhance] completed with built-in MCP ingest"
     elif [ "$MCP_STRICT" = "1" ]; then
       echo "[enhance] ingest failed (strict mode), exiting"

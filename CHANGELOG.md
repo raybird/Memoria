@@ -4,20 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-02-26
+
 ### Added
-- Optional MCP end-to-end check script: `scripts/test-mcp-e2e.sh`.
-- Installation completion checklist and compatibility matrix in `README.md`.
-- Documented MCP failure policy via `MEMORIA_MCP_STRICT`.
-- Container installation baseline with `Dockerfile` and `.dockerignore`.
-- Standardized release playbook in `RELEASE.md`.
-- New CLI commands: `memoria prune` and `memoria export`.
+- Tree memory index schema (`memory_nodes`, `memory_node_sources`) and `memoria index build` command.
+- Tree/hybrid recall mode with explainable `reasoning_path` metadata.
+- Recall routing telemetry with aggregated stats and raw API endpoint (`GET /v1/telemetry/recall`).
+- MCP sync cursor state (`memory_sync_state`) and post-ingest cursor commit script.
+- Incremental MCP payload mode (`MEMORIA_MCP_PAYLOAD_MODE=incremental`, default) with compatibility fallback to `full`.
 
 ### Changed
-- README paths/examples synchronized with current repository layout and install options.
-- README was streamlined and split into focused docs under `docs/`.
-- Session/event fallback IDs are now deterministic for idempotent repeated syncs.
-- Added SQLite indexes for common session/event/skill query patterns.
-- Added explicit implemented-vs-planned documentation split (`SPEC.md`, `RFC.md`).
+- `memoria sync` now auto-builds incremental tree index by default (`MEMORIA_INDEX_AUTOBUILD=0` to disable).
+- Hybrid MCP flow now supports true no-op second sync (entities/relations unchanged when no deltas).
+- `memoria stats` now reports 7-day recall routing quality (fallback rate, route counts, latency, hit count).
+- Operations and MCP docs updated for tree recall observability and incremental sync controls.
 
 ## [1.2.0] - 2026-02-14
 

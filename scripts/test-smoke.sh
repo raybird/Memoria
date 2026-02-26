@@ -28,6 +28,10 @@ MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" export --type all --format json
 echo "[smoke] prune(dry-run)"
 MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" prune --all --dry-run
 
+echo "[smoke] stats(json)"
+STATS_JSON=$(MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" stats --json)
+node -e "const data=JSON.parse(process.argv[1]); if(!data?.data?.recallRouting){ throw new Error('missing recallRouting in stats') }" "$STATS_JSON"
+
 if [ ! -f "$TMP_MEMORIA_HOME/.memory/sessions.db" ]; then
   echo "sessions.db was not created"
   exit 1

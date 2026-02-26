@@ -88,6 +88,9 @@ export type MemoriaResult<T> = {
         source: string       // 'sqlite' | 'markdown' | 'mcp'
         evidence: string[]   // IDs of sessions/events/skills supporting this result
         confidence: number   // 0–1; 1.0 for writes, keyword-match for reads
+        reasoning_path?: string[] // Optional retrieval path for tree/hybrid recall
+        route_mode?: string  // Optional routing mode used by recall
+        fallback_used?: boolean // Whether hybrid route fell back to keyword recall
         timestamp: string    // ISO8601
         latency_ms: number   // end-to-end operation time
     }
@@ -98,6 +101,7 @@ export type RecallFilter = {
     project?: string
     top_k?: number         // default 5
     time_window?: string   // ISO duration, e.g. 'P7D'
+    mode?: 'keyword' | 'tree' | 'hybrid'
 }
 
 export type RecallHit = {
@@ -108,6 +112,22 @@ export type RecallHit = {
     project: string
     snippet: string
     score: number
+    node_id?: string
+    reasoning_path?: string[]
+}
+
+export type MemoryIndexBuildOptions = {
+    project?: string
+    since?: string
+    dryRun?: boolean
+    sessionId?: string
+}
+
+export type MemoryIndexBuildResult = {
+    sessionsConsidered: number
+    sessionsIndexed: number
+    nodesUpserted: number
+    linksUpserted: number
 }
 
 export type SessionSummary = {
@@ -141,4 +161,33 @@ export type StatsData = {
         use_count: number
         success_rate: number
     }>
+    recallRouting?: {
+        window: string
+        totalQueries: number
+        routeCounts: {
+            keyword: number
+            tree: number
+            hybrid_tree: number
+            hybrid_fallback: number
+        }
+        fallbackRate: number
+        avgLatencyMs: number
+        p95LatencyMs: number
+        avgHitCount: number
+    }
+}
+
+export type RecallTelemetryPoint = {
+    id: string
+    route_mode: string
+    fallback_used: boolean
+    hit_count: number
+    latency_ms: number
+    created_at: string
+}
+
+export type RecallTelemetryData = {
+    window: string
+    total: number
+    rows: RecallTelemetryPoint[]
 }

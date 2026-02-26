@@ -71,6 +71,11 @@ async function main() {
     verify: {
       read_graph: {},
       search_nodes: { query: String(payload.session_id ?? 'session') }
+    },
+    _meta: {
+      sync: payload.sync ?? null,
+      generated_at: payload.generated_at ?? null,
+      source: payload.source ?? 'memoria'
     }
   }
 

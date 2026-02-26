@@ -12,7 +12,11 @@ import {
     extractDecisions,
     extractSkills,
     queryStats,
+    queryRecallTelemetry,
+    logRecallTelemetry,
     runVerify,
+    buildMemoryIndex,
+    recallTree,
     recallKeyword,
     querySessionSummary
 } from './db.js'
@@ -24,7 +28,8 @@ import type {
     RecallHit,
     SessionSummary,
     HealthStatus,
-    StatsData
+    StatsData,
+    RecallTelemetryData
 } from './types.js'
 
 export class MemoriaCore {
@@ -62,6 +67,16 @@ export class MemoriaCore {
             await syncDailyNote(this.paths.memoriaHome, this.paths.dbPath, sessionId)
             await extractDecisions(this.paths.memoriaHome, this.paths.dbPath, sessionId)
             await extractSkills(this.paths.memoriaHome, this.paths.dbPath, sessionId)
+
+            // Auto-build tree index by default after successful sync.
+            // Disable with MEMORIA_INDEX_AUTOBUILD=0.
+            if (process.env.MEMORIA_INDEX_AUTOBUILD !== '0') {
+                try {
+                    buildMemoryIndex(this.paths.dbPath, { sessionId, project: data.project })
+                } catch {
+                    // Keep remember() fail-open for indexing errors.
+                }
+            }
 
             return {
                 ok: true,
@@ -109,6 +124,7 @@ export class MemoriaCore {
             }
 
             const topK = filter.top_k ?? 5
+            const mode = filter.mode ?? 'keyword'
             let afterDate: Date | undefined
             if (filter.time_window) {
                 // Parse ISO duration P<n>D (days only, extend as needed)
@@ -119,7 +135,50 @@ export class MemoriaCore {
                 }
             }
 
-            const raw = recallKeyword(this.paths.dbPath, filter.query, filter.project, topK, afterDate)
+            const treeRaw = mode !== 'keyword'
+                ? recallTree(this.paths.dbPath, filter.query, filter.project, topK)
+                : []
+            const keywordRaw = mode === 'tree'
+                ? []
+                : recallKeyword(this.paths.dbPath, filter.query, filter.project, topK, afterDate)
+
+            let routeMode: string = mode
+            let fallbackUsed = false
+
+            type RawRecallRow = {
+                type: string
+                id: string
+                session_id: string
+                timestamp: string
+                project: string
+                snippet: string
+                score?: number
+                node_id?: string
+                reasoning_path?: string[]
+            }
+
+            const raw: RawRecallRow[] = (() => {
+                if (mode === 'tree') {
+                    routeMode = 'tree'
+                    return treeRaw as RawRecallRow[]
+                }
+                if (mode === 'keyword') {
+                    routeMode = 'keyword'
+                    return keywordRaw as RawRecallRow[]
+                }
+
+                // hybrid mode: prefer tree route, then merge keyword fallback if needed
+                const merged = [...treeRaw, ...keywordRaw].filter((item, index, arr) =>
+                    arr.findIndex((x) => x.id === item.id && x.session_id === item.session_id) === index
+                ) as RawRecallRow[]
+
+                const treeIds = new Set((treeRaw as RawRecallRow[]).map((r) => `${r.id}:${r.session_id}`))
+                const usedKeyword = merged.some((r) => !treeIds.has(`${r.id}:${r.session_id}`))
+
+                fallbackUsed = treeRaw.length === 0 || usedKeyword
+                routeMode = fallbackUsed ? 'hybrid_fallback' : 'hybrid_tree'
+                return merged.slice(0, topK)
+            })()
 
             const hits: RecallHit[] = raw.map((r, i) => ({
                 type: r.type as RecallHit['type'],
@@ -129,8 +188,21 @@ export class MemoriaCore {
                 project: r.project,
                 snippet: r.snippet,
                 // Score based on recency: most recent → score 1.0
-                score: raw.length === 1 ? 1.0 : 1.0 - i / (raw.length - 1)
+                score: Number.isFinite(r.score) ? Number(r.score) : (raw.length === 1 ? 1.0 : 1.0 - i / (raw.length - 1)),
+                node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
+                reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
             }))
+
+            try {
+                logRecallTelemetry(this.paths.dbPath, {
+                    routeMode,
+                    fallbackUsed,
+                    hitCount: hits.length,
+                    latencyMs: Date.now() - start
+                })
+            } catch {
+                // Keep recall fail-open when telemetry logging fails.
+            }
 
             return {
                 ok: true,
@@ -139,6 +211,9 @@ export class MemoriaCore {
                     source: 'sqlite',
                     evidence: hits.map((h) => h.id),
                     confidence: hits.length > 0 ? hits[0].score : 0,
+                    reasoning_path: hits[0]?.reasoning_path,
+                    route_mode: routeMode,
+                    fallback_used: fallbackUsed,
                     timestamp: new Date().toISOString(),
                     latency_ms: Date.now() - start
                 }
@@ -290,6 +365,52 @@ export class MemoriaCore {
                 }
             }
             const data = queryStats(this.paths.dbPath)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'sqlite',
+                    evidence: [],
+                    confidence: 1.0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'sqlite',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
+    }
+
+    // ─── recallTelemetry() ────────────────────────────────────────────────────
+
+    async recallTelemetry(options?: { window?: string; limit?: number }): Promise<MemoriaResult<RecallTelemetryData>> {
+        const start = Date.now()
+        try {
+            if (!existsSync(this.paths.dbPath)) {
+                return {
+                    ok: false,
+                    error: 'Database not found. Run init first.',
+                    meta: {
+                        source: 'sqlite',
+                        evidence: [],
+                        confidence: 0,
+                        timestamp: new Date().toISOString(),
+                        latency_ms: Date.now() - start
+                    }
+                }
+            }
+
+            const data = queryRecallTelemetry(this.paths.dbPath, options)
             return {
                 ok: true,
                 data,

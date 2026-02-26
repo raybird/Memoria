@@ -5,6 +5,7 @@
 // Routes:
 //   GET  /v1/health
 //   GET  /v1/stats
+//   GET  /v1/telemetry/recall?window=P7D&limit=100
 //   POST /v1/remember          body: SessionData JSON
 //   POST /v1/recall            body: RecallFilter JSON
 //   GET  /v1/sessions/:id/summary
@@ -38,25 +39,41 @@ function sendError(res: ServerResponse, status: number, message: string): void {
 export function createServer(core: MemoriaCore): http.Server {
     return http.createServer(async (req, res) => {
         const method = req.method ?? 'GET'
-        const url = req.url ?? '/'
+        const rawUrl = req.url ?? '/'
+        const parsedUrl = new URL(rawUrl, 'http://localhost')
+        const pathname = parsedUrl.pathname
 
         try {
             // GET /v1/health
-            if (method === 'GET' && url === '/v1/health') {
+            if (method === 'GET' && pathname === '/v1/health') {
                 const result = await core.health()
                 send(res, result.ok ? 200 : 503, result)
                 return
             }
 
             // GET /v1/stats
-            if (method === 'GET' && url === '/v1/stats') {
+            if (method === 'GET' && pathname === '/v1/stats') {
                 const result = await core.stats()
                 send(res, result.ok ? 200 : 500, result)
                 return
             }
 
+            // GET /v1/telemetry/recall
+            if (method === 'GET' && pathname === '/v1/telemetry/recall') {
+                const window = parsedUrl.searchParams.get('window') ?? undefined
+                const limitRaw = parsedUrl.searchParams.get('limit')
+                const limit = limitRaw ? Number(limitRaw) : undefined
+                if (limitRaw && !Number.isFinite(limit)) {
+                    sendError(res, 400, 'Invalid limit query param; expected number')
+                    return
+                }
+                const result = await core.recallTelemetry({ window, limit })
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
             // POST /v1/remember
-            if (method === 'POST' && url === '/v1/remember') {
+            if (method === 'POST' && pathname === '/v1/remember') {
                 const raw = await readBody(req)
                 let body: unknown
                 try { body = JSON.parse(raw) } catch {
@@ -69,7 +86,7 @@ export function createServer(core: MemoriaCore): http.Server {
             }
 
             // POST /v1/recall
-            if (method === 'POST' && url === '/v1/recall') {
+            if (method === 'POST' && pathname === '/v1/recall') {
                 const raw = await readBody(req)
                 let body: unknown
                 try { body = JSON.parse(raw) } catch {
@@ -86,7 +103,7 @@ export function createServer(core: MemoriaCore): http.Server {
             }
 
             // GET /v1/sessions/:id/summary
-            const sessionMatch = /^\/v1\/sessions\/([^/]+)\/summary$/.exec(url)
+            const sessionMatch = /^\/v1\/sessions\/([^/]+)\/summary$/.exec(pathname)
             if (method === 'GET' && sessionMatch) {
                 const sessionId = decodeURIComponent(sessionMatch[1])
                 const result = await core.summarizeSession(sessionId)
@@ -94,7 +111,7 @@ export function createServer(core: MemoriaCore): http.Server {
                 return
             }
 
-            sendError(res, 404, `Not found: ${method} ${url}`)
+            sendError(res, 404, `Not found: ${method} ${rawUrl}`)
         } catch (error) {
             sendError(res, 500, error instanceof Error ? error.message : String(error))
         }

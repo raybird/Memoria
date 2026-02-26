@@ -13,6 +13,7 @@ import {
   runVerify,
   runPrune,
   exportMemory,
+  buildMemoryIndex,
   existsSync,
   safeDate,
   slugify,
@@ -35,7 +36,8 @@ import type {
   PruneOptions,
   ExportOptions,
   ExportType,
-  ExportFormat
+  ExportFormat,
+  MemoryIndexBuildOptions
 } from './core/index.js'
 
 // ─── Session schema (Zod validation) ─────────────────────────────────────────
@@ -208,7 +210,7 @@ async function run(): Promise<void> {
   const program = new Command()
     .name('memoria')
     .description('Memoria TypeScript CLI')
-    .version('1.2.0')
+    .version('1.3.0')
 
   // ── init ──────────────────────────────────────────────────────────────────
 
@@ -284,6 +286,41 @@ async function run(): Promise<void> {
             console.log(`  - ${skill.name}: uses=${skill.use_count}, success=${(skill.success_rate * 100).toFixed(1)}%`)
           }
         }
+        if (s.recallRouting) {
+          const rr = s.recallRouting
+          console.log(`- recall routing (${rr.window}):`)
+          console.log(`  - queries=${rr.totalQueries}, fallback_rate=${(rr.fallbackRate * 100).toFixed(1)}%`)
+          console.log(`  - route_counts: keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`)
+          console.log(`  - latency_ms: avg=${rr.avgLatencyMs}, p95=${rr.p95LatencyMs}`)
+          console.log(`  - avg_hit_count=${rr.avgHitCount}`)
+        }
+      }
+    })
+
+  // ── index ─────────────────────────────────────────────────────────────────
+
+  const indexCommand = program
+    .command('index')
+    .description('Build and inspect lightweight tree memory index')
+
+  indexCommand
+    .command('build')
+    .description('Build incremental tree index from unindexed sessions')
+    .option('--project <name>', 'Scope build to one project')
+    .option('--since <isoDate>', 'Only include sessions at/after this ISO date')
+    .option('--session-id <id>', 'Build index for one specific session id')
+    .option('--dry-run', 'Show what would be indexed without writing nodes')
+    .option('--json', 'Machine-readable JSON output')
+    .action(async (options: MemoryIndexBuildOptions & { json?: boolean }) => {
+      const result = buildMemoryIndex(paths.dbPath, options)
+      if (options.json) {
+        console.log(JSON.stringify({ ok: true, ...result }))
+      } else {
+        console.log(`🌲 Memory index build${options.dryRun ? ' (dry-run)' : ''}`)
+        console.log(`- sessions considered: ${result.sessionsConsidered}`)
+        console.log(`- sessions indexed: ${result.sessionsIndexed}`)
+        console.log(`- nodes upserted: ${result.nodesUpserted}`)
+        console.log(`- source links upserted: ${result.linksUpserted}`)
       }
     })
 
@@ -427,6 +464,7 @@ async function run(): Promise<void> {
         console.log(`🚀 Memoria server listening on http://localhost:${actualPort}`)
         console.log('   GET  /v1/health')
         console.log('   GET  /v1/stats')
+        console.log('   GET  /v1/telemetry/recall?window=P7D&limit=100')
         console.log('   POST /v1/remember')
         console.log('   POST /v1/recall')
         console.log('   GET  /v1/sessions/:id/summary')

@@ -8,6 +8,7 @@ import { existsSync } from './paths.js'
 import {
     safeDate,
     slugify,
+    shortHash,
     resolveSessionId,
     resolveEventId,
     getEventType,
@@ -23,7 +24,6 @@ import type {
     Json,
     MemoriaPaths,
     SessionData,
-    SessionEvent,
     VerifyStatus,
     VerifyCheck,
     ExportDecision,
@@ -32,7 +32,11 @@ import type {
     ExportType,
     ExportFormat,
     PruneOptions,
-    StatsData
+    StatsData,
+    RecallTelemetryData,
+    MemoryIndexBuildOptions,
+    MemoryIndexBuildResult,
+    RecallHit
 } from './types.js'
 
 // ─── Init ────────────────────────────────────────────────────────────────────
@@ -69,6 +73,44 @@ export function initDatabase(dbPath: string): void {
         filepath TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS memory_nodes (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT,
+        project TEXT,
+        title TEXT,
+        summary TEXT,
+        level INTEGER,
+        path_key TEXT,
+        created_at DATETIME,
+        updated_at DATETIME,
+        last_synced_at DATETIME,
+        FOREIGN KEY (parent_id) REFERENCES memory_nodes(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS memory_node_sources (
+        node_id TEXT,
+        session_id TEXT,
+        created_at DATETIME,
+        PRIMARY KEY (node_id, session_id),
+        FOREIGN KEY (node_id) REFERENCES memory_nodes(id),
+        FOREIGN KEY (session_id) REFERENCES sessions(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS memory_sync_state (
+        target TEXT PRIMARY KEY,
+        cursor_updated_at DATETIME,
+        updated_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS recall_telemetry (
+        id TEXT PRIMARY KEY,
+        route_mode TEXT,
+        fallback_used INTEGER,
+        hit_count INTEGER,
+        latency_ms INTEGER,
+        created_at DATETIME
+      );
+
       CREATE INDEX IF NOT EXISTS idx_sessions_timestamp
       ON sessions(timestamp);
 
@@ -83,6 +125,24 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_skills_category_created
       ON skills(category, created_date);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_nodes_parent
+      ON memory_nodes(parent_id);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_nodes_project_level
+      ON memory_nodes(project, level);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_nodes_updated
+      ON memory_nodes(updated_at);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_node_sources_session
+      ON memory_node_sources(session_id);
+
+      CREATE INDEX IF NOT EXISTS idx_recall_telemetry_created
+      ON recall_telemetry(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route
+      ON recall_telemetry(route_mode, created_at);
     `)
     } finally {
         db.close()
@@ -304,6 +364,46 @@ ${examples}
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
 
+export function logRecallTelemetry(
+    dbPath: string,
+    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number }
+): void {
+    if (!existsSync(dbPath)) return
+
+    const db = new Database(dbPath)
+    try {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS recall_telemetry (
+            id TEXT PRIMARY KEY,
+            route_mode TEXT,
+            fallback_used INTEGER,
+            hit_count INTEGER,
+            latency_ms INTEGER,
+            created_at DATETIME
+          );
+          CREATE INDEX IF NOT EXISTS idx_recall_telemetry_created ON recall_telemetry(created_at);
+          CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route ON recall_telemetry(route_mode, created_at);
+        `)
+
+        const createdAt = new Date().toISOString()
+        const id = `rt_${shortHash(`${createdAt}:${input.routeMode}:${input.latencyMs}:${input.hitCount}`, 24)}`
+        db.prepare(`
+          INSERT OR REPLACE INTO recall_telemetry
+          (id, route_mode, fallback_used, hit_count, latency_ms, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+            id,
+            input.routeMode,
+            input.fallbackUsed ? 1 : 0,
+            Math.max(0, Math.floor(input.hitCount)),
+            Math.max(0, Math.floor(input.latencyMs)),
+            createdAt
+        )
+    } finally {
+        db.close()
+    }
+}
+
 export function queryStats(dbPath: string): StatsData {
     const db = new Database(dbPath, { readonly: true })
     try {
@@ -319,7 +419,117 @@ export function queryStats(dbPath: string): StatsData {
             .prepare('SELECT name, use_count, success_rate FROM skills ORDER BY use_count DESC, name ASC LIMIT 5')
             .all() as { name: string; use_count: number; success_rate: number }[]
 
-        return { sessions, events, skills, lastSession, topSkills }
+        const window = 'P7D'
+        const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        const recallTelemetryTable = db
+            .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_telemetry' LIMIT 1`)
+            .get() as { ok: number } | undefined
+        const telemetryRows = recallTelemetryTable
+            ? db
+                .prepare(`
+                  SELECT route_mode, fallback_used, hit_count, latency_ms
+                  FROM recall_telemetry
+                  WHERE created_at >= ?
+                `)
+                .all(sinceIso) as Array<{ route_mode: string; fallback_used: number; hit_count: number; latency_ms: number }>
+            : []
+
+        const routeCounts = {
+            keyword: 0,
+            tree: 0,
+            hybrid_tree: 0,
+            hybrid_fallback: 0
+        }
+        let fallbackCount = 0
+        let hitCountSum = 0
+        const latencies: number[] = []
+
+        for (const row of telemetryRows) {
+            const mode = row.route_mode
+            if (mode in routeCounts) {
+                routeCounts[mode as keyof typeof routeCounts] += 1
+            }
+            if (row.fallback_used === 1) fallbackCount += 1
+            hitCountSum += Number(row.hit_count ?? 0)
+            latencies.push(Number(row.latency_ms ?? 0))
+        }
+
+        latencies.sort((a, b) => a - b)
+        const totalQueries = telemetryRows.length
+        const avgLatencyMs = totalQueries > 0
+            ? Number((latencies.reduce((sum, x) => sum + x, 0) / totalQueries).toFixed(2))
+            : 0
+        const p95LatencyMs = totalQueries > 0
+            ? latencies[Math.min(latencies.length - 1, Math.floor((latencies.length - 1) * 0.95))]
+            : 0
+        const fallbackRate = totalQueries > 0 ? Number((fallbackCount / totalQueries).toFixed(4)) : 0
+        const avgHitCount = totalQueries > 0 ? Number((hitCountSum / totalQueries).toFixed(2)) : 0
+
+        const recallRouting = {
+            window,
+            totalQueries,
+            routeCounts,
+            fallbackRate,
+            avgLatencyMs,
+            p95LatencyMs,
+            avgHitCount
+        }
+
+        return { sessions, events, skills, lastSession, topSkills, recallRouting }
+    } finally {
+        db.close()
+    }
+}
+
+export function queryRecallTelemetry(
+    dbPath: string,
+    options?: { window?: string; limit?: number }
+): RecallTelemetryData {
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const window = options?.window && /^P\d+D$/.test(options.window) ? options.window : 'P7D'
+        const limitRaw = options?.limit ?? 100
+        const limit = Math.min(500, Math.max(1, Math.floor(limitRaw)))
+        const days = Number(/^P(\d+)D$/.exec(window)?.[1] ?? '7')
+        const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
+        const tableExists = db
+            .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_telemetry' LIMIT 1`)
+            .get() as { ok: number } | undefined
+
+        if (!tableExists) {
+            return { window, total: 0, rows: [] }
+        }
+
+        const rows = db
+            .prepare(`
+              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at
+              FROM recall_telemetry
+              WHERE created_at >= ?
+              ORDER BY created_at DESC
+              LIMIT ?
+            `)
+            .all(sinceIso, limit) as Array<{
+            id: string
+            route_mode: string
+            fallback_used: number
+            hit_count: number
+            latency_ms: number
+            created_at: string
+        }>
+
+        return {
+            window,
+            total: rows.length,
+            rows: rows.map((r) => ({
+                id: r.id,
+                route_mode: r.route_mode,
+                fallback_used: r.fallback_used === 1,
+                hit_count: Number(r.hit_count ?? 0),
+                latency_ms: Number(r.latency_ms ?? 0),
+                created_at: r.created_at
+            }))
+        }
     } finally {
         db.close()
     }
@@ -623,6 +833,336 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
         }
 
         return { filePath, decisions, skills }
+    } finally {
+        db.close()
+    }
+}
+
+// ─── Tree index build + recall ───────────────────────────────────────────────
+
+function truncateText(input: string, max = 180): string {
+    const clean = input.replace(/\s+/g, ' ').trim()
+    if (clean.length <= max) return clean
+    return `${clean.slice(0, Math.max(0, max - 1))}…`
+}
+
+function tokenizeQuery(query: string): string[] {
+    const tokens = query
+        .toLowerCase()
+        .split(/[^a-z0-9\u4e00-\u9fff]+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 2)
+    return Array.from(new Set(tokens))
+}
+
+function scoreNode(title: string, summary: string, tokens: string[]): number {
+    if (tokens.length === 0) return 0
+    const haystack = `${title} ${summary}`.toLowerCase()
+    let score = 0
+    for (const token of tokens) {
+        if (haystack.includes(token)) score += 1
+    }
+    return score / tokens.length
+}
+
+function extractTopicFromSession(
+    summary: string,
+    decision: string,
+    skill: string,
+    timestamp: string
+): { title: string; summary: string } {
+    const fallbackDate = safeDate(timestamp).toISOString().slice(0, 10)
+    if (decision.trim()) {
+        const title = truncateText(decision.trim(), 72)
+        return { title, summary: truncateText(summary || decision, 180) }
+    }
+    if (skill.trim()) {
+        const title = truncateText(skill.trim(), 72)
+        return { title, summary: truncateText(summary || skill, 180) }
+    }
+    if (summary.trim()) {
+        const title = truncateText(summary, 72)
+        return { title, summary: truncateText(summary, 180) }
+    }
+    return { title: `Session ${fallbackDate}`, summary: `Session memory captured on ${fallbackDate}` }
+}
+
+export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOptions = {}): MemoryIndexBuildResult {
+    if (!existsSync(dbPath)) {
+        throw new Error(`sessions.db not found: ${dbPath}`)
+    }
+
+    const db = new Database(dbPath)
+    const nowIso = new Date().toISOString()
+    const dryRun = Boolean(options.dryRun)
+    const projectFilter = options.project?.trim()
+    const since = parseBoundaryDate(options.since, '--since')
+    const specificSessionId = options.sessionId?.trim()
+
+    try {
+        const sessions = db.prepare(`
+          SELECT id, timestamp, project, summary
+          FROM sessions
+          WHERE 1 = 1
+            ${specificSessionId ? 'AND id = ?' : ''}
+            ${projectFilter ? 'AND project = ?' : ''}
+            ${since ? 'AND timestamp >= ?' : ''}
+            AND id NOT IN (SELECT DISTINCT session_id FROM memory_node_sources)
+          ORDER BY timestamp ASC
+        `).all(
+            ...[
+                ...(specificSessionId ? [specificSessionId] : []),
+                ...(projectFilter ? [projectFilter] : []),
+                ...(since ? [since.toISOString()] : [])
+            ]
+        ) as { id: string; timestamp: string; project: string; summary: string }[]
+
+        if (sessions.length === 0) {
+            return { sessionsConsidered: 0, sessionsIndexed: 0, nodesUpserted: 0, linksUpserted: 0 }
+        }
+
+        let nodesUpserted = 0
+        let linksUpserted = 0
+
+        const upsertNode = db.prepare(`
+          INSERT OR REPLACE INTO memory_nodes
+          (id, parent_id, project, title, summary, level, path_key, created_at, updated_at, last_synced_at)
+          VALUES (
+            ?, ?, ?, ?, ?, ?, ?,
+            COALESCE((SELECT created_at FROM memory_nodes WHERE id = ?), ?),
+            ?,
+            COALESCE((SELECT last_synced_at FROM memory_nodes WHERE id = ?), NULL)
+          )
+        `)
+
+        const upsertSource = db.prepare(`
+          INSERT OR REPLACE INTO memory_node_sources (node_id, session_id, created_at)
+          VALUES (?, ?, COALESCE((SELECT created_at FROM memory_node_sources WHERE node_id = ? AND session_id = ?), ?))
+        `)
+
+        const eventRowsBySession = db.prepare(`
+          SELECT session_id, event_type, content
+          FROM events
+          WHERE session_id = ?
+            AND event_type IN ('DecisionMade', 'SkillLearned')
+          ORDER BY timestamp ASC
+        `)
+
+        const tx = db.transaction(() => {
+            for (const session of sessions) {
+                const project = (session.project ?? 'default').trim() || 'default'
+                const projectSlug = slugify(project).toLowerCase()
+                const rootNodeId = `node:project:${projectSlug}`
+                const rootPathKey = `${projectSlug}`
+
+                if (!dryRun) {
+                    upsertNode.run(
+                        rootNodeId,
+                        null,
+                        project,
+                        project,
+                        `Project memory directory for ${project}`,
+                        0,
+                        rootPathKey,
+                        rootNodeId,
+                        nowIso,
+                        nowIso,
+                        rootNodeId
+                    )
+                }
+                nodesUpserted += 1
+
+                const eventRows = eventRowsBySession.all(session.id) as { session_id: string; event_type: string; content: string }[]
+                let decisionText = ''
+                let skillText = ''
+                for (const row of eventRows) {
+                    const parsed = maybeParseJson(row.content)
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+                    const parsedObj = parsed as Json
+                    if (!decisionText && row.event_type === 'DecisionMade' && typeof parsedObj.decision === 'string') {
+                        decisionText = parsedObj.decision
+                    }
+                    if (!skillText && row.event_type === 'SkillLearned' && typeof parsedObj.skill_name === 'string') {
+                        skillText = parsedObj.skill_name
+                    }
+                    if (decisionText && skillText) break
+                }
+
+                const topic = extractTopicFromSession(session.summary ?? '', decisionText, skillText, session.timestamp)
+                const topicSlug = slugify(topic.title).toLowerCase()
+                const topicNodeId = `node:topic:${projectSlug}:${shortHash(topicSlug, 20)}`
+                const topicPathKey = `${rootPathKey}/${topicSlug}`
+
+                if (!dryRun) {
+                    upsertNode.run(
+                        topicNodeId,
+                        rootNodeId,
+                        project,
+                        topic.title,
+                        topic.summary,
+                        1,
+                        topicPathKey,
+                        topicNodeId,
+                        nowIso,
+                        nowIso,
+                        topicNodeId
+                    )
+                }
+                nodesUpserted += 1
+
+                const sessionNodeId = `node:session:${session.id}`
+                const sessionTitle = truncateText(session.summary?.trim() || session.id, 80)
+                const sessionSummary = truncateText(session.summary?.trim() || `Session ${session.id}`, 180)
+                const sessionPathKey = `${topicPathKey}/${slugify(session.id).toLowerCase()}`
+
+                if (!dryRun) {
+                    upsertNode.run(
+                        sessionNodeId,
+                        topicNodeId,
+                        project,
+                        sessionTitle,
+                        sessionSummary,
+                        2,
+                        sessionPathKey,
+                        sessionNodeId,
+                        nowIso,
+                        nowIso,
+                        sessionNodeId
+                    )
+
+                    upsertSource.run(topicNodeId, session.id, topicNodeId, session.id, nowIso)
+                    upsertSource.run(sessionNodeId, session.id, sessionNodeId, session.id, nowIso)
+                }
+                nodesUpserted += 1
+                linksUpserted += 2
+            }
+        })
+
+        tx()
+
+        return {
+            sessionsConsidered: sessions.length,
+            sessionsIndexed: sessions.length,
+            nodesUpserted,
+            linksUpserted
+        }
+    } finally {
+        db.close()
+    }
+}
+
+export function recallTree(
+    dbPath: string,
+    query: string,
+    projectFilter?: string,
+    topK = 5
+): RecallHit[] {
+    if (!existsSync(dbPath)) return []
+
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const allNodes = db.prepare(`
+          SELECT id, parent_id, project, title, summary, level, updated_at
+          FROM memory_nodes
+          WHERE 1 = 1
+          ${projectFilter ? 'AND project = ?' : ''}
+        `).all(...[...(projectFilter ? [projectFilter] : [])]) as {
+            id: string
+            parent_id: string | null
+            project: string
+            title: string
+            summary: string
+            level: number
+            updated_at: string
+        }[]
+
+        const nodes = allNodes.filter((node) => node.level >= 1)
+
+        if (nodes.length === 0) return []
+
+        const nodeById = new Map<string, (typeof allNodes)[number]>()
+        for (const node of allNodes) nodeById.set(node.id, node)
+
+        const tokens = tokenizeQuery(query)
+        const scored = nodes
+            .map((node) => ({
+                node,
+                score: scoreNode(node.title ?? '', node.summary ?? '', tokens)
+            }))
+            .filter((entry) => entry.score > 0)
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score
+                return parseCreatedAt(b.node.updated_at) - parseCreatedAt(a.node.updated_at)
+            })
+            .slice(0, Math.max(1, topK))
+
+        if (scored.length === 0) return []
+
+        const getPath = (nodeId: string): string[] => {
+            const pathTitles: string[] = []
+            let cursor: string | null = nodeId
+            let guard = 0
+            while (cursor && guard < 16) {
+                const n = nodeById.get(cursor)
+                if (!n) break
+                pathTitles.push(n.title)
+                cursor = n.parent_id
+                guard += 1
+            }
+            return pathTitles.reverse()
+        }
+
+        const sessionIdsByNode = db.prepare(`
+          SELECT session_id FROM memory_node_sources
+          WHERE node_id = ?
+          ORDER BY created_at DESC
+          LIMIT ?
+        `)
+
+        const getSession = db.prepare(`
+          SELECT id, timestamp, project, summary
+          FROM sessions
+          WHERE id = ?
+        `)
+
+        const hits: RecallHit[] = []
+        for (const entry of scored) {
+            const linked = sessionIdsByNode.all(entry.node.id, 3) as { session_id: string }[]
+            const reasoningPath = getPath(entry.node.id)
+            for (const link of linked) {
+                const session = getSession.get(link.session_id) as {
+                    id: string
+                    timestamp: string
+                    project: string
+                    summary: string
+                } | undefined
+                if (!session) continue
+                hits.push({
+                    type: 'session',
+                    id: session.id,
+                    session_id: session.id,
+                    timestamp: session.timestamp,
+                    project: session.project,
+                    snippet: truncateText(session.summary ?? entry.node.summary ?? entry.node.title, 200),
+                    score: entry.score,
+                    node_id: entry.node.id,
+                    reasoning_path: reasoningPath
+                })
+            }
+        }
+
+        const deduped = new Map<string, RecallHit>()
+        for (const hit of hits) {
+            const existing = deduped.get(hit.id)
+            if (!existing || hit.score > existing.score) deduped.set(hit.id, hit)
+        }
+
+        return Array.from(deduped.values())
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score
+                return parseCreatedAt(b.timestamp) - parseCreatedAt(a.timestamp)
+            })
+            .slice(0, topK)
     } finally {
         db.close()
     }

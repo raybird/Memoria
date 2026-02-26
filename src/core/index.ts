@@ -10,9 +10,13 @@ export {
     extractDecisions,
     extractSkills,
     queryStats,
+    queryRecallTelemetry,
+    logRecallTelemetry,
     runVerify,
     runPrune,
     exportMemory,
+    buildMemoryIndex,
+    recallTree,
     recallKeyword,
     querySessionSummary
 } from './db.js'
@@ -29,5 +33,7 @@ export type {
     VerifyStatus, VerifyCheck,
     ExportType, ExportFormat, ExportDecision, ExportSkill, ExportOptions,
     PruneOptions, MemoriaResult, RecallFilter, RecallHit,
-    SessionSummary, HealthStatus, StatsData
+    SessionSummary, HealthStatus, StatsData,
+    RecallTelemetryPoint, RecallTelemetryData,
+    MemoryIndexBuildOptions, MemoryIndexBuildResult
 } from './types.js'

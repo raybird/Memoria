@@ -15,7 +15,8 @@ import type {
     RecallHit,
     SessionSummary,
     HealthStatus,
-    StatsData
+    StatsData,
+    RecallTelemetryData
 } from './core/types.js'
 
 const DEFAULT_BASE_URL = 'http://localhost:3917'
@@ -64,6 +65,15 @@ export class MemoriaClient {
     /** Get stats (session/event/skill counts, top skills) */
     async stats(): Promise<MemoriaResult<StatsData>> {
         return this.get('/v1/stats')
+    }
+
+    /** Get recall routing telemetry for observability */
+    async recallTelemetry(opts?: { window?: string; limit?: number }): Promise<MemoriaResult<RecallTelemetryData>> {
+        const params = new URLSearchParams()
+        if (opts?.window) params.set('window', opts.window)
+        if (typeof opts?.limit === 'number') params.set('limit', String(opts.limit))
+        const suffix = params.toString() ? `?${params.toString()}` : ''
+        return this.get(`/v1/telemetry/recall${suffix}`)
     }
 
     /** Poll health until service is ready. Useful right after startup. */
