@@ -5,6 +5,28 @@ Memoria uses a dual-layer model:
 - Memoria (SQLite + markdown) = source of truth
 - `mcp-memory-libsql` = semantic enhancement layer
 
+## Is MCP Required?
+
+No. In v1.3.0, MCP/libSQL is still optional.
+
+- Without MCP/libSQL: Memoria core features remain fully available (sync, index, recall, stats, telemetry).
+- With MCP/libSQL: you gain external graph projection and cross-agent semantic enrichment.
+
+Think of MCP/libSQL as an add-on index layer, not a replacement datastore.
+
+## Decision Guide
+
+Choose your deployment mode based on workload:
+
+- Use **Memoria-only** when you need simple, local, auditable memory with minimal ops overhead.
+- Enable **Memoria + MCP/libSQL** when you need cross-agent graph sharing, external semantic traversal, or multi-node memory projection.
+
+Practical defaults:
+
+- Start with Memoria-only in development and early production.
+- Add MCP/libSQL when retrieval complexity or collaboration scope grows.
+- Keep Memoria SQLite as source-of-truth in both modes.
+
 ## What It Does
 
 Hybrid flow (`run-sync-with-enhancement.sh`) performs:

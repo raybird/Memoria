@@ -65,6 +65,29 @@ curl http://localhost:3917/v1/stats
 | Policy 引擎（PII 過濾 / 讀寫策略） | 🔜 Planned |
 | 高階 Policy 可配置化（多租戶/規則引擎） | 🔜 Planned |
 
+## Memoria vs MCP/libSQL
+
+`mcp-memory-libsql` 在 v1.3.0 仍是 **optional enhancement**，不是必需依賴。
+
+| 能力 | Memoria 單獨可用 | Memoria + MCP/libSQL |
+|------|------------------|------------------------|
+| 本地持久記憶（SQLite + markdown） | ✅ | ✅ |
+| `recall`（keyword/tree/hybrid） | ✅ | ✅ |
+| Recall telemetry（`stats` + API） | ✅ | ✅ |
+| 跨系統圖譜投射/增量同步 | ➖ | ✅ |
+| 多 Agent 共用外部語意圖譜 | ➖ | ✅ |
+
+結論：
+
+- 要「完整可用」：Memoria 單獨就足夠。
+- 要「跨系統/多節點語意增強」：再加 MCP/libSQL。
+
+快速決策（3 行）：
+
+- 先上 Memoria-only（最小維運成本，功能已完整）。
+- 需要跨 Agent/跨節點語意圖譜時，再加 MCP/libSQL。
+- 無論哪種模式，都以 Memoria SQLite 為 source-of-truth。
+
 ## HTTP API
 
 啟動：`./cli serve` (port 3917，可用 `MEMORIA_PORT` 覆寫)

@@ -156,6 +156,51 @@ Preflight checks: `./cli preflight --json` → Node.js version, pnpm, disk space
 
 Test the bootstrap flow: `bash scripts/test-bootstrap.sh`
 
+## Agent Runtime Quickstart
+
+For agents that need a deterministic install-and-use path, follow this exact sequence:
+
+1. Setup and serve:
+
+```bash
+./cli setup --serve --port 3917 --json
+```
+
+2. Wait until healthy:
+
+```bash
+curl -sf http://localhost:3917/v1/health
+```
+
+3. Write memory:
+
+```bash
+curl -sS -X POST http://localhost:3917/v1/remember \
+  -H 'Content-Type: application/json' \
+  -d @examples/session.sample.json
+```
+
+4. Recall memory (`mode` supports `keyword|tree|hybrid`):
+
+```bash
+curl -sS -X POST http://localhost:3917/v1/recall \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"TS migration","top_k":5,"mode":"hybrid"}'
+```
+
+5. Observe routing quality:
+
+```bash
+curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
+```
+
+Optional enhancement (not required):
+
+```bash
+export LIBSQL_URL="file:/path/to/memory-tool.db"
+bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
+```
+
 ## Agent Skill and MCP Notes
 
 - Primary skill path: `skills/memoria-memory-sync/SKILL.md`.

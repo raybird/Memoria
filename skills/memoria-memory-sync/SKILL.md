@@ -94,6 +94,8 @@ MEMORIA_HOME="$TMP" ./cli sync examples/session.sample.json
 
 Yes: Memoria and MCP/libSQL can be designed to reinforce each other.
 
+Important: MCP/libSQL is recommended for enhancement, but not required for Memoria core operation.
+
 Use this dual-layer model:
 
 - Layer 1 (Memoria): deterministic local truth for sessions/events/markdown artifacts
@@ -160,6 +162,39 @@ Failure semantics:
 - Base sync completes before enhancement starts.
 - In strict mode (`MEMORIA_MCP_STRICT=1`), enhancement failure returns non-zero exit.
 - In non-strict mode (`MEMORIA_MCP_STRICT=0`), enhancement failure is logged and workflow continues.
+
+## Integration Strategies (v1.3.0)
+
+Given incremental MCP payload mode (`MEMORIA_MCP_PAYLOAD_MODE=incremental`) and no-op behavior, use one of these patterns:
+
+### Strategy A: Tight Coupling (After-Response Hook)
+
+Run hybrid sync directly after each conversation response:
+
+```bash
+bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh <session-json> <memoria-home>
+```
+
+- Good for single-agent or moderate traffic.
+- Keeps memory availability close to real time.
+- No changes still stay cheap due to incremental no-op.
+
+### Strategy B: Async Batch (Scheduled Sync)
+
+Keep the main agent writing to Memoria first, then schedule MCP enhancement out-of-band (cron/systemd timer):
+
+```bash
+bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh <session-json> <memoria-home>
+```
+
+- Good for high-frequency or multi-agent workloads.
+- Separates user-facing latency from MCP/network variability.
+- Maintains stable throughput while preserving incremental projection.
+
+### Practical recommendation
+
+- Start with Strategy A for simplicity.
+- Move to Strategy B when throughput scales or when you need stricter isolation.
 
 ## References
 

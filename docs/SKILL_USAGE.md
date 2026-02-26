@@ -34,6 +34,12 @@ export LIBSQL_URL="file:/path/to/memory-tool.db"
 bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
 ```
 
+## Integration Strategy
+
+- Tight coupling: run the hybrid script in your agent's after-response hook (near real-time).
+- Async batch: run the same script on a scheduler for high-throughput environments.
+- Prefer tight coupling first; switch to batch when latency isolation or scale requires it.
+
 Optional e2e checks:
 
 ```bash
