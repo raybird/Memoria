@@ -29,6 +29,10 @@ This reference supports `SKILL.md` for deeper implementation details.
 - Run runtime/schema verification:
   - `MEMORIA_HOME=$(pwd) ./cli verify`
   - `MEMORIA_HOME=$(pwd) ./cli verify --json`
+- Build incremental tree index:
+  - `MEMORIA_HOME=$(pwd) ./cli index build`
+- Query recall routing telemetry API:
+  - `curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"`
 
 Skill validation (if available):
 
@@ -48,9 +52,10 @@ Run in this order when making behavior changes:
 
 ## Single-Test Focus
 
-This repository currently has one explicit test script:
+This repository currently has two explicit test scripts:
 
 - `bash scripts/test-smoke.sh`
+- `bash scripts/test-mcp-e2e.sh`
 
 No Jest/Vitest/Pytest suite is configured.
 
@@ -61,6 +66,10 @@ Current database tables:
 - `sessions`
 - `events`
 - `skills`
+- `memory_nodes`
+- `memory_node_sources`
+- `memory_sync_state`
+- `recall_telemetry`
 
 Current write semantics use `INSERT OR REPLACE`. Preserve unless requested.
 
@@ -142,6 +151,7 @@ MCP request bundle contract:
 - Output file includes `create_entities`, `create_relations`, and verify requests
 - File path is exposed as `MEMORIA_MCP_REQUESTS`
 - Designed to match `mcp-memory-libsql` tool names and argument shape
+- Includes `_meta.sync` for incremental cursor/debug context
 
 Example MCP server config:
 
@@ -189,6 +199,9 @@ Automatic mode (no custom command):
 - Override with:
   - `MEMORIA_MCP_SERVER_COMMAND`
   - `MEMORIA_MCP_SERVER_ARGS`
+- Incremental sync controls:
+  - `MEMORIA_MCP_SYNC_TARGET` (cursor namespace)
+  - `MEMORIA_MCP_PAYLOAD_MODE` (`incremental` default, `full` optional)
 - Failure policy:
   - `MEMORIA_MCP_STRICT=1` (default): fail fast on MCP ingest errors
   - `MEMORIA_MCP_STRICT=0`: continue after logging MCP ingest failure

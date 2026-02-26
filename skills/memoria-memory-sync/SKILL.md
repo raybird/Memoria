@@ -56,6 +56,7 @@ MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
 MEMORIA_HOME=$(pwd) ./cli stats
 MEMORIA_HOME=$(pwd) ./cli doctor
 MEMORIA_HOME=$(pwd) ./cli verify
+MEMORIA_HOME=$(pwd) ./cli index build
 ```
 
 Optional skill validation (if `skills-ref` is installed):
@@ -66,10 +67,11 @@ skills-ref validate skills/memoria-memory-sync
 
 ## Single-Test Guidance
 
-The repo has one explicit test script:
+The repo has two explicit test scripts:
 
 ```bash
 bash scripts/test-smoke.sh
+bash scripts/test-mcp-e2e.sh
 ```
 
 For focused manual verification:
@@ -113,6 +115,8 @@ Environment gates:
 - Generated request env: `MEMORIA_MCP_REQUESTS`
 - Optional MCP server override: `MEMORIA_MCP_SERVER_COMMAND`, `MEMORIA_MCP_SERVER_ARGS`
 - MCP failure policy: `MEMORIA_MCP_STRICT` (`1` fail-fast, `0` continue)
+- Incremental MCP cursor target: `MEMORIA_MCP_SYNC_TARGET`
+- MCP payload mode: `MEMORIA_MCP_PAYLOAD_MODE` (`incremental` default, `full` optional)
 
 Use helper script for this pattern:
 
@@ -144,10 +148,11 @@ Template files (ts-cli-skill style resources):
 
 Expected behavior:
 
-- If `LIBSQL_URL` is set: bridge payload is generated from `sessions/events/skills`
+- If `LIBSQL_URL` is set: bridge payload is generated from Memoria DB (incremental by default)
 - Tool-ready request bundle is generated as `MEMORIA_MCP_REQUESTS`
 - If `MEMORIA_MCP_ENHANCE_CMD` is set: run that command
 - If command is not set: auto-run built-in ingest script against `mcp-memory-libsql`
+- On successful ingest: sync cursor is committed to `memory_sync_state`
 - If MCP env is missing: base sync still succeeds and enhancement is skipped
 
 Failure semantics:

@@ -26,6 +26,7 @@ Run from repo root:
 
 ```bash
 pnpm install
+pnpm run release:docs-check
 pnpm run check
 pnpm run build
 node dist/cli.mjs --help
@@ -35,6 +36,12 @@ bash scripts/test-mcp-e2e.sh
 ```
 
 If any command fails, do not release.
+
+`release:docs-check` validates high-signal doc sync points automatically:
+
+- Version alignment (`package.json`, `src/cli.ts`, `install.sh`)
+- `CHANGELOG.md` contains current version section
+- Core docs include current telemetry/index/incremental MCP behavior
 
 ## Files to Update
 

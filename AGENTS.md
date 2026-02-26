@@ -47,9 +47,13 @@ There is an optional distribution build step and no dedicated ESLint/Prettier co
 
 ## Single-Test Guidance (Important)
 
-This repo currently has one explicit test script: `scripts/test-smoke.sh`.
+This repo currently has two explicit test scripts:
 
-- Run the single smoke test: `bash scripts/test-smoke.sh`
+- `scripts/test-smoke.sh`
+- `scripts/test-mcp-e2e.sh`
+
+- Run smoke test: `bash scripts/test-smoke.sh`
+- Run MCP/libSQL e2e test: `bash scripts/test-mcp-e2e.sh`
 - There is no unit-test framework (no Jest/Vitest/Pytest config present).
 - For focused verification, run one CLI flow manually:
   - `TMP=$(mktemp -d)`
@@ -77,6 +81,7 @@ Before opening PRs, mirror CI locally in this order:
 - `cli`: executable shim (`pnpm tsx`).
 - `dist/cli.mjs`: esbuild bundle (production).
 - `scripts/test-smoke.sh`: smoke test (CLI full flow).
+- `scripts/test-mcp-e2e.sh`: MCP/libSQL hybrid + incremental sync test.
 - `scripts/test-bootstrap.sh`: bootstrap test (AI Agent self-install flow).
 - `skills/memoria-memory-sync/SKILL.md`: Agent Skill entrypoint.
 - `examples/session.sample.json`: sample input for sync flow.
@@ -98,10 +103,11 @@ src/core/
 
 **MemoriaCore API** (all return `MemoriaResult<T>`):
 - `remember(sessionData)` – import + sync daily/decisions/skills
-- `recall(filter)` – keyword search against sessions/events/skills
+- `recall(filter)` – supports `keyword | tree | hybrid` retrieval
 - `summarizeSession(id)` – structured session + decisions + skills
 - `health()` – verify DB + dirs
 - `stats()` – session/event/skill counts
+- `recallTelemetry({ window, limit })` – raw recall routing telemetry rows
 
 ## HTTP API (Phase 1)
 
@@ -111,6 +117,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 |--------|------|-------------|
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Stats |
+| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry |
 | `POST` | `/v1/remember` | Write session memory |
 | `POST` | `/v1/recall` | Recall memories |
 | `GET`  | `/v1/sessions/:id/summary` | Session summary |
@@ -221,7 +228,7 @@ Test the bootstrap flow: `bash scripts/test-bootstrap.sh`
 
 ## What Not to Change Implicitly
 
-- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`, `prune`, `export`) without request.
+- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `prune`, `export`) without request.
 - Do not change persisted table names/columns without migration plan.
 - Do not alter sample file formats unless all readers are updated.
 

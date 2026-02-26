@@ -10,7 +10,8 @@
     "memoria": "tsx src/cli.ts",
     "check": "tsc --noEmit",
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node18 --external:better-sqlite3 --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --outfile=dist/cli.mjs",
-    "memoria:dist": "node dist/cli.mjs"
+    "memoria:dist": "node dist/cli.mjs",
+    "release:docs-check": "node scripts/check-release-doc-sync.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

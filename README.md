@@ -51,17 +51,19 @@ curl http://localhost:3917/v1/stats
 
 | 功能 | 狀態 |
 |------|------|
-| CLI（init/sync/stats/doctor/verify/prune/export） | ✅ Implemented |
+| CLI（init/sync/stats/doctor/verify/index/prune/export） | ✅ Implemented |
 | Core 模組 API（remember/recall/summarizeSession/health/stats） | ✅ Implemented |
-| HTTP API Server（5 端點，port 3917） | ✅ Implemented |
+| HTTP API Server（6 端點，port 3917） | ✅ Implemented |
 | Node.js SDK（`MemoriaClient`） | ✅ Implemented |
 | Agent Adapter（Gemini / OpenCode 參考實作） | ✅ Implemented |
 | Bootstrap 指令（preflight/setup）| ✅ Implemented |
 | 所有指令 `--json` 機器可讀輸出 | ✅ Implemented |
 | SQLite + Markdown 持久化 | ✅ Implemented |
 | MCP/libSQL 語意增強（optional） | ✅ Implemented |
+| Tree 目錄索引（無向量）與 hybrid recall | ✅ Implemented |
+| Recall 路由 telemetry（stats + API） | ✅ Implemented |
 | Policy 引擎（PII 過濾 / 讀寫策略） | 🔜 Planned |
-| Metrics 模組（命中率 / 延遲追蹤） | 🔜 Planned |
+| 高階 Policy 可配置化（多租戶/規則引擎） | 🔜 Planned |
 
 ## HTTP API
 
@@ -71,8 +73,9 @@ curl http://localhost:3917/v1/stats
 |--------|------|------|
 | `GET`  | `/v1/health` | 健康檢查 |
 | `GET`  | `/v1/stats` | 統計 |
+| `GET`  | `/v1/telemetry/recall` | Recall 路由遙測（query: `window`, `limit`） |
 | `POST` | `/v1/remember` | 寫入記憶 (body: SessionData) |
-| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?}`) |
+| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, mode?}`) |
 | `GET`  | `/v1/sessions/:id/summary` | 會話摘要 |
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
@@ -86,6 +89,7 @@ curl http://localhost:3917/v1/stats
 ./cli stats [--json]                 # 統計
 ./cli doctor [--json]                # 本地健康檢查
 ./cli verify [--json]                # 完整驗證
+./cli index build [--json]           # 增量重建 tree index
 ./cli prune --all --dry-run          # 清理預覽
 ./cli export --type all --format json # 匯出
 ./cli serve [--port 3917]            # HTTP API Server
@@ -103,6 +107,7 @@ await client.waitUntilReady()              // poll /v1/health 直到就緒
 
 const r = await client.remember(sessionData)
 const hits = await client.recall({ query: 'migration', top_k: 3 })
+const telemetry = await client.recallTelemetry({ window: 'P7D', limit: 50 })
 const summary = await client.summarizeSession('session_abc')
 ```
 
@@ -144,6 +149,7 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 │       └── index.ts
 ├── scripts/
 │   ├── test-smoke.sh       # CLI 全流程測試
+│   ├── test-mcp-e2e.sh     # MCP 增量同步 E2E
 │   └── test-bootstrap.sh   # Agent 自主安裝測試
 ├── skills/memoria-memory-sync/
 ├── examples/session.sample.json

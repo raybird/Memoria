@@ -36,6 +36,8 @@ pnpm install
 MEMORIA_HOME=$(pwd) ./cli init
 MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
 MEMORIA_HOME=$(pwd) ./cli verify
+# optional: manual incremental tree index build
+MEMORIA_HOME=$(pwd) ./cli index build
 ```
 
 ## Path Overrides
