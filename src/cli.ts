@@ -210,7 +210,7 @@ async function run(): Promise<void> {
   const program = new Command()
     .name('memoria')
     .description('Memoria TypeScript CLI')
-    .version('1.3.0')
+    .version('1.4.0')
 
   // ── init ──────────────────────────────────────────────────────────────────
 
@@ -387,7 +387,9 @@ async function run(): Promise<void> {
     .option('--exports-days <days>', 'Remove export files older than N days')
     .option('--checkpoints-days <days>', 'Remove checkpoints older than N days')
     .option('--dedupe-skills', 'Delete duplicate skills by normalized skill name')
-    .option('--all', 'Apply default pruning targets (30 days + dedupe skills)')
+    .option('--consolidate-days <days>', 'Consolidate old session nodes under same topic older than N days')
+    .option('--stale-days <days>', 'Remove memory nodes and sessions never recalled and older than N days')
+    .option('--all', 'Apply default pruning targets (30 days + dedupe + consolidate 90d + stale 180d)')
     .option('--dry-run', 'Preview prune actions without deleting')
     .option('--json', 'Machine-readable JSON output')
     .action(async (options: PruneOptions & { json?: boolean }) => {
@@ -409,6 +411,14 @@ async function run(): Promise<void> {
         if (result.dedupe) {
           const r = result.dedupe
           console.log(`- dedupe-skills: groups=${r.duplicateGroups}, ${dryRun ? 'would_remove' : 'removed'}=${r.removed}`)
+        }
+        if (result.consolidate) {
+          const r = result.consolidate
+          console.log(`- consolidate: groups=${r.groupsFound}, consolidated=${r.sessionsConsolidated}, nodes_removed=${r.nodesRemoved}`)
+        }
+        if (result.stale) {
+          const r = result.stale
+          console.log(`- stale: nodes=${r.staleNodes}, sessions=${r.staleSessions}, removed_nodes=${r.removedNodes}, removed_sessions=${r.removedSessions}`)
         }
       }
     })

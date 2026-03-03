@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-03
+
+### Added
+- Time-decay scoring for recall: memory relevance now decreases with age using `1 / (1 + age/halfLife)` (halfLife=90 days). Newer memories rank higher when token match is equal.
+- Keyword recall (`recallKeyword`) now computes relevance scores and sorts by score instead of timestamp-only ordering.
+- Recall hit tracking: `recallTree` updates `last_synced_at` on matched `memory_nodes` for stale detection.
+- `prune --consolidate-days <N>`: merges old session nodes under the same topic node (keeps newest, removes ≥3 old children).
+- `prune --stale-days <N>`: removes `memory_nodes` (level=2) never recalled and orphan sessions older than N days.
+- `prune --all` now includes `--consolidate-days 90` and `--stale-days 180` by default.
+
+### Changed
+- `scoreNode()` accepts optional timestamp parameter for time-decay weighting.
+- `recallKeyword()` return type now includes `score` field.
+- `recall()` in `MemoriaCore` no longer synthesises position-based scores; uses actual computed scores.
+
 ## [1.3.0] - 2026-02-26
 
 ### Added

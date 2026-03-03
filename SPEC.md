@@ -26,6 +26,14 @@ This document is the source of truth for what Memoria currently implements.
 - Tree memory index build and recall modes:
   - `recall` supports `mode: keyword | tree | hybrid`
   - recall metadata includes `reasoning_path`, `route_mode`, `fallback_used`
+- Time-decay recall scoring:
+  - `scoreNode()` applies `1 / (1 + ageDays / halfLife)` decay (halfLife=90 days)
+  - `recallKeyword()` computes per-result relevance scores (token match × decay)
+  - recall hit tracking: `recallTree` updates `last_synced_at` on matched nodes
+- Prune memory management:
+  - `--consolidate-days <N>`: merges old session nodes under same topic
+  - `--stale-days <N>`: removes never-recalled nodes and orphan sessions
+  - `--all` includes consolidate (90d) and stale (180d) by default
 - Recall routing observability:
   - aggregated in `stats.recallRouting`
   - raw endpoint: `GET /v1/telemetry/recall?window=P7D&limit=100`

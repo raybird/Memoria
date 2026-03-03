@@ -708,6 +708,147 @@ export function pruneSkillsDuplicates(dbPath: string, dryRun: boolean): { duplic
     }
 }
 
+function pruneConsolidate(
+    dbPath: string,
+    cutoffDays: number,
+    dryRun: boolean
+): { groupsFound: number; sessionsConsolidated: number; nodesRemoved: number } {
+    if (!existsSync(dbPath)) return { groupsFound: 0, sessionsConsolidated: 0, nodesRemoved: 0 }
+
+    const db = new Database(dbPath)
+    try {
+        const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1000).toISOString()
+
+        // Find level=1 topic nodes that have ≥3 old child session nodes
+        const topicGroups = db.prepare(`
+          SELECT parent.id AS topic_id, parent.title AS topic_title, parent.summary AS topic_summary,
+                 COUNT(child.id) AS child_count
+          FROM memory_nodes parent
+          JOIN memory_nodes child ON child.parent_id = parent.id AND child.level = 2
+          WHERE parent.level = 1
+            AND child.updated_at < ?
+          GROUP BY parent.id
+          HAVING COUNT(child.id) >= 3
+        `).all(cutoff) as { topic_id: string; topic_title: string; topic_summary: string; child_count: number }[]
+
+        if (topicGroups.length === 0) return { groupsFound: 0, sessionsConsolidated: 0, nodesRemoved: 0 }
+
+        let totalConsolidated = 0
+        let totalRemoved = 0
+
+        if (!dryRun) {
+            db.transaction(() => {
+                for (const group of topicGroups) {
+                    // Get all old child nodes under this topic, sorted by updated_at DESC
+                    const children = db.prepare(`
+                      SELECT id, title, summary, updated_at
+                      FROM memory_nodes
+                      WHERE parent_id = ? AND level = 2 AND updated_at < ?
+                      ORDER BY updated_at DESC
+                    `).all(group.topic_id, cutoff) as { id: string; title: string; summary: string; updated_at: string }[]
+
+                    if (children.length < 3) continue
+
+                    // Keep the newest, remove the rest
+                    const toRemove = children.slice(1)
+                    const summaries = toRemove.map((c) => c.summary || c.title).filter(Boolean)
+
+                    // Merge summaries into topic node
+                    if (summaries.length > 0) {
+                        const merged = `${group.topic_summary ? group.topic_summary + ' | ' : ''}Consolidated: ${summaries.slice(0, 5).join('; ')}`
+                        db.prepare('UPDATE memory_nodes SET summary = ?, updated_at = ? WHERE id = ?')
+                            .run(truncateText(merged, 500), new Date().toISOString(), group.topic_id)
+                    }
+
+                    // Delete sources and nodes for removed children
+                    const delSources = db.prepare('DELETE FROM memory_node_sources WHERE node_id = ?')
+                    const delNode = db.prepare('DELETE FROM memory_nodes WHERE id = ?')
+                    for (const child of toRemove) {
+                        delSources.run(child.id)
+                        delNode.run(child.id)
+                    }
+
+                    totalConsolidated += toRemove.length
+                    totalRemoved += toRemove.length
+                }
+            })()
+        } else {
+            for (const group of topicGroups) {
+                const children = db.prepare(`
+                  SELECT id FROM memory_nodes
+                  WHERE parent_id = ? AND level = 2 AND updated_at < ?
+                `).all(group.topic_id, cutoff) as { id: string }[]
+                if (children.length >= 3) {
+                    totalConsolidated += children.length - 1
+                    totalRemoved += children.length - 1
+                }
+            }
+        }
+
+        return { groupsFound: topicGroups.length, sessionsConsolidated: totalConsolidated, nodesRemoved: totalRemoved }
+    } finally {
+        db.close()
+    }
+}
+
+function pruneStaleMemory(
+    dbPath: string,
+    cutoffDays: number,
+    dryRun: boolean
+): { staleNodes: number; staleSessions: number; removedNodes: number; removedSessions: number } {
+    if (!existsSync(dbPath)) return { staleNodes: 0, staleSessions: 0, removedNodes: 0, removedSessions: 0 }
+
+    const db = new Database(dbPath)
+    try {
+        const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1000).toISOString()
+
+        // Find level=2 memory nodes never recalled and older than cutoff
+        const staleNodes = db.prepare(`
+          SELECT id FROM memory_nodes
+          WHERE level = 2
+            AND last_synced_at IS NULL
+            AND updated_at < ?
+        `).all(cutoff) as { id: string }[]
+
+        // Find sessions not linked to any memory node and older than cutoff
+        const staleSessions = db.prepare(`
+          SELECT s.id FROM sessions s
+          LEFT JOIN memory_node_sources mns ON mns.session_id = s.id
+          WHERE mns.session_id IS NULL
+            AND s.timestamp < ?
+        `).all(cutoff) as { id: string }[]
+
+        if (!dryRun) {
+            db.transaction(() => {
+                // Remove stale nodes and their sources
+                const delSources = db.prepare('DELETE FROM memory_node_sources WHERE node_id = ?')
+                const delNode = db.prepare('DELETE FROM memory_nodes WHERE id = ?')
+                for (const node of staleNodes) {
+                    delSources.run(node.id)
+                    delNode.run(node.id)
+                }
+
+                // Remove stale sessions and their events
+                const delEvents = db.prepare('DELETE FROM events WHERE session_id = ?')
+                const delSession = db.prepare('DELETE FROM sessions WHERE id = ?')
+                for (const session of staleSessions) {
+                    delEvents.run(session.id)
+                    delSession.run(session.id)
+                }
+            })()
+        }
+
+        return {
+            staleNodes: staleNodes.length,
+            staleSessions: staleSessions.length,
+            removedNodes: dryRun ? 0 : staleNodes.length,
+            removedSessions: dryRun ? 0 : staleSessions.length
+        }
+    } finally {
+        db.close()
+    }
+}
+
 export async function runPrune(
     paths: MemoriaPaths,
     options: PruneOptions
@@ -715,6 +856,8 @@ export async function runPrune(
     exports?: { matched: number; removed: number; bytes: number }
     checkpoints?: { matched: number; removed: number; bytes: number }
     dedupe?: { duplicateGroups: number; removed: number }
+    consolidate?: { groupsFound: number; sessionsConsolidated: number; nodesRemoved: number }
+    stale?: { staleNodes: number; staleSessions: number; removedNodes: number; removedSessions: number }
 }> {
     const dryRun = Boolean(options.dryRun)
     const all = Boolean(options.all)
@@ -722,9 +865,11 @@ export async function runPrune(
     const exportsDays = parseDaysOption(options.exportsDays, '--exports-days') ?? (all ? 30 : undefined)
     const checkpointsDays = parseDaysOption(options.checkpointsDays, '--checkpoints-days') ?? (all ? 30 : undefined)
     const dedupeSkills = Boolean(options.dedupeSkills) || all
+    const consolidateDays = parseDaysOption(options.consolidateDays, '--consolidate-days') ?? (all ? 90 : undefined)
+    const staleDays = parseDaysOption(options.staleDays, '--stale-days') ?? (all ? 180 : undefined)
 
-    if (exportsDays === undefined && checkpointsDays === undefined && !dedupeSkills) {
-        throw new Error('No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills')
+    if (exportsDays === undefined && checkpointsDays === undefined && !dedupeSkills && consolidateDays === undefined && staleDays === undefined) {
+        throw new Error('No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills, --consolidate-days, --stale-days')
     }
 
     const result: ReturnType<typeof runPrune> extends Promise<infer R> ? R : never = {}
@@ -739,6 +884,12 @@ export async function runPrune(
     }
     if (dedupeSkills) {
         result.dedupe = pruneSkillsDuplicates(paths.dbPath, dryRun)
+    }
+    if (consolidateDays !== undefined) {
+        result.consolidate = pruneConsolidate(paths.dbPath, consolidateDays, dryRun)
+    }
+    if (staleDays !== undefined) {
+        result.stale = pruneStaleMemory(paths.dbPath, staleDays, dryRun)
     }
 
     return result
@@ -855,14 +1006,25 @@ function tokenizeQuery(query: string): string[] {
     return Array.from(new Set(tokens))
 }
 
-function scoreNode(title: string, summary: string, tokens: string[]): number {
+const DEFAULT_DECAY_HALF_LIFE_DAYS = 90
+
+function computeDecayFactor(timestamp: string, halfLifeDays = DEFAULT_DECAY_HALF_LIFE_DAYS): number {
+    const ageMs = Date.now() - parseCreatedAt(timestamp)
+    if (ageMs <= 0) return 1.0
+    const ageDays = ageMs / (24 * 60 * 60 * 1000)
+    return 1 / (1 + ageDays / halfLifeDays)
+}
+
+function scoreNode(title: string, summary: string, tokens: string[], timestamp?: string): number {
     if (tokens.length === 0) return 0
     const haystack = `${title} ${summary}`.toLowerCase()
     let score = 0
     for (const token of tokens) {
         if (haystack.includes(token)) score += 1
     }
-    return score / tokens.length
+    const relevance = score / tokens.length
+    if (!timestamp) return relevance
+    return relevance * computeDecayFactor(timestamp)
 }
 
 function extractTopicFromSession(
@@ -1087,7 +1249,7 @@ export function recallTree(
         const scored = nodes
             .map((node) => ({
                 node,
-                score: scoreNode(node.title ?? '', node.summary ?? '', tokens)
+                score: scoreNode(node.title ?? '', node.summary ?? '', tokens, node.updated_at)
             }))
             .filter((entry) => entry.score > 0)
             .sort((a, b) => {
@@ -1157,12 +1319,27 @@ export function recallTree(
             if (!existing || hit.score > existing.score) deduped.set(hit.id, hit)
         }
 
-        return Array.from(deduped.values())
+        const finalHits = Array.from(deduped.values())
             .sort((a, b) => {
                 if (b.score !== a.score) return b.score - a.score
                 return parseCreatedAt(b.timestamp) - parseCreatedAt(a.timestamp)
             })
             .slice(0, topK)
+
+        // Record recall hits — used by stale cleanup to identify active memory nodes
+        try {
+            const hitNodeIds = [...new Set(finalHits.map((h) => h.node_id).filter(Boolean))]
+            if (hitNodeIds.length > 0) {
+                const dbW = new Database(dbPath)
+                try {
+                    const now = new Date().toISOString()
+                    const stmt = dbW.prepare('UPDATE memory_nodes SET last_synced_at = ? WHERE id = ?')
+                    dbW.transaction(() => { for (const id of hitNodeIds) stmt.run(now, id) })()
+                } finally { dbW.close() }
+            }
+        } catch { /* fail-open: tracking failure must not affect recall results */ }
+
+        return finalHits
     } finally {
         db.close()
     }
@@ -1176,7 +1353,7 @@ export function recallKeyword(
     projectFilter?: string,
     topK = 5,
     afterDate?: Date
-): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string }> {
+): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }> {
     const db = new Database(dbPath, { readonly: true })
     const q = `%${query.toLowerCase()}%`
     try {
@@ -1221,17 +1398,24 @@ export function recallKeyword(
             ...sessionRows.map((r) => ({ type: 'session' as const, ...r }))
         ]
 
+        const tokens = tokenizeQuery(query)
+
         return all
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-            .slice(0, topK)
             .map((r) => {
                 const parsed = maybeParseJson(r.content)
                 const snippet =
                     typeof parsed === 'object' && parsed !== null
                         ? JSON.stringify(parsed).slice(0, 200)
                         : String(r.content).slice(0, 200)
-                return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet }
+                const relevance = scoreNode('', snippet, tokens, r.timestamp)
+                const score = Math.max(relevance, computeDecayFactor(r.timestamp) * 0.1)
+                return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score }
             })
+            .sort((a, b) => {
+                if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score
+                return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            })
+            .slice(0, topK)
     } finally {
         db.close()
     }

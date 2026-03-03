@@ -4158,14 +4158,120 @@ function pruneSkillsDuplicates(dbPath, dryRun) {
     db.close();
   }
 }
+function pruneConsolidate(dbPath, cutoffDays, dryRun) {
+  if (!existsSync(dbPath)) return { groupsFound: 0, sessionsConsolidated: 0, nodesRemoved: 0 };
+  const db = new Database(dbPath);
+  try {
+    const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1e3).toISOString();
+    const topicGroups = db.prepare(`
+          SELECT parent.id AS topic_id, parent.title AS topic_title, parent.summary AS topic_summary,
+                 COUNT(child.id) AS child_count
+          FROM memory_nodes parent
+          JOIN memory_nodes child ON child.parent_id = parent.id AND child.level = 2
+          WHERE parent.level = 1
+            AND child.updated_at < ?
+          GROUP BY parent.id
+          HAVING COUNT(child.id) >= 3
+        `).all(cutoff);
+    if (topicGroups.length === 0) return { groupsFound: 0, sessionsConsolidated: 0, nodesRemoved: 0 };
+    let totalConsolidated = 0;
+    let totalRemoved = 0;
+    if (!dryRun) {
+      db.transaction(() => {
+        for (const group of topicGroups) {
+          const children = db.prepare(`
+                      SELECT id, title, summary, updated_at
+                      FROM memory_nodes
+                      WHERE parent_id = ? AND level = 2 AND updated_at < ?
+                      ORDER BY updated_at DESC
+                    `).all(group.topic_id, cutoff);
+          if (children.length < 3) continue;
+          const toRemove = children.slice(1);
+          const summaries = toRemove.map((c) => c.summary || c.title).filter(Boolean);
+          if (summaries.length > 0) {
+            const merged = `${group.topic_summary ? group.topic_summary + " | " : ""}Consolidated: ${summaries.slice(0, 5).join("; ")}`;
+            db.prepare("UPDATE memory_nodes SET summary = ?, updated_at = ? WHERE id = ?").run(truncateText(merged, 500), (/* @__PURE__ */ new Date()).toISOString(), group.topic_id);
+          }
+          const delSources = db.prepare("DELETE FROM memory_node_sources WHERE node_id = ?");
+          const delNode = db.prepare("DELETE FROM memory_nodes WHERE id = ?");
+          for (const child of toRemove) {
+            delSources.run(child.id);
+            delNode.run(child.id);
+          }
+          totalConsolidated += toRemove.length;
+          totalRemoved += toRemove.length;
+        }
+      })();
+    } else {
+      for (const group of topicGroups) {
+        const children = db.prepare(`
+                  SELECT id FROM memory_nodes
+                  WHERE parent_id = ? AND level = 2 AND updated_at < ?
+                `).all(group.topic_id, cutoff);
+        if (children.length >= 3) {
+          totalConsolidated += children.length - 1;
+          totalRemoved += children.length - 1;
+        }
+      }
+    }
+    return { groupsFound: topicGroups.length, sessionsConsolidated: totalConsolidated, nodesRemoved: totalRemoved };
+  } finally {
+    db.close();
+  }
+}
+function pruneStaleMemory(dbPath, cutoffDays, dryRun) {
+  if (!existsSync(dbPath)) return { staleNodes: 0, staleSessions: 0, removedNodes: 0, removedSessions: 0 };
+  const db = new Database(dbPath);
+  try {
+    const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1e3).toISOString();
+    const staleNodes = db.prepare(`
+          SELECT id FROM memory_nodes
+          WHERE level = 2
+            AND last_synced_at IS NULL
+            AND updated_at < ?
+        `).all(cutoff);
+    const staleSessions = db.prepare(`
+          SELECT s.id FROM sessions s
+          LEFT JOIN memory_node_sources mns ON mns.session_id = s.id
+          WHERE mns.session_id IS NULL
+            AND s.timestamp < ?
+        `).all(cutoff);
+    if (!dryRun) {
+      db.transaction(() => {
+        const delSources = db.prepare("DELETE FROM memory_node_sources WHERE node_id = ?");
+        const delNode = db.prepare("DELETE FROM memory_nodes WHERE id = ?");
+        for (const node of staleNodes) {
+          delSources.run(node.id);
+          delNode.run(node.id);
+        }
+        const delEvents = db.prepare("DELETE FROM events WHERE session_id = ?");
+        const delSession = db.prepare("DELETE FROM sessions WHERE id = ?");
+        for (const session of staleSessions) {
+          delEvents.run(session.id);
+          delSession.run(session.id);
+        }
+      })();
+    }
+    return {
+      staleNodes: staleNodes.length,
+      staleSessions: staleSessions.length,
+      removedNodes: dryRun ? 0 : staleNodes.length,
+      removedSessions: dryRun ? 0 : staleSessions.length
+    };
+  } finally {
+    db.close();
+  }
+}
 async function runPrune(paths, options) {
   const dryRun = Boolean(options.dryRun);
   const all = Boolean(options.all);
   const exportsDays = parseDaysOption(options.exportsDays, "--exports-days") ?? (all ? 30 : void 0);
   const checkpointsDays = parseDaysOption(options.checkpointsDays, "--checkpoints-days") ?? (all ? 30 : void 0);
   const dedupeSkills = Boolean(options.dedupeSkills) || all;
-  if (exportsDays === void 0 && checkpointsDays === void 0 && !dedupeSkills) {
-    throw new Error("No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills");
+  const consolidateDays = parseDaysOption(options.consolidateDays, "--consolidate-days") ?? (all ? 90 : void 0);
+  const staleDays = parseDaysOption(options.staleDays, "--stale-days") ?? (all ? 180 : void 0);
+  if (exportsDays === void 0 && checkpointsDays === void 0 && !dedupeSkills && consolidateDays === void 0 && staleDays === void 0) {
+    throw new Error("No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills, --consolidate-days, --stale-days");
   }
   const result = {};
   if (exportsDays !== void 0) {
@@ -4178,6 +4284,12 @@ async function runPrune(paths, options) {
   }
   if (dedupeSkills) {
     result.dedupe = pruneSkillsDuplicates(paths.dbPath, dryRun);
+  }
+  if (consolidateDays !== void 0) {
+    result.consolidate = pruneConsolidate(paths.dbPath, consolidateDays, dryRun);
+  }
+  if (staleDays !== void 0) {
+    result.stale = pruneStaleMemory(paths.dbPath, staleDays, dryRun);
   }
   return result;
 }
@@ -4282,14 +4394,22 @@ function tokenizeQuery(query) {
   const tokens = query.toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
   return Array.from(new Set(tokens));
 }
-function scoreNode(title, summary, tokens) {
+function computeDecayFactor(timestamp, halfLifeDays = DEFAULT_DECAY_HALF_LIFE_DAYS) {
+  const ageMs = Date.now() - parseCreatedAt(timestamp);
+  if (ageMs <= 0) return 1;
+  const ageDays = ageMs / (24 * 60 * 60 * 1e3);
+  return 1 / (1 + ageDays / halfLifeDays);
+}
+function scoreNode(title, summary, tokens, timestamp) {
   if (tokens.length === 0) return 0;
   const haystack = `${title} ${summary}`.toLowerCase();
   let score = 0;
   for (const token of tokens) {
     if (haystack.includes(token)) score += 1;
   }
-  return score / tokens.length;
+  const relevance = score / tokens.length;
+  if (!timestamp) return relevance;
+  return relevance * computeDecayFactor(timestamp);
 }
 function extractTopicFromSession(summary, decision, skill, timestamp) {
   const fallbackDate = safeDate(timestamp).toISOString().slice(0, 10);
@@ -4470,7 +4590,7 @@ function recallTree(dbPath, query, projectFilter, topK = 5) {
     const tokens = tokenizeQuery(query);
     const scored = nodes.map((node) => ({
       node,
-      score: scoreNode(node.title ?? "", node.summary ?? "", tokens)
+      score: scoreNode(node.title ?? "", node.summary ?? "", tokens, node.updated_at)
     })).filter((entry) => entry.score > 0).sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return parseCreatedAt(b.node.updated_at) - parseCreatedAt(a.node.updated_at);
@@ -4525,10 +4645,27 @@ function recallTree(dbPath, query, projectFilter, topK = 5) {
       const existing = deduped.get(hit.id);
       if (!existing || hit.score > existing.score) deduped.set(hit.id, hit);
     }
-    return Array.from(deduped.values()).sort((a, b) => {
+    const finalHits = Array.from(deduped.values()).sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
       return parseCreatedAt(b.timestamp) - parseCreatedAt(a.timestamp);
     }).slice(0, topK);
+    try {
+      const hitNodeIds = [...new Set(finalHits.map((h) => h.node_id).filter(Boolean))];
+      if (hitNodeIds.length > 0) {
+        const dbW = new Database(dbPath);
+        try {
+          const now = (/* @__PURE__ */ new Date()).toISOString();
+          const stmt = dbW.prepare("UPDATE memory_nodes SET last_synced_at = ? WHERE id = ?");
+          dbW.transaction(() => {
+            for (const id of hitNodeIds) stmt.run(now, id);
+          })();
+        } finally {
+          dbW.close();
+        }
+      }
+    } catch {
+    }
+    return finalHits;
   } finally {
     db.close();
   }
@@ -4571,11 +4708,17 @@ function recallKeyword(dbPath, query, projectFilter, topK = 5, afterDate) {
       ...skillRows.map((r) => ({ type: "skill", ...r })),
       ...sessionRows.map((r) => ({ type: "session", ...r }))
     ];
-    return all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, topK).map((r) => {
+    const tokens = tokenizeQuery(query);
+    return all.map((r) => {
       const parsed = maybeParseJson(r.content);
       const snippet = typeof parsed === "object" && parsed !== null ? JSON.stringify(parsed).slice(0, 200) : String(r.content).slice(0, 200);
-      return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet };
-    });
+      const relevance = scoreNode("", snippet, tokens, r.timestamp);
+      const score = Math.max(relevance, computeDecayFactor(r.timestamp) * 0.1);
+      return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score };
+    }).sort((a, b) => {
+      if (Math.abs(b.score - a.score) > 1e-3) return b.score - a.score;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    }).slice(0, topK);
   } finally {
     db.close();
   }
@@ -4610,11 +4753,13 @@ function querySessionSummary(dbPath, sessionId) {
     db.close();
   }
 }
+var DEFAULT_DECAY_HALF_LIFE_DAYS;
 var init_db = __esm({
   "src/core/db.ts"() {
     "use strict";
     init_paths();
     init_utils();
+    DEFAULT_DECAY_HALF_LIFE_DAYS = 90;
   }
 });
 
@@ -4745,7 +4890,7 @@ var init_memoria = __esm({
             project: r.project,
             snippet: r.snippet,
             // Score based on recency: most recent → score 1.0
-            score: Number.isFinite(r.score) ? Number(r.score) : raw.length === 1 ? 1 : 1 - i / (raw.length - 1),
+            score: Number.isFinite(r.score) ? Number(r.score) : 0,
             node_id: typeof r.node_id === "string" ? r.node_id : void 0,
             reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : void 0
           }));
@@ -19009,7 +19154,7 @@ async function runPreflight(memoriaHome) {
 async function run() {
   const paths = resolveMemoriaPaths();
   const core = new MemoriaCore(paths);
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.3.0");
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.4.0");
   program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
     await core.init();
     if (opts.json) {
@@ -19119,7 +19264,7 @@ async function run() {
     }
     if (!ok) process.exitCode = 1;
   });
-  program2.command("prune").description("Prune old runtime artifacts and optional duplicate skills").option("--exports-days <days>", "Remove export files older than N days").option("--checkpoints-days <days>", "Remove checkpoints older than N days").option("--dedupe-skills", "Delete duplicate skills by normalized skill name").option("--all", "Apply default pruning targets (30 days + dedupe skills)").option("--dry-run", "Preview prune actions without deleting").option("--json", "Machine-readable JSON output").action(async (options) => {
+  program2.command("prune").description("Prune old runtime artifacts and optional duplicate skills").option("--exports-days <days>", "Remove export files older than N days").option("--checkpoints-days <days>", "Remove checkpoints older than N days").option("--dedupe-skills", "Delete duplicate skills by normalized skill name").option("--consolidate-days <days>", "Consolidate old session nodes under same topic older than N days").option("--stale-days <days>", "Remove memory nodes and sessions never recalled and older than N days").option("--all", "Apply default pruning targets (30 days + dedupe + consolidate 90d + stale 180d)").option("--dry-run", "Preview prune actions without deleting").option("--json", "Machine-readable JSON output").action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     const result = await runPrune(paths, options);
     if (options.json) {
@@ -19137,6 +19282,14 @@ async function run() {
       if (result.dedupe) {
         const r = result.dedupe;
         console.log(`- dedupe-skills: groups=${r.duplicateGroups}, ${dryRun ? "would_remove" : "removed"}=${r.removed}`);
+      }
+      if (result.consolidate) {
+        const r = result.consolidate;
+        console.log(`- consolidate: groups=${r.groupsFound}, consolidated=${r.sessionsConsolidated}, nodes_removed=${r.nodesRemoved}`);
+      }
+      if (result.stale) {
+        const r = result.stale;
+        console.log(`- stale: nodes=${r.staleNodes}, sessions=${r.staleSessions}, removed_nodes=${r.removedNodes}, removed_sessions=${r.removedSessions}`);
       }
     }
   });

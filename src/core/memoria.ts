@@ -188,7 +188,7 @@ export class MemoriaCore {
                 project: r.project,
                 snippet: r.snippet,
                 // Score based on recency: most recent → score 1.0
-                score: Number.isFinite(r.score) ? Number(r.score) : (raw.length === 1 ? 1.0 : 1.0 - i / (raw.length - 1)),
+                score: Number.isFinite(r.score) ? Number(r.score) : 0,
                 node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
                 reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
             }))

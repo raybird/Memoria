@@ -10,8 +10,29 @@
 ./cli index build
 ./cli index build --project my-project --dry-run
 ./cli prune --all --dry-run
+./cli prune --consolidate-days 90 --dry-run
+./cli prune --stale-days 180 --dry-run
 ./cli export --type all --format json
 ```
+
+## Memory Quality & Pruning
+
+Memoria applies time-decay scoring to recall results: newer memories rank higher when token relevance is equal. The decay follows `1 / (1 + ageDays / 90)` — a 90-day-old memory scores at 50% of an equivalent new one, but never reaches zero.
+
+Prune strategies for long-running instances:
+
+```bash
+# Consolidate: merge old session nodes under same topic (keeps newest, removes rest)
+./cli prune --consolidate-days 90 --dry-run
+
+# Stale: remove memory_nodes never recalled and orphan sessions older than N days
+./cli prune --stale-days 180 --dry-run
+
+# All-in-one: exports 30d + checkpoints 30d + dedupe + consolidate 90d + stale 180d
+./cli prune --all --dry-run
+```
+
+Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `sessions` and `events` rows are preserved for audit trail and keyword recall. `--stale-days` removes both stale nodes and orphan sessions.
 
 ## Tree Index Notes
 

@@ -73,6 +73,8 @@ export type PruneOptions = {
     exportsDays?: string
     checkpointsDays?: string
     dedupeSkills?: boolean
+    consolidateDays?: string
+    staleDays?: string
     all?: boolean
     dryRun?: boolean
 }

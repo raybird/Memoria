@@ -103,7 +103,7 @@ src/core/
 
 **MemoriaCore API** (all return `MemoriaResult<T>`):
 - `remember(sessionData)` – import + sync daily/decisions/skills
-- `recall(filter)` – supports `keyword | tree | hybrid` retrieval
+- `recall(filter)` – supports `keyword | tree | hybrid` retrieval; results are ranked by relevance × time-decay (halfLife=90 days)
 - `summarizeSession(id)` – structured session + decisions + skills
 - `health()` – verify DB + dirs
 - `stats()` – session/event/skill counts
@@ -275,6 +275,7 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 
 - Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `prune`, `export`) without request.
 - Do not change persisted table names/columns without migration plan.
+- `prune --all` includes consolidate (90d) and stale (180d) by default. Use `--consolidate-days` or `--stale-days` for custom thresholds.
 - Do not alter sample file formats unless all readers are updated.
 
 ## Agent Workflow Recommendations
