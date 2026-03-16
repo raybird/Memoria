@@ -71,4 +71,14 @@ bash scripts/test-mcp-e2e.sh
 - Built-in semantic/vector retrieval engine inside Memoria core
 - First-party OpenCode plugin implementation
 
+## Architectural Non-Goals
+
+To preserve Memoria's local-first and explainable design, these are explicit non-goals for the core system today:
+
+- Embedding-first / rerank-heavy retrieval as a required dependency for baseline recall
+- Turning MCP/libSQL or any external vector store into the source-of-truth datastore
+- Deep coupling to a single agent runtime's internal plugin lifecycle
+- Large retrieval config surfaces that make the default install hard to understand or operate
+- Replacing auditable SQLite + markdown memory with opaque ranking-only infrastructure
+
 Those items are tracked in planning docs (`RFC.md`, legacy spec notes).

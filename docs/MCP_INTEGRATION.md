@@ -27,6 +27,16 @@ Practical defaults:
 - Add MCP/libSQL when retrieval complexity or collaboration scope grows.
 - Keep Memoria SQLite as source-of-truth in both modes.
 
+## What Memoria Intentionally Does Not Adopt
+
+Memoria learns from richer memory systems, but keeps a narrower core on purpose:
+
+- It does **not** require embedding pipelines or rerank APIs for baseline memory recall.
+- It does **not** treat MCP/libSQL as primary storage.
+- It does **not** optimize for maximum retrieval sophistication at the cost of simple local operation.
+
+This keeps the system lightweight, explainable, and deployable even without external memory infrastructure.
+
 ## What It Does
 
 Hybrid flow (`run-sync-with-enhancement.sh`) performs:
