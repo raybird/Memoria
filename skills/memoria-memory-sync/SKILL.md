@@ -163,7 +163,7 @@ Failure semantics:
 - In strict mode (`MEMORIA_MCP_STRICT=1`), enhancement failure returns non-zero exit.
 - In non-strict mode (`MEMORIA_MCP_STRICT=0`), enhancement failure is logged and workflow continues.
 
-## Integration Strategies (v1.4.0)
+## Integration Strategies (v1.5.0)
 
 Given incremental MCP payload mode (`MEMORIA_MCP_PAYLOAD_MODE=incremental`) and no-op behavior, use one of these patterns:
 

@@ -19516,7 +19516,7 @@ async function runPreflight(memoriaHome) {
 async function run() {
   const paths = resolveMemoriaPaths();
   const core = new MemoriaCore(paths);
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.4.0");
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.5.0");
   program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
     await core.init();
     if (opts.json) {

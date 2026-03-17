@@ -72,7 +72,7 @@ curl http://localhost:3917/v1/stats
 
 ## Memoria vs MCP/libSQL
 
-`mcp-memory-libsql` 在 v1.4.0 仍是 **optional enhancement**，不是必需依賴。
+`mcp-memory-libsql` 在 v1.5.0 仍是 **optional enhancement**，不是必需依賴。
 
 | 能力 | Memoria 單獨可用 | Memoria + MCP/libSQL |
 |------|------------------|------------------------|

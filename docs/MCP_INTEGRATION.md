@@ -7,7 +7,7 @@ Memoria uses a dual-layer model:
 
 ## Is MCP Required?
 
-No. In v1.4.0, MCP/libSQL is still optional.
+No. In v1.5.0, MCP/libSQL is still optional.
 
 - Without MCP/libSQL: Memoria core features remain fully available (sync, index, recall, stats, telemetry).
 - With MCP/libSQL: you gain external graph projection and cross-agent semantic enrichment.

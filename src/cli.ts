@@ -213,7 +213,7 @@ async function run(): Promise<void> {
   const program = new Command()
     .name('memoria')
     .description('Memoria TypeScript CLI')
-    .version('1.4.0')
+    .version('1.5.0')
 
   // ── init ──────────────────────────────────────────────────────────────────
 
