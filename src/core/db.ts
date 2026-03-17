@@ -36,6 +36,9 @@ import type {
     PruneOptions,
     StatsData,
     RecallTelemetryData,
+    GovernanceReviewData,
+    GovernanceReviewItem,
+    GovernanceReviewOptions,
     MemoryIndexBuildOptions,
     MemoryIndexBuildResult,
     RecallHit
@@ -551,6 +554,158 @@ export function queryRecallTelemetry(
                 latency_ms: Number(r.latency_ms ?? 0),
                 created_at: r.created_at
             }))
+        }
+    } finally {
+        db.close()
+    }
+}
+
+export function queryGovernanceReview(
+    dbPath: string,
+    options: GovernanceReviewOptions = {}
+): GovernanceReviewData {
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const projectFilter = options.project?.trim()
+        const scopeFilter = options.scope?.trim()
+        const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 20)))
+
+        const decisionRows = db.prepare(`
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
+          FROM events e JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'DecisionMade'
+            ${projectFilter ? 'AND s.project = ?' : ''}
+            ${scopeFilter ? 'AND s.scope = ?' : ''}
+          ORDER BY e.timestamp DESC
+        `).all(...[...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : [])]) as Array<{
+            id: string
+            session_id: string
+            timestamp: string
+            content: string
+            project: string
+            scope: string
+        }>
+
+        const skillRows = db.prepare(`
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
+          FROM events e JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'SkillLearned'
+            ${projectFilter ? 'AND s.project = ?' : ''}
+            ${scopeFilter ? 'AND s.scope = ?' : ''}
+          ORDER BY e.timestamp DESC
+        `).all(...[...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : [])]) as Array<{
+            id: string
+            session_id: string
+            timestamp: string
+            content: string
+            project: string
+            scope: string
+        }>
+
+        type CandidateAccum = {
+            kind: 'decision' | 'skill'
+            title: string
+            normalized_title: string
+            latest_session_id: string
+            latest_timestamp: string
+            sessionIds: Set<string>
+            highImpact: boolean
+        }
+
+        const byKey = new Map<string, CandidateAccum>()
+
+        for (const row of decisionRows) {
+            const parsed = maybeParseJson(row.content)
+            const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : {}
+            const title = String(obj.decision ?? '').trim()
+            if (!title) continue
+            const normalized = normalizeSkillKey(title)
+            const key = `decision:${normalized}`
+            const impact = String(obj.impact_level ?? 'medium').toLowerCase() === 'high'
+            const existing = byKey.get(key)
+            if (!existing) {
+                byKey.set(key, {
+                    kind: 'decision',
+                    title,
+                    normalized_title: normalized,
+                    latest_session_id: row.session_id,
+                    latest_timestamp: row.timestamp,
+                    sessionIds: new Set([row.session_id]),
+                    highImpact: impact
+                })
+                continue
+            }
+            existing.sessionIds.add(row.session_id)
+            existing.highImpact = existing.highImpact || impact
+            if (parseCreatedAt(row.timestamp) > parseCreatedAt(existing.latest_timestamp)) {
+                existing.latest_timestamp = row.timestamp
+                existing.latest_session_id = row.session_id
+                existing.title = title
+            }
+        }
+
+        for (const row of skillRows) {
+            const parsed = maybeParseJson(row.content)
+            const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : {}
+            const title = String(obj.skill_name ?? '').trim()
+            if (!title) continue
+            const normalized = normalizeSkillKey(title)
+            const key = `skill:${normalized}`
+            const existing = byKey.get(key)
+            if (!existing) {
+                byKey.set(key, {
+                    kind: 'skill',
+                    title,
+                    normalized_title: normalized,
+                    latest_session_id: row.session_id,
+                    latest_timestamp: row.timestamp,
+                    sessionIds: new Set([row.session_id]),
+                    highImpact: false
+                })
+                continue
+            }
+            existing.sessionIds.add(row.session_id)
+            if (parseCreatedAt(row.timestamp) > parseCreatedAt(existing.latest_timestamp)) {
+                existing.latest_timestamp = row.timestamp
+                existing.latest_session_id = row.session_id
+                existing.title = title
+            }
+        }
+
+        const items: GovernanceReviewItem[] = Array.from(byKey.values())
+            .map((entry) => {
+                const sourceCount = entry.sessionIds.size
+                const repeated = sourceCount >= 2
+                const rationale: GovernanceReviewItem['rationale'] | null = repeated
+                    ? 'repeated'
+                    : entry.kind === 'decision' && entry.highImpact
+                        ? 'high-impact'
+                        : null
+                if (!rationale) return null
+                const score = sourceCount * 10 + (entry.highImpact ? 5 : 0)
+                return {
+                    id: `${entry.kind}:${entry.normalized_title}`,
+                    kind: entry.kind,
+                    title: entry.title,
+                    normalized_title: entry.normalized_title,
+                    source_count: sourceCount,
+                    latest_session_id: entry.latest_session_id,
+                    latest_timestamp: entry.latest_timestamp,
+                    rationale,
+                    score
+                }
+            })
+            .filter((item): item is GovernanceReviewItem => item !== null)
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score
+                return parseCreatedAt(b.latest_timestamp) - parseCreatedAt(a.latest_timestamp)
+            })
+            .slice(0, limit)
+
+        return {
+            total: items.length,
+            items
         }
     } finally {
         db.close()

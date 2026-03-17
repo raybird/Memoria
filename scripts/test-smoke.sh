@@ -77,6 +77,70 @@ cat > "$SCOPE_FILE" <<'JSON'
 JSON
 MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" sync "$SCOPE_FILE" >/dev/null
 
+echo "[smoke] governance review"
+GOV1_FILE="$TMP_MEMORIA_HOME/governance-1.json"
+GOV2_FILE="$TMP_MEMORIA_HOME/governance-2.json"
+cat > "$GOV1_FILE" <<'JSON'
+{
+  "id": "session_govern_001",
+  "timestamp": "2026-03-16T12:00:00Z",
+  "project": "Memoria",
+  "summary": "Governance candidate one",
+  "events": [
+    {
+      "timestamp": "2026-03-16T12:00:05Z",
+      "type": "DecisionMade",
+      "content": {
+        "decision": "Prefer deterministic governance review",
+        "impact_level": "high"
+      },
+      "metadata": {}
+    },
+    {
+      "timestamp": "2026-03-16T12:00:10Z",
+      "type": "SkillLearned",
+      "content": {
+        "skill_name": "Governance Review",
+        "category": "process"
+      },
+      "metadata": {}
+    }
+  ]
+}
+JSON
+cat > "$GOV2_FILE" <<'JSON'
+{
+  "id": "session_govern_002",
+  "timestamp": "2026-03-16T13:00:00Z",
+  "project": "Memoria",
+  "summary": "Governance candidate two",
+  "events": [
+    {
+      "timestamp": "2026-03-16T13:00:05Z",
+      "type": "DecisionMade",
+      "content": {
+        "decision": "Prefer deterministic governance review",
+        "impact_level": "medium"
+      },
+      "metadata": {}
+    },
+    {
+      "timestamp": "2026-03-16T13:00:10Z",
+      "type": "SkillLearned",
+      "content": {
+        "skill_name": "Governance Review",
+        "category": "process"
+      },
+      "metadata": {}
+    }
+  ]
+}
+JSON
+MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" sync "$GOV1_FILE" >/dev/null
+MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" sync "$GOV2_FILE" >/dev/null
+GOVERN_JSON=$(MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" govern review --json)
+node -e "const data=JSON.parse(process.argv[1]); const items=data?.data?.items ?? []; if(items.length < 2) throw new Error('expected governance candidates'); if(!items.some((x)=>x.kind==='decision' && x.normalized_title==='prefer_deterministic_governance_review')) throw new Error('missing decision candidate'); if(!items.some((x)=>x.kind==='skill' && x.normalized_title==='governance_review')) throw new Error('missing skill candidate');" "$GOVERN_JSON"
+
 echo "[smoke] verify"
 MEMORIA_HOME="$TMP_MEMORIA_HOME" "$ROOT_DIR/cli" verify
 

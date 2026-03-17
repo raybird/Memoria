@@ -27,9 +27,9 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 - Native semantic search in core: `idea`
 - OpenCode plugin in-repo: `idea`
 - Expanded verify checks and schema migration helpers: `planned`
-- Adaptive retrieval gate: `planned`
-- Lightweight multi-scope isolation: `planned`
-- Memory-quality guardrails: `planned`
+- Adaptive retrieval gate: `done`
+- Lightweight multi-scope isolation: `done`
+- Memory-quality guardrails: `done`
 - Governance / skill-extraction layer: `idea`
 
 ## Design Inputs Worth Absorbing
@@ -119,6 +119,68 @@ Why later:
 
 - Higher product/design ambiguity
 - Better as an optional layer after retrieval hygiene is solid
+
+## Governance Extraction MVP
+
+The smallest useful version should stay deterministic at selection time and optional at execution time.
+
+### Proposed Commands
+
+- `memoria govern review`
+  - scans existing `DecisionMade` + `SkillLearned` material
+  - groups repeated/high-signal items
+  - outputs a ranked review queue without mutating stored memory
+- `memoria govern extract-skill --id <item>`
+  - promotes one reviewed governance candidate into a durable skill/rule artifact
+  - writes markdown under a dedicated governed path (for example `knowledge/Governance/` or `knowledge/Skills/` with provenance)
+
+### Candidate Selection Rules
+
+First implementation should avoid LLM dependence and rely on simple heuristics:
+
+- repeated normalized decision titles across sessions
+- repeated normalized skill names across sessions
+- high-impact decisions (`impact_level=high`) with multiple related sessions
+- frequently recalled items as optional secondary signal later
+
+### Minimal Data Model
+
+Prefer no new table in the first iteration if possible.
+
+- `govern review` can derive candidates directly from:
+  - `events`
+  - `sessions`
+  - `skills`
+- If persistence becomes useful, add a small optional table later:
+  - `governance_candidates(id, kind, title, source_count, first_seen_at, last_seen_at, status)`
+
+### Output Shape
+
+Review output should include:
+
+- candidate id
+- kind (`decision` | `skill`)
+- normalized title
+- source session count
+- latest session id
+- rationale for surfacing (`repeated`, `high-impact`, `high-signal`)
+
+### Non-Goals for Governance MVP
+
+- no automatic rule injection into recall prompts
+- no mandatory background worker
+- no LLM extraction as a baseline requirement
+- no replacement of current `DecisionMade` / `SkillLearned` flow
+
+## Next Concrete Slice
+
+Recommended next implementation step:
+
+1. Add `memoria govern review --json`
+2. Surface repeated decisions / skills with deterministic scoring
+3. Defer `extract-skill` write path until review output stabilizes
+
+This keeps the first governance release small, inspectable, and easy to test.
 
 ## Recommended Execution Order
 

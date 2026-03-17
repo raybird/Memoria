@@ -4126,6 +4126,115 @@ function queryRecallTelemetry(dbPath, options) {
     db.close();
   }
 }
+function queryGovernanceReview(dbPath, options = {}) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const projectFilter = options.project?.trim();
+    const scopeFilter = options.scope?.trim();
+    const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 20)));
+    const decisionRows = db.prepare(`
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
+          FROM events e JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'DecisionMade'
+            ${projectFilter ? "AND s.project = ?" : ""}
+            ${scopeFilter ? "AND s.scope = ?" : ""}
+          ORDER BY e.timestamp DESC
+        `).all(...[...projectFilter ? [projectFilter] : [], ...scopeFilter ? [scopeFilter] : []]);
+    const skillRows = db.prepare(`
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
+          FROM events e JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'SkillLearned'
+            ${projectFilter ? "AND s.project = ?" : ""}
+            ${scopeFilter ? "AND s.scope = ?" : ""}
+          ORDER BY e.timestamp DESC
+        `).all(...[...projectFilter ? [projectFilter] : [], ...scopeFilter ? [scopeFilter] : []]);
+    const byKey = /* @__PURE__ */ new Map();
+    for (const row of decisionRows) {
+      const parsed = maybeParseJson(row.content);
+      const obj = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      const title = String(obj.decision ?? "").trim();
+      if (!title) continue;
+      const normalized = normalizeSkillKey(title);
+      const key = `decision:${normalized}`;
+      const impact = String(obj.impact_level ?? "medium").toLowerCase() === "high";
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, {
+          kind: "decision",
+          title,
+          normalized_title: normalized,
+          latest_session_id: row.session_id,
+          latest_timestamp: row.timestamp,
+          sessionIds: /* @__PURE__ */ new Set([row.session_id]),
+          highImpact: impact
+        });
+        continue;
+      }
+      existing.sessionIds.add(row.session_id);
+      existing.highImpact = existing.highImpact || impact;
+      if (parseCreatedAt(row.timestamp) > parseCreatedAt(existing.latest_timestamp)) {
+        existing.latest_timestamp = row.timestamp;
+        existing.latest_session_id = row.session_id;
+        existing.title = title;
+      }
+    }
+    for (const row of skillRows) {
+      const parsed = maybeParseJson(row.content);
+      const obj = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      const title = String(obj.skill_name ?? "").trim();
+      if (!title) continue;
+      const normalized = normalizeSkillKey(title);
+      const key = `skill:${normalized}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, {
+          kind: "skill",
+          title,
+          normalized_title: normalized,
+          latest_session_id: row.session_id,
+          latest_timestamp: row.timestamp,
+          sessionIds: /* @__PURE__ */ new Set([row.session_id]),
+          highImpact: false
+        });
+        continue;
+      }
+      existing.sessionIds.add(row.session_id);
+      if (parseCreatedAt(row.timestamp) > parseCreatedAt(existing.latest_timestamp)) {
+        existing.latest_timestamp = row.timestamp;
+        existing.latest_session_id = row.session_id;
+        existing.title = title;
+      }
+    }
+    const items = Array.from(byKey.values()).map((entry) => {
+      const sourceCount = entry.sessionIds.size;
+      const repeated = sourceCount >= 2;
+      const rationale = repeated ? "repeated" : entry.kind === "decision" && entry.highImpact ? "high-impact" : null;
+      if (!rationale) return null;
+      const score = sourceCount * 10 + (entry.highImpact ? 5 : 0);
+      return {
+        id: `${entry.kind}:${entry.normalized_title}`,
+        kind: entry.kind,
+        title: entry.title,
+        normalized_title: entry.normalized_title,
+        source_count: sourceCount,
+        latest_session_id: entry.latest_session_id,
+        latest_timestamp: entry.latest_timestamp,
+        rationale,
+        score
+      };
+    }).filter((item) => item !== null).sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return parseCreatedAt(b.latest_timestamp) - parseCreatedAt(a.latest_timestamp);
+    }).slice(0, limit);
+    return {
+      total: items.length,
+      items
+    };
+  } finally {
+    db.close();
+  }
+}
 async function canWrite(targetPath) {
   try {
     const { constants: fsConstants, access } = await import("node:fs/promises");
@@ -5287,6 +5396,49 @@ var init_memoria = __esm({
               source: "sqlite",
               evidence: [],
               confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      async governanceReview(options) {
+        const start = Date.now();
+        try {
+          if (!existsSync(this.paths.dbPath)) {
+            return {
+              ok: false,
+              error: "Database not found. Run init first.",
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 0,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
+          initDatabase(this.paths.dbPath);
+          const data = queryGovernanceReview(this.paths.dbPath, options);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "sqlite",
+              evidence: data.items.map((item) => item.id),
+              confidence: data.items.length > 0 ? 1 : 0.8,
               timestamp: (/* @__PURE__ */ new Date()).toISOString(),
               latency_ms: Date.now() - start
             }
@@ -19434,6 +19586,28 @@ async function run() {
       console.log(`- sessions indexed: ${result.sessionsIndexed}`);
       console.log(`- nodes upserted: ${result.nodesUpserted}`);
       console.log(`- source links upserted: ${result.linksUpserted}`);
+    }
+  });
+  const governCommand = program2.command("govern").description("Review higher-signal governance candidates from memory");
+  governCommand.command("review").description("Review repeated decisions and skills worth extracting").option("--project <name>", "Filter candidates by project").option("--scope <name>", "Filter candidates by scope").option("--limit <n>", "Maximum number of candidates to return", "20").option("--json", "Machine-readable JSON output").action(async (options) => {
+    const limit = Number(options.limit ?? "20");
+    if (!Number.isFinite(limit) || limit <= 0) {
+      throw new Error(`Invalid --limit '${options.limit}'. Use a positive number`);
+    }
+    const result = await core.governanceReview({
+      project: options.project,
+      scope: options.scope,
+      limit
+    });
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log("\u{1F9ED} Governance Review");
+      console.log(`- candidates: ${result.data?.total ?? 0}`);
+      for (const item of result.data?.items ?? []) {
+        console.log(`- ${item.kind}: ${item.title} | sessions=${item.source_count} | rationale=${item.rationale} | latest=${item.latest_session_id}`);
+      }
     }
   });
   program2.command("doctor").description("Check local runtime and directory health").option("--json", "Machine-readable JSON output").action(async (opts) => {

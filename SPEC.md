@@ -11,6 +11,7 @@ This document is the source of truth for what Memoria currently implements.
   - `doctor`
   - `verify` (`--json`)
   - `index build`
+  - `govern review`
   - `prune`
   - `export`
 - SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`)
@@ -36,6 +37,9 @@ This document is the source of truth for what Memoria currently implements.
 - Adaptive retrieval gate:
   - skips trivial/greeting recall requests when no explicit recall mode or memory intent is present
   - telemetry records skipped requests with `route_mode=skipped`
+- Governance review:
+  - deterministic review queue for repeated decisions / skills
+  - exposed via `memoria govern review`
 - Time-decay recall scoring:
   - `scoreNode()` applies `1 / (1 + ageDays / halfLife)` decay (halfLife=90 days)
   - `recallKeyword()` computes per-result relevance scores (token match × decay)

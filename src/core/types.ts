@@ -199,3 +199,26 @@ export type RecallTelemetryData = {
     total: number
     rows: RecallTelemetryPoint[]
 }
+
+export type GovernanceReviewOptions = {
+    project?: string
+    scope?: string
+    limit?: number
+}
+
+export type GovernanceReviewItem = {
+    id: string
+    kind: 'decision' | 'skill'
+    title: string
+    normalized_title: string
+    source_count: number
+    latest_session_id: string
+    latest_timestamp: string
+    rationale: 'repeated' | 'high-impact'
+    score: number
+}
+
+export type GovernanceReviewData = {
+    total: number
+    items: GovernanceReviewItem[]
+}

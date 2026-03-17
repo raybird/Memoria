@@ -51,6 +51,11 @@ Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `s
 - If omitted, Memoria defaults to `project:<project>` when `project` exists, otherwise `global`.
 - Use `scope` in recall requests to isolate memory reads.
 
+## Governance Review
+
+- Use `./cli govern review --json` to inspect repeated decisions and skills worth promoting into durable rules/skills.
+- Current governance review is deterministic and read-only; it does not mutate memory state.
+
 ## Recall Quality Checks
 
 Start server and inspect tree/hybrid routing metadata:

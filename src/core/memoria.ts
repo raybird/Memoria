@@ -13,6 +13,7 @@ import {
     extractSkills,
     queryStats,
     queryRecallTelemetry,
+    queryGovernanceReview,
     logRecallTelemetry,
     runVerify,
     buildMemoryIndex,
@@ -29,7 +30,9 @@ import type {
     SessionSummary,
     HealthStatus,
     StatsData,
-    RecallTelemetryData
+    RecallTelemetryData,
+    GovernanceReviewData,
+    GovernanceReviewOptions
 } from './types.js'
 
 export class MemoriaCore {
@@ -450,6 +453,51 @@ export class MemoriaCore {
                     source: 'sqlite',
                     evidence: [],
                     confidence: 1.0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'sqlite',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
+    }
+
+    async governanceReview(options?: GovernanceReviewOptions): Promise<MemoriaResult<GovernanceReviewData>> {
+        const start = Date.now()
+        try {
+            if (!existsSync(this.paths.dbPath)) {
+                return {
+                    ok: false,
+                    error: 'Database not found. Run init first.',
+                    meta: {
+                        source: 'sqlite',
+                        evidence: [],
+                        confidence: 0,
+                        timestamp: new Date().toISOString(),
+                        latency_ms: Date.now() - start
+                    }
+                }
+            }
+            initDatabase(this.paths.dbPath)
+
+            const data = queryGovernanceReview(this.paths.dbPath, options)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'sqlite',
+                    evidence: data.items.map((item) => item.id),
+                    confidence: data.items.length > 0 ? 1.0 : 0.8,
                     timestamp: new Date().toISOString(),
                     latency_ms: Date.now() - start
                 }

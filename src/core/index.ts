@@ -11,6 +11,7 @@ export {
     extractSkills,
     queryStats,
     queryRecallTelemetry,
+    queryGovernanceReview,
     logRecallTelemetry,
     runVerify,
     runPrune,
@@ -36,5 +37,6 @@ export type {
     PruneOptions, MemoriaResult, RecallFilter, RecallHit,
     SessionSummary, HealthStatus, StatsData,
     RecallTelemetryPoint, RecallTelemetryData,
+    GovernanceReviewOptions, GovernanceReviewItem, GovernanceReviewData,
     MemoryIndexBuildOptions, MemoryIndexBuildResult
 } from './types.js'
