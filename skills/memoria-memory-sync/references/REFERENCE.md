@@ -31,8 +31,16 @@ This reference supports `SKILL.md` for deeper implementation details.
   - `MEMORIA_HOME=$(pwd) ./cli verify --json`
 - Build incremental tree index:
   - `MEMORIA_HOME=$(pwd) ./cli index build`
+- Review governance candidates:
+  - `MEMORIA_HOME=$(pwd) ./cli govern review --json`
 - Query recall routing telemetry API:
   - `curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"`
+
+Recall/runtime notes:
+
+- `recall` supports `mode=keyword|tree|hybrid`
+- trivial recall queries may return `meta.route_mode=skipped`
+- imported sessions can include optional `scope` (for example `agent:main`, `user:alice`, `project:Memoria`)
 
 Skill validation (if available):
 
@@ -72,6 +80,11 @@ Current database tables:
 - `recall_telemetry`
 
 Current write semantics use `INSERT OR REPLACE`. Preserve unless requested.
+
+Current import guardrails:
+
+- exact duplicate events within the same session are suppressed before persistence
+- trivial summaries are replaced with the first higher-signal event text when available
 
 ## Output Contracts
 
@@ -124,6 +137,10 @@ Practical split of responsibility:
 Golden rule:
 
 - Persist first, enrich second
+
+Additional local-first rule:
+
+- Memoria SQLite remains the source-of-truth even when MCP/libSQL enhancement is enabled
 
 This avoids data loss risk while still enabling advanced retrieval.
 

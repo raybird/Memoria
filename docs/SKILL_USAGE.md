@@ -25,7 +25,10 @@ MEMORIA_HOME=$(pwd) ./cli init
 MEMORIA_HOME=$(pwd) ./cli sync examples/session.sample.json
 MEMORIA_HOME=$(pwd) ./cli verify
 MEMORIA_HOME=$(pwd) ./cli index build
+MEMORIA_HOME=$(pwd) ./cli govern review --json
 ```
+
+Session JSON can optionally include `scope` (for example `agent:main`, `user:alice`, `project:Memoria`).
 
 ## Hybrid MCP Workflow
 
@@ -39,6 +42,13 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 - Tight coupling: run the hybrid script in your agent's after-response hook (near real-time).
 - Async batch: run the same script on a scheduler for high-throughput environments.
 - Prefer tight coupling first; switch to batch when latency isolation or scale requires it.
+
+## Runtime Notes
+
+- Recall supports `mode=keyword|tree|hybrid`.
+- Trivial recall queries may return `meta.route_mode=skipped` due to adaptive retrieval.
+- Use `scope` on write/read when you need agent- or user-level isolation.
+- Use `./cli govern review --json` to inspect repeated decisions/skills worth promoting.
 
 Optional e2e checks:
 

@@ -103,11 +103,12 @@ src/core/
 
 **MemoriaCore API** (all return `MemoriaResult<T>`):
 - `remember(sessionData)` – import + sync daily/decisions/skills
-- `recall(filter)` – supports `keyword | tree | hybrid` retrieval; results are ranked by relevance × time-decay (halfLife=90 days)
+- `recall(filter)` – supports `keyword | tree | hybrid` retrieval plus adaptive skip for trivial queries; results are ranked by relevance × time-decay (halfLife=90 days)
 - `summarizeSession(id)` – structured session + decisions + skills
 - `health()` – verify DB + dirs
 - `stats()` – session/event/skill counts
 - `recallTelemetry({ window, limit })` – raw recall routing telemetry rows
+- `governanceReview({ project, scope, limit })` – deterministic governance candidate review
 
 ## HTTP API (Phase 1)
 
@@ -180,18 +181,26 @@ curl -sS -X POST http://localhost:3917/v1/remember \
   -d @examples/session.sample.json
 ```
 
+Optional: add `scope` to session JSON (for example `agent:main`, `user:alice`, `project:Memoria`).
+
 4. Recall memory (`mode` supports `keyword|tree|hybrid`):
 
 ```bash
 curl -sS -X POST http://localhost:3917/v1/recall \
   -H 'Content-Type: application/json' \
-  -d '{"query":"TS migration","top_k":5,"mode":"hybrid"}'
+  -d '{"query":"TS migration","top_k":5,"mode":"hybrid","scope":"project:Memoria"}'
 ```
 
 5. Observe routing quality:
 
 ```bash
 curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
+```
+
+6. Review governance candidates:
+
+```bash
+MEMORIA_HOME=$(pwd) ./cli govern review --json
 ```
 
 Optional enhancement (not required):
@@ -258,6 +267,7 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 - Preserve current upsert semantics (`INSERT OR REPLACE`).
 - Serialize structured fields with `JSON.stringify` before persistence.
 - Be careful with timestamp parsing; use safe date fallback pattern.
+- Preserve backward-compatible schema upgrades (`initDatabase()` currently patches older DBs).
 
 ## File and Markdown Output Rules
 
@@ -273,7 +283,7 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 
 ## What Not to Change Implicitly
 
-- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `prune`, `export`) without request.
+- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `govern`, `prune`, `export`) without request.
 - Do not change persisted table names/columns without migration plan.
 - `prune --all` includes consolidate (90d) and stale (180d) by default. Use `--consolidate-days` or `--stale-days` for custom thresholds.
 - Do not alter sample file formats unless all readers are updated.
