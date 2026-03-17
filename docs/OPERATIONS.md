@@ -40,6 +40,17 @@ Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `s
 - Disable auto-build by setting `MEMORIA_INDEX_AUTOBUILD=0`.
 - Manual incremental rebuild remains available via `./cli index build`.
 
+## Import Guardrails
+
+- Memoria suppresses exact duplicate events within the same imported session.
+- If a session summary is trivial (for example greetings or very short acknowledgements), Memoria derives a better summary from the first higher-signal event when possible.
+
+## Scope Filtering
+
+- You can attach `scope` to imported session JSON (for example `agent:main`, `user:alice`, `project:Memoria`, `global`).
+- If omitted, Memoria defaults to `project:<project>` when `project` exists, otherwise `global`.
+- Use `scope` in recall requests to isolate memory reads.
+
 ## Recall Quality Checks
 
 Start server and inspect tree/hybrid routing metadata:
@@ -57,6 +68,8 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 ```
 
 Look at `meta.route_mode`, `meta.fallback_used`, and `meta.reasoning_path`.
+
+- `route_mode=skipped` means adaptive retrieval intentionally bypassed memory lookup for a trivial query.
 
 You can also inspect aggregated telemetry in stats:
 

@@ -16,6 +16,7 @@ export type SessionData = {
     id?: string
     timestamp?: string
     project?: string
+    scope?: string
     summary?: string
     events?: SessionEvent[]
 }
@@ -64,6 +65,7 @@ export type ExportOptions = {
     from?: string
     to?: string
     project?: string
+    scope?: string
     type?: ExportType
     format?: ExportFormat
     out?: string
@@ -101,6 +103,7 @@ export type MemoriaResult<T> = {
 export type RecallFilter = {
     query: string
     project?: string
+    scope?: string
     top_k?: number         // default 5
     time_window?: string   // ISO duration, e.g. 'P7D'
     mode?: 'keyword' | 'tree' | 'hybrid'
@@ -120,6 +123,7 @@ export type RecallHit = {
 
 export type MemoryIndexBuildOptions = {
     project?: string
+    scope?: string
     since?: string
     dryRun?: boolean
     sessionId?: string
@@ -136,6 +140,7 @@ export type SessionSummary = {
     sessionId: string
     timestamp: string
     project: string
+    scope: string
     eventCount: number
     summary: string
     decisions: Array<{ id: string; decision: string; impact_level: string }>
@@ -167,6 +172,7 @@ export type StatsData = {
         window: string
         totalQueries: number
         routeCounts: {
+            skipped: number
             keyword: number
             tree: number
             hybrid_tree: number

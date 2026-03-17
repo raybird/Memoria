@@ -3544,6 +3544,7 @@ function resolveSessionId(sessionData) {
   const fingerprint = stableStringify({
     timestamp: sessionData.timestamp ?? "",
     project: sessionData.project ?? "default",
+    scope: deriveScope(sessionData),
     summary: sessionData.summary ?? "",
     events
   });
@@ -3561,6 +3562,12 @@ function resolveEventId(event, sessionId, index) {
     metadata: event.metadata ?? {}
   });
   return `evt_${shortHash(fingerprint)}`;
+}
+function deriveScope(sessionData) {
+  const explicit = sessionData.scope?.trim();
+  if (explicit) return explicit;
+  const project = sessionData.project?.trim();
+  return project ? `project:${project}` : "global";
 }
 function getEventType(event) {
   return event.type ?? event.event_type ?? "UnknownEvent";
@@ -3609,9 +3616,91 @@ function parseCreatedAt(raw) {
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? 0 : d.getTime();
 }
+function isLowValueMemoryText(raw) {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (!text) return true;
+  if (TRIVIAL_SUMMARY_SET.has(text)) return true;
+  if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i.test(text)) return true;
+  return text.length < 8;
+}
+function extractEventText(event) {
+  if (typeof event.content === "string") return event.content.trim();
+  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
+    const obj = event.content;
+    const preferredFields = ["decision", "skill_name", "text", "summary", "pattern"];
+    for (const key of preferredFields) {
+      const value = obj[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    for (const value of Object.values(obj)) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return "";
+}
+function sanitizeSessionDataForImport(sessionData) {
+  const originalEvents = sessionData.events ?? [];
+  const dedupedEvents = [];
+  const seenKeys = /* @__PURE__ */ new Set();
+  for (const event of originalEvents) {
+    const dedupeKey = stableStringify({
+      timestamp: event.timestamp ?? "",
+      event_type: event.type ?? event.event_type ?? "UnknownEvent",
+      content: event.content ?? "",
+      metadata: event.metadata ?? {}
+    });
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
+    dedupedEvents.push(event);
+  }
+  const summary = sessionData.summary?.trim() ?? "";
+  if (!isLowValueMemoryText(summary)) {
+    return { ...sessionData, summary, events: dedupedEvents };
+  }
+  const signalEvent = dedupedEvents.find((event) => {
+    const eventType = getEventType(event);
+    return eventType === "DecisionMade" || eventType === "SkillLearned" || eventType === "UserMessage";
+  });
+  const derivedSummary = extractEventText(signalEvent ?? dedupedEvents[0] ?? {});
+  return {
+    ...sessionData,
+    summary: derivedSummary || summary,
+    events: dedupedEvents
+  };
+}
+var TRIVIAL_SUMMARY_SET;
 var init_utils = __esm({
   "src/core/utils.ts"() {
     "use strict";
+    TRIVIAL_SUMMARY_SET = /* @__PURE__ */ new Set([
+      "",
+      "ok",
+      "okay",
+      "thanks",
+      "thank you",
+      "got it",
+      "sounds good",
+      "cool",
+      "yes",
+      "no",
+      "hi",
+      "hello",
+      "hey",
+      "yo",
+      "sure",
+      "nice",
+      "great",
+      "\u{1F44D}",
+      "\u{1F44C}",
+      "\u6536\u5230",
+      "\u597D",
+      "\u597D\u7684",
+      "\u8B1D\u8B1D",
+      "\u8C22\u8C22",
+      "\u4F60\u597D",
+      "\u54C8\u56C9",
+      "\u55E8"
+    ]);
   }
 });
 
@@ -3627,6 +3716,7 @@ function initDatabase(dbPath) {
         id TEXT PRIMARY KEY,
         timestamp DATETIME,
         project TEXT,
+        scope TEXT,
         event_count INTEGER,
         summary TEXT
       );
@@ -3655,6 +3745,7 @@ function initDatabase(dbPath) {
         id TEXT PRIMARY KEY,
         parent_id TEXT,
         project TEXT,
+        scope TEXT,
         title TEXT,
         summary TEXT,
         level INTEGER,
@@ -3722,6 +3813,18 @@ function initDatabase(dbPath) {
       CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route
       ON recall_telemetry(route_mode, created_at);
     `);
+    const sessionColumns = new Set(db.prepare("PRAGMA table_info(sessions)").all().map((r) => r.name));
+    if (!sessionColumns.has("scope")) {
+      db.exec(`ALTER TABLE sessions ADD COLUMN scope TEXT`);
+      db.exec(`UPDATE sessions SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`);
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_scope_timestamp ON sessions(scope, timestamp)`);
+    const memoryNodeColumns = new Set(db.prepare("PRAGMA table_info(memory_nodes)").all().map((r) => r.name));
+    if (!memoryNodeColumns.has("scope")) {
+      db.exec(`ALTER TABLE memory_nodes ADD COLUMN scope TEXT`);
+      db.exec(`UPDATE memory_nodes SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`);
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_level ON memory_nodes(scope, level)`);
   } finally {
     db.close();
   }
@@ -3729,20 +3832,23 @@ function initDatabase(dbPath) {
 function importSession(dbPath, sessionData) {
   const db = new Database(dbPath);
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const sessionId = resolveSessionId(sessionData);
-  const timestamp = safeDate(sessionData.timestamp).toISOString();
-  const events = sessionData.events ?? [];
+  const sanitized = sanitizeSessionDataForImport(sessionData);
+  const sessionId = resolveSessionId(sanitized);
+  const timestamp = safeDate(sanitized.timestamp).toISOString();
+  const scope = deriveScope(sanitized);
+  const events = sanitized.events ?? [];
   try {
     const upsertSession = db.prepare(`
-      INSERT OR REPLACE INTO sessions (id, timestamp, project, event_count, summary)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO sessions (id, timestamp, project, scope, event_count, summary)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
     upsertSession.run(
       sessionId,
       timestamp,
-      sessionData.project ?? "default",
+      sanitized.project ?? "default",
+      scope,
       events.length,
-      sessionData.summary ?? ""
+      sanitized.summary ?? ""
     );
     const upsertEvent = db.prepare(`
       INSERT OR REPLACE INTO events (id, session_id, timestamp, event_type, content, metadata)
@@ -3947,6 +4053,7 @@ function queryStats(dbPath) {
                   WHERE created_at >= ?
                 `).all(sinceIso) : [];
     const routeCounts = {
+      skipped: 0,
       keyword: 0,
       tree: 0,
       hybrid_tree: 0,
@@ -4056,6 +4163,7 @@ async function runVerify(paths) {
     add("db_exists", "fail", `sessions.db missing: ${paths.dbPath}`);
     return { ok: false, checks };
   }
+  initDatabase(paths.dbPath);
   let db = null;
   try {
     db = new Database(paths.dbPath, { readonly: true, fileMustExist: true });
@@ -4067,7 +4175,7 @@ async function runVerify(paths) {
       add(`table_${table}`, tableSet.has(table) ? "pass" : "fail", `table ${table}`);
     }
     const requiredColumns = {
-      sessions: ["id", "timestamp", "project", "event_count", "summary"],
+      sessions: ["id", "timestamp", "project", "scope", "event_count", "summary"],
       events: ["id", "session_id", "timestamp", "event_type", "content", "metadata"],
       skills: ["id", "name", "category", "created_date", "success_rate", "use_count", "filepath"]
     };
@@ -4297,25 +4405,27 @@ async function exportMemory(paths, options) {
   if (!existsSync(paths.dbPath)) {
     throw new Error(`sessions.db not found: ${paths.dbPath}. Run 'memoria init' first.`);
   }
+  initDatabase(paths.dbPath);
   const from = parseBoundaryDate(options.from, "--from");
   const to = parseBoundaryDate(options.to, "--to");
   const projectFilter = options.project?.trim();
+  const scopeFilter = options.scope?.trim();
   const type = options.type ?? "all";
   const format = options.format ?? "json";
   const outDir = options.out ? path2.resolve(options.out) : path2.join(paths.memoryDir, "exports");
   const db = new Database(paths.dbPath, { readonly: true });
   try {
     const decisionsRows = type === "all" || type === "decisions" ? db.prepare(`
-            SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+            SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
             FROM events e JOIN sessions s ON s.id = e.session_id
             WHERE e.event_type = 'DecisionMade'
           `).all() : [];
     const skillsRows = type === "all" || type === "skills" ? db.prepare(`
-            SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+            SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
             FROM events e JOIN sessions s ON s.id = e.session_id
             WHERE e.event_type = 'SkillLearned'
           `).all() : [];
-    const decisions = decisionsRows.filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
+    const decisions = decisionsRows.filter((r) => (!projectFilter || r.project === projectFilter) && (!scopeFilter || r.scope === scopeFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
       const content = maybeParseJson(r.content);
       const c = content && typeof content === "object" && !Array.isArray(content) ? content : {};
       return {
@@ -4328,7 +4438,7 @@ async function exportMemory(paths, options) {
         impact_level: String(c.impact_level ?? "medium")
       };
     });
-    const skills = skillsRows.filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
+    const skills = skillsRows.filter((r) => (!projectFilter || r.project === projectFilter) && (!scopeFilter || r.scope === scopeFilter) && inDateRange(r.timestamp, from, to)).map((r) => {
       const content = maybeParseJson(r.content);
       const c = content && typeof content === "object" && !Array.isArray(content) ? content : {};
       return {
@@ -4348,7 +4458,7 @@ async function exportMemory(paths, options) {
     const filePath = path2.join(outDir, `memoria-export_${type}${projectPart}_${stamp}.${ext}`);
     const payload = {
       generated_at: (/* @__PURE__ */ new Date()).toISOString(),
-      filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, type, format },
+      filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, scope: scopeFilter ?? null, type, format },
       counts: { decisions: decisions.length, skills: skills.length },
       decisions,
       skills
@@ -4366,6 +4476,7 @@ Generated: ${payload.generated_at}
 - from: ${payload.filters.from ?? "(none)"}
 - to: ${payload.filters.to ?? "(none)"}
 - project: ${payload.filters.project ?? "(none)"}
+- scope: ${payload.filters.scope ?? "(none)"}
 - type: ${type}
 
 ## Counts
@@ -4431,19 +4542,22 @@ function buildMemoryIndex(dbPath, options = {}) {
   if (!existsSync(dbPath)) {
     throw new Error(`sessions.db not found: ${dbPath}`);
   }
+  initDatabase(dbPath);
   const db = new Database(dbPath);
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const dryRun = Boolean(options.dryRun);
   const projectFilter = options.project?.trim();
+  const scopeFilter = options.scope?.trim();
   const since = parseBoundaryDate(options.since, "--since");
   const specificSessionId = options.sessionId?.trim();
   try {
     const sessions = db.prepare(`
-          SELECT id, timestamp, project, summary
+          SELECT id, timestamp, project, scope, summary
           FROM sessions
           WHERE 1 = 1
             ${specificSessionId ? "AND id = ?" : ""}
             ${projectFilter ? "AND project = ?" : ""}
+            ${scopeFilter ? "AND scope = ?" : ""}
             ${since ? "AND timestamp >= ?" : ""}
             AND id NOT IN (SELECT DISTINCT session_id FROM memory_node_sources)
           ORDER BY timestamp ASC
@@ -4451,6 +4565,7 @@ function buildMemoryIndex(dbPath, options = {}) {
       ...[
         ...specificSessionId ? [specificSessionId] : [],
         ...projectFilter ? [projectFilter] : [],
+        ...scopeFilter ? [scopeFilter] : [],
         ...since ? [since.toISOString()] : []
       ]
     );
@@ -4461,9 +4576,9 @@ function buildMemoryIndex(dbPath, options = {}) {
     let linksUpserted = 0;
     const upsertNode = db.prepare(`
           INSERT OR REPLACE INTO memory_nodes
-          (id, parent_id, project, title, summary, level, path_key, created_at, updated_at, last_synced_at)
+          (id, parent_id, project, scope, title, summary, level, path_key, created_at, updated_at, last_synced_at)
           VALUES (
-            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?,
             COALESCE((SELECT created_at FROM memory_nodes WHERE id = ?), ?),
             ?,
             COALESCE((SELECT last_synced_at FROM memory_nodes WHERE id = ?), NULL)
@@ -4483,14 +4598,17 @@ function buildMemoryIndex(dbPath, options = {}) {
     const tx = db.transaction(() => {
       for (const session of sessions) {
         const project = (session.project ?? "default").trim() || "default";
+        const scope = (session.scope ?? deriveScope(session)).trim() || deriveScope(session);
         const projectSlug = slugify2(project).toLowerCase();
-        const rootNodeId = `node:project:${projectSlug}`;
-        const rootPathKey = `${projectSlug}`;
+        const scopeSlug = slugify2(scope).toLowerCase();
+        const rootNodeId = `node:project:${scopeSlug}:${projectSlug}`;
+        const rootPathKey = `${scopeSlug}/${projectSlug}`;
         if (!dryRun) {
           upsertNode.run(
             rootNodeId,
             null,
             project,
+            scope,
             project,
             `Project memory directory for ${project}`,
             0,
@@ -4519,13 +4637,14 @@ function buildMemoryIndex(dbPath, options = {}) {
         }
         const topic = extractTopicFromSession(session.summary ?? "", decisionText, skillText, session.timestamp);
         const topicSlug = slugify2(topic.title).toLowerCase();
-        const topicNodeId = `node:topic:${projectSlug}:${shortHash(topicSlug, 20)}`;
+        const topicNodeId = `node:topic:${scopeSlug}:${projectSlug}:${shortHash(topicSlug, 20)}`;
         const topicPathKey = `${rootPathKey}/${topicSlug}`;
         if (!dryRun) {
           upsertNode.run(
             topicNodeId,
             rootNodeId,
             project,
+            scope,
             topic.title,
             topic.summary,
             1,
@@ -4546,6 +4665,7 @@ function buildMemoryIndex(dbPath, options = {}) {
             sessionNodeId,
             topicNodeId,
             project,
+            scope,
             sessionTitle,
             sessionSummary,
             2,
@@ -4573,16 +4693,17 @@ function buildMemoryIndex(dbPath, options = {}) {
     db.close();
   }
 }
-function recallTree(dbPath, query, projectFilter, topK = 5) {
+function recallTree(dbPath, query, projectFilter, scopeFilter, topK = 5) {
   if (!existsSync(dbPath)) return [];
   const db = new Database(dbPath, { readonly: true });
   try {
     const allNodes = db.prepare(`
-          SELECT id, parent_id, project, title, summary, level, updated_at
+          SELECT id, parent_id, project, scope, title, summary, level, updated_at
           FROM memory_nodes
           WHERE 1 = 1
           ${projectFilter ? "AND project = ?" : ""}
-        `).all(...[...projectFilter ? [projectFilter] : []]);
+          ${scopeFilter ? "AND scope = ?" : ""}
+        `).all(...[...projectFilter ? [projectFilter] : [], ...scopeFilter ? [scopeFilter] : []]);
     const nodes = allNodes.filter((node) => node.level >= 1);
     if (nodes.length === 0) return [];
     const nodeById = /* @__PURE__ */ new Map();
@@ -4670,7 +4791,7 @@ function recallTree(dbPath, query, projectFilter, topK = 5) {
     db.close();
   }
 }
-function recallKeyword(dbPath, query, projectFilter, topK = 5, afterDate) {
+function recallKeyword(dbPath, query, projectFilter, scopeFilter, topK = 5, afterDate) {
   const db = new Database(dbPath, { readonly: true });
   const q = `%${query.toLowerCase()}%`;
   try {
@@ -4680,29 +4801,32 @@ function recallKeyword(dbPath, query, projectFilter, topK = 5, afterDate) {
       WHERE e.event_type = 'DecisionMade'
         AND LOWER(e.content) LIKE ?
         ${projectFilter ? "AND s.project = ?" : ""}
+        ${scopeFilter ? "AND s.scope = ?" : ""}
         ${afterDate ? "AND e.timestamp >= ?" : ""}
       ORDER BY e.timestamp DESC
       LIMIT ?
-    `).all(...[q, ...projectFilter ? [projectFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
+    `).all(...[q, ...projectFilter ? [projectFilter] : [], ...scopeFilter ? [scopeFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
     const skillRows = db.prepare(`
       SELECT e.id, e.session_id, e.timestamp, e.content, s.project
       FROM events e JOIN sessions s ON s.id = e.session_id
       WHERE e.event_type = 'SkillLearned'
         AND LOWER(e.content) LIKE ?
         ${projectFilter ? "AND s.project = ?" : ""}
+        ${scopeFilter ? "AND s.scope = ?" : ""}
         ${afterDate ? "AND e.timestamp >= ?" : ""}
       ORDER BY e.timestamp DESC
       LIMIT ?
-    `).all(...[q, ...projectFilter ? [projectFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
+    `).all(...[q, ...projectFilter ? [projectFilter] : [], ...scopeFilter ? [scopeFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
     const sessionRows = db.prepare(`
       SELECT id, id AS session_id, timestamp, COALESCE(summary, '') AS content, project
       FROM sessions
       WHERE (LOWER(summary) LIKE ? OR LOWER(project) LIKE ?)
         ${projectFilter ? "AND project = ?" : ""}
+        ${scopeFilter ? "AND scope = ?" : ""}
         ${afterDate ? "AND timestamp >= ?" : ""}
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(...[q, q, ...projectFilter ? [projectFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
+    `).all(...[q, q, ...projectFilter ? [projectFilter] : [], ...scopeFilter ? [scopeFilter] : [], ...afterDate ? [afterDate.toISOString()] : [], topK]);
     const all = [
       ...decisionRows.map((r) => ({ type: "decision", ...r })),
       ...skillRows.map((r) => ({ type: "skill", ...r })),
@@ -4726,7 +4850,7 @@ function recallKeyword(dbPath, query, projectFilter, topK = 5, afterDate) {
 function querySessionSummary(dbPath, sessionId) {
   const db = new Database(dbPath, { readonly: true });
   try {
-    const session = db.prepare("SELECT id, timestamp, project, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
+    const session = db.prepare("SELECT id, timestamp, project, scope, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
     if (!session) return null;
     const decisionEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'DecisionMade'`).all(sessionId);
     const skillEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'SkillLearned'`).all(sessionId);
@@ -4766,7 +4890,44 @@ var init_db = __esm({
 // src/core/memoria.ts
 import fs2 from "node:fs/promises";
 import path3 from "node:path";
-var MemoriaCore;
+function isEmojiOnlyQuery(query) {
+  const stripped = query.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]/gu, "");
+  return stripped.length === 0 && query.trim().length > 0;
+}
+function shouldSkipAdaptiveRecall(filter) {
+  if (typeof filter.mode === "string") return false;
+  const query = filter.query.trim();
+  if (!query) return true;
+  const lower = query.toLowerCase();
+  if (EXPLICIT_RECALL_HINTS.some((hint) => lower.includes(hint))) return false;
+  if (isEmojiOnlyQuery(query)) return true;
+  const normalized = lower.replace(/\s+/g, " ").trim();
+  const trivialPhrases = /* @__PURE__ */ new Set([
+    "ok",
+    "okay",
+    "thanks",
+    "thank you",
+    "got it",
+    "sounds good",
+    "cool",
+    "yes",
+    "no",
+    "hi",
+    "hello",
+    "hey",
+    "yo",
+    "sure",
+    "nice",
+    "great",
+    "\u{1F44D}",
+    "\u{1F44C}"
+  ]);
+  if (trivialPhrases.has(normalized)) return true;
+  const greetingPattern = /^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i;
+  if (greetingPattern.test(query)) return true;
+  return normalized.length < 8;
+}
+var MemoriaCore, EXPLICIT_RECALL_HINTS;
 var init_memoria = __esm({
   "src/core/memoria.ts"() {
     "use strict";
@@ -4804,7 +4965,7 @@ var init_memoria = __esm({
           await extractSkills(this.paths.memoriaHome, this.paths.dbPath, sessionId);
           if (process.env.MEMORIA_INDEX_AUTOBUILD !== "0") {
             try {
-              buildMemoryIndex(this.paths.dbPath, { sessionId, project: data.project });
+              buildMemoryIndex(this.paths.dbPath, { sessionId, project: data.project, scope: data.scope });
             } catch {
             }
           }
@@ -4850,6 +5011,31 @@ var init_memoria = __esm({
               }
             };
           }
+          initDatabase(this.paths.dbPath);
+          if (shouldSkipAdaptiveRecall(filter)) {
+            try {
+              logRecallTelemetry(this.paths.dbPath, {
+                routeMode: "skipped",
+                fallbackUsed: false,
+                hitCount: 0,
+                latencyMs: Date.now() - start
+              });
+            } catch {
+            }
+            return {
+              ok: true,
+              data: [],
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 0,
+                route_mode: "skipped",
+                fallback_used: false,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
           const topK = filter.top_k ?? 5;
           const mode = filter.mode ?? "keyword";
           let afterDate;
@@ -4860,8 +5046,8 @@ var init_memoria = __esm({
               afterDate = new Date(Date.now() - days * 24 * 60 * 60 * 1e3);
             }
           }
-          const treeRaw = mode !== "keyword" ? recallTree(this.paths.dbPath, filter.query, filter.project, topK) : [];
-          const keywordRaw = mode === "tree" ? [] : recallKeyword(this.paths.dbPath, filter.query, filter.project, topK, afterDate);
+          const treeRaw = mode !== "keyword" ? recallTree(this.paths.dbPath, filter.query, filter.project, filter.scope, topK) : [];
+          const keywordRaw = mode === "tree" ? [] : recallKeyword(this.paths.dbPath, filter.query, filter.project, filter.scope, topK, afterDate);
           let routeMode = mode;
           let fallbackUsed = false;
           const raw = (() => {
@@ -4948,6 +5134,7 @@ var init_memoria = __esm({
               }
             };
           }
+          initDatabase(this.paths.dbPath);
           const raw = querySessionSummary(this.paths.dbPath, sessionId);
           if (!raw) {
             return {
@@ -4966,6 +5153,7 @@ var init_memoria = __esm({
             sessionId: raw.session.id,
             timestamp: raw.session.timestamp,
             project: raw.session.project,
+            scope: raw.session.scope,
             eventCount: raw.session.event_count,
             summary: raw.session.summary,
             decisions: raw.decisions,
@@ -5046,6 +5234,7 @@ var init_memoria = __esm({
               }
             };
           }
+          initDatabase(this.paths.dbPath);
           const data = queryStats(this.paths.dbPath);
           return {
             ok: true,
@@ -5089,6 +5278,7 @@ var init_memoria = __esm({
               }
             };
           }
+          initDatabase(this.paths.dbPath);
           const data = queryRecallTelemetry(this.paths.dbPath, options);
           return {
             ok: true,
@@ -5116,6 +5306,23 @@ var init_memoria = __esm({
         }
       }
     };
+    EXPLICIT_RECALL_HINTS = [
+      "remember",
+      "memory",
+      "previous",
+      "previously",
+      "last time",
+      "earlier",
+      "before",
+      "recall",
+      "what did we",
+      "\u6211\u5011\u4E4B\u524D",
+      "\u4E4B\u524D",
+      "\u4E0A\u6B21",
+      "\u9084\u8A18\u5F97",
+      "\u56DE\u61B6",
+      "\u8A18\u5F97"
+    ];
   }
 });
 
@@ -19046,6 +19253,7 @@ var sessionSchema = external_exports.object({
   id: external_exports.string().optional(),
   timestamp: external_exports.string().optional(),
   project: external_exports.string().optional(),
+  scope: external_exports.string().optional(),
   summary: external_exports.string().optional(),
   events: external_exports.array(sessionEventSchema).default([])
 }).passthrough();
@@ -19067,6 +19275,7 @@ async function readSession(sessionFile) {
     id: typeof data.id === "string" ? data.id : void 0,
     timestamp: typeof data.timestamp === "string" ? data.timestamp : void 0,
     project: typeof data.project === "string" ? data.project : void 0,
+    scope: typeof data.scope === "string" ? data.scope : void 0,
     summary: typeof data.summary === "string" ? data.summary : void 0,
     events: Array.isArray(data.events) ? data.events : []
   };
@@ -19093,6 +19302,7 @@ function previewSync(paths, sessionFile, sessionData) {
   console.log(`- session file: ${sessionFile}`);
   console.log(`- session id: ${sessionId}`);
   console.log(`- project: ${sessionData.project ?? "default"}`);
+  console.log(`- scope: ${sessionData.scope ?? (sessionData.project ? `project:${sessionData.project}` : "global")}`);
   console.log(`- events: ${events.length}`);
   console.log(`- database upsert: ${paths.dbPath}`);
   console.log(`- daily note append: ${dailyPath}`);
@@ -19207,14 +19417,14 @@ async function run() {
         const rr = s.recallRouting;
         console.log(`- recall routing (${rr.window}):`);
         console.log(`  - queries=${rr.totalQueries}, fallback_rate=${(rr.fallbackRate * 100).toFixed(1)}%`);
-        console.log(`  - route_counts: keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`);
+        console.log(`  - route_counts: skipped=${rr.routeCounts.skipped}, keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`);
         console.log(`  - latency_ms: avg=${rr.avgLatencyMs}, p95=${rr.p95LatencyMs}`);
         console.log(`  - avg_hit_count=${rr.avgHitCount}`);
       }
     }
   });
   const indexCommand = program2.command("index").description("Build and inspect lightweight tree memory index");
-  indexCommand.command("build").description("Build incremental tree index from unindexed sessions").option("--project <name>", "Scope build to one project").option("--since <isoDate>", "Only include sessions at/after this ISO date").option("--session-id <id>", "Build index for one specific session id").option("--dry-run", "Show what would be indexed without writing nodes").option("--json", "Machine-readable JSON output").action(async (options) => {
+  indexCommand.command("build").description("Build incremental tree index from unindexed sessions").option("--project <name>", "Scope build to one project").option("--scope <name>", "Scope build to one memory scope (e.g. global, agent:main)").option("--since <isoDate>", "Only include sessions at/after this ISO date").option("--session-id <id>", "Build index for one specific session id").option("--dry-run", "Show what would be indexed without writing nodes").option("--json", "Machine-readable JSON output").action(async (options) => {
     const result = buildMemoryIndex(paths.dbPath, options);
     if (options.json) {
       console.log(JSON.stringify({ ok: true, ...result }));
@@ -19293,7 +19503,7 @@ async function run() {
       }
     }
   });
-  program2.command("export").description("Export decisions/skills by time range and project").option("--from <isoDate>", "Include records at/after this ISO date").option("--to <isoDate>", "Include records at/before this ISO date").option("--project <name>", "Filter by project name").option("--type <type>", "Export type: all|decisions|skills", "all").option("--format <fmt>", "Output format: json|markdown", "json").option("--out <path>", "Output directory (default: .memory/exports)").option("--json", "Machine-readable summary output").action(async (options) => {
+  program2.command("export").description("Export decisions/skills by time range and project").option("--from <isoDate>", "Include records at/after this ISO date").option("--to <isoDate>", "Include records at/before this ISO date").option("--project <name>", "Filter by project name").option("--scope <name>", "Filter by memory scope").option("--type <type>", "Export type: all|decisions|skills", "all").option("--format <fmt>", "Output format: json|markdown", "json").option("--out <path>", "Output directory (default: .memory/exports)").option("--json", "Machine-readable summary output").action(async (options) => {
     const type = options.type ?? "all";
     const format = options.format ?? "json";
     if (!["all", "decisions", "skills"].includes(type)) {

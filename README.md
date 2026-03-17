@@ -61,6 +61,9 @@ curl http://localhost:3917/v1/stats
 | SQLite + Markdown 持久化 | ✅ Implemented |
 | MCP/libSQL 語意增強（optional） | ✅ Implemented |
 | Tree 目錄索引（無向量）與 hybrid recall | ✅ Implemented |
+| Adaptive retrieval gate（略過無需 recall 的 query） | ✅ Implemented |
+| Import guardrails（低價值 summary 修正 + duplicate event suppression） | ✅ Implemented |
+| Lightweight scope isolation（`global/project/agent/user` style） | ✅ Implemented |
 | 記憶品質衰減防止（時間衰減評分 + 合併 + 過期清理）| ✅ Implemented |
 | Recall 路由 telemetry（stats + API） | ✅ Implemented |
 | Policy 引擎（PII 過濾 / 讀寫策略） | 🔜 Planned |
@@ -68,7 +71,7 @@ curl http://localhost:3917/v1/stats
 
 ## Memoria vs MCP/libSQL
 
-`mcp-memory-libsql` 在 v1.3.0 仍是 **optional enhancement**，不是必需依賴。
+`mcp-memory-libsql` 在 v1.4.0 仍是 **optional enhancement**，不是必需依賴。
 
 | 能力 | Memoria 單獨可用 | Memoria + MCP/libSQL |
 |------|------------------|------------------------|
@@ -98,8 +101,8 @@ curl http://localhost:3917/v1/stats
 | `GET`  | `/v1/health` | 健康檢查 |
 | `GET`  | `/v1/stats` | 統計 |
 | `GET`  | `/v1/telemetry/recall` | Recall 路由遙測（query: `window`, `limit`） |
-| `POST` | `/v1/remember` | 寫入記憶 (body: SessionData) |
-| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, mode?}`) |
+| `POST` | `/v1/remember` | 寫入記憶 (body: SessionData; optional `scope`) |
+| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, scope?, mode?}`) |
 | `GET`  | `/v1/sessions/:id/summary` | 會話摘要 |
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
@@ -114,6 +117,7 @@ curl http://localhost:3917/v1/stats
 ./cli doctor [--json]                # 本地健康檢查
 ./cli verify [--json]                # 完整驗證
 ./cli index build [--json]           # 增量重建 tree index
+./cli index build --scope agent:main # 只重建指定 scope
 ./cli prune --all --dry-run          # 清理預覽（含 consolidate 90d + stale 180d）
 ./cli prune --consolidate-days 90    # 合併同 topic 下的舊 session nodes
 ./cli prune --stale-days 180         # 移除從未被 recall 命中的過期記憶
@@ -132,7 +136,7 @@ const client = new MemoriaClient()         // default http://localhost:3917
 await client.waitUntilReady()              // poll /v1/health 直到就緒
 
 const r = await client.remember(sessionData)
-const hits = await client.recall({ query: 'migration', top_k: 3 })
+const hits = await client.recall({ query: 'migration', top_k: 3, scope: 'project:Memoria' })
 const telemetry = await client.recallTelemetry({ window: 'P7D', limit: 50 })
 const summary = await client.summarizeSession('session_abc')
 ```

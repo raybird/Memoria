@@ -9,12 +9,14 @@ import {
     safeDate,
     slugify,
     shortHash,
+    deriveScope,
     resolveSessionId,
     resolveEventId,
     getEventType,
     getEventContentObject,
     maybeParseJson,
     normalizeSkillKey,
+    sanitizeSessionDataForImport,
     parseDaysOption,
     parseBoundaryDate,
     inDateRange,
@@ -49,6 +51,7 @@ export function initDatabase(dbPath: string): void {
         id TEXT PRIMARY KEY,
         timestamp DATETIME,
         project TEXT,
+        scope TEXT,
         event_count INTEGER,
         summary TEXT
       );
@@ -77,6 +80,7 @@ export function initDatabase(dbPath: string): void {
         id TEXT PRIMARY KEY,
         parent_id TEXT,
         project TEXT,
+        scope TEXT,
         title TEXT,
         summary TEXT,
         level INTEGER,
@@ -144,6 +148,20 @@ export function initDatabase(dbPath: string): void {
       CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route
       ON recall_telemetry(route_mode, created_at);
     `)
+
+        const sessionColumns = new Set((db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((r) => r.name))
+        if (!sessionColumns.has('scope')) {
+            db.exec(`ALTER TABLE sessions ADD COLUMN scope TEXT`)
+            db.exec(`UPDATE sessions SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
+        }
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_scope_timestamp ON sessions(scope, timestamp)`)
+
+        const memoryNodeColumns = new Set((db.prepare('PRAGMA table_info(memory_nodes)').all() as { name: string }[]).map((r) => r.name))
+        if (!memoryNodeColumns.has('scope')) {
+            db.exec(`ALTER TABLE memory_nodes ADD COLUMN scope TEXT`)
+            db.exec(`UPDATE memory_nodes SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
+        }
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_level ON memory_nodes(scope, level)`)
     } finally {
         db.close()
     }
@@ -154,22 +172,25 @@ export function initDatabase(dbPath: string): void {
 export function importSession(dbPath: string, sessionData: SessionData): string {
     const db = new Database(dbPath)
     const nowIso = new Date().toISOString()
-    const sessionId = resolveSessionId(sessionData)
-    const timestamp = safeDate(sessionData.timestamp).toISOString()
-    const events = sessionData.events ?? []
+    const sanitized = sanitizeSessionDataForImport(sessionData)
+    const sessionId = resolveSessionId(sanitized)
+    const timestamp = safeDate(sanitized.timestamp).toISOString()
+    const scope = deriveScope(sanitized)
+    const events = sanitized.events ?? []
 
     try {
         const upsertSession = db.prepare(`
-      INSERT OR REPLACE INTO sessions (id, timestamp, project, event_count, summary)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO sessions (id, timestamp, project, scope, event_count, summary)
+      VALUES (?, ?, ?, ?, ?, ?)
     `)
 
         upsertSession.run(
             sessionId,
             timestamp,
-            sessionData.project ?? 'default',
+            sanitized.project ?? 'default',
+            scope,
             events.length,
-            sessionData.summary ?? ''
+            sanitized.summary ?? ''
         )
 
         const upsertEvent = db.prepare(`
@@ -435,6 +456,7 @@ export function queryStats(dbPath: string): StatsData {
             : []
 
         const routeCounts = {
+            skipped: 0,
             keyword: 0,
             tree: 0,
             hybrid_tree: 0,
@@ -581,6 +603,8 @@ export async function runVerify(paths: MemoriaPaths): Promise<{ ok: boolean; che
         return { ok: false, checks }
     }
 
+    initDatabase(paths.dbPath)
+
     let db: Database.Database | null = null
     try {
         db = new Database(paths.dbPath, { readonly: true, fileMustExist: true })
@@ -595,7 +619,7 @@ export async function runVerify(paths: MemoriaPaths): Promise<{ ok: boolean; che
         }
 
         const requiredColumns: Record<string, string[]> = {
-            sessions: ['id', 'timestamp', 'project', 'event_count', 'summary'],
+            sessions: ['id', 'timestamp', 'project', 'scope', 'event_count', 'summary'],
             events: ['id', 'session_id', 'timestamp', 'event_type', 'content', 'metadata'],
             skills: ['id', 'name', 'category', 'created_date', 'success_rate', 'use_count', 'filepath']
         }
@@ -905,10 +929,12 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
     if (!existsSync(paths.dbPath)) {
         throw new Error(`sessions.db not found: ${paths.dbPath}. Run 'memoria init' first.`)
     }
+    initDatabase(paths.dbPath)
 
     const from = parseBoundaryDate(options.from, '--from')
     const to = parseBoundaryDate(options.to, '--to')
     const projectFilter = options.project?.trim()
+    const scopeFilter = options.scope?.trim()
     const type = (options.type ?? 'all') as ExportType
     const format = (options.format ?? 'json') as ExportFormat
     const outDir = options.out ? path.resolve(options.out) : path.join(paths.memoryDir, 'exports')
@@ -918,23 +944,23 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
         const decisionsRows =
             type === 'all' || type === 'decisions'
                 ? (db.prepare(`
-            SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+            SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
             FROM events e JOIN sessions s ON s.id = e.session_id
             WHERE e.event_type = 'DecisionMade'
-          `).all() as { id: string; session_id: string; timestamp: string; content: string; project: string }[])
+          `).all() as { id: string; session_id: string; timestamp: string; content: string; project: string; scope: string }[])
                 : []
 
         const skillsRows =
             type === 'all' || type === 'skills'
                 ? (db.prepare(`
-            SELECT e.id, e.session_id, e.timestamp, e.content, s.project
+            SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
             FROM events e JOIN sessions s ON s.id = e.session_id
             WHERE e.event_type = 'SkillLearned'
-          `).all() as { id: string; session_id: string; timestamp: string; content: string; project: string }[])
+          `).all() as { id: string; session_id: string; timestamp: string; content: string; project: string; scope: string }[])
                 : []
 
         const decisions: ExportDecision[] = decisionsRows
-            .filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to))
+            .filter((r) => (!projectFilter || r.project === projectFilter) && (!scopeFilter || (r as { scope?: string }).scope === scopeFilter) && inDateRange(r.timestamp, from, to))
             .map((r) => {
                 const content = maybeParseJson(r.content)
                 const c = content && typeof content === 'object' && !Array.isArray(content) ? (content as Json) : {}
@@ -946,7 +972,7 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
             })
 
         const skills: ExportSkill[] = skillsRows
-            .filter((r) => (!projectFilter || r.project === projectFilter) && inDateRange(r.timestamp, from, to))
+            .filter((r) => (!projectFilter || r.project === projectFilter) && (!scopeFilter || (r as { scope?: string }).scope === scopeFilter) && inDateRange(r.timestamp, from, to))
             .map((r) => {
                 const content = maybeParseJson(r.content)
                 const c = content && typeof content === 'object' && !Array.isArray(content) ? (content as Json) : {}
@@ -965,7 +991,7 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
 
         const payload = {
             generated_at: new Date().toISOString(),
-            filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, type, format },
+            filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, scope: scopeFilter ?? null, type, format },
             counts: { decisions: decisions.length, skills: skills.length },
             decisions, skills
         }
@@ -979,7 +1005,7 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
             const skillBlock = skills
                 .map((s) => `- [${s.timestamp}] (${s.project}) ${s.skill_name || '(untitled)'} | category=${s.category}`)
                 .join('\n')
-            const md = `# Memoria Export\n\nGenerated: ${payload.generated_at}\n\n## Filters\n- from: ${payload.filters.from ?? '(none)'}\n- to: ${payload.filters.to ?? '(none)'}\n- project: ${payload.filters.project ?? '(none)'}\n- type: ${type}\n\n## Counts\n- decisions: ${decisions.length}\n- skills: ${skills.length}\n\n## Decisions\n${decisionBlock || '- (none)'}\n\n## Skills\n${skillBlock || '- (none)'}\n`
+            const md = `# Memoria Export\n\nGenerated: ${payload.generated_at}\n\n## Filters\n- from: ${payload.filters.from ?? '(none)'}\n- to: ${payload.filters.to ?? '(none)'}\n- project: ${payload.filters.project ?? '(none)'}\n- scope: ${payload.filters.scope ?? '(none)'}\n- type: ${type}\n\n## Counts\n- decisions: ${decisions.length}\n- skills: ${skills.length}\n\n## Decisions\n${decisionBlock || '- (none)'}\n\n## Skills\n${skillBlock || '- (none)'}\n`
             await fs.writeFile(filePath, md, 'utf8')
         }
 
@@ -1053,21 +1079,24 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
     if (!existsSync(dbPath)) {
         throw new Error(`sessions.db not found: ${dbPath}`)
     }
+    initDatabase(dbPath)
 
     const db = new Database(dbPath)
     const nowIso = new Date().toISOString()
     const dryRun = Boolean(options.dryRun)
     const projectFilter = options.project?.trim()
+    const scopeFilter = options.scope?.trim()
     const since = parseBoundaryDate(options.since, '--since')
     const specificSessionId = options.sessionId?.trim()
 
     try {
         const sessions = db.prepare(`
-          SELECT id, timestamp, project, summary
+          SELECT id, timestamp, project, scope, summary
           FROM sessions
           WHERE 1 = 1
             ${specificSessionId ? 'AND id = ?' : ''}
             ${projectFilter ? 'AND project = ?' : ''}
+            ${scopeFilter ? 'AND scope = ?' : ''}
             ${since ? 'AND timestamp >= ?' : ''}
             AND id NOT IN (SELECT DISTINCT session_id FROM memory_node_sources)
           ORDER BY timestamp ASC
@@ -1075,9 +1104,10 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
             ...[
                 ...(specificSessionId ? [specificSessionId] : []),
                 ...(projectFilter ? [projectFilter] : []),
+                ...(scopeFilter ? [scopeFilter] : []),
                 ...(since ? [since.toISOString()] : [])
             ]
-        ) as { id: string; timestamp: string; project: string; summary: string }[]
+        ) as { id: string; timestamp: string; project: string; scope: string; summary: string }[]
 
         if (sessions.length === 0) {
             return { sessionsConsidered: 0, sessionsIndexed: 0, nodesUpserted: 0, linksUpserted: 0 }
@@ -1088,9 +1118,9 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
 
         const upsertNode = db.prepare(`
           INSERT OR REPLACE INTO memory_nodes
-          (id, parent_id, project, title, summary, level, path_key, created_at, updated_at, last_synced_at)
+          (id, parent_id, project, scope, title, summary, level, path_key, created_at, updated_at, last_synced_at)
           VALUES (
-            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?,
             COALESCE((SELECT created_at FROM memory_nodes WHERE id = ?), ?),
             ?,
             COALESCE((SELECT last_synced_at FROM memory_nodes WHERE id = ?), NULL)
@@ -1113,15 +1143,18 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
         const tx = db.transaction(() => {
             for (const session of sessions) {
                 const project = (session.project ?? 'default').trim() || 'default'
+                const scope = (session.scope ?? deriveScope(session)).trim() || deriveScope(session)
                 const projectSlug = slugify(project).toLowerCase()
-                const rootNodeId = `node:project:${projectSlug}`
-                const rootPathKey = `${projectSlug}`
+                const scopeSlug = slugify(scope).toLowerCase()
+                const rootNodeId = `node:project:${scopeSlug}:${projectSlug}`
+                const rootPathKey = `${scopeSlug}/${projectSlug}`
 
                 if (!dryRun) {
                     upsertNode.run(
                         rootNodeId,
                         null,
                         project,
+                        scope,
                         project,
                         `Project memory directory for ${project}`,
                         0,
@@ -1152,7 +1185,7 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
 
                 const topic = extractTopicFromSession(session.summary ?? '', decisionText, skillText, session.timestamp)
                 const topicSlug = slugify(topic.title).toLowerCase()
-                const topicNodeId = `node:topic:${projectSlug}:${shortHash(topicSlug, 20)}`
+                const topicNodeId = `node:topic:${scopeSlug}:${projectSlug}:${shortHash(topicSlug, 20)}`
                 const topicPathKey = `${rootPathKey}/${topicSlug}`
 
                 if (!dryRun) {
@@ -1160,6 +1193,7 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
                         topicNodeId,
                         rootNodeId,
                         project,
+                        scope,
                         topic.title,
                         topic.summary,
                         1,
@@ -1182,6 +1216,7 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
                         sessionNodeId,
                         topicNodeId,
                         project,
+                        scope,
                         sessionTitle,
                         sessionSummary,
                         2,
@@ -1217,6 +1252,7 @@ export function recallTree(
     dbPath: string,
     query: string,
     projectFilter?: string,
+    scopeFilter?: string,
     topK = 5
 ): RecallHit[] {
     if (!existsSync(dbPath)) return []
@@ -1224,14 +1260,16 @@ export function recallTree(
     const db = new Database(dbPath, { readonly: true })
     try {
         const allNodes = db.prepare(`
-          SELECT id, parent_id, project, title, summary, level, updated_at
+          SELECT id, parent_id, project, scope, title, summary, level, updated_at
           FROM memory_nodes
           WHERE 1 = 1
           ${projectFilter ? 'AND project = ?' : ''}
-        `).all(...[...(projectFilter ? [projectFilter] : [])]) as {
+          ${scopeFilter ? 'AND scope = ?' : ''}
+        `).all(...[...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : [])]) as {
             id: string
             parent_id: string | null
             project: string
+            scope: string
             title: string
             summary: string
             level: number
@@ -1351,6 +1389,7 @@ export function recallKeyword(
     dbPath: string,
     query: string,
     projectFilter?: string,
+    scopeFilter?: string,
     topK = 5,
     afterDate?: Date
 ): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }> {
@@ -1363,10 +1402,11 @@ export function recallKeyword(
       WHERE e.event_type = 'DecisionMade'
         AND LOWER(e.content) LIKE ?
         ${projectFilter ? 'AND s.project = ?' : ''}
+        ${scopeFilter ? 'AND s.scope = ?' : ''}
         ${afterDate ? 'AND e.timestamp >= ?' : ''}
       ORDER BY e.timestamp DESC
       LIMIT ?
-    `).all(...[q, ...(projectFilter ? [projectFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
+    `).all(...[q, ...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
             { id: string; session_id: string; timestamp: string; content: string; project: string }[]
 
         const skillRows = db.prepare(`
@@ -1375,10 +1415,11 @@ export function recallKeyword(
       WHERE e.event_type = 'SkillLearned'
         AND LOWER(e.content) LIKE ?
         ${projectFilter ? 'AND s.project = ?' : ''}
+        ${scopeFilter ? 'AND s.scope = ?' : ''}
         ${afterDate ? 'AND e.timestamp >= ?' : ''}
       ORDER BY e.timestamp DESC
       LIMIT ?
-    `).all(...[q, ...(projectFilter ? [projectFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
+    `).all(...[q, ...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
             { id: string; session_id: string; timestamp: string; content: string; project: string }[]
 
         const sessionRows = db.prepare(`
@@ -1386,10 +1427,11 @@ export function recallKeyword(
       FROM sessions
       WHERE (LOWER(summary) LIKE ? OR LOWER(project) LIKE ?)
         ${projectFilter ? 'AND project = ?' : ''}
+        ${scopeFilter ? 'AND scope = ?' : ''}
         ${afterDate ? 'AND timestamp >= ?' : ''}
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(...[q, q, ...(projectFilter ? [projectFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
+    `).all(...[q, q, ...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
             { id: string; session_id: string; timestamp: string; content: string; project: string }[]
 
         const all = [
@@ -1427,15 +1469,15 @@ export function querySessionSummary(
     dbPath: string,
     sessionId: string
 ): {
-    session: { id: string; timestamp: string; project: string; event_count: number; summary: string }
+    session: { id: string; timestamp: string; project: string; scope: string; event_count: number; summary: string }
     decisions: Array<{ id: string; decision: string; impact_level: string }>
     skills: Array<{ id: string; skill_name: string; category: string }>
 } | null {
     const db = new Database(dbPath, { readonly: true })
     try {
         const session = db
-            .prepare('SELECT id, timestamp, project, event_count, summary FROM sessions WHERE id = ?')
-            .get(sessionId) as { id: string; timestamp: string; project: string; event_count: number; summary: string } | undefined
+            .prepare('SELECT id, timestamp, project, scope, event_count, summary FROM sessions WHERE id = ?')
+            .get(sessionId) as { id: string; timestamp: string; project: string; scope: string; event_count: number; summary: string } | undefined
 
         if (!session) return null
 

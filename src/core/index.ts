@@ -21,12 +21,13 @@ export {
     querySessionSummary
 } from './db.js'
 export {
-    safeDate, slugify, stableStringify, shortHash,
+    safeDate, slugify, stableStringify, shortHash, deriveScope,
     resolveSessionId, resolveEventId,
     getEventType, getEventContentObject,
     maybeParseJson, normalizeSkillKey,
     parseDaysOption, parseBoundaryDate,
-    inDateRange, parseCreatedAt
+    inDateRange, parseCreatedAt,
+    isLowValueMemoryText, sanitizeSessionDataForImport
 } from './utils.js'
 export type {
     Json, SessionEvent, SessionData, MemoriaPaths,

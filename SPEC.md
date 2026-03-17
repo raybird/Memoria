@@ -14,6 +14,10 @@ This document is the source of truth for what Memoria currently implements.
   - `prune`
   - `export`
 - SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`)
+- Lightweight scope isolation:
+  - `SessionData.scope` optional at write time
+  - if omitted, scope defaults to `project:<project>` or `global`
+  - `recall` and `index build` support scope filtering
 - Markdown sync outputs:
   - `knowledge/Daily/`
   - `knowledge/Decisions/`
@@ -23,9 +27,15 @@ This document is the source of truth for what Memoria currently implements.
   - `MEMORIA_SESSIONS_PATH`
   - `MEMORIA_CONFIG_PATH`
 - Deterministic fallback IDs for idempotent re-sync behavior
+- Memory-quality guardrails during import:
+  - exact duplicate events within the same session are suppressed before persistence
+  - trivial session summaries are replaced with the first higher-signal event text when available
 - Tree memory index build and recall modes:
   - `recall` supports `mode: keyword | tree | hybrid`
   - recall metadata includes `reasoning_path`, `route_mode`, `fallback_used`
+- Adaptive retrieval gate:
+  - skips trivial/greeting recall requests when no explicit recall mode or memory intent is present
+  - telemetry records skipped requests with `route_mode=skipped`
 - Time-decay recall scoring:
   - `scoreNode()` applies `1 / (1 + ageDays / halfLife)` decay (halfLife=90 days)
   - `recallKeyword()` computes per-result relevance scores (token match × decay)

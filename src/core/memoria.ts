@@ -72,7 +72,7 @@ export class MemoriaCore {
             // Disable with MEMORIA_INDEX_AUTOBUILD=0.
             if (process.env.MEMORIA_INDEX_AUTOBUILD !== '0') {
                 try {
-                    buildMemoryIndex(this.paths.dbPath, { sessionId, project: data.project })
+                    buildMemoryIndex(this.paths.dbPath, { sessionId, project: data.project, scope: data.scope })
                 } catch {
                     // Keep remember() fail-open for indexing errors.
                 }
@@ -122,6 +122,34 @@ export class MemoriaCore {
                     }
                 }
             }
+            initDatabase(this.paths.dbPath)
+
+            if (shouldSkipAdaptiveRecall(filter)) {
+                try {
+                    logRecallTelemetry(this.paths.dbPath, {
+                        routeMode: 'skipped',
+                        fallbackUsed: false,
+                        hitCount: 0,
+                        latencyMs: Date.now() - start
+                    })
+                } catch {
+                    // Keep recall fail-open when telemetry logging fails.
+                }
+
+                return {
+                    ok: true,
+                    data: [],
+                    meta: {
+                        source: 'sqlite',
+                        evidence: [],
+                        confidence: 0,
+                        route_mode: 'skipped',
+                        fallback_used: false,
+                        timestamp: new Date().toISOString(),
+                        latency_ms: Date.now() - start
+                    }
+                }
+            }
 
             const topK = filter.top_k ?? 5
             const mode = filter.mode ?? 'keyword'
@@ -136,11 +164,11 @@ export class MemoriaCore {
             }
 
             const treeRaw = mode !== 'keyword'
-                ? recallTree(this.paths.dbPath, filter.query, filter.project, topK)
+                ? recallTree(this.paths.dbPath, filter.query, filter.project, filter.scope, topK)
                 : []
             const keywordRaw = mode === 'tree'
                 ? []
-                : recallKeyword(this.paths.dbPath, filter.query, filter.project, topK, afterDate)
+                : recallKeyword(this.paths.dbPath, filter.query, filter.project, filter.scope, topK, afterDate)
 
             let routeMode: string = mode
             let fallbackUsed = false
@@ -251,6 +279,7 @@ export class MemoriaCore {
                     }
                 }
             }
+            initDatabase(this.paths.dbPath)
 
             const raw = querySessionSummary(this.paths.dbPath, sessionId)
             if (!raw) {
@@ -271,6 +300,7 @@ export class MemoriaCore {
                 sessionId: raw.session.id,
                 timestamp: raw.session.timestamp,
                 project: raw.session.project,
+                scope: raw.session.scope,
                 eventCount: raw.session.event_count,
                 summary: raw.session.summary,
                 decisions: raw.decisions,
@@ -364,6 +394,7 @@ export class MemoriaCore {
                     }
                 }
             }
+            initDatabase(this.paths.dbPath)
             const data = queryStats(this.paths.dbPath)
             return {
                 ok: true,
@@ -409,6 +440,7 @@ export class MemoriaCore {
                     }
                 }
             }
+            initDatabase(this.paths.dbPath)
 
             const data = queryRecallTelemetry(this.paths.dbPath, options)
             return {
@@ -436,4 +468,51 @@ export class MemoriaCore {
             }
         }
     }
+}
+
+const EXPLICIT_RECALL_HINTS = [
+    'remember',
+    'memory',
+    'previous',
+    'previously',
+    'last time',
+    'earlier',
+    'before',
+    'recall',
+    'what did we',
+    '我們之前',
+    '之前',
+    '上次',
+    '還記得',
+    '回憶',
+    '記得'
+]
+
+function isEmojiOnlyQuery(query: string): boolean {
+    const stripped = query.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]/gu, '')
+    return stripped.length === 0 && query.trim().length > 0
+}
+
+function shouldSkipAdaptiveRecall(filter: RecallFilter): boolean {
+    if (typeof filter.mode === 'string') return false
+
+    const query = filter.query.trim()
+    if (!query) return true
+
+    const lower = query.toLowerCase()
+    if (EXPLICIT_RECALL_HINTS.some((hint) => lower.includes(hint))) return false
+
+    if (isEmojiOnlyQuery(query)) return true
+
+    const normalized = lower.replace(/\s+/g, ' ').trim()
+    const trivialPhrases = new Set([
+        'ok', 'okay', 'thanks', 'thank you', 'got it', 'sounds good', 'cool', 'yes', 'no',
+        'hi', 'hello', 'hey', 'yo', 'sure', 'nice', 'great', '👍', '👌'
+    ])
+    if (trivialPhrases.has(normalized)) return true
+
+    const greetingPattern = /^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i
+    if (greetingPattern.test(query)) return true
+
+    return normalized.length < 8
 }

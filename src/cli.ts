@@ -58,6 +58,7 @@ const sessionSchema = z
     id: z.string().optional(),
     timestamp: z.string().optional(),
     project: z.string().optional(),
+    scope: z.string().optional(),
     summary: z.string().optional(),
     events: z.array(sessionEventSchema).default([])
   })
@@ -87,6 +88,7 @@ async function readSession(sessionFile: string): Promise<SessionData> {
     id: typeof data.id === 'string' ? data.id : undefined,
     timestamp: typeof data.timestamp === 'string' ? data.timestamp : undefined,
     project: typeof data.project === 'string' ? data.project : undefined,
+    scope: typeof data.scope === 'string' ? data.scope : undefined,
     summary: typeof data.summary === 'string' ? data.summary : undefined,
     events: Array.isArray(data.events) ? (data.events as SessionEvent[]) : []
   }
@@ -128,6 +130,7 @@ function previewSync(paths: MemoriaPaths, sessionFile: string, sessionData: Sess
   console.log(`- session file: ${sessionFile}`)
   console.log(`- session id: ${sessionId}`)
   console.log(`- project: ${sessionData.project ?? 'default'}`)
+  console.log(`- scope: ${sessionData.scope ?? (sessionData.project ? `project:${sessionData.project}` : 'global')}`)
   console.log(`- events: ${events.length}`)
   console.log(`- database upsert: ${paths.dbPath}`)
   console.log(`- daily note append: ${dailyPath}`)
@@ -290,7 +293,7 @@ async function run(): Promise<void> {
           const rr = s.recallRouting
           console.log(`- recall routing (${rr.window}):`)
           console.log(`  - queries=${rr.totalQueries}, fallback_rate=${(rr.fallbackRate * 100).toFixed(1)}%`)
-          console.log(`  - route_counts: keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`)
+          console.log(`  - route_counts: skipped=${rr.routeCounts.skipped}, keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`)
           console.log(`  - latency_ms: avg=${rr.avgLatencyMs}, p95=${rr.p95LatencyMs}`)
           console.log(`  - avg_hit_count=${rr.avgHitCount}`)
         }
@@ -307,6 +310,7 @@ async function run(): Promise<void> {
     .command('build')
     .description('Build incremental tree index from unindexed sessions')
     .option('--project <name>', 'Scope build to one project')
+    .option('--scope <name>', 'Scope build to one memory scope (e.g. global, agent:main)')
     .option('--since <isoDate>', 'Only include sessions at/after this ISO date')
     .option('--session-id <id>', 'Build index for one specific session id')
     .option('--dry-run', 'Show what would be indexed without writing nodes')
@@ -431,6 +435,7 @@ async function run(): Promise<void> {
     .option('--from <isoDate>', 'Include records at/after this ISO date')
     .option('--to <isoDate>', 'Include records at/before this ISO date')
     .option('--project <name>', 'Filter by project name')
+    .option('--scope <name>', 'Filter by memory scope')
     .option('--type <type>', 'Export type: all|decisions|skills', 'all')
     .option('--format <fmt>', 'Output format: json|markdown', 'json')
     .option('--out <path>', 'Output directory (default: .memory/exports)')

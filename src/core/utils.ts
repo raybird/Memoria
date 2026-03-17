@@ -51,6 +51,7 @@ export function resolveSessionId(sessionData: SessionData): string {
     const fingerprint = stableStringify({
         timestamp: sessionData.timestamp ?? '',
         project: sessionData.project ?? 'default',
+        scope: deriveScope(sessionData),
         summary: sessionData.summary ?? '',
         events
     })
@@ -72,6 +73,13 @@ export function resolveEventId(event: SessionEvent, sessionId: string, index: nu
     })
 
     return `evt_${shortHash(fingerprint)}`
+}
+
+export function deriveScope(sessionData: Pick<SessionData, 'scope' | 'project'>): string {
+    const explicit = sessionData.scope?.trim()
+    if (explicit) return explicit
+    const project = sessionData.project?.trim()
+    return project ? `project:${project}` : 'global'
 }
 
 export function getEventType(event: SessionEvent): string {
@@ -127,4 +135,69 @@ export function parseCreatedAt(raw: string | undefined): number {
     if (!raw) return 0
     const d = new Date(raw)
     return Number.isNaN(d.getTime()) ? 0 : d.getTime()
+}
+
+const TRIVIAL_SUMMARY_SET = new Set([
+    '', 'ok', 'okay', 'thanks', 'thank you', 'got it', 'sounds good', 'cool', 'yes', 'no',
+    'hi', 'hello', 'hey', 'yo', 'sure', 'nice', 'great', '👍', '👌', '收到', '好', '好的', '謝謝', '谢谢', '你好', '哈囉', '嗨'
+])
+
+export function isLowValueMemoryText(raw: string | undefined): boolean {
+    const text = (raw ?? '').trim().toLowerCase()
+    if (!text) return true
+    if (TRIVIAL_SUMMARY_SET.has(text)) return true
+    if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i.test(text)) return true
+    return text.length < 8
+}
+
+function extractEventText(event: SessionEvent): string {
+    if (typeof event.content === 'string') return event.content.trim()
+    if (event.content && typeof event.content === 'object' && !Array.isArray(event.content)) {
+        const obj = event.content as Json
+        const preferredFields = ['decision', 'skill_name', 'text', 'summary', 'pattern']
+        for (const key of preferredFields) {
+            const value = obj[key]
+            if (typeof value === 'string' && value.trim()) return value.trim()
+        }
+        for (const value of Object.values(obj)) {
+            if (typeof value === 'string' && value.trim()) return value.trim()
+        }
+    }
+    return ''
+}
+
+export function sanitizeSessionDataForImport(sessionData: SessionData): SessionData {
+    const originalEvents = sessionData.events ?? []
+    const dedupedEvents: SessionEvent[] = []
+    const seenKeys = new Set<string>()
+
+    for (const event of originalEvents) {
+        const dedupeKey = stableStringify({
+            timestamp: event.timestamp ?? '',
+            event_type: event.type ?? event.event_type ?? 'UnknownEvent',
+            content: event.content ?? '',
+            metadata: event.metadata ?? {}
+        })
+        if (seenKeys.has(dedupeKey)) continue
+        seenKeys.add(dedupeKey)
+        dedupedEvents.push(event)
+    }
+
+    const summary = sessionData.summary?.trim() ?? ''
+    if (!isLowValueMemoryText(summary)) {
+        return { ...sessionData, summary, events: dedupedEvents }
+    }
+
+    const signalEvent = dedupedEvents.find((event) => {
+        const eventType = getEventType(event)
+        return eventType === 'DecisionMade' || eventType === 'SkillLearned' || eventType === 'UserMessage'
+    })
+
+    const derivedSummary = extractEventText(signalEvent ?? dedupedEvents[0] ?? {})
+
+    return {
+        ...sessionData,
+        summary: derivedSummary || summary,
+        events: dedupedEvents
+    }
 }
