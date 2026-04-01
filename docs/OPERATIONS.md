@@ -95,6 +95,8 @@ curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 
 ```bash
 bash scripts/test-smoke.sh
+bash scripts/test-bootstrap.sh
+bash scripts/test-adapter-runtime.sh
 bash scripts/test-mcp-e2e.sh
 ```
 
@@ -107,8 +109,16 @@ pnpm run build
 node dist/cli.mjs --help
 bash -n install.sh
 bash scripts/test-smoke.sh
+bash scripts/test-bootstrap.sh
+bash scripts/test-adapter-runtime.sh
 bash scripts/test-mcp-e2e.sh
 ```
+
+## Release SOP
+
+Patch release flow lives in `RELEASE.md`.
+
+Use it when docs, verification steps, runtime packaging, or release metadata change.
 
 ## Backup
 

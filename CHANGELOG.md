@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-04-01
+
+### Added
+- Native ESM adapter runtime regression test at `scripts/test-adapter-runtime.sh` and CI coverage for bootstrap + adapter runtime verification.
+
+### Fixed
+- `./cli setup` now resolves the project install directory from the CLI entrypoint instead of `MEMORIA_HOME`, so bootstrap setup no longer runs `pnpm install` in the wrong location.
+- `scripts/test-bootstrap.sh` now resolves repo root correctly.
+- `BaseAdapter` now constructs `MemoriaClient` without CommonJS `require()`, so URL-string configuration works under native ESM runtime.
+
+### Changed
+- Release and operations docs now include the bootstrap + adapter runtime verification steps in the patch release SOP.
+
 ## [1.5.0] - 2026-03-17
 
 ### Added

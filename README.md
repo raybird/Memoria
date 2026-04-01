@@ -195,6 +195,7 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 | 文件 | 對象 | 說明 |
 |------|------|------|
 | [AGENTS.md](AGENTS.md) | AI Agent | 架構、API、Bootstrap、開發約定 |
+| [RELEASE.md](RELEASE.md) | 維護者 | patch/minor/major 發版 SOP 與驗證流程 |
 | [SPEC.md](SPEC.md) | 開發者 | 已落地功能規格 |
 | [RFC.md](RFC.md) | 開發者 | 規劃與未來方向 |
 | [docs/](docs/) | 維運 | 安裝、容器、MCP 整合等 |

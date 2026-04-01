@@ -4,6 +4,33 @@ Standard release workflow for Memoria.
 
 Use this guide for every tagged release to keep versioning, artifacts, and docs consistent.
 
+## Patch SOP
+
+Use this exact sequence for a normal patch release from repo root:
+
+```bash
+pnpm install
+pnpm run release:docs-check
+pnpm run check
+pnpm run build
+node dist/cli.mjs --help
+bash -n install.sh
+bash scripts/test-smoke.sh
+bash scripts/test-bootstrap.sh
+bash scripts/test-adapter-runtime.sh
+bash scripts/test-mcp-e2e.sh
+git status
+npm version patch --no-git-tag-version
+pnpm run build
+git add package.json pnpm-lock.yaml src/cli.ts install.sh CHANGELOG.md README.md RELEASE.md docs/OPERATIONS.md AGENTS.md scripts/test-bootstrap.sh scripts/test-adapter-runtime.sh src/adapter/adapter.ts .github/workflows/ci.yml dist/cli.mjs
+git commit -m "Release vX.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push
+git push origin vX.Y.Z
+```
+
+If `npm version patch` updates files beyond `package.json`, review them before commit.
+
 ## Scope
 
 This process covers:
@@ -32,6 +59,8 @@ pnpm run build
 node dist/cli.mjs --help
 bash -n install.sh
 bash scripts/test-smoke.sh
+bash scripts/test-bootstrap.sh
+bash scripts/test-adapter-runtime.sh
 bash scripts/test-mcp-e2e.sh
 ```
 
@@ -51,7 +80,8 @@ For a normal release, update:
 2. `src/cli.ts` `.version(...)`
 3. `install.sh` banner version
 4. `CHANGELOG.md` move `Unreleased` changes into new version section
-5. Rebuild bundle: `pnpm run build` (updates `dist/cli.mjs`)
+5. `README.md`, `RELEASE.md`, and `docs/OPERATIONS.md` if verification or release steps changed
+6. Rebuild bundle: `pnpm run build` (updates `dist/cli.mjs`)
 
 ## Release Procedure
 
@@ -68,7 +98,7 @@ git status
 4. Commit release:
 
 ```bash
-git add package.json src/cli.ts install.sh CHANGELOG.md dist/cli.mjs
+git add package.json pnpm-lock.yaml src/cli.ts install.sh CHANGELOG.md README.md RELEASE.md docs/OPERATIONS.md AGENTS.md scripts/test-bootstrap.sh scripts/test-adapter-runtime.sh src/adapter/adapter.ts .github/workflows/ci.yml dist/cli.mjs
 git commit -m "Release vX.Y.Z"
 ```
 

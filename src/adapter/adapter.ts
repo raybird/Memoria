@@ -8,7 +8,7 @@
 //   await adapter.afterResponse({ response, conversationId, userMessage })
 //   // → deduped + throttled write to Memoria
 
-import type { MemoriaClient } from '../sdk.js'
+import { MemoriaClient } from '../sdk.js'
 import type { RecallHit } from '../core/types.js'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -67,10 +67,8 @@ export abstract class BaseAdapter {
     private readonly lastWriteAt = new Map<string, number>()
 
     constructor(config: MemoriaAdapterConfig) {
-        // Accept either a MemoriaClient instance or a base URL string
         if (typeof config.client === 'string') {
-            const { MemoriaClient } = require('../sdk.js') // dynamic require for ESM compat
-            this.client = new MemoriaClient(config.client) as MemoriaClient
+            this.client = new MemoriaClient(config.client)
         } else {
             this.client = config.client
         }

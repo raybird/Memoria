@@ -47,12 +47,16 @@ There is an optional distribution build step and no dedicated ESLint/Prettier co
 
 ## Single-Test Guidance (Important)
 
-This repo currently has two explicit test scripts:
+This repo currently has four explicit test scripts:
 
 - `scripts/test-smoke.sh`
+- `scripts/test-bootstrap.sh`
+- `scripts/test-adapter-runtime.sh`
 - `scripts/test-mcp-e2e.sh`
 
 - Run smoke test: `bash scripts/test-smoke.sh`
+- Run bootstrap/self-install test: `bash scripts/test-bootstrap.sh`
+- Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
 - Run MCP/libSQL e2e test: `bash scripts/test-mcp-e2e.sh`
 - There is no unit-test framework (no Jest/Vitest/Pytest config present).
 - For focused verification, run one CLI flow manually:
@@ -70,7 +74,9 @@ Before opening PRs, mirror CI locally in this order:
 4. `node dist/cli.mjs --help`
 5. `bash -n install.sh`
 6. `bash scripts/test-smoke.sh`
-7. `bash scripts/test-mcp-e2e.sh`
+7. `bash scripts/test-bootstrap.sh`
+8. `bash scripts/test-adapter-runtime.sh`
+9. `bash scripts/test-mcp-e2e.sh`
 
 ## Repository Layout
 

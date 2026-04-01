@@ -42,5 +42,11 @@ jobs:
       - name: Run smoke test
         run: bash scripts/test-smoke.sh
 
+      - name: Run bootstrap test
+        run: bash scripts/test-bootstrap.sh
+
+      - name: Run adapter runtime test
+        run: bash scripts/test-adapter-runtime.sh
+
       - name: Run MCP end-to-end test
         run: bash scripts/test-mcp-e2e.sh

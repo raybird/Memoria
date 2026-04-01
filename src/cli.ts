@@ -4,6 +4,7 @@
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import { Command } from 'commander'
 import {
@@ -140,6 +141,10 @@ function previewSync(paths: MemoriaPaths, sessionFile: string, sessionData: Sess
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`)
 }
 
+function getProjectRoot(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+}
+
 // ─── Preflight checks ────────────────────────────────────────────────────────
 
 type PreflightCheck = { id: string; status: 'pass' | 'fail'; detail: string; fix?: string }
@@ -213,7 +218,7 @@ async function run(): Promise<void> {
   const program = new Command()
     .name('memoria')
     .description('Memoria TypeScript CLI')
-    .version('1.5.0')
+    .version('1.5.1')
 
   // ── init ──────────────────────────────────────────────────────────────────
 
@@ -590,7 +595,7 @@ async function run(): Promise<void> {
       stepLog('preflight', true)
 
       // Step 2: pnpm install (if node_modules missing)
-      const pkgDir = path.resolve(paths.memoriaHome)
+      const pkgDir = getProjectRoot()
       if (!existsSync(path.join(pkgDir, 'node_modules'))) {
         stepStart = Date.now()
         try {

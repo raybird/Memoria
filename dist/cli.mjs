@@ -5605,6 +5605,7 @@ var init_server = __esm({
 // src/cli.ts
 import fs3 from "node:fs/promises";
 import path4 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -19463,6 +19464,9 @@ function previewSync(paths, sessionFile, sessionData) {
   console.log(`- skills to write: ${skillPaths.length}`);
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`);
 }
+function getProjectRoot() {
+  return path4.resolve(path4.dirname(fileURLToPath2(import.meta.url)), "..");
+}
 async function runPreflight(memoriaHome) {
   const checks = [];
   const nodeVer = process.versions.node;
@@ -19516,7 +19520,7 @@ async function runPreflight(memoriaHome) {
 async function run() {
   const paths = resolveMemoriaPaths();
   const core = new MemoriaCore(paths);
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.5.0");
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.5.1");
   program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
     await core.init();
     if (opts.json) {
@@ -19757,7 +19761,7 @@ async function run() {
       return;
     }
     stepLog("preflight", true);
-    const pkgDir = path4.resolve(paths.memoriaHome);
+    const pkgDir = getProjectRoot();
     if (!existsSync(path4.join(pkgDir, "node_modules"))) {
       stepStart = Date.now();
       try {
