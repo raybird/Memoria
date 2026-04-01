@@ -19464,10 +19464,28 @@ function previewSync(paths, sessionFile, sessionData) {
   console.log(`- skills to write: ${skillPaths.length}`);
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`);
 }
-function getProjectRoot() {
-  return path4.resolve(path4.dirname(fileURLToPath2(import.meta.url)), "..");
+function hasRepoMarkers(candidateRoot) {
+  return existsSync(path4.join(candidateRoot, "package.json")) && existsSync(path4.join(candidateRoot, "src", "cli.ts"));
 }
-async function runPreflight(memoriaHome) {
+function getRuntimeLayout() {
+  const moduleDir = path4.dirname(fileURLToPath2(import.meta.url));
+  const candidateRoots = [moduleDir, path4.resolve(moduleDir, "..")];
+  for (const candidateRoot of candidateRoots) {
+    if (hasRepoMarkers(candidateRoot)) {
+      return {
+        mode: "repo",
+        runtimeRoot: candidateRoot,
+        canSelfInstallDeps: true
+      };
+    }
+  }
+  return {
+    mode: "installed",
+    runtimeRoot: path4.resolve(moduleDir, ".."),
+    canSelfInstallDeps: false
+  };
+}
+async function runPreflight(memoriaHome, layout) {
   const checks = [];
   const nodeVer = process.versions.node;
   const [major] = nodeVer.split(".").map(Number);
@@ -19477,17 +19495,21 @@ async function runPreflight(memoriaHome) {
     detail: `v${nodeVer}`,
     fix: major < 18 ? "Install Node.js >= 18 via nvm/fnm: https://github.com/nvm-sh/nvm" : void 0
   });
-  try {
-    const { execSync } = await import("node:child_process");
-    const pnpmVer = execSync("pnpm --version", { stdio: "pipe" }).toString().trim();
-    checks.push({ id: "pnpm", status: "pass", detail: pnpmVer });
-  } catch {
-    checks.push({
-      id: "pnpm",
-      status: "fail",
-      detail: "not found",
-      fix: "Install pnpm: npm install -g pnpm"
-    });
+  if (layout.canSelfInstallDeps) {
+    try {
+      const { execSync } = await import("node:child_process");
+      const pnpmVer = execSync("pnpm --version", { stdio: "pipe" }).toString().trim();
+      checks.push({ id: "pnpm", status: "pass", detail: pnpmVer });
+    } catch {
+      checks.push({
+        id: "pnpm",
+        status: "fail",
+        detail: "not found",
+        fix: "Install pnpm: npm install -g pnpm"
+      });
+    }
+  } else {
+    checks.push({ id: "pnpm", status: "pass", detail: "not required in installed mode" });
   }
   try {
     const { statfs } = await import("node:fs/promises");
@@ -19519,6 +19541,7 @@ async function runPreflight(memoriaHome) {
 }
 async function run() {
   const paths = resolveMemoriaPaths();
+  const runtimeLayout = getRuntimeLayout();
   const core = new MemoriaCore(paths);
   const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.5.1");
   program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
@@ -19724,10 +19747,11 @@ async function run() {
     process.on("SIGTERM", shutdown);
   });
   program2.command("preflight").description("Check prerequisites (Node.js, pnpm, disk space, write permission)").option("--json", "Machine-readable JSON output").action(async (opts) => {
-    const { ok, checks } = await runPreflight(paths.memoriaHome);
+    const { ok, checks } = await runPreflight(paths.memoriaHome, runtimeLayout);
     if (opts.json) {
-      console.log(JSON.stringify({ ok, checks }));
+      console.log(JSON.stringify({ ok, checks, mode: runtimeLayout.mode }));
     } else {
+      console.log(`Runtime mode: ${runtimeLayout.mode}`);
       for (const c of checks) {
         const icon = c.status === "pass" ? "\u2713" : "\u2717";
         console.log(`${icon} ${c.id}: ${c.detail}`);
@@ -19754,15 +19778,15 @@ async function run() {
     }
     let stepStart = Date.now();
     stepStart = Date.now();
-    const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome);
+    const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome, runtimeLayout);
     if (!preflightOk) {
-      stepLog("preflight", false, { checks });
+      stepLog("preflight", false, { mode: runtimeLayout.mode, checks });
       process.exitCode = 1;
       return;
     }
-    stepLog("preflight", true);
-    const pkgDir = getProjectRoot();
-    if (!existsSync(path4.join(pkgDir, "node_modules"))) {
+    stepLog("preflight", true, { mode: runtimeLayout.mode });
+    const pkgDir = runtimeLayout.runtimeRoot;
+    if (runtimeLayout.canSelfInstallDeps && !existsSync(path4.join(pkgDir, "node_modules"))) {
       stepStart = Date.now();
       try {
         const { execSync } = await import("node:child_process");
@@ -19773,6 +19797,9 @@ async function run() {
         process.exitCode = 1;
         return;
       }
+    } else if (!runtimeLayout.canSelfInstallDeps) {
+      stepStart = Date.now();
+      stepLog("install", true, { skipped: true, reason: "installed runtime already packaged" });
     }
     stepStart = Date.now();
     try {

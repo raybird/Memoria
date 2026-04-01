@@ -3,29 +3,45 @@
 ## Environment
 
 - Node.js `>=18`（建議 20/22）
-- `pnpm`（推薦）或 `npm`（fallback）
+- no-clone release artifact 目前只支援 Linux x64
+- repo 開發模式需要 `pnpm`
 
-## Method A: Installer (Recommended)
+## Method A: No-Clone Install (Recommended)
 
 ```bash
-git clone https://github.com/raybird/Memoria Memoria
-cd Memoria
-./install.sh
+bash install.sh \
+  --artifact ./memoria-linux-x64-v1.5.1.tar.gz \
+  --install-dir "$HOME/.local/share/memoria"
 ```
 
-Minimal mode（容器/極簡系統）：
+也可省略 `--artifact`，直接用 `--version` 從 GitHub release 下載：
 
 ```bash
-./install.sh --minimal
+bash install.sh --version 1.5.1 --install-dir "$HOME/.local/share/memoria"
 ```
 
 Installer behavior:
 
-- 會先做 preflight（node/pnpm/npm/git/unzip/python3）
-- `pnpm` 不存在時會 fallback `npm`
-- `--no-git` 或無 git 時會跳過 git 初始化
+- 只部署 release runtime，不建立 repo
+- 支援本地 tarball 路徑或 HTTPS URL
+- 安裝後入口固定在 `<install-dir>/bin/memoria`
+- 後續初始化交給 `memoria setup` / `memoria init`
 
-## Method B: Manual Install
+建議安裝後立刻驗證：
+
+```bash
+$HOME/.local/share/memoria/bin/memoria preflight --json
+$HOME/.local/share/memoria/bin/memoria setup --serve --json
+```
+
+常見失敗排查：
+
+- `artifact not found`: 檢查 `--artifact` 路徑或 URL 是否正確
+- `curl is required`: 使用本地 tarball，或先安裝 `curl`
+- `Node.js >= 18 is required`: 升級 Node.js 後重試
+- `artifact missing required path`: 重新下載 tarball，確認不是 repo source archive
+
+## Method B: Developer Setup From Repo
 
 ```bash
 git clone https://github.com/raybird/Memoria Memoria
@@ -83,3 +99,8 @@ node dist/cli.mjs init
 ```
 
 `./cli` will prefer `dist/cli.mjs` when present.
+
+Release artifact 與 repo dist mode 不同：
+
+- repo dist mode: 仍在原始碼樹內執行 `node dist/cli.mjs`
+- no-clone mode: 使用 release tarball 內的 `bin/memoria`

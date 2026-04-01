@@ -4,7 +4,42 @@
 
 ## 🤖 AI Agent Quick Install
 
-> **Agent 看到這裡就夠了。** 三步完成安裝與啟動：
+> **Agent 看到這裡就夠了。** 先走 no-clone 安裝；開發者再走 repo mode。
+
+### Self-Hosted Without Clone
+
+```bash
+# 1. 下載 installer 與 Linux x64 release artifact
+curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
+curl -fsSL -o memoria-linux-x64-v1.5.1.tar.gz \
+  https://github.com/raybird/Memoria/releases/download/v1.5.1/memoria-linux-x64-v1.5.1.tar.gz
+
+# 2. 安裝 runtime
+bash install.sh \
+  --artifact ./memoria-linux-x64-v1.5.1.tar.gz \
+  --install-dir "$HOME/.local/share/memoria"
+
+# 3. 啟動 bootstrap
+$HOME/.local/share/memoria/bin/memoria setup --serve --json
+```
+
+輸出 JSON lines，每步一行：
+
+```json
+{"step":"preflight","ok":true,"ms":120,"mode":"installed"}
+{"step":"install","ok":true,"ms":0,"skipped":true,"reason":"installed runtime already packaged"}
+{"step":"init","ok":true,"ms":85}
+{"step":"verify","ok":true,"ms":42}
+{"step":"serve","ok":true,"port":3917}
+```
+
+確認就緒：
+
+```bash
+curl -sf http://localhost:3917/v1/health
+```
+
+### Developer Setup From Repo
 
 ```bash
 # 1. Clone
@@ -12,16 +47,9 @@ git clone https://github.com/raybird/Memoria && cd Memoria
 
 # 2. 一鍵安裝（preflight → install → init → verify → serve）
 ./cli setup --serve --json
-# 輸出 JSON lines，每步一行：
-# {"step":"preflight","ok":true,"ms":120}
-# {"step":"install","ok":true,"ms":3400}
-# {"step":"init","ok":true,"ms":85}
-# {"step":"verify","ok":true,"ms":42}
-# {"step":"serve","ok":true,"port":3917}
 
 # 3. 確認就緒
 curl -sf http://localhost:3917/v1/health
-# → {"ok":true,"data":{"ok":true,"db":"ok","dirs":"ok",...}}
 ```
 
 安裝成功後即可透過 HTTP API 使用：
@@ -41,7 +69,9 @@ curl -X POST http://localhost:3917/v1/recall \
 curl http://localhost:3917/v1/stats
 ```
 
-**前置需求**：Node.js ≥ 18、pnpm（檢查：`./cli preflight --json`）
+**no-clone 前置需求**：Node.js ≥ 18、下載 release artifact 的能力、Linux x64。
+
+**repo mode 前置需求**：Node.js ≥ 18、pnpm（檢查：`./cli preflight --json`）
 
 **完整 Agent 整合指南**：[AGENTS.md](AGENTS.md)（含 Core Architecture / HTTP API / Bootstrap 章節）
 

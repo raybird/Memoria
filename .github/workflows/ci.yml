@@ -50,3 +50,19 @@ jobs:
 
       - name: Run MCP end-to-end test
         run: bash scripts/test-mcp-e2e.sh
+
+      - name: Capture release version
+        id: release_meta
+        run: echo "version=$(node -e \"const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync('package.json','utf8')).version);\")" >> "$GITHUB_OUTPUT"
+
+      - name: Package release artifact
+        run: pnpm run release:package
+
+      - name: Run no-clone install test
+        run: bash scripts/test-no-clone-install.sh
+
+      - name: Upload Linux x64 release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: memoria-linux-x64-v${{ steps.release_meta.outputs.version }}
+          path: dist/release/memoria-linux-x64-v${{ steps.release_meta.outputs.version }}.tar.gz

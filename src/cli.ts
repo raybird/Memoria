@@ -141,15 +141,45 @@ function previewSync(paths: MemoriaPaths, sessionFile: string, sessionData: Sess
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`)
 }
 
-function getProjectRoot(): string {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+type RuntimeLayout = {
+  mode: 'repo' | 'installed'
+  runtimeRoot: string
+  canSelfInstallDeps: boolean
+}
+
+function hasRepoMarkers(candidateRoot: string): boolean {
+  return existsSync(path.join(candidateRoot, 'package.json')) && existsSync(path.join(candidateRoot, 'src', 'cli.ts'))
+}
+
+function getRuntimeLayout(): RuntimeLayout {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+  const candidateRoots = [moduleDir, path.resolve(moduleDir, '..')]
+
+  for (const candidateRoot of candidateRoots) {
+    if (hasRepoMarkers(candidateRoot)) {
+      return {
+        mode: 'repo',
+        runtimeRoot: candidateRoot,
+        canSelfInstallDeps: true
+      }
+    }
+  }
+
+  return {
+    mode: 'installed',
+    runtimeRoot: path.resolve(moduleDir, '..'),
+    canSelfInstallDeps: false
+  }
 }
 
 // ─── Preflight checks ────────────────────────────────────────────────────────
 
 type PreflightCheck = { id: string; status: 'pass' | 'fail'; detail: string; fix?: string }
 
-async function runPreflight(memoriaHome: string): Promise<{ ok: boolean; checks: PreflightCheck[] }> {
+async function runPreflight(
+  memoriaHome: string,
+  layout: RuntimeLayout
+): Promise<{ ok: boolean; checks: PreflightCheck[] }> {
   const checks: PreflightCheck[] = []
 
   // Node.js version
@@ -162,18 +192,21 @@ async function runPreflight(memoriaHome: string): Promise<{ ok: boolean; checks:
     fix: major < 18 ? 'Install Node.js >= 18 via nvm/fnm: https://github.com/nvm-sh/nvm' : undefined
   })
 
-  // pnpm available
-  try {
-    const { execSync } = await import('node:child_process')
-    const pnpmVer = execSync('pnpm --version', { stdio: 'pipe' }).toString().trim()
-    checks.push({ id: 'pnpm', status: 'pass', detail: pnpmVer })
-  } catch {
-    checks.push({
-      id: 'pnpm',
-      status: 'fail',
-      detail: 'not found',
-      fix: 'Install pnpm: npm install -g pnpm'
-    })
+  if (layout.canSelfInstallDeps) {
+    try {
+      const { execSync } = await import('node:child_process')
+      const pnpmVer = execSync('pnpm --version', { stdio: 'pipe' }).toString().trim()
+      checks.push({ id: 'pnpm', status: 'pass', detail: pnpmVer })
+    } catch {
+      checks.push({
+        id: 'pnpm',
+        status: 'fail',
+        detail: 'not found',
+        fix: 'Install pnpm: npm install -g pnpm'
+      })
+    }
+  } else {
+    checks.push({ id: 'pnpm', status: 'pass', detail: 'not required in installed mode' })
   }
 
   // Disk space (>= 100 MB)
@@ -213,6 +246,7 @@ async function runPreflight(memoriaHome: string): Promise<{ ok: boolean; checks:
 
 async function run(): Promise<void> {
   const paths = resolveMemoriaPaths()
+  const runtimeLayout = getRuntimeLayout()
   const core = new MemoriaCore(paths)
 
   const program = new Command()
@@ -541,11 +575,12 @@ async function run(): Promise<void> {
     .description('Check prerequisites (Node.js, pnpm, disk space, write permission)')
     .option('--json', 'Machine-readable JSON output')
     .action(async (opts: { json?: boolean }) => {
-      const { ok, checks } = await runPreflight(paths.memoriaHome)
+      const { ok, checks } = await runPreflight(paths.memoriaHome, runtimeLayout)
 
       if (opts.json) {
-        console.log(JSON.stringify({ ok, checks }))
+        console.log(JSON.stringify({ ok, checks, mode: runtimeLayout.mode }))
       } else {
+        console.log(`Runtime mode: ${runtimeLayout.mode}`)
         for (const c of checks) {
           const icon = c.status === 'pass' ? '✓' : '✗'
           console.log(`${icon} ${c.id}: ${c.detail}`)
@@ -586,17 +621,17 @@ async function run(): Promise<void> {
 
       // Step 1: preflight
       stepStart = Date.now()
-      const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome)
+      const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome, runtimeLayout)
       if (!preflightOk) {
-        stepLog('preflight', false, { checks })
+        stepLog('preflight', false, { mode: runtimeLayout.mode, checks })
         process.exitCode = 1
         return
       }
-      stepLog('preflight', true)
+      stepLog('preflight', true, { mode: runtimeLayout.mode })
 
       // Step 2: pnpm install (if node_modules missing)
-      const pkgDir = getProjectRoot()
-      if (!existsSync(path.join(pkgDir, 'node_modules'))) {
+      const pkgDir = runtimeLayout.runtimeRoot
+      if (runtimeLayout.canSelfInstallDeps && !existsSync(path.join(pkgDir, 'node_modules'))) {
         stepStart = Date.now()
         try {
           const { execSync } = await import('node:child_process')
@@ -607,6 +642,9 @@ async function run(): Promise<void> {
           process.exitCode = 1
           return
         }
+      } else if (!runtimeLayout.canSelfInstallDeps) {
+        stepStart = Date.now()
+        stepLog('install', true, { skipped: true, reason: 'installed runtime already packaged' })
       }
 
       // Step 3: init

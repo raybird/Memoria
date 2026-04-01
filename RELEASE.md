@@ -13,16 +13,19 @@ pnpm install
 pnpm run release:docs-check
 pnpm run check
 pnpm run build
+pnpm run release:package
 node dist/cli.mjs --help
 bash -n install.sh
 bash scripts/test-smoke.sh
 bash scripts/test-bootstrap.sh
 bash scripts/test-adapter-runtime.sh
+bash scripts/test-no-clone-install.sh
 bash scripts/test-mcp-e2e.sh
 git status
 npm version patch --no-git-tag-version
 pnpm run build
-git add package.json pnpm-lock.yaml src/cli.ts install.sh CHANGELOG.md README.md RELEASE.md docs/OPERATIONS.md AGENTS.md scripts/test-bootstrap.sh scripts/test-adapter-runtime.sh src/adapter/adapter.ts .github/workflows/ci.yml dist/cli.mjs
+pnpm run release:package
+git add package.json pnpm-lock.yaml src/cli.ts install.sh CHANGELOG.md README.md RELEASE.md docs/INSTALL.md docs/OPERATIONS.md AGENTS.md scripts/package-release-artifacts.sh scripts/render-no-clone-fixture.mjs scripts/test-bootstrap.sh scripts/test-adapter-runtime.sh scripts/test-no-clone-install.sh src/adapter/adapter.ts .github/workflows/ci.yml dist/cli.mjs dist/install/memoria
 git commit -m "Release vX.Y.Z"
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push
@@ -30,6 +33,8 @@ git push origin vX.Y.Z
 ```
 
 If `npm version patch` updates files beyond `package.json`, review them before commit.
+
+If the release includes the new no-clone installation path, prefer a minor release over a patch release.
 
 ## Scope
 
@@ -56,11 +61,13 @@ pnpm install
 pnpm run release:docs-check
 pnpm run check
 pnpm run build
+pnpm run release:package
 node dist/cli.mjs --help
 bash -n install.sh
 bash scripts/test-smoke.sh
 bash scripts/test-bootstrap.sh
 bash scripts/test-adapter-runtime.sh
+bash scripts/test-no-clone-install.sh
 bash scripts/test-mcp-e2e.sh
 ```
 
@@ -80,8 +87,9 @@ For a normal release, update:
 2. `src/cli.ts` `.version(...)`
 3. `install.sh` banner version
 4. `CHANGELOG.md` move `Unreleased` changes into new version section
-5. `README.md`, `RELEASE.md`, and `docs/OPERATIONS.md` if verification or release steps changed
+5. `README.md`, `docs/INSTALL.md`, `RELEASE.md`, and `docs/OPERATIONS.md` if verification or release steps changed
 6. Rebuild bundle: `pnpm run build` (updates `dist/cli.mjs`)
+7. Repackage release runtime: `pnpm run release:package` (updates `dist/install/memoria` and `dist/release/...tar.gz`)
 
 ## Release Procedure
 
@@ -98,9 +106,11 @@ git status
 4. Commit release:
 
 ```bash
-git add package.json pnpm-lock.yaml src/cli.ts install.sh CHANGELOG.md README.md RELEASE.md docs/OPERATIONS.md AGENTS.md scripts/test-bootstrap.sh scripts/test-adapter-runtime.sh src/adapter/adapter.ts .github/workflows/ci.yml dist/cli.mjs
+git add package.json pnpm-lock.yaml src/cli.ts install.sh CHANGELOG.md README.md RELEASE.md docs/INSTALL.md docs/OPERATIONS.md AGENTS.md scripts/package-release-artifacts.sh scripts/render-no-clone-fixture.mjs scripts/test-bootstrap.sh scripts/test-adapter-runtime.sh scripts/test-no-clone-install.sh src/adapter/adapter.ts .github/workflows/ci.yml dist/cli.mjs dist/install/memoria
 git commit -m "Release vX.Y.Z"
 ```
+
+Do not commit `dist/release/*.tar.gz`; those are release assets, not tracked source artifacts.
 
 5. Create annotated tag:
 
@@ -114,6 +124,29 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push
 git push origin vX.Y.Z
 ```
+
+7. Create or update the GitHub release asset for the Linux x64 tarball:
+
+```bash
+gh release create vX.Y.Z dist/release/memoria-linux-x64-vX.Y.Z.tar.gz --notes-file CHANGELOG.md
+# or, if the release already exists:
+gh release upload vX.Y.Z dist/release/memoria-linux-x64-vX.Y.Z.tar.gz --clobber
+```
+
+## Release Artifacts
+
+Current supported release artifact:
+
+- `memoria-linux-x64-vX.Y.Z.tar.gz`
+
+Artifact layout:
+
+- `bin/memoria`
+- `lib/cli.mjs`
+- `node_modules/`
+- `install.sh`
+
+CI packages this artifact on every PR/push, runs `bash scripts/test-no-clone-install.sh`, then uploads the tarball as a workflow artifact.
 
 ## Post-Release Checks
 

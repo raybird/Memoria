@@ -1,6 +1,9 @@
 # Node dependencies
 node_modules/
 
+# Generated release artifacts
+dist/release/
+
 # Memory runtime artifacts
 .memory/sessions.db
 .memory/sessions.db-journal
