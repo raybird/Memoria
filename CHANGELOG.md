@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-04-01
+
+### Added
+- No-clone release packaging via `pnpm run release:package`, including a Linux x64 runtime tarball with packaged `better-sqlite3` dependencies.
+- Artifact-based installer flow and no-clone end-to-end coverage for `preflight`, `setup --serve --json`, `remember`, and `recall`.
+
+### Changed
+- `preflight` and `setup` now distinguish repo mode from installed mode, so packaged runtimes no longer require `pnpm` or repo-local dependency installation.
+- README, install guide, release SOP, and CI now document and validate the release-asset installation path.
+
 ## [1.5.1] - 2026-04-01
 
 ### Added
