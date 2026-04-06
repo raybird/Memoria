@@ -6,6 +6,8 @@
 
 **Architecture:** 先不碰 npm publish，採用最小風險的 release artifact 路線：CI 產生可獨立執行的 CLI 發行物與安裝腳本，安裝腳本將產物部署到目標目錄；CLI 的 `setup`/runtime 路徑邏輯改為以安裝目錄為中心，而非 repo root。驗證以一條新的 no-clone E2E 腳本為核心，確保乾淨暫存目錄中只有 release artifact 也能完成 bootstrap。
 
+**Runtime boundary clarification:** `MEMORIA_HOME` 仍是資料根目錄（`.memory/`, `knowledge/`, `configs/`），但必須與 build/runtime root 分離。no-clone 模式要解決的是「如何從安裝後的 launcher 與 artifact 啟動 CLI」以及「哪些 bootstrap 行為只在 repo mode 才成立」，不是把所有資料路徑都改成依賴 artifact 位置。
+
 **Tech Stack:** TypeScript CLI, esbuild, Node.js 18+, bash installer, GitHub Actions release artifacts, existing smoke/bootstrap test scripts.
 
 ---
@@ -47,6 +49,7 @@
 - 先做 release artifact 路線，不做 npm publish。
 - 保留 repo 開發模式，不能破壞 `./cli` 在 repo root 的既有體驗。
 - no-clone 模式只要求 Node.js 與下載能力，不要求原始碼樹存在。
+- installed mode 的 `preflight` / `setup` 不得因缺少 `pnpm` 而失敗；repo mode 才需要檢查是否可自裝依賴。
 - `setup --serve --json` 的輸出格式不可改壞，避免破壞既有 agent automation。
 - 新增驗證必須在 CI 可重複執行，不依賴手動 release。
 
@@ -91,11 +94,17 @@ type RuntimeLayout = {
 - 若相鄰有 repo 特徵檔案（例如 `package.json`, `src/cli.ts`），視為 `repo`。
 - 否則視為 `installed`。
 
+實作目標要刻意保持小而明確：
+- `runtimeRoot`: launcher / bundle / packaged `node_modules` 所在位置。
+- `memoriaHome`: 使用者資料目錄，仍由 `MEMORIA_HOME` 與既有 path resolver 控制。
+- 不要把 runtime root 與 memoria home 合併成同一概念。
+
 - [ ] **Step 4: 讓 `setup` 在 installed mode 不跑 repo install 流程**
 
 最小實作目標：
 - `repo` mode: 仍可做 `pnpm install` 補依賴。
 - `installed` mode: 直接略過這一步，因為 release artifact 應已自含可執行內容。
+- `installed` mode: `preflight` 不要求 `pnpm`，因為 release artifact 已自含 runtime；`repo` mode 才檢查 `pnpm` 與 `node_modules` 補裝能力。
 
 - [ ] **Step 5: 驗證既有 bootstrap 流程未壞**
 
@@ -127,6 +136,22 @@ Expected:
 
 不要把整個 repo 打包進去。
 
+在實作前必須先固定 artifact layout，避免 installer / launcher / test script 各自猜路徑。建議最小 layout 類似：
+
+```text
+memoria-linux-x64-vX.Y.Z/
+  bin/memoria
+  lib/cli.mjs
+  node_modules/better-sqlite3/...
+  install.sh
+  VERSION
+```
+
+可接受等價變形，但要滿足：
+- 安裝後 launcher 不依賴 repo root。
+- `cli.mjs` 能穩定載入相鄰 packaged runtime 依賴。
+- installer 與 no-clone 測試都只依賴這個固定結構。
+
 - [ ] **Step 2: 明確處理 `better-sqlite3` external 依賴**
 
 目前 `pnpm run build` 會保留 `better-sqlite3` 為 external，因此 release artifact 不能只放 `dist/cli.mjs`。
@@ -137,6 +162,8 @@ Expected:
 - 方案 C: 調整 build/distribution 方式，讓 native runtime 依賴有明確可攜策略。
 
 推薦先做 **方案 A**，因為最接近 no-clone 目標，且 CI 最容易穩定驗證。
+
+這個選擇一旦決定，就視為第一階段架構決策，不要在 installer 或 test script 裡同時混入多種 fallback。第一版目標是穩定、單一路徑，而不是同時支援多種分發策略。
 
 - [ ] **Step 3: 新增 packaging script**
 
@@ -202,6 +229,12 @@ installer 不再負責：
 - 建 repo
 - 假設 `.git`、`src/` 存在
 - 在安裝目錄內把原始碼當 runtime 執行
+- 直接建立 `.memory/`, `knowledge/`, `configs/` 等產品資料樹
+- 直接寫 agent config、sample preferences 或其他產品初始化內容
+
+產品初始化責任應收斂到 CLI 本身：
+- runtime 部署：`install.sh`
+- 資料初始化：`memoria setup` / `memoria init`
 
 - [ ] **Step 2: 實作最小可用的 artifact 安裝流程**
 
@@ -225,6 +258,11 @@ installer 不再負責：
 - 解壓後目錄結構
 - 安裝後 launcher 位置
 - CI 如何以本地 tarball 餵給 installer
+
+另外要明確規範：
+- 安裝完成後是否複製完整 artifact tree，或只複製其中 runtime 子目錄
+- `bin/memoria` 與 `lib/cli.mjs` 的相對定位關係
+- `node_modules` 是否與 `cli.mjs` 共同部署於固定相對路徑
 
 - [ ] **Step 4: 保留 repo 開發者路徑，但不混在主要安裝說明**
 
@@ -265,6 +303,7 @@ Manual expected checks:
 
 ```bash
 # install artifact into temp dir
+# run memoria preflight --json
 # run memoria setup --serve --json
 # poll /v1/health
 # POST /v1/remember with a generated minimal session JSON
@@ -275,6 +314,7 @@ Expected:
 - 全部 exit 0
 - 不依賴 repo 內 `src/` 或 `node_modules`
 - 不依賴 repo 內 `examples/session.sample.json`
+- installed mode 下不需要 `pnpm` 也能通過 `preflight` / `setup`
 
 - [ ] **Step 3: 在腳本內產生 fixture，不引用 repo sample**
 
@@ -311,6 +351,8 @@ Expected:
 在 `.github/workflows/ci.yml` 中：
 - 先 build/package artifact
 - 再跑 `bash scripts/test-no-clone-install.sh`
+
+CI 第一版建議在同一個 job 內直接使用剛產出的本地 tarball 跑 no-clone E2E，測完再 upload artifact；先避免 download/upload round-trip 增加變數。
 
 - [ ] **Step 7: 驗證舊測試仍成立**
 
@@ -419,8 +461,10 @@ release commit 應只包含：
 
 - **不建議第一階段就做 npm publish**：會同時引入 package exports、發布資產、版本治理問題，超出最小需求。
 - **`better-sqlite3` 是第一個必解風險**：只搬 `dist/cli.mjs` 不夠，必須有明確的 native 依賴分發策略。
+- **`preflight` 目前有 repo 假設**：若不改成 mode-aware，no-clone 情境仍可能被 `pnpm` 檢查誤擋。
 - **最大風險在路徑假設**：目前 CLI 與 installer 都帶有 repo layout 假設，改動時要用 no-clone E2E 鎖住。
 - **不要把 repo launcher 和 installed launcher 混成同一層責任**：兩者生命週期不同，混在一起容易再度耦合到原始碼樹。
+- **artifact layout 必須先固定**：若 launcher、installer、測試各自推測路徑，後續很容易反覆修補。
 
 ## Definition of Done
 
