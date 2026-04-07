@@ -7,7 +7,7 @@ Guidance for coding agents operating in this repository.
 - Stack: TypeScript CLI (Node.js).
 - Package manager: `pnpm` (lockfile: `pnpm-lock.yaml`).
 - Entry point: `cli` -> `src/cli.ts` via `tsx`.
-- Core domains: session import, SQLite persistence, markdown sync.
+- Core domains: session import, SQLite persistence, markdown sync, compiled wiki maintenance.
 - Main runtime dependency: `better-sqlite3`.
 - Validation library: `zod`.
 
@@ -47,17 +47,27 @@ There is an optional distribution build step and no dedicated ESLint/Prettier co
 
 ## Single-Test Guidance (Important)
 
-This repo currently has four explicit test scripts:
+This repo currently has explicit runtime and wiki test scripts:
 
 - `scripts/test-smoke.sh`
 - `scripts/test-bootstrap.sh`
 - `scripts/test-adapter-runtime.sh`
+- `scripts/test-no-clone-install.sh`
 - `scripts/test-mcp-e2e.sh`
+- `scripts/test-wiki-ingest.sh`
+- `scripts/test-wiki-build.sh`
+- `scripts/test-wiki-query-fileback.sh`
+- `scripts/test-wiki-lint.sh`
 
 - Run smoke test: `bash scripts/test-smoke.sh`
 - Run bootstrap/self-install test: `bash scripts/test-bootstrap.sh`
 - Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
+- Run no-clone install test: `bash scripts/test-no-clone-install.sh`
 - Run MCP/libSQL e2e test: `bash scripts/test-mcp-e2e.sh`
+- Run wiki source ingest test: `bash scripts/test-wiki-ingest.sh`
+- Run wiki build test: `bash scripts/test-wiki-build.sh`
+- Run wiki query file-back test: `bash scripts/test-wiki-query-fileback.sh`
+- Run wiki lint test: `bash scripts/test-wiki-lint.sh`
 - There is no unit-test framework (no Jest/Vitest/Pytest config present).
 - For focused verification, run one CLI flow manually:
   - `TMP=$(mktemp -d)`
@@ -76,7 +86,12 @@ Before opening PRs, mirror CI locally in this order:
 6. `bash scripts/test-smoke.sh`
 7. `bash scripts/test-bootstrap.sh`
 8. `bash scripts/test-adapter-runtime.sh`
-9. `bash scripts/test-mcp-e2e.sh`
+9. `bash scripts/test-no-clone-install.sh`
+10. `bash scripts/test-mcp-e2e.sh`
+11. `bash scripts/test-wiki-ingest.sh`
+12. `bash scripts/test-wiki-build.sh`
+13. `bash scripts/test-wiki-query-fileback.sh`
+14. `bash scripts/test-wiki-lint.sh`
 
 ## Repository Layout
 
@@ -86,9 +101,17 @@ Before opening PRs, mirror CI locally in this order:
 - `src/sdk.ts`: Node.js SDK client (`MemoriaClient`).
 - `cli`: executable shim (`pnpm tsx`).
 - `dist/cli.mjs`: esbuild bundle (production).
+- `src/core/source-import.ts`: raw source import for markdown/text inputs.
+- `src/core/wiki-build.ts`: compiled wiki special-page builder.
+- `src/core/wiki-query.ts`: query file-back into synthesis/comparison pages.
+- `src/core/wiki-lint.ts`: wiki governance finding generation.
 - `scripts/test-smoke.sh`: smoke test (CLI full flow).
 - `scripts/test-mcp-e2e.sh`: MCP/libSQL hybrid + incremental sync test.
 - `scripts/test-bootstrap.sh`: bootstrap test (AI Agent self-install flow).
+- `scripts/test-wiki-ingest.sh`: raw source ingest + source-summary page test.
+- `scripts/test-wiki-build.sh`: compiled wiki special pages test.
+- `scripts/test-wiki-query-fileback.sh`: query filing test.
+- `scripts/test-wiki-lint.sh`: wiki governance/lint test.
 - `skills/memoria-memory-sync/SKILL.md`: Agent Skill entrypoint.
 - `examples/session.sample.json`: sample input for sync flow.
 - `.github/workflows/ci.yml`: canonical validation pipeline.
@@ -102,14 +125,24 @@ src/core/
   types.ts     – MemoriaResult<T> envelope, RecallFilter, RecallHit, HealthStatus …
   paths.ts     – resolveMemoriaPaths(), getMemoriaHome()
   utils.ts     – slugify, shortHash, safeDate, resolveSessionId …
-  db.ts        – all SQLite operations (init, import, sync, verify, recall …)
-  memoria.ts   – MemoriaCore class (remember/recall/summarizeSession/health/stats)
+  db.ts        – all SQLite operations (init, import, sync, verify, recall, wiki state …)
+  source-import.ts – raw markdown/text source import
+  wiki.ts      – wiki constants + markdown render helpers
+  wiki-build.ts – compiled wiki special pages (`index/log/overview`)
+  wiki-query.ts – file high-value recall output back into wiki pages
+  wiki-lint.ts – durable wiki lint finding generation
+  memoria.ts   – MemoriaCore class (remember/recall/wiki flows/health/stats)
   index.ts     – unified re-export
 ```
 
 **MemoriaCore API** (all return `MemoriaResult<T>`):
 - `remember(sessionData)` – import + sync daily/decisions/skills
+- `addSource(input)` – import markdown/text source and generate `source-summary`
+- `listSources(filter)` – inspect imported raw sources
 - `recall(filter)` – supports `keyword | tree | hybrid` retrieval plus adaptive skip for trivial queries; results are ranked by relevance × time-decay (halfLife=90 days)
+- `buildWiki()` – refresh compiled wiki special pages (`index/log/overview`)
+- `fileQuery(input)` – file a high-value recall result into `synthesis` or `comparison` page
+- `wikiLint(options)` – generate durable wiki governance findings
 - `summarizeSession(id)` – structured session + decisions + skills
 - `health()` – verify DB + dirs
 - `stats()` – session/event/skill counts
@@ -127,6 +160,11 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `GET`  | `/v1/telemetry/recall` | Recall routing telemetry |
 | `POST` | `/v1/remember` | Write session memory |
 | `POST` | `/v1/recall` | Recall memories |
+| `POST` | `/v1/sources` | Import raw source |
+| `GET`  | `/v1/sources` | List raw sources |
+| `POST` | `/v1/wiki/build` | Rebuild compiled wiki pages |
+| `POST` | `/v1/wiki/file-query` | File query result into wiki page |
+| `POST` | `/v1/wiki/lint` | Run wiki governance lint |
 | `GET`  | `/v1/sessions/:id/summary` | Session summary |
 
 All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
@@ -207,6 +245,29 @@ curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 
 ```bash
 MEMORIA_HOME=$(pwd) ./cli govern review --json
+```
+
+7. Import raw source and refresh compiled wiki:
+
+```bash
+MEMORIA_HOME=$(pwd) ./cli source add notes/research.md
+MEMORIA_HOME=$(pwd) ./cli wiki build
+```
+
+8. File a high-value query back into the wiki:
+
+```bash
+MEMORIA_HOME=$(pwd) ./cli wiki file-query \
+  --query "TS CLI migration" \
+  --title "TS CLI Migration Brief" \
+  --kind synthesis \
+  --scope project:Memoria
+```
+
+9. Run wiki governance checks:
+
+```bash
+MEMORIA_HOME=$(pwd) ./cli wiki lint --json
 ```
 
 Optional enhancement (not required):

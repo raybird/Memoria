@@ -97,6 +97,10 @@ curl http://localhost:3917/v1/stats
 | Governance review（重複 decisions/skills 候選檢查） | ✅ Implemented |
 | 記憶品質衰減防止（時間衰減評分 + 合併 + 過期清理）| ✅ Implemented |
 | Recall 路由 telemetry（stats + API） | ✅ Implemented |
+| Raw source import（markdown/text） | ✅ Implemented |
+| Compiled wiki special pages（`index/log/overview`） | ✅ Implemented |
+| Query file-back（`synthesis/comparison`） | ✅ Implemented |
+| Wiki governance lint | ✅ Implemented |
 | Policy 引擎（PII 過濾 / 讀寫策略） | 🔜 Planned |
 | 高階 Policy 可配置化（多租戶/規則引擎） | 🔜 Planned |
 
@@ -134,6 +138,11 @@ curl http://localhost:3917/v1/stats
 | `GET`  | `/v1/telemetry/recall` | Recall 路由遙測（query: `window`, `limit`） |
 | `POST` | `/v1/remember` | 寫入記憶 (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, scope?, mode?}`) |
+| `POST` | `/v1/sources` | 匯入 markdown/text source |
+| `GET`  | `/v1/sources` | 列出 raw sources |
+| `POST` | `/v1/wiki/build` | 重建 compiled wiki special pages |
+| `POST` | `/v1/wiki/file-query` | 將高價值 query 回寫成 wiki page |
+| `POST` | `/v1/wiki/lint` | 執行 wiki governance lint |
 | `GET`  | `/v1/sessions/:id/summary` | 會話摘要 |
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
@@ -149,6 +158,11 @@ curl http://localhost:3917/v1/stats
 ./cli verify [--json]                # 完整驗證
 ./cli index build [--json]           # 增量重建 tree index
 ./cli index build --scope agent:main # 只重建指定 scope
+./cli source add notes/research.md   # 匯入 markdown/text source
+./cli source list --json             # 列出 raw sources
+./cli wiki build --json              # 重建 compiled wiki
+./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
+./cli wiki lint --json               # 產生 durable wiki governance findings
 ./cli govern review --json           # 檢查可提升成 rule/skill 的候選項
 ./cli prune --all --dry-run          # 清理預覽（含 consolidate 90d + stale 180d）
 ./cli prune --consolidate-days 90    # 合併同 topic 下的舊 session nodes
@@ -202,6 +216,11 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 │   │   ├── paths.ts        # 路徑解析
 │   │   ├── utils.ts        # 工具函式
 │   │   ├── db.ts           # SQLite 操作層
+│   │   ├── source-import.ts# raw source import
+│   │   ├── wiki.ts         # wiki constants / render helpers
+│   │   ├── wiki-build.ts   # compiled wiki special page builder
+│   │   ├── wiki-query.ts   # query file-back
+│   │   ├── wiki-lint.ts    # wiki governance checks
 │   │   ├── memoria.ts      # MemoriaCore class
 │   │   └── index.ts        # 統一匯出
 │   └── adapter/            # Agent Adapter
@@ -212,7 +231,11 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 ├── scripts/
 │   ├── test-smoke.sh       # CLI 全流程測試
 │   ├── test-mcp-e2e.sh     # MCP 增量同步 E2E
-│   └── test-bootstrap.sh   # Agent 自主安裝測試
+│   ├── test-bootstrap.sh   # Agent 自主安裝測試
+│   ├── test-wiki-ingest.sh # raw source ingest test
+│   ├── test-wiki-build.sh  # compiled wiki build test
+│   ├── test-wiki-query-fileback.sh # query file-back test
+│   └── test-wiki-lint.sh   # wiki governance test
 ├── skills/memoria-memory-sync/
 ├── examples/session.sample.json
 ├── AGENTS.md               # Agent 整合指南

@@ -21,6 +21,10 @@ bash scripts/test-bootstrap.sh
 bash scripts/test-adapter-runtime.sh
 bash scripts/test-no-clone-install.sh
 bash scripts/test-mcp-e2e.sh
+bash scripts/test-wiki-ingest.sh
+bash scripts/test-wiki-build.sh
+bash scripts/test-wiki-query-fileback.sh
+bash scripts/test-wiki-lint.sh
 git status
 npm version patch --no-git-tag-version
 pnpm run build
@@ -69,6 +73,10 @@ bash scripts/test-bootstrap.sh
 bash scripts/test-adapter-runtime.sh
 bash scripts/test-no-clone-install.sh
 bash scripts/test-mcp-e2e.sh
+bash scripts/test-wiki-ingest.sh
+bash scripts/test-wiki-build.sh
+bash scripts/test-wiki-query-fileback.sh
+bash scripts/test-wiki-lint.sh
 ```
 
 If any command fails, do not release.

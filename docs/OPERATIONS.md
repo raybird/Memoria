@@ -9,6 +9,9 @@
 ./cli verify --json
 ./cli index build
 ./cli index build --project my-project --dry-run
+./cli source list --json
+./cli wiki build
+./cli wiki lint --json
 ./cli prune --all --dry-run
 ./cli prune --consolidate-days 90 --dry-run
 ./cli prune --stale-days 180 --dry-run
@@ -56,6 +59,24 @@ Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `s
 - Use `./cli govern review --json` to inspect repeated decisions and skills worth promoting into durable rules/skills.
 - Current governance review is deterministic and read-only; it does not mutate memory state.
 
+## Compiled Wiki Operations
+
+Use the wiki workflow when you need durable, human-browsable knowledge artifacts on top of session/source memory.
+
+```bash
+./cli source add notes/research.md
+./cli wiki build
+./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
+./cli wiki lint --json
+```
+
+Operational guidance:
+
+- `source add` stores immutable raw text under `.memory/sources/` and generates `knowledge/Sources/*.md`
+- `wiki build` refreshes `knowledge/index.md`, `knowledge/log.md`, and `knowledge/overview.md`
+- `wiki file-query` should be reserved for high-value synthesis/comparison outputs, not trivial Q&A
+- `wiki lint` writes durable governance findings so follow-up cleanup can be reviewed later
+
 ## Recall Quality Checks
 
 Start server and inspect tree/hybrid routing metadata:
@@ -97,7 +118,12 @@ curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 bash scripts/test-smoke.sh
 bash scripts/test-bootstrap.sh
 bash scripts/test-adapter-runtime.sh
+bash scripts/test-no-clone-install.sh
 bash scripts/test-mcp-e2e.sh
+bash scripts/test-wiki-ingest.sh
+bash scripts/test-wiki-build.sh
+bash scripts/test-wiki-query-fileback.sh
+bash scripts/test-wiki-lint.sh
 ```
 
 ## CI Parity (Local)
@@ -111,7 +137,12 @@ bash -n install.sh
 bash scripts/test-smoke.sh
 bash scripts/test-bootstrap.sh
 bash scripts/test-adapter-runtime.sh
+bash scripts/test-no-clone-install.sh
 bash scripts/test-mcp-e2e.sh
+bash scripts/test-wiki-ingest.sh
+bash scripts/test-wiki-build.sh
+bash scripts/test-wiki-query-fileback.sh
+bash scripts/test-wiki-lint.sh
 ```
 
 ## Release SOP

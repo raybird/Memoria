@@ -1,6 +1,6 @@
 ---
 name: memoria-memory-sync
-description: Initialize, sync, and inspect Memoria persistent memory data from exported AI session JSON files. Use when the user wants cross-session memory persistence, markdown knowledge outputs, memory health checks, or optional MCP/libSQL memory evolution.
+description: Initialize, sync, and inspect Memoria persistent memory data from exported AI session JSON files or imported text sources. Use when the user wants cross-session memory persistence, compiled wiki outputs, governance checks, or optional MCP/libSQL memory evolution.
 license: MIT
 compatibility: Designed for filesystem-based coding agents with bash access. Requires Node.js >=18 and pnpm.
 metadata:
@@ -11,7 +11,7 @@ metadata:
 
 # Memoria Memory Sync
 
-Use this skill when the task is about importing AI session exports into Memoria, generating durable notes, checking memory health, or extending memory behavior with optional MCP/libSQL workflows.
+Use this skill when the task is about importing AI session exports or markdown/text sources into Memoria, generating durable notes/wiki pages, checking memory health, or extending memory behavior with optional MCP/libSQL workflows.
 
 ## Activation Signals
 
@@ -27,8 +27,8 @@ Activate this skill when user intent includes any of:
 This skill should deliver these outcomes:
 
 1. Session data imported into `.memory/sessions.db`
-2. Knowledge markdown generated in `knowledge/Daily`, `knowledge/Decisions`, and `knowledge/Skills`
-3. Health and consistency checks completed (`stats`, `doctor`, smoke test when needed)
+2. Knowledge markdown generated in `knowledge/Daily`, `knowledge/Decisions`, `knowledge/Skills`, and wiki special pages like `index.md` / `log.md` / `overview.md`
+3. Health and consistency checks completed (`stats`, `doctor`, smoke/wiki tests when needed)
 
 ## Standard Workflow
 
@@ -57,6 +57,24 @@ MEMORIA_HOME=$(pwd) ./cli stats
 MEMORIA_HOME=$(pwd) ./cli doctor
 MEMORIA_HOME=$(pwd) ./cli verify
 MEMORIA_HOME=$(pwd) ./cli index build
+MEMORIA_HOME=$(pwd) ./cli wiki build
+MEMORIA_HOME=$(pwd) ./cli wiki lint --json
+```
+
+5. Optional: import an external markdown/text source into the compiled wiki:
+
+```bash
+MEMORIA_HOME=$(pwd) ./cli source add notes/research.md
+```
+
+6. Optional: file a high-value recall query into a synthesis/comparison page:
+
+```bash
+MEMORIA_HOME=$(pwd) ./cli wiki file-query \
+  --query "TS CLI migration" \
+  --title "TS CLI Migration Brief" \
+  --kind synthesis \
+  --scope project:Memoria
 ```
 
 Optional skill validation (if `skills-ref` is installed):
@@ -67,10 +85,16 @@ skills-ref validate skills/memoria-memory-sync
 
 ## Single-Test Guidance
 
-The repo has two explicit test scripts:
+The repo has explicit runtime and wiki test scripts:
 
 ```bash
 bash scripts/test-smoke.sh
+bash scripts/test-bootstrap.sh
+bash scripts/test-no-clone-install.sh
+bash scripts/test-wiki-ingest.sh
+bash scripts/test-wiki-build.sh
+bash scripts/test-wiki-query-fileback.sh
+bash scripts/test-wiki-lint.sh
 bash scripts/test-mcp-e2e.sh
 ```
 
@@ -88,6 +112,8 @@ MEMORIA_HOME="$TMP" ./cli sync examples/session.sample.json
 - Keep current DB table names and columns unless user asks for migrations
 - Validate external JSON input before persistence
 - Use deterministic, sanitized filenames for markdown output
+- Treat raw sources as immutable inputs; compile understanding into wiki pages instead of overwriting originals
+- Prefer `wiki lint` before large wiki refactors so governance findings stay durable
 - Keep changes minimal; avoid introducing new dependencies by default
 
 ## Complementary Hybrid Mode (Recommended)
