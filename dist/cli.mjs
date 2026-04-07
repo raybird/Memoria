@@ -1201,8 +1201,8 @@ var require_command = __commonJS({
   "node_modules/.pnpm/commander@14.0.3/node_modules/commander/lib/command.js"(exports) {
     var EventEmitter = __require("node:events").EventEmitter;
     var childProcess = __require("node:child_process");
-    var path5 = __require("node:path");
-    var fs4 = __require("node:fs");
+    var path8 = __require("node:path");
+    var fs7 = __require("node:fs");
     var process3 = __require("node:process");
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -2196,7 +2196,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs4.existsSync(executableFile)) return;
+        if (fs7.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -2214,11 +2214,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = path5.resolve(baseDir, baseName);
-          if (fs4.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path5.extname(baseName))) return void 0;
+          const localBin = path8.resolve(baseDir, baseName);
+          if (fs7.existsSync(localBin)) return localBin;
+          if (sourceExt.includes(path8.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs4.existsSync(`${localBin}${ext}`)
+            (ext) => fs7.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -2230,21 +2230,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs4.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs7.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = path5.resolve(
-            path5.dirname(resolvedScriptPath),
+          executableDir = path8.resolve(
+            path8.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = path5.basename(
+            const legacyName = path8.basename(
               this._scriptPath,
-              path5.extname(this._scriptPath)
+              path8.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -2255,7 +2255,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        launchWithNode = sourceExt.includes(path5.extname(executableFile));
+        launchWithNode = sourceExt.includes(path8.extname(executableFile));
         let proc;
         if (process3.platform !== "win32") {
           if (launchWithNode) {
@@ -3170,7 +3170,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = path5.basename(filename, path5.extname(filename));
+        this._name = path8.basename(filename, path8.extname(filename));
         return this;
       }
       /**
@@ -3184,9 +3184,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} [path]
        * @return {(string|null|Command)}
        */
-      executableDir(path6) {
-        if (path6 === void 0) return this._executableDir;
-        this._executableDir = path6;
+      executableDir(path9) {
+        if (path9 === void 0) return this._executableDir;
+        this._executableDir = path9;
         return this;
       }
       /**
@@ -3780,6 +3780,91 @@ function initDatabase(dbPath) {
         created_at DATETIME
       );
 
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY,
+        type TEXT,
+        scope TEXT,
+        title TEXT,
+        origin_path TEXT,
+        origin_url TEXT,
+        checksum TEXT,
+        created_at DATETIME,
+        imported_at DATETIME,
+        status TEXT,
+        metadata TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_pages (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        title TEXT,
+        page_type TEXT,
+        scope TEXT,
+        summary TEXT,
+        filepath TEXT,
+        status TEXT,
+        confidence REAL,
+        last_built_at DATETIME,
+        last_reviewed_at DATETIME,
+        metadata TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_page_sources (
+        page_id TEXT,
+        source_id TEXT,
+        relation_type TEXT,
+        created_at DATETIME,
+        PRIMARY KEY (page_id, source_id),
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (source_id) REFERENCES sources(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_page_links (
+        from_page_id TEXT,
+        to_page_id TEXT,
+        link_type TEXT,
+        created_at DATETIME,
+        PRIMARY KEY (from_page_id, to_page_id),
+        FOREIGN KEY (from_page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (to_page_id) REFERENCES wiki_pages(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_lint_runs (
+        id TEXT PRIMARY KEY,
+        status TEXT,
+        summary TEXT,
+        created_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_lint_findings (
+        id TEXT PRIMARY KEY,
+        run_id TEXT,
+        finding_type TEXT,
+        severity TEXT,
+        page_id TEXT,
+        related_page_id TEXT,
+        source_id TEXT,
+        status TEXT,
+        summary TEXT,
+        details TEXT,
+        created_at DATETIME,
+        resolved_at DATETIME,
+        FOREIGN KEY (run_id) REFERENCES wiki_lint_runs(id),
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (related_page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (source_id) REFERENCES sources(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_query_artifacts (
+        id TEXT PRIMARY KEY,
+        query TEXT,
+        kind TEXT,
+        page_id TEXT,
+        created_at DATETIME,
+        metadata TEXT,
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_sessions_timestamp
       ON sessions(timestamp);
 
@@ -3812,6 +3897,33 @@ function initDatabase(dbPath) {
 
       CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route
       ON recall_telemetry(route_mode, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_sources_type_imported_at
+      ON sources(type, imported_at);
+
+      CREATE INDEX IF NOT EXISTS idx_sources_scope_imported_at
+      ON sources(scope, imported_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_page_type_scope
+      ON wiki_pages(page_type, scope);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_status
+      ON wiki_pages(status, last_built_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_page_sources_source_id
+      ON wiki_page_sources(source_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_page_links_from
+      ON wiki_page_links(from_page_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_lint_findings_status_severity_created
+      ON wiki_lint_findings(status, severity, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_lint_findings_run
+      ON wiki_lint_findings(run_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_query_artifacts_kind_created
+      ON wiki_query_artifacts(kind, created_at);
     `);
     const sessionColumns = new Set(db.prepare("PRAGMA table_info(sessions)").all().map((r) => r.name));
     if (!sessionColumns.has("scope")) {
@@ -3825,9 +3937,86 @@ function initDatabase(dbPath) {
       db.exec(`UPDATE memory_nodes SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`);
     }
     db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_level ON memory_nodes(scope, level)`);
+    const wikiLintColumns = new Set(db.prepare("PRAGMA table_info(wiki_lint_findings)").all().map((r) => r.name));
+    if (!wikiLintColumns.has("run_id")) {
+      db.exec(`ALTER TABLE wiki_lint_findings ADD COLUMN run_id TEXT`);
+    }
   } finally {
     db.close();
   }
+}
+function stringifyJson(value) {
+  return stableStringify(value ?? {});
+}
+function parseJsonRecord(value) {
+  if (!value) return void 0;
+  const parsed = maybeParseJson(value);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+}
+function mapSourceRecord(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    scope: row.scope,
+    title: row.title,
+    origin_path: row.origin_path ?? void 0,
+    origin_url: row.origin_url ?? void 0,
+    checksum: row.checksum ?? void 0,
+    created_at: row.created_at,
+    imported_at: row.imported_at,
+    status: row.status,
+    metadata: parseJsonRecord(row.metadata)
+  };
+}
+function mapWikiPage(row) {
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    page_type: row.page_type,
+    scope: row.scope,
+    summary: row.summary,
+    filepath: row.filepath ?? void 0,
+    status: row.status,
+    confidence: typeof row.confidence === "number" ? row.confidence : void 0,
+    last_built_at: row.last_built_at ?? void 0,
+    last_reviewed_at: row.last_reviewed_at ?? void 0,
+    metadata: parseJsonRecord(row.metadata)
+  };
+}
+function mapWikiLintFinding(row) {
+  return {
+    id: row.id,
+    run_id: row.run_id ?? void 0,
+    finding_type: row.finding_type,
+    severity: row.severity,
+    page_id: row.page_id ?? void 0,
+    related_page_id: row.related_page_id ?? void 0,
+    source_id: row.source_id ?? void 0,
+    status: row.status,
+    summary: row.summary,
+    details: row.details ?? void 0,
+    created_at: row.created_at,
+    resolved_at: row.resolved_at ?? void 0
+  };
+}
+function mapWikiLintRun(row) {
+  return {
+    id: row.id,
+    status: row.status,
+    summary: row.summary ?? void 0,
+    created_at: row.created_at
+  };
+}
+function mapWikiQueryArtifact(row) {
+  return {
+    id: row.id,
+    query: row.query,
+    kind: row.kind,
+    page_id: row.page_id,
+    created_at: row.created_at,
+    metadata: parseJsonRecord(row.metadata)
+  };
 }
 function importSession(dbPath, sessionData) {
   const db = new Database(dbPath);
@@ -3866,6 +4055,346 @@ function importSession(dbPath, sessionData) {
     db.close();
   }
   return sessionId;
+}
+function upsertSourceRecord(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath);
+  try {
+    const importedAt = input.imported_at ?? (/* @__PURE__ */ new Date()).toISOString();
+    db.prepare(`
+          INSERT INTO sources
+          (id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            type = excluded.type,
+            scope = excluded.scope,
+            title = excluded.title,
+            origin_path = excluded.origin_path,
+            origin_url = excluded.origin_url,
+            checksum = excluded.checksum,
+            created_at = excluded.created_at,
+            imported_at = excluded.imported_at,
+            status = excluded.status,
+            metadata = excluded.metadata
+        `).run(
+      input.id,
+      input.type,
+      input.scope,
+      input.title,
+      input.origin_path ?? null,
+      input.origin_url ?? null,
+      input.checksum ?? null,
+      input.created_at,
+      importedAt,
+      input.status ?? "active",
+      stringifyJson(input.metadata)
+    );
+    const row = db.prepare(`
+          SELECT id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata
+          FROM sources
+          WHERE id = ?
+        `).get(input.id);
+    return mapSourceRecord(row);
+  } finally {
+    db.close();
+  }
+}
+function listSourceRecords(dbPath, options) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)));
+    const rows = db.prepare(`
+          SELECT id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata
+          FROM sources
+          WHERE 1 = 1
+          ${options?.type ? "AND type = ?" : ""}
+          ${options?.scope ? "AND scope = ?" : ""}
+          ORDER BY imported_at DESC
+          LIMIT ?
+        `).all(
+      ...[
+        ...options?.type ? [options.type] : [],
+        ...options?.scope ? [options.scope] : [],
+        limit
+      ]
+    );
+    return rows.map(mapSourceRecord);
+  } finally {
+    db.close();
+  }
+}
+function upsertWikiPage(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath);
+  try {
+    db.prepare(`
+          INSERT INTO wiki_pages
+          (id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            slug = excluded.slug,
+            title = excluded.title,
+            page_type = excluded.page_type,
+            scope = excluded.scope,
+            summary = excluded.summary,
+            filepath = excluded.filepath,
+            status = excluded.status,
+            confidence = excluded.confidence,
+            last_built_at = excluded.last_built_at,
+            last_reviewed_at = excluded.last_reviewed_at,
+            metadata = excluded.metadata
+        `).run(
+      input.id,
+      input.slug,
+      input.title,
+      input.page_type,
+      input.scope,
+      input.summary,
+      input.filepath ?? null,
+      input.status ?? "draft",
+      typeof input.confidence === "number" ? input.confidence : null,
+      input.last_built_at ?? null,
+      input.last_reviewed_at ?? null,
+      stringifyJson(input.metadata)
+    );
+    const row = db.prepare(`
+          SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
+          FROM wiki_pages
+          WHERE id = ?
+        `).get(input.id);
+    return mapWikiPage(row);
+  } finally {
+    db.close();
+  }
+}
+function getWikiPageBySlug(dbPath, slug) {
+  if (!existsSync(dbPath)) return void 0;
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const row = db.prepare(`
+          SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
+          FROM wiki_pages
+          WHERE slug = ?
+        `).get(slug);
+    return row ? mapWikiPage(row) : void 0;
+  } finally {
+    db.close();
+  }
+}
+function listWikiPages(dbPath, options) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)));
+    const rows = db.prepare(`
+          SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
+          FROM wiki_pages
+          WHERE 1 = 1
+          ${options?.pageType ? "AND page_type = ?" : ""}
+          ${options?.scope ? "AND scope = ?" : ""}
+          ORDER BY COALESCE(last_built_at, last_reviewed_at, slug) DESC
+          LIMIT ?
+        `).all(
+      ...[
+        ...options?.pageType ? [options.pageType] : [],
+        ...options?.scope ? [options.scope] : [],
+        limit
+      ]
+    );
+    return rows.map(mapWikiPage);
+  } finally {
+    db.close();
+  }
+}
+function listRecentSessions(dbPath, limitRaw = 10) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const limit = Math.min(100, Math.max(1, Math.floor(limitRaw)));
+    return db.prepare(`
+          SELECT id, timestamp, project, scope, summary
+          FROM sessions
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all(limit);
+  } finally {
+    db.close();
+  }
+}
+function queryWikiBuildResult(dbPath) {
+  if (!existsSync(dbPath)) {
+    return { sourceCount: 0, pageCount: 0, pageTypeCounts: {} };
+  }
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const sourceCount = Number(db.prepare("SELECT COUNT(*) AS c FROM sources").get().c);
+    const pageCount = Number(db.prepare("SELECT COUNT(*) AS c FROM wiki_pages").get().c);
+    const rows = db.prepare(`
+          SELECT page_type, COUNT(*) AS c
+          FROM wiki_pages
+          GROUP BY page_type
+          ORDER BY page_type ASC
+        `).all();
+    const pageTypeCounts = Object.fromEntries(rows.map((row) => [row.page_type, Number(row.c)]));
+    return { sourceCount, pageCount, pageTypeCounts };
+  } finally {
+    db.close();
+  }
+}
+function upsertWikiPageSourceLink(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath);
+  try {
+    db.prepare(`
+          INSERT OR REPLACE INTO wiki_page_sources (page_id, source_id, relation_type, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(input.page_id, input.source_id, input.relation_type ?? "supports", input.created_at ?? (/* @__PURE__ */ new Date()).toISOString());
+  } finally {
+    db.close();
+  }
+}
+function listWikiPageSourceLinks(dbPath) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.prepare(`
+          SELECT page_id, source_id, relation_type, created_at
+          FROM wiki_page_sources
+          ORDER BY created_at DESC
+        `).all();
+  } finally {
+    db.close();
+  }
+}
+function listWikiPageLinks(dbPath) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    return db.prepare(`
+          SELECT from_page_id, to_page_id, link_type, created_at
+          FROM wiki_page_links
+          ORDER BY created_at DESC
+        `).all();
+  } finally {
+    db.close();
+  }
+}
+function upsertWikiLintRun(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath);
+  try {
+    db.prepare(`
+          INSERT OR REPLACE INTO wiki_lint_runs (id, status, summary, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(input.id, input.status ?? "completed", input.summary ?? null, input.created_at ?? (/* @__PURE__ */ new Date()).toISOString());
+  } finally {
+    db.close();
+  }
+}
+function getWikiLintRun(dbPath, id) {
+  if (!existsSync(dbPath)) return void 0;
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const row = db.prepare(`
+          SELECT id, status, summary, created_at
+          FROM wiki_lint_runs
+          WHERE id = ?
+        `).get(id);
+    return row ? mapWikiLintRun(row) : void 0;
+  } finally {
+    db.close();
+  }
+}
+function upsertWikiLintFinding(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath);
+  try {
+    db.prepare(`
+          INSERT OR REPLACE INTO wiki_lint_findings
+          (id, run_id, finding_type, severity, page_id, related_page_id, source_id, status, summary, details, created_at, resolved_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+      input.id,
+      input.run_id ?? null,
+      input.finding_type,
+      input.severity,
+      input.page_id ?? null,
+      input.related_page_id ?? null,
+      input.source_id ?? null,
+      input.status ?? "open",
+      input.summary,
+      input.details ?? null,
+      input.created_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+      input.resolved_at ?? null
+    );
+    const row = db.prepare(`
+          SELECT id, run_id, finding_type, severity, page_id, related_page_id, source_id, status, summary, details, created_at, resolved_at
+          FROM wiki_lint_findings
+          WHERE id = ?
+        `).get(input.id);
+    return mapWikiLintFinding(row);
+  } finally {
+    db.close();
+  }
+}
+function listWikiLintFindings(dbPath, options) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)));
+    const rows = db.prepare(`
+          SELECT id, run_id, finding_type, severity, page_id, related_page_id, source_id, status, summary, details, created_at, resolved_at
+          FROM wiki_lint_findings
+          WHERE 1 = 1
+          ${options?.status ? "AND status = ?" : ""}
+          ORDER BY created_at DESC
+          LIMIT ?
+        `).all(...[...options?.status ? [options.status] : [], limit]);
+    return rows.map(mapWikiLintFinding);
+  } finally {
+    db.close();
+  }
+}
+function upsertWikiQueryArtifact(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database(dbPath);
+  try {
+    db.prepare(`
+          INSERT INTO wiki_query_artifacts (id, query, kind, page_id, created_at, metadata)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            query = excluded.query,
+            kind = excluded.kind,
+            page_id = excluded.page_id,
+            created_at = excluded.created_at,
+            metadata = excluded.metadata
+        `).run(
+      input.id,
+      input.query,
+      input.kind,
+      input.page_id,
+      input.created_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+      stringifyJson(input.metadata)
+    );
+    const row = db.prepare(`
+          SELECT id, query, kind, page_id, created_at, metadata
+          FROM wiki_query_artifacts
+          WHERE id = ?
+        `).get(input.id);
+    return mapWikiQueryArtifact(row);
+  } finally {
+    db.close();
+  }
 }
 async function syncDailyNote(memoriaHome, dbPath, sessionId) {
   const db = new Database(dbPath, { readonly: true });
@@ -4996,9 +5525,483 @@ var init_db = __esm({
   }
 });
 
-// src/core/memoria.ts
+// src/core/source-import.ts
+import crypto from "node:crypto";
 import fs2 from "node:fs/promises";
 import path3 from "node:path";
+function inferSourceType(filePath) {
+  const ext = path3.extname(filePath).toLowerCase();
+  if (ext === ".md" || ext === ".markdown") return "article";
+  if (ext === ".txt") return "note";
+  return "document";
+}
+function summarizeText(content) {
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return "Imported source with no textual content.";
+  return normalized.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 3).join(" ").slice(0, 220);
+}
+function inferSourceTitle(raw, absolutePath, explicitTitle) {
+  const trimmedTitle = explicitTitle?.trim();
+  if (trimmedTitle) return trimmedTitle;
+  const heading = raw.match(/^#\s+(.+)$/m)?.[1]?.trim();
+  if (heading) return heading;
+  return path3.basename(absolutePath, path3.extname(absolutePath));
+}
+function renderSourceSummaryPage(input) {
+  return `# ${input.title}
+
+## Metadata
+- Source ID: \`${input.sourceId}\`
+- Type: ${input.type}
+- Scope: ${input.scope}
+- Imported At: ${input.importedAt}
+- Checksum: \`${input.checksum}\`
+- Origin Path: \`${input.originPath}\`
+
+## Summary
+${input.summary}
+`;
+}
+async function importSourceFile(paths, input) {
+  const absolutePath = path3.resolve(input.filePath);
+  const raw = await fs2.readFile(absolutePath, "utf8");
+  const checksum = crypto.createHash("sha256").update(raw).digest("hex");
+  const importedAt = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = importedAt;
+  const sourceType = input.type ?? inferSourceType(absolutePath);
+  const sourceTitle = inferSourceTitle(raw, absolutePath, input.title);
+  const scope = input.scope?.trim() || "global";
+  const dedupedExisting = listSourceRecords(paths.dbPath, { limit: 500 }).find((record2) => record2.checksum === checksum);
+  if (dedupedExisting) {
+    const existingSlug = `source-${slugify2(dedupedExisting.title).toLowerCase()}-${shortHash(dedupedExisting.id, 8)}`;
+    const existingPage = getWikiPageBySlug(paths.dbPath, existingSlug);
+    if (!existingPage) {
+      throw new Error(`Source record exists without source-summary page: ${dedupedExisting.id}`);
+    }
+    return { source: dedupedExisting, page: existingPage, deduped: true };
+  }
+  const sourceId = `src_${shortHash(`${absolutePath}:${checksum}`, 24)}`;
+  const slugStem = slugify2(sourceTitle).toLowerCase() || "source";
+  const sourceSlug = `source-${slugStem}-${shortHash(sourceId, 8)}`;
+  const sourceDir = path3.join(paths.memoryDir, "sources");
+  const sourceExt = path3.extname(absolutePath).toLowerCase() || ".txt";
+  const storedSourcePath = path3.join(sourceDir, `${sourceId}${sourceExt}`);
+  const pageDir = path3.join(paths.knowledgeDir, "Sources");
+  const pagePath = path3.join(pageDir, `${sourceSlug}.md`);
+  await fs2.mkdir(sourceDir, { recursive: true });
+  await fs2.mkdir(pageDir, { recursive: true });
+  await fs2.writeFile(storedSourcePath, raw, "utf8");
+  const source = upsertSourceRecord(paths.dbPath, {
+    id: sourceId,
+    type: sourceType,
+    scope,
+    title: sourceTitle,
+    origin_path: storedSourcePath,
+    checksum,
+    created_at: createdAt,
+    imported_at: importedAt,
+    status: "active",
+    metadata: {
+      original_path: absolutePath,
+      byte_length: Buffer.byteLength(raw, "utf8"),
+      file_extension: sourceExt
+    }
+  });
+  const page = upsertWikiPage(paths.dbPath, {
+    id: `page_${shortHash(sourceId, 24)}`,
+    slug: sourceSlug,
+    title: sourceTitle,
+    page_type: "source-summary",
+    scope,
+    summary: summarizeText(raw),
+    filepath: pagePath,
+    status: "active",
+    confidence: 1,
+    last_built_at: importedAt,
+    metadata: {
+      source_id: sourceId,
+      generated_by: "importSourceFile"
+    }
+  });
+  upsertWikiPageSourceLink(paths.dbPath, {
+    page_id: page.id,
+    source_id: source.id,
+    relation_type: "summarizes",
+    created_at: importedAt
+  });
+  await fs2.writeFile(pagePath, renderSourceSummaryPage({
+    title: sourceTitle,
+    sourceId: source.id,
+    type: source.type,
+    scope: source.scope,
+    importedAt,
+    checksum,
+    originPath: source.origin_path ?? absolutePath,
+    summary: page.summary
+  }), "utf8");
+  return { source, page, deduped: false };
+}
+var init_source_import = __esm({
+  "src/core/source-import.ts"() {
+    "use strict";
+    init_db();
+    init_utils();
+  }
+});
+
+// src/core/wiki.ts
+function renderMetadataLines(entries) {
+  return entries.filter(([, value]) => value !== void 0 && value !== "").map(([label, value]) => `- ${label}: ${value}`).join("\n");
+}
+function renderWikiIndexPage(input) {
+  const grouped = /* @__PURE__ */ new Map();
+  for (const page of input.pages) {
+    const bucket = grouped.get(page.page_type) ?? [];
+    bucket.push(page);
+    grouped.set(page.page_type, bucket);
+  }
+  const sections = [...grouped.entries()].map(([pageType, pages]) => {
+    const items = pages.sort((a, b) => a.title.localeCompare(b.title)).map((page) => `- [[${page.filepath ? page.filepath.split("/").slice(-2).join("/").replace(/\.md$/, "") : page.slug}|${page.title}]] - ${page.summary}`).join("\n");
+    return `## ${pageType} (${input.pageTypeCounts[pageType] ?? pages.length})
+${items}`;
+  });
+  return `# Knowledge Index
+
+## Summary
+${Object.entries(input.pageTypeCounts).sort(([a], [b]) => a.localeCompare(b)).map(([pageType, count]) => `- ${pageType}: ${count}`).join("\n")}
+
+${sections.join("\n\n")}
+`;
+}
+function renderWikiLogPage(input) {
+  const sourceEntries = input.sources.map((source) => `## [${source.imported_at.slice(0, 10)}] source | ${source.title}
+
+- id: \`${source.id}\`
+- type: ${source.type}
+- scope: ${source.scope}`);
+  const sessionEntries = input.sessions.map((session) => `## [${session.timestamp.slice(0, 10)}] session | ${session.id}
+
+- project: ${session.project}
+- scope: ${session.scope}
+- summary: ${session.summary || "(none)"}`);
+  const entries = [...sourceEntries, ...sessionEntries].join("\n\n");
+  return `# Knowledge Log
+
+${entries || "No log entries yet."}
+`;
+}
+function renderWikiOverviewPage(input) {
+  return `# Knowledge Overview
+
+## Runtime Summary
+${renderMetadataLines([
+    ["Source Count", input.build.sourceCount],
+    ["Wiki Page Count", input.build.pageCount],
+    ["Session Count", input.stats.sessions],
+    ["Event Count", input.stats.events],
+    ["Skill Count", input.stats.skills]
+  ])}
+
+## Wiki Page Types
+${Object.entries(input.pageTypeCounts).sort(([a], [b]) => a.localeCompare(b)).map(([pageType, count]) => `- ${pageType}: ${count}`).join("\n") || "- (none)"}
+
+## Last Session
+${input.stats.lastSession ? `- ${input.stats.lastSession.id} (${input.stats.lastSession.project}, ${input.stats.lastSession.timestamp})` : "- (none)"}
+`;
+}
+var init_wiki = __esm({
+  "src/core/wiki.ts"() {
+    "use strict";
+  }
+});
+
+// src/core/wiki-build.ts
+import fs3 from "node:fs/promises";
+import path4 from "node:path";
+async function ensureWikiDirectories(knowledgeDir) {
+  await Promise.all([
+    path4.join(knowledgeDir, "Daily"),
+    path4.join(knowledgeDir, "Decisions"),
+    path4.join(knowledgeDir, "Skills"),
+    path4.join(knowledgeDir, "Sources")
+  ].map((dir) => fs3.mkdir(dir, { recursive: true })));
+}
+function inferWikiPageType(dirName) {
+  if (dirName === "Sources") return "source-summary";
+  if (dirName === "Daily") return "index-meta";
+  if (dirName === "Decisions") return "comparison";
+  if (dirName === "Skills") return "concept";
+  return void 0;
+}
+async function syncFilesystemPages(paths) {
+  const subdirs = ["Daily", "Decisions", "Skills", "Sources"];
+  let synced = 0;
+  for (const subdir of subdirs) {
+    const absDir = path4.join(paths.knowledgeDir, subdir);
+    const entries = await fs3.readdir(absDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const filepath = path4.join(absDir, entry.name);
+      const content = await fs3.readFile(filepath, "utf8");
+      const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim() || path4.basename(entry.name, ".md");
+      const summary = content.replace(/^#.*$/m, "").split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 2).join(" ").slice(0, 220) || `${title} page`;
+      const slug = slugify2(path4.basename(entry.name, ".md")).toLowerCase() || shortHash(filepath, 8);
+      const pageType = inferWikiPageType(subdir);
+      if (!pageType) continue;
+      const existingPage = getWikiPageBySlug(paths.dbPath, slug);
+      upsertWikiPage(paths.dbPath, {
+        id: existingPage?.id ?? `page_${shortHash(filepath, 24)}`,
+        slug,
+        title,
+        page_type: pageType,
+        scope: "global",
+        summary,
+        filepath,
+        status: "active",
+        last_built_at: (/* @__PURE__ */ new Date()).toISOString(),
+        metadata: {
+          source_directory: subdir,
+          synced_from_filesystem: true
+        }
+      });
+      synced += 1;
+    }
+  }
+  return synced;
+}
+async function buildCompiledWiki(paths) {
+  await ensureWikiDirectories(paths.knowledgeDir);
+  const pagesSynced = await syncFilesystemPages(paths);
+  const sources = listSourceRecords(paths.dbPath, { limit: 100 });
+  const pages = listWikiPages(paths.dbPath, { limit: 500 });
+  const sessions = listRecentSessions(paths.dbPath, 20);
+  const buildSummary = queryWikiBuildResult(paths.dbPath);
+  const stats = queryStats(paths.dbPath);
+  const specialPages = {
+    index: path4.join(paths.knowledgeDir, "index.md"),
+    log: path4.join(paths.knowledgeDir, "log.md"),
+    overview: path4.join(paths.knowledgeDir, "overview.md")
+  };
+  await fs3.writeFile(specialPages.index, renderWikiIndexPage({ pages, pageTypeCounts: buildSummary.pageTypeCounts }), "utf8");
+  await fs3.writeFile(specialPages.log, renderWikiLogPage({ sources, sessions }), "utf8");
+  await fs3.writeFile(specialPages.overview, renderWikiOverviewPage({
+    build: { pagesSynced, sourceCount: buildSummary.sourceCount, pageCount: buildSummary.pageCount, specialPages },
+    stats,
+    pageTypeCounts: buildSummary.pageTypeCounts
+  }), "utf8");
+  return {
+    pagesSynced,
+    sourceCount: buildSummary.sourceCount,
+    pageCount: buildSummary.pageCount,
+    specialPages
+  };
+}
+var init_wiki_build = __esm({
+  "src/core/wiki-build.ts"() {
+    "use strict";
+    init_db();
+    init_wiki();
+    init_utils();
+  }
+});
+
+// src/core/wiki-query.ts
+import fs4 from "node:fs/promises";
+import path5 from "node:path";
+function renderFiledQueryPage(input) {
+  const evidence = input.hits.map((hit) => `- ${hit.type} \`${hit.id}\` (${hit.project}, ${hit.timestamp})
+  - ${hit.snippet}`).join("\n");
+  return `# ${input.title}
+
+## Metadata
+- Query: ${input.query}
+- Kind: ${input.kind}
+- Scope: ${input.scope}
+
+## Synthesis
+${input.hits.length > 0 ? `This page was filed from a query over ${input.hits.length} supporting recall hit(s).` : "No supporting hits were available."}
+
+## Evidence
+${evidence || "- (none)"}
+`;
+}
+async function fileQueryResult(paths, input, hits) {
+  const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+  const scope = input.scope?.trim() || "global";
+  const pageType = input.kind;
+  const slug = `${input.kind}-${slugify2(input.title).toLowerCase() || shortHash(input.query, 8)}-${shortHash(`${input.query}:${createdAt}`, 8)}`;
+  const subdir = input.kind === "comparison" ? "Comparisons" : "Syntheses";
+  const dirPath = path5.join(paths.knowledgeDir, subdir);
+  const pagePath = path5.join(dirPath, `${slug}.md`);
+  const pageId = `page_${shortHash(pagePath, 24)}`;
+  await fs4.mkdir(dirPath, { recursive: true });
+  const page = upsertWikiPage(paths.dbPath, {
+    id: pageId,
+    slug,
+    title: input.title,
+    page_type: pageType,
+    scope,
+    summary: `Filed query for ${input.query}`.slice(0, 220),
+    filepath: pagePath,
+    status: "active",
+    confidence: hits.length > 0 ? hits[0].score : 0,
+    last_built_at: createdAt,
+    metadata: {
+      filed_from_query: true,
+      hit_count: hits.length
+    }
+  });
+  await fs4.writeFile(pagePath, renderFiledQueryPage({ title: input.title, query: input.query, kind: pageType, scope, hits }), "utf8");
+  const artifact = upsertWikiQueryArtifact(paths.dbPath, {
+    id: `qa_${shortHash(`${input.query}:${page.id}:${createdAt}`, 24)}`,
+    query: input.query,
+    kind: input.kind,
+    page_id: page.id,
+    created_at: createdAt,
+    metadata: {
+      title: input.title,
+      scope,
+      hit_ids: hits.map((hit) => hit.id)
+    }
+  });
+  return { artifact, page, hits };
+}
+var init_wiki_query = __esm({
+  "src/core/wiki-query.ts"() {
+    "use strict";
+    init_db();
+    init_utils();
+  }
+});
+
+// src/core/wiki-lint.ts
+function normalizeTitle(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+function runWikiLint(paths, options = {}) {
+  const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+  const runId = `wlr_${shortHash(createdAt, 24)}`;
+  const staleDays = Number.isFinite(options.stale_days) ? Number(options.stale_days) : 30;
+  const limit = Math.min(500, Math.max(1, Math.floor(options.limit ?? 100)));
+  const pages = listWikiPages(paths.dbPath, { limit: 1e3 });
+  const sources = listSourceRecords(paths.dbPath, { limit: 1e3 });
+  const pageSourceLinks = listWikiPageSourceLinks(paths.dbPath);
+  const pageLinks = listWikiPageLinks(paths.dbPath);
+  upsertWikiLintRun(paths.dbPath, {
+    id: runId,
+    status: "completed",
+    summary: `Wiki lint executed for ${pages.length} pages and ${sources.length} sources`,
+    created_at: createdAt
+  });
+  const sourceIdsWithCompiledPages = new Set(pageSourceLinks.map((link) => link.source_id));
+  const pageIdsWithSourceLinks = new Set(pageSourceLinks.map((link) => link.page_id));
+  const pageIdsWithAnyLinks = new Set(pageLinks.flatMap((link) => [link.from_page_id, link.to_page_id]));
+  const staleBefore = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1e3);
+  const findings = [];
+  for (const source of sources) {
+    if (!sourceIdsWithCompiledPages.has(source.id)) {
+      findings.push(upsertWikiLintFinding(paths.dbPath, {
+        id: `wlf_${shortHash(`source-not-compiled:${source.id}`, 24)}`,
+        run_id: runId,
+        finding_type: "source-not-compiled",
+        severity: "high",
+        source_id: source.id,
+        status: "open",
+        summary: `Source '${source.title}' is not linked to any compiled wiki page`,
+        details: `Source ${source.id} has no wiki_page_sources link.`,
+        created_at: createdAt
+      }));
+    }
+  }
+  const duplicateBuckets = /* @__PURE__ */ new Map();
+  for (const page of pages) {
+    const key = `${page.page_type}:${page.scope}:${normalizeTitle(page.title)}`;
+    const bucket = duplicateBuckets.get(key) ?? [];
+    bucket.push(page);
+    duplicateBuckets.set(key, bucket);
+  }
+  for (const bucket of duplicateBuckets.values()) {
+    if (bucket.length < 2) continue;
+    const [primary, ...duplicates] = bucket.sort((a, b) => a.slug.localeCompare(b.slug));
+    for (const duplicate of duplicates) {
+      findings.push(upsertWikiLintFinding(paths.dbPath, {
+        id: `wlf_${shortHash(`duplicate:${duplicate.id}:${primary.id}`, 24)}`,
+        run_id: runId,
+        finding_type: "duplicate-page",
+        severity: "medium",
+        page_id: duplicate.id,
+        related_page_id: primary.id,
+        status: "open",
+        summary: `Duplicate wiki page title '${duplicate.title}' detected`,
+        details: `Page ${duplicate.id} duplicates ${primary.id} within ${duplicate.page_type}/${duplicate.scope}.`,
+        created_at: createdAt
+      }));
+    }
+  }
+  for (const page of pages) {
+    const lastTouchedIso = page.last_reviewed_at ?? page.last_built_at;
+    const metadata = page.metadata ?? {};
+    const hasSourceLinks = pageIdsWithSourceLinks.has(page.id);
+    const hasPageLinks = pageIdsWithAnyLinks.has(page.id);
+    if (page.page_type !== "index-meta" && page.page_type !== "source-summary" && !hasSourceLinks && !hasPageLinks && metadata.filed_from_query !== true) {
+      findings.push(upsertWikiLintFinding(paths.dbPath, {
+        id: `wlf_${shortHash(`orphan:${page.id}`, 24)}`,
+        run_id: runId,
+        finding_type: "orphan-page",
+        severity: "medium",
+        page_id: page.id,
+        status: "open",
+        summary: `Wiki page '${page.title}' is orphaned`,
+        details: `Page ${page.id} has no source provenance or page links.`,
+        created_at: createdAt
+      }));
+    }
+    if (["entity", "concept", "synthesis", "comparison", "question"].includes(page.page_type) && !hasSourceLinks && metadata.filed_from_query !== true) {
+      findings.push(upsertWikiLintFinding(paths.dbPath, {
+        id: `wlf_${shortHash(`low-provenance:${page.id}`, 24)}`,
+        run_id: runId,
+        finding_type: "low-provenance",
+        severity: "high",
+        page_id: page.id,
+        status: "open",
+        summary: `Wiki page '${page.title}' has no source provenance links`,
+        details: `Page ${page.id} is a ${page.page_type} page without wiki_page_sources support.`,
+        created_at: createdAt
+      }));
+    }
+    if (lastTouchedIso) {
+      const lastTouched = new Date(lastTouchedIso);
+      if (!Number.isNaN(lastTouched.getTime()) && lastTouched < staleBefore && page.status === "active" && page.page_type !== "index-meta") {
+        findings.push(upsertWikiLintFinding(paths.dbPath, {
+          id: `wlf_${shortHash(`stale:${page.id}:${staleDays}`, 24)}`,
+          run_id: runId,
+          finding_type: "stale-page",
+          severity: "medium",
+          page_id: page.id,
+          status: "open",
+          summary: `Wiki page '${page.title}' is older than ${staleDays} day(s)`,
+          details: `Last touched at ${lastTouchedIso}.`,
+          created_at: createdAt
+        }));
+      }
+    }
+  }
+  return {
+    run: getWikiLintRun(paths.dbPath, runId) ?? { id: runId, status: "completed", summary: "Wiki lint run completed", created_at: createdAt },
+    findings: listWikiLintFindings(paths.dbPath, { status: "open", limit }).filter((finding) => finding.run_id === runId)
+  };
+}
+var init_wiki_lint = __esm({
+  "src/core/wiki-lint.ts"() {
+    "use strict";
+    init_db();
+    init_utils();
+  }
+});
+
+// src/core/memoria.ts
+import fs5 from "node:fs/promises";
+import path6 from "node:path";
 function isEmojiOnlyQuery(query) {
   const stripped = query.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]/gu, "");
   return stripped.length === 0 && query.trim().length > 0;
@@ -5042,6 +6045,10 @@ var init_memoria = __esm({
     "use strict";
     init_paths();
     init_db();
+    init_source_import();
+    init_wiki_build();
+    init_wiki_query();
+    init_wiki_lint();
     MemoriaCore = class {
       paths;
       constructor(paths) {
@@ -5052,16 +6059,197 @@ var init_memoria = __esm({
         const dirs = [
           this.paths.memoryDir,
           this.paths.sessionsPath,
-          path3.join(this.paths.memoryDir, "checkpoints"),
-          path3.join(this.paths.memoryDir, "exports"),
+          path6.join(this.paths.memoryDir, "sources"),
+          path6.join(this.paths.memoryDir, "checkpoints"),
+          path6.join(this.paths.memoryDir, "exports"),
           this.paths.knowledgeDir,
-          path3.join(this.paths.knowledgeDir, "Daily"),
-          path3.join(this.paths.knowledgeDir, "Skills"),
-          path3.join(this.paths.knowledgeDir, "Decisions"),
+          path6.join(this.paths.knowledgeDir, "Daily"),
+          path6.join(this.paths.knowledgeDir, "Sources"),
+          path6.join(this.paths.knowledgeDir, "Skills"),
+          path6.join(this.paths.knowledgeDir, "Decisions"),
           this.paths.configPath
         ];
-        await Promise.all(dirs.map((d) => fs2.mkdir(d, { recursive: true })));
+        await Promise.all(dirs.map((d) => fs5.mkdir(d, { recursive: true })));
         initDatabase(this.paths.dbPath);
+      }
+      async addSource(input) {
+        const start = Date.now();
+        try {
+          await this.init();
+          const data = await importSourceFile(this.paths, input);
+          await buildCompiledWiki(this.paths);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "markdown",
+              evidence: [data.source.id, data.page.id],
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "markdown",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      async buildWiki() {
+        const start = Date.now();
+        try {
+          await this.init();
+          const data = await buildCompiledWiki(this.paths);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "markdown",
+              evidence: Object.values(data.specialPages),
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "markdown",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      async listSources(options) {
+        const start = Date.now();
+        try {
+          if (!existsSync(this.paths.dbPath)) {
+            return {
+              ok: true,
+              data: [],
+              meta: {
+                source: "sqlite",
+                evidence: [],
+                confidence: 1,
+                timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+                latency_ms: Date.now() - start
+              }
+            };
+          }
+          initDatabase(this.paths.dbPath);
+          const data = listSourceRecords(this.paths.dbPath, options);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "sqlite",
+              evidence: data.map((item) => item.id),
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      async fileQuery(input) {
+        const start = Date.now();
+        try {
+          await this.init();
+          const recallResult = await this.recall({
+            query: input.query,
+            scope: input.scope,
+            top_k: input.top_k,
+            time_window: input.time_window,
+            mode: input.mode
+          });
+          if (!recallResult.ok) {
+            throw new Error(recallResult.error);
+          }
+          const hits = recallResult.data ?? [];
+          if (hits.length === 0) {
+            throw new Error("No recall hits found for file-query");
+          }
+          const data = await fileQueryResult(this.paths, input, hits);
+          await buildCompiledWiki(this.paths);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "markdown",
+              evidence: [data.artifact.id, data.page.id, ...hits.map((hit) => hit.id)],
+              confidence: hits[0]?.score ?? 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "markdown",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
+      }
+      async wikiLint(options) {
+        const start = Date.now();
+        try {
+          await this.init();
+          const data = runWikiLint(this.paths, options);
+          return {
+            ok: true,
+            data,
+            meta: {
+              source: "sqlite",
+              evidence: data.findings.map((finding) => finding.id),
+              confidence: 1,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        } catch (error48) {
+          return {
+            ok: false,
+            error: error48 instanceof Error ? error48.message : String(error48),
+            meta: {
+              source: "sqlite",
+              evidence: [],
+              confidence: 0,
+              timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+              latency_ms: Date.now() - start
+            }
+          };
+        }
       }
       // ─── remember() ──────────────────────────────────────────────────────────
       async remember(data) {
@@ -5077,6 +6265,10 @@ var init_memoria = __esm({
               buildMemoryIndex(this.paths.dbPath, { sessionId, project: data.project, scope: data.scope });
             } catch {
             }
+          }
+          try {
+            await buildCompiledWiki(this.paths);
+          } catch {
           }
           return {
             ok: true,
@@ -5484,6 +6676,11 @@ var init_core = __esm({
     "use strict";
     init_memoria();
     init_paths();
+    init_source_import();
+    init_wiki_build();
+    init_wiki_query();
+    init_wiki_lint();
+    init_wiki();
     init_db();
     init_utils();
   }
@@ -5571,6 +6768,73 @@ function createServer(core) {
         send(res, result.ok ? 200 : 500, result);
         return;
       }
+      if (method === "POST" && pathname === "/v1/sources") {
+        const raw = await readBody(req);
+        let body;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          sendError(res, 400, "Invalid JSON body");
+          return;
+        }
+        if (typeof body !== "object" || body === null || !("filePath" in body) || typeof body.filePath !== "string") {
+          sendError(res, 400, 'Body must include "filePath" field');
+          return;
+        }
+        const result = await core.addSource(body);
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      if (method === "GET" && pathname === "/v1/sources") {
+        const type = parsedUrl.searchParams.get("type") ?? void 0;
+        const scope = parsedUrl.searchParams.get("scope") ?? void 0;
+        const limitRaw = parsedUrl.searchParams.get("limit");
+        const limit = limitRaw ? Number(limitRaw) : void 0;
+        if (limitRaw && !Number.isFinite(limit)) {
+          sendError(res, 400, "Invalid limit query param; expected number");
+          return;
+        }
+        const result = await core.listSources({ type, scope, limit });
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      if (method === "POST" && pathname === "/v1/wiki/build") {
+        const result = await core.buildWiki();
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      if (method === "POST" && pathname === "/v1/wiki/file-query") {
+        const raw = await readBody(req);
+        let body;
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          sendError(res, 400, "Invalid JSON body");
+          return;
+        }
+        if (typeof body !== "object" || body === null || !("query" in body) || !("title" in body)) {
+          sendError(res, 400, 'Body must include "query" and "title" fields');
+          return;
+        }
+        const result = await core.fileQuery(body);
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
+      if (method === "POST" && pathname === "/v1/wiki/lint") {
+        const raw = await readBody(req);
+        let body = {};
+        if (raw.trim()) {
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            sendError(res, 400, "Invalid JSON body");
+            return;
+          }
+        }
+        const result = await core.wikiLint(body);
+        send(res, result.ok ? 200 : 500, result);
+        return;
+      }
       const sessionMatch = /^\/v1\/sessions\/([^/]+)\/summary$/.exec(pathname);
       if (method === "GET" && sessionMatch) {
         const sessionId = decodeURIComponent(sessionMatch[1]);
@@ -5603,8 +6867,8 @@ var init_server = __esm({
 });
 
 // src/cli.ts
-import fs3 from "node:fs/promises";
-import path4 from "node:path";
+import fs6 from "node:fs/promises";
+import path7 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/external.js
@@ -6374,10 +7638,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path5) {
-  if (!path5)
+function getElementAtPath(obj, path8) {
+  if (!path8)
     return obj;
-  return path5.reduce((acc, key) => acc?.[key], obj);
+  return path8.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -6760,11 +8024,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path5, issues) {
+function prefixIssues(path8, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path5);
+    iss.path.unshift(path8);
     return iss;
   });
 }
@@ -6947,7 +8211,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path5 = []) => {
+  const processError = (error49, path8 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -6957,7 +8221,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path5, ...issue2.path];
+        const fullpath = [...path8, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -6989,8 +8253,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path5 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path5) {
+  const path8 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path8) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -18967,13 +20231,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path5 = ref.slice(1).split("/").filter(Boolean);
-  if (path5.length === 0) {
+  const path8 = ref.slice(1).split("/").filter(Boolean);
+  if (path8.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path5[0] === defsKey) {
-    const key = path5[1];
+  if (path8[0] === defsKey) {
+    const key = path8[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -19411,7 +20675,7 @@ var sessionSchema = external_exports.object({
   events: external_exports.array(sessionEventSchema).default([])
 }).passthrough();
 async function readSession(sessionFile) {
-  const raw = await fs3.readFile(sessionFile, "utf8");
+  const raw = await fs6.readFile(sessionFile, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -19438,18 +20702,18 @@ function previewSync(paths, sessionFile, sessionData) {
   const timestamp = safeDate(sessionData.timestamp).toISOString();
   const events = sessionData.events ?? [];
   const date5 = safeDate(timestamp).toISOString().slice(0, 10);
-  const dailyPath = path4.join(paths.knowledgeDir, "Daily", `${date5}.md`);
+  const dailyPath = path7.join(paths.knowledgeDir, "Daily", `${date5}.md`);
   const decisionPaths = events.map((event, index) => ({ event, index })).filter(({ event }) => getEventType(event) === "DecisionMade").map(({ event, index }) => {
     const content = getEventContentObject(event);
     const decisionTitle = typeof content.decision === "string" && content.decision.trim() ? content.decision.trim() : "Untitled Decision";
     const eventId = resolveEventId(event, sessionId, index);
     const filename = `${date5}_${slugify2(decisionTitle).slice(0, 40)}_${slugify2(eventId).slice(0, 8)}.md`;
-    return path4.join(paths.knowledgeDir, "Decisions", filename);
+    return path7.join(paths.knowledgeDir, "Decisions", filename);
   });
   const skillPaths = events.filter((e) => getEventType(e) === "SkillLearned").map((event) => {
     const content = getEventContentObject(event);
     const skillName = typeof content.skill_name === "string" && content.skill_name.trim() ? content.skill_name.trim() : "Untitled Skill";
-    return path4.join(paths.knowledgeDir, "Skills", `${slugify2(skillName)}.md`);
+    return path7.join(paths.knowledgeDir, "Skills", `${slugify2(skillName)}.md`);
   });
   console.log("\u{1F9EA} Dry run (no files written)");
   console.log(`- session file: ${sessionFile}`);
@@ -19465,11 +20729,11 @@ function previewSync(paths, sessionFile, sessionData) {
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`);
 }
 function hasRepoMarkers(candidateRoot) {
-  return existsSync(path4.join(candidateRoot, "package.json")) && existsSync(path4.join(candidateRoot, "src", "cli.ts"));
+  return existsSync(path7.join(candidateRoot, "package.json")) && existsSync(path7.join(candidateRoot, "src", "cli.ts"));
 }
 function getRuntimeLayout() {
-  const moduleDir = path4.dirname(fileURLToPath2(import.meta.url));
-  const candidateRoots = [moduleDir, path4.resolve(moduleDir, "..")];
+  const moduleDir = path7.dirname(fileURLToPath2(import.meta.url));
+  const candidateRoots = [moduleDir, path7.resolve(moduleDir, "..")];
   for (const candidateRoot of candidateRoots) {
     if (hasRepoMarkers(candidateRoot)) {
       return {
@@ -19481,7 +20745,7 @@ function getRuntimeLayout() {
   }
   return {
     mode: "installed",
-    runtimeRoot: path4.resolve(moduleDir, ".."),
+    runtimeRoot: path7.resolve(moduleDir, ".."),
     canSelfInstallDeps: false
   };
 }
@@ -19525,9 +20789,9 @@ async function runPreflight(memoriaHome, layout) {
     checks.push({ id: "disk_space", status: "pass", detail: "unknown (skipping check)" });
   }
   try {
-    const testPath = path4.join(memoriaHome, `.memoria_preflight_${Date.now()}`);
-    await fs3.writeFile(testPath, "");
-    await fs3.unlink(testPath);
+    const testPath = path7.join(memoriaHome, `.memoria_preflight_${Date.now()}`);
+    await fs6.writeFile(testPath, "");
+    await fs6.unlink(testPath);
     checks.push({ id: "write_permission", status: "pass", detail: memoriaHome });
   } catch {
     checks.push({
@@ -19556,7 +20820,7 @@ async function run() {
     }
   });
   program2.command("sync").description("Import session JSON and sync notes").argument("<sessionFile>", "Path to session JSON file").option("--dry-run", "Validate and preview without writing files").option("--json", "Machine-readable JSON output").action(async (sessionFile, options) => {
-    const absSessionPath = path4.resolve(sessionFile);
+    const absSessionPath = path7.resolve(sessionFile);
     const sessionData = await readSession(absSessionPath);
     if (options.dryRun) {
       previewSync(paths, absSessionPath, sessionData);
@@ -19569,6 +20833,96 @@ async function run() {
     } else {
       console.log(`\u2713 \u5DF2\u5C0E\u5165\u6703\u8A71: ${result.data?.sessionId}`);
       console.log("\u2705 \u540C\u6B65\u5B8C\u6210!");
+    }
+  });
+  const sourceCommand = program2.command("source").description("Import and inspect non-session raw sources");
+  sourceCommand.command("add").description("Import a markdown or text source and generate a source-summary page").argument("<file>", "Path to source file").option("--type <type>", "Override source type: note|article|document").option("--title <title>", "Override source title").option("--scope <scope>", "Scope for the imported source").option("--json", "Machine-readable JSON output").action(async (file2, options) => {
+    const result = await core.addSource({
+      filePath: path7.resolve(file2),
+      type: options.type,
+      title: options.title,
+      scope: options.scope
+    });
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log(`${result.data?.deduped ? "\u2713 \u5DF2\u91CD\u7528\u4F86\u6E90" : "\u2713 \u5DF2\u5C0E\u5165\u4F86\u6E90"}: ${result.data?.source.id}`);
+      console.log(`- title: ${result.data?.source.title}`);
+      console.log(`- type: ${result.data?.source.type}`);
+      console.log(`- stored source: ${result.data?.source.origin_path}`);
+      console.log(`- summary page: ${result.data?.page.filepath}`);
+    }
+  });
+  sourceCommand.command("list").description("List imported raw sources").option("--type <type>", "Filter by source type").option("--scope <scope>", "Filter by scope").option("--limit <n>", "Maximum rows to return", "20").option("--json", "Machine-readable JSON output").action(async (options) => {
+    const limit = Number(options.limit ?? "20");
+    if (!Number.isFinite(limit) || limit <= 0) throw new Error(`Invalid --limit '${options.limit}'. Use a positive number`);
+    const result = await core.listSources({ type: options.type, scope: options.scope, limit });
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log(`\u{1F4DA} Sources: ${result.data?.length ?? 0}`);
+      for (const source of result.data ?? []) {
+        console.log(`- ${source.id}: ${source.title} | type=${source.type} | scope=${source.scope}`);
+      }
+    }
+  });
+  const wikiCommand = program2.command("wiki").description("Build and inspect compiled wiki artifacts");
+  wikiCommand.command("build").description("Build compiled wiki special pages from current memory state").option("--json", "Machine-readable JSON output").action(async (options) => {
+    const result = await core.buildWiki();
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log("\u{1F9F1} Wiki build complete");
+      console.log(`- pages synced: ${result.data?.pagesSynced}`);
+      console.log(`- sources: ${result.data?.sourceCount}`);
+      console.log(`- wiki pages: ${result.data?.pageCount}`);
+      console.log(`- index: ${result.data?.specialPages.index}`);
+      console.log(`- log: ${result.data?.specialPages.log}`);
+      console.log(`- overview: ${result.data?.specialPages.overview}`);
+    }
+  });
+  wikiCommand.command("file-query").description("File a high-value recall query into a synthesis or comparison page").requiredOption("--query <text>", "Query text to recall against memory").requiredOption("--title <title>", "Title for the filed page").option("--kind <kind>", "Page kind: synthesis|comparison", "synthesis").option("--scope <scope>", "Scope for recall and filed page").option("--top-k <n>", "Maximum recall hits to file", "5").option("--time-window <window>", "Recall time window, e.g. P30D").option("--mode <mode>", "Recall mode: keyword|tree|hybrid").option("--json", "Machine-readable JSON output").action(async (options) => {
+    const topKRaw = options.topK ?? options["top-k"] ?? "5";
+    const topK = Number(topKRaw);
+    if (!Number.isFinite(topK) || topK <= 0) throw new Error(`Invalid --top-k '${topKRaw}'. Use a positive number`);
+    const result = await core.fileQuery({
+      query: options.query,
+      title: options.title,
+      kind: options.kind ?? "synthesis",
+      scope: options.scope,
+      top_k: topK,
+      time_window: options.timeWindow ?? options["time-window"],
+      mode: options.mode
+    });
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log(`\u{1F4DD} Filed query: ${result.data?.artifact.id}`);
+      console.log(`- page: ${result.data?.page.filepath}`);
+      console.log(`- hits: ${result.data?.hits.length}`);
+    }
+  });
+  wikiCommand.command("lint").description("Run wiki governance lint checks and persist findings").option("--stale-days <n>", "Flag active pages older than N days", "30").option("--limit <n>", "Maximum findings to return", "100").option("--json", "Machine-readable JSON output").action(async (options) => {
+    const staleDaysRaw = options.staleDays ?? options["stale-days"] ?? "30";
+    const staleDays = Number(staleDaysRaw);
+    const limit = Number(options.limit ?? "100");
+    if (!Number.isFinite(staleDays) || staleDays < 0) throw new Error(`Invalid --stale-days '${staleDaysRaw}'. Use a non-negative number`);
+    if (!Number.isFinite(limit) || limit <= 0) throw new Error(`Invalid --limit '${options.limit}'. Use a positive number`);
+    const result = await core.wikiLint({ stale_days: staleDays, limit });
+    if (!result.ok) throw new Error(result.error);
+    if (options.json) {
+      console.log(JSON.stringify(result));
+    } else {
+      console.log("\u{1F9ED} Wiki lint complete");
+      console.log(`- run: ${result.data?.run.id}`);
+      console.log(`- findings: ${result.data?.findings.length}`);
+      for (const finding of result.data?.findings ?? []) {
+        console.log(`- ${finding.finding_type} [${finding.severity}] ${finding.summary}`);
+      }
     }
   });
   program2.command("stats").description("Show session, event, and skill statistics").option("--json", "Machine-readable JSON output").action(async (opts) => {
@@ -19786,7 +21140,7 @@ async function run() {
     }
     stepLog("preflight", true, { mode: runtimeLayout.mode });
     const pkgDir = runtimeLayout.runtimeRoot;
-    if (runtimeLayout.canSelfInstallDeps && !existsSync(path4.join(pkgDir, "node_modules"))) {
+    if (runtimeLayout.canSelfInstallDeps && !existsSync(path7.join(pkgDir, "node_modules"))) {
       stepStart = Date.now();
       try {
         const { execSync } = await import("node:child_process");

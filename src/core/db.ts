@@ -8,6 +8,7 @@ import { existsSync } from './paths.js'
 import {
     safeDate,
     slugify,
+    stableStringify,
     shortHash,
     deriveScope,
     resolveSessionId,
@@ -41,7 +42,23 @@ import type {
     GovernanceReviewOptions,
     MemoryIndexBuildOptions,
     MemoryIndexBuildResult,
-    RecallHit
+    RecallHit,
+    SourceRecord,
+    UpsertSourceInput,
+    UpsertWikiLintFindingInput,
+    UpsertWikiLintRunInput,
+    UpsertWikiQueryArtifactInput,
+    UpsertWikiPageInput,
+    UpsertWikiPageLinkInput,
+    UpsertWikiPageSourceLinkInput,
+    RecentSessionRecord,
+    WikiPageLink,
+    WikiPageSourceLink,
+    WikiQueryArtifact,
+    WikiLintFinding,
+    WikiLintRun,
+    WikiPage,
+    WikiBuildResult
 } from './types.js'
 
 // ─── Init ────────────────────────────────────────────────────────────────────
@@ -118,6 +135,91 @@ export function initDatabase(dbPath: string): void {
         created_at DATETIME
       );
 
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY,
+        type TEXT,
+        scope TEXT,
+        title TEXT,
+        origin_path TEXT,
+        origin_url TEXT,
+        checksum TEXT,
+        created_at DATETIME,
+        imported_at DATETIME,
+        status TEXT,
+        metadata TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_pages (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        title TEXT,
+        page_type TEXT,
+        scope TEXT,
+        summary TEXT,
+        filepath TEXT,
+        status TEXT,
+        confidence REAL,
+        last_built_at DATETIME,
+        last_reviewed_at DATETIME,
+        metadata TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_page_sources (
+        page_id TEXT,
+        source_id TEXT,
+        relation_type TEXT,
+        created_at DATETIME,
+        PRIMARY KEY (page_id, source_id),
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (source_id) REFERENCES sources(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_page_links (
+        from_page_id TEXT,
+        to_page_id TEXT,
+        link_type TEXT,
+        created_at DATETIME,
+        PRIMARY KEY (from_page_id, to_page_id),
+        FOREIGN KEY (from_page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (to_page_id) REFERENCES wiki_pages(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_lint_runs (
+        id TEXT PRIMARY KEY,
+        status TEXT,
+        summary TEXT,
+        created_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_lint_findings (
+        id TEXT PRIMARY KEY,
+        run_id TEXT,
+        finding_type TEXT,
+        severity TEXT,
+        page_id TEXT,
+        related_page_id TEXT,
+        source_id TEXT,
+        status TEXT,
+        summary TEXT,
+        details TEXT,
+        created_at DATETIME,
+        resolved_at DATETIME,
+        FOREIGN KEY (run_id) REFERENCES wiki_lint_runs(id),
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (related_page_id) REFERENCES wiki_pages(id),
+        FOREIGN KEY (source_id) REFERENCES sources(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS wiki_query_artifacts (
+        id TEXT PRIMARY KEY,
+        query TEXT,
+        kind TEXT,
+        page_id TEXT,
+        created_at DATETIME,
+        metadata TEXT,
+        FOREIGN KEY (page_id) REFERENCES wiki_pages(id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_sessions_timestamp
       ON sessions(timestamp);
 
@@ -150,6 +252,33 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route
       ON recall_telemetry(route_mode, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_sources_type_imported_at
+      ON sources(type, imported_at);
+
+      CREATE INDEX IF NOT EXISTS idx_sources_scope_imported_at
+      ON sources(scope, imported_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_page_type_scope
+      ON wiki_pages(page_type, scope);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_pages_status
+      ON wiki_pages(status, last_built_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_page_sources_source_id
+      ON wiki_page_sources(source_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_page_links_from
+      ON wiki_page_links(from_page_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_lint_findings_status_severity_created
+      ON wiki_lint_findings(status, severity, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_lint_findings_run
+      ON wiki_lint_findings(run_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_wiki_query_artifacts_kind_created
+      ON wiki_query_artifacts(kind, created_at);
     `)
 
         const sessionColumns = new Set((db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((r) => r.name))
@@ -165,8 +294,143 @@ export function initDatabase(dbPath: string): void {
             db.exec(`UPDATE memory_nodes SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
         }
         db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_level ON memory_nodes(scope, level)`)
+
+        const wikiLintColumns = new Set((db.prepare('PRAGMA table_info(wiki_lint_findings)').all() as { name: string }[]).map((r) => r.name))
+        if (!wikiLintColumns.has('run_id')) {
+            db.exec(`ALTER TABLE wiki_lint_findings ADD COLUMN run_id TEXT`)
+        }
     } finally {
         db.close()
+    }
+}
+
+function stringifyJson(value: Json | undefined): string {
+    return stableStringify(value ?? {})
+}
+
+function parseJsonRecord(value: string | null): Json | undefined {
+    if (!value) return undefined
+    const parsed = maybeParseJson(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : undefined
+}
+
+function mapSourceRecord(row: {
+    id: string
+    type: string
+    scope: string
+    title: string
+    origin_path: string | null
+    origin_url: string | null
+    checksum: string | null
+    created_at: string
+    imported_at: string
+    status: string
+    metadata: string | null
+}): SourceRecord {
+    return {
+        id: row.id,
+        type: row.type as SourceRecord['type'],
+        scope: row.scope,
+        title: row.title,
+        origin_path: row.origin_path ?? undefined,
+        origin_url: row.origin_url ?? undefined,
+        checksum: row.checksum ?? undefined,
+        created_at: row.created_at,
+        imported_at: row.imported_at,
+        status: row.status as SourceRecord['status'],
+        metadata: parseJsonRecord(row.metadata)
+    }
+}
+
+function mapWikiPage(row: {
+    id: string
+    slug: string
+    title: string
+    page_type: string
+    scope: string
+    summary: string
+    filepath: string | null
+    status: string
+    confidence: number | null
+    last_built_at: string | null
+    last_reviewed_at: string | null
+    metadata: string | null
+}): WikiPage {
+    return {
+        id: row.id,
+        slug: row.slug,
+        title: row.title,
+        page_type: row.page_type as WikiPage['page_type'],
+        scope: row.scope,
+        summary: row.summary,
+        filepath: row.filepath ?? undefined,
+        status: row.status as WikiPage['status'],
+        confidence: typeof row.confidence === 'number' ? row.confidence : undefined,
+        last_built_at: row.last_built_at ?? undefined,
+        last_reviewed_at: row.last_reviewed_at ?? undefined,
+        metadata: parseJsonRecord(row.metadata)
+    }
+}
+
+function mapWikiLintFinding(row: {
+    id: string
+    run_id: string | null
+    finding_type: string
+    severity: string
+    page_id: string | null
+    related_page_id: string | null
+    source_id: string | null
+    status: string
+    summary: string
+    details: string | null
+    created_at: string
+    resolved_at: string | null
+}): WikiLintFinding {
+    return {
+        id: row.id,
+        run_id: row.run_id ?? undefined,
+        finding_type: row.finding_type as WikiLintFinding['finding_type'],
+        severity: row.severity as WikiLintFinding['severity'],
+        page_id: row.page_id ?? undefined,
+        related_page_id: row.related_page_id ?? undefined,
+        source_id: row.source_id ?? undefined,
+        status: row.status as WikiLintFinding['status'],
+        summary: row.summary,
+        details: row.details ?? undefined,
+        created_at: row.created_at,
+        resolved_at: row.resolved_at ?? undefined
+    }
+}
+
+function mapWikiLintRun(row: {
+    id: string
+    status: string
+    summary: string | null
+    created_at: string
+}): WikiLintRun {
+    return {
+        id: row.id,
+        status: row.status as WikiLintRun['status'],
+        summary: row.summary ?? undefined,
+        created_at: row.created_at
+    }
+}
+
+function mapWikiQueryArtifact(row: {
+    id: string
+    query: string
+    kind: string
+    page_id: string
+    created_at: string
+    metadata: string | null
+}): WikiQueryArtifact {
+    return {
+        id: row.id,
+        query: row.query,
+        kind: row.kind as WikiQueryArtifact['kind'],
+        page_id: row.page_id,
+        created_at: row.created_at,
+        metadata: parseJsonRecord(row.metadata)
     }
 }
 
@@ -214,6 +478,480 @@ export function importSession(dbPath: string, sessionData: SessionData): string 
     }
 
     return sessionId
+}
+
+export function upsertSourceRecord(dbPath: string, input: UpsertSourceInput): SourceRecord {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        const importedAt = input.imported_at ?? new Date().toISOString()
+        db.prepare(`
+          INSERT INTO sources
+          (id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            type = excluded.type,
+            scope = excluded.scope,
+            title = excluded.title,
+            origin_path = excluded.origin_path,
+            origin_url = excluded.origin_url,
+            checksum = excluded.checksum,
+            created_at = excluded.created_at,
+            imported_at = excluded.imported_at,
+            status = excluded.status,
+            metadata = excluded.metadata
+        `).run(
+            input.id,
+            input.type,
+            input.scope,
+            input.title,
+            input.origin_path ?? null,
+            input.origin_url ?? null,
+            input.checksum ?? null,
+            input.created_at,
+            importedAt,
+            input.status ?? 'active',
+            stringifyJson(input.metadata)
+        )
+
+        const row = db.prepare(`
+          SELECT id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata
+          FROM sources
+          WHERE id = ?
+        `).get(input.id) as {
+            id: string
+            type: string
+            scope: string
+            title: string
+            origin_path: string | null
+            origin_url: string | null
+            checksum: string | null
+            created_at: string
+            imported_at: string
+            status: string
+            metadata: string | null
+        }
+        return mapSourceRecord(row)
+    } finally {
+        db.close()
+    }
+}
+
+export function listSourceRecords(
+    dbPath: string,
+    options?: { type?: string; scope?: string; limit?: number }
+): SourceRecord[] {
+    if (!existsSync(dbPath)) return []
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)))
+        const rows = db.prepare(`
+          SELECT id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata
+          FROM sources
+          WHERE 1 = 1
+          ${options?.type ? 'AND type = ?' : ''}
+          ${options?.scope ? 'AND scope = ?' : ''}
+          ORDER BY imported_at DESC
+          LIMIT ?
+        `).all(
+            ...[
+                ...(options?.type ? [options.type] : []),
+                ...(options?.scope ? [options.scope] : []),
+                limit
+            ]
+        ) as Array<{
+            id: string
+            type: string
+            scope: string
+            title: string
+            origin_path: string | null
+            origin_url: string | null
+            checksum: string | null
+            created_at: string
+            imported_at: string
+            status: string
+            metadata: string | null
+        }>
+        return rows.map(mapSourceRecord)
+    } finally {
+        db.close()
+    }
+}
+
+export function upsertWikiPage(dbPath: string, input: UpsertWikiPageInput): WikiPage {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        db.prepare(`
+          INSERT INTO wiki_pages
+          (id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            slug = excluded.slug,
+            title = excluded.title,
+            page_type = excluded.page_type,
+            scope = excluded.scope,
+            summary = excluded.summary,
+            filepath = excluded.filepath,
+            status = excluded.status,
+            confidence = excluded.confidence,
+            last_built_at = excluded.last_built_at,
+            last_reviewed_at = excluded.last_reviewed_at,
+            metadata = excluded.metadata
+        `).run(
+            input.id,
+            input.slug,
+            input.title,
+            input.page_type,
+            input.scope,
+            input.summary,
+            input.filepath ?? null,
+            input.status ?? 'draft',
+            typeof input.confidence === 'number' ? input.confidence : null,
+            input.last_built_at ?? null,
+            input.last_reviewed_at ?? null,
+            stringifyJson(input.metadata)
+        )
+
+        const row = db.prepare(`
+          SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
+          FROM wiki_pages
+          WHERE id = ?
+        `).get(input.id) as {
+            id: string
+            slug: string
+            title: string
+            page_type: string
+            scope: string
+            summary: string
+            filepath: string | null
+            status: string
+            confidence: number | null
+            last_built_at: string | null
+            last_reviewed_at: string | null
+            metadata: string | null
+        }
+        return mapWikiPage(row)
+    } finally {
+        db.close()
+    }
+}
+
+export function getWikiPageBySlug(dbPath: string, slug: string): WikiPage | undefined {
+    if (!existsSync(dbPath)) return undefined
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const row = db.prepare(`
+          SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
+          FROM wiki_pages
+          WHERE slug = ?
+        `).get(slug) as {
+            id: string
+            slug: string
+            title: string
+            page_type: string
+            scope: string
+            summary: string
+            filepath: string | null
+            status: string
+            confidence: number | null
+            last_built_at: string | null
+            last_reviewed_at: string | null
+            metadata: string | null
+        } | undefined
+        return row ? mapWikiPage(row) : undefined
+    } finally {
+        db.close()
+    }
+}
+
+export function listWikiPages(
+    dbPath: string,
+    options?: { pageType?: string; scope?: string; limit?: number }
+): WikiPage[] {
+    if (!existsSync(dbPath)) return []
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)))
+        const rows = db.prepare(`
+          SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
+          FROM wiki_pages
+          WHERE 1 = 1
+          ${options?.pageType ? 'AND page_type = ?' : ''}
+          ${options?.scope ? 'AND scope = ?' : ''}
+          ORDER BY COALESCE(last_built_at, last_reviewed_at, slug) DESC
+          LIMIT ?
+        `).all(
+            ...[
+                ...(options?.pageType ? [options.pageType] : []),
+                ...(options?.scope ? [options.scope] : []),
+                limit
+            ]
+        ) as Array<{
+            id: string
+            slug: string
+            title: string
+            page_type: string
+            scope: string
+            summary: string
+            filepath: string | null
+            status: string
+            confidence: number | null
+            last_built_at: string | null
+            last_reviewed_at: string | null
+            metadata: string | null
+        }>
+        return rows.map(mapWikiPage)
+    } finally {
+        db.close()
+    }
+}
+
+export function listRecentSessions(dbPath: string, limitRaw = 10): RecentSessionRecord[] {
+    if (!existsSync(dbPath)) return []
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const limit = Math.min(100, Math.max(1, Math.floor(limitRaw)))
+        return db.prepare(`
+          SELECT id, timestamp, project, scope, summary
+          FROM sessions
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all(limit) as RecentSessionRecord[]
+    } finally {
+        db.close()
+    }
+}
+
+export function queryWikiBuildResult(dbPath: string): Pick<WikiBuildResult, 'sourceCount' | 'pageCount'> & { pageTypeCounts: Record<string, number> } {
+    if (!existsSync(dbPath)) {
+        return { sourceCount: 0, pageCount: 0, pageTypeCounts: {} }
+    }
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const sourceCount = Number((db.prepare('SELECT COUNT(*) AS c FROM sources').get() as { c: number }).c)
+        const pageCount = Number((db.prepare('SELECT COUNT(*) AS c FROM wiki_pages').get() as { c: number }).c)
+        const rows = db.prepare(`
+          SELECT page_type, COUNT(*) AS c
+          FROM wiki_pages
+          GROUP BY page_type
+          ORDER BY page_type ASC
+        `).all() as Array<{ page_type: string; c: number }>
+        const pageTypeCounts = Object.fromEntries(rows.map((row) => [row.page_type, Number(row.c)]))
+        return { sourceCount, pageCount, pageTypeCounts }
+    } finally {
+        db.close()
+    }
+}
+
+export function upsertWikiPageSourceLink(dbPath: string, input: UpsertWikiPageSourceLinkInput): void {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        db.prepare(`
+          INSERT OR REPLACE INTO wiki_page_sources (page_id, source_id, relation_type, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(input.page_id, input.source_id, input.relation_type ?? 'supports', input.created_at ?? new Date().toISOString())
+    } finally {
+        db.close()
+    }
+}
+
+export function listWikiPageSourceLinks(dbPath: string): WikiPageSourceLink[] {
+    if (!existsSync(dbPath)) return []
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        return db.prepare(`
+          SELECT page_id, source_id, relation_type, created_at
+          FROM wiki_page_sources
+          ORDER BY created_at DESC
+        `).all() as WikiPageSourceLink[]
+    } finally {
+        db.close()
+    }
+}
+
+export function upsertWikiPageLink(dbPath: string, input: UpsertWikiPageLinkInput): void {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        db.prepare(`
+          INSERT OR REPLACE INTO wiki_page_links (from_page_id, to_page_id, link_type, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(input.from_page_id, input.to_page_id, input.link_type ?? 'references', input.created_at ?? new Date().toISOString())
+    } finally {
+        db.close()
+    }
+}
+
+export function listWikiPageLinks(dbPath: string): WikiPageLink[] {
+    if (!existsSync(dbPath)) return []
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        return db.prepare(`
+          SELECT from_page_id, to_page_id, link_type, created_at
+          FROM wiki_page_links
+          ORDER BY created_at DESC
+        `).all() as WikiPageLink[]
+    } finally {
+        db.close()
+    }
+}
+
+export function upsertWikiLintRun(dbPath: string, input: UpsertWikiLintRunInput): void {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        db.prepare(`
+          INSERT OR REPLACE INTO wiki_lint_runs (id, status, summary, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(input.id, input.status ?? 'completed', input.summary ?? null, input.created_at ?? new Date().toISOString())
+    } finally {
+        db.close()
+    }
+}
+
+export function getWikiLintRun(dbPath: string, id: string): WikiLintRun | undefined {
+    if (!existsSync(dbPath)) return undefined
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const row = db.prepare(`
+          SELECT id, status, summary, created_at
+          FROM wiki_lint_runs
+          WHERE id = ?
+        `).get(id) as { id: string; status: string; summary: string | null; created_at: string } | undefined
+        return row ? mapWikiLintRun(row) : undefined
+    } finally {
+        db.close()
+    }
+}
+
+export function upsertWikiLintFinding(dbPath: string, input: UpsertWikiLintFindingInput): WikiLintFinding {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        db.prepare(`
+          INSERT OR REPLACE INTO wiki_lint_findings
+          (id, run_id, finding_type, severity, page_id, related_page_id, source_id, status, summary, details, created_at, resolved_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            input.id,
+            input.run_id ?? null,
+            input.finding_type,
+            input.severity,
+            input.page_id ?? null,
+            input.related_page_id ?? null,
+            input.source_id ?? null,
+            input.status ?? 'open',
+            input.summary,
+            input.details ?? null,
+            input.created_at ?? new Date().toISOString(),
+            input.resolved_at ?? null
+        )
+
+        const row = db.prepare(`
+          SELECT id, run_id, finding_type, severity, page_id, related_page_id, source_id, status, summary, details, created_at, resolved_at
+          FROM wiki_lint_findings
+          WHERE id = ?
+        `).get(input.id) as {
+            id: string
+            run_id: string | null
+            finding_type: string
+            severity: string
+            page_id: string | null
+            related_page_id: string | null
+            source_id: string | null
+            status: string
+            summary: string
+            details: string | null
+            created_at: string
+            resolved_at: string | null
+        }
+        return mapWikiLintFinding(row)
+    } finally {
+        db.close()
+    }
+}
+
+export function listWikiLintFindings(dbPath: string, options?: { status?: string; limit?: number }): WikiLintFinding[] {
+    if (!existsSync(dbPath)) return []
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)))
+        const rows = db.prepare(`
+          SELECT id, run_id, finding_type, severity, page_id, related_page_id, source_id, status, summary, details, created_at, resolved_at
+          FROM wiki_lint_findings
+          WHERE 1 = 1
+          ${options?.status ? 'AND status = ?' : ''}
+          ORDER BY created_at DESC
+          LIMIT ?
+        `).all(...[...(options?.status ? [options.status] : []), limit]) as Array<{
+            id: string
+            run_id: string | null
+            finding_type: string
+            severity: string
+            page_id: string | null
+            related_page_id: string | null
+            source_id: string | null
+            status: string
+            summary: string
+            details: string | null
+            created_at: string
+            resolved_at: string | null
+        }>
+        return rows.map(mapWikiLintFinding)
+    } finally {
+        db.close()
+    }
+}
+
+export function upsertWikiQueryArtifact(dbPath: string, input: UpsertWikiQueryArtifactInput): WikiQueryArtifact {
+    initDatabase(dbPath)
+    const db = new Database(dbPath)
+    try {
+        db.prepare(`
+          INSERT INTO wiki_query_artifacts (id, query, kind, page_id, created_at, metadata)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            query = excluded.query,
+            kind = excluded.kind,
+            page_id = excluded.page_id,
+            created_at = excluded.created_at,
+            metadata = excluded.metadata
+        `).run(
+            input.id,
+            input.query,
+            input.kind,
+            input.page_id,
+            input.created_at ?? new Date().toISOString(),
+            stringifyJson(input.metadata)
+        )
+
+        const row = db.prepare(`
+          SELECT id, query, kind, page_id, created_at, metadata
+          FROM wiki_query_artifacts
+          WHERE id = ?
+        `).get(input.id) as {
+            id: string
+            query: string
+            kind: string
+            page_id: string
+            created_at: string
+            metadata: string | null
+        }
+        return mapWikiQueryArtifact(row)
+    } finally {
+        db.close()
+    }
 }
 
 // ─── Markdown sync ───────────────────────────────────────────────────────────

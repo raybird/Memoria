@@ -102,6 +102,72 @@ export function createServer(core: MemoriaCore): http.Server {
                 return
             }
 
+            if (method === 'POST' && pathname === '/v1/sources') {
+                const raw = await readBody(req)
+                let body: unknown
+                try { body = JSON.parse(raw) } catch {
+                    sendError(res, 400, 'Invalid JSON body')
+                    return
+                }
+                if (typeof body !== 'object' || body === null || !('filePath' in body) || typeof body.filePath !== 'string') {
+                    sendError(res, 400, 'Body must include "filePath" field')
+                    return
+                }
+                const result = await core.addSource(body as Parameters<typeof core.addSource>[0])
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            if (method === 'GET' && pathname === '/v1/sources') {
+                const type = parsedUrl.searchParams.get('type') ?? undefined
+                const scope = parsedUrl.searchParams.get('scope') ?? undefined
+                const limitRaw = parsedUrl.searchParams.get('limit')
+                const limit = limitRaw ? Number(limitRaw) : undefined
+                if (limitRaw && !Number.isFinite(limit)) {
+                    sendError(res, 400, 'Invalid limit query param; expected number')
+                    return
+                }
+                const result = await core.listSources({ type, scope, limit })
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            if (method === 'POST' && pathname === '/v1/wiki/build') {
+                const result = await core.buildWiki()
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            if (method === 'POST' && pathname === '/v1/wiki/file-query') {
+                const raw = await readBody(req)
+                let body: unknown
+                try { body = JSON.parse(raw) } catch {
+                    sendError(res, 400, 'Invalid JSON body')
+                    return
+                }
+                if (typeof body !== 'object' || body === null || !('query' in body) || !('title' in body)) {
+                    sendError(res, 400, 'Body must include "query" and "title" fields')
+                    return
+                }
+                const result = await core.fileQuery(body as Parameters<typeof core.fileQuery>[0])
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            if (method === 'POST' && pathname === '/v1/wiki/lint') {
+                const raw = await readBody(req)
+                let body: unknown = {}
+                if (raw.trim()) {
+                    try { body = JSON.parse(raw) } catch {
+                        sendError(res, 400, 'Invalid JSON body')
+                        return
+                    }
+                }
+                const result = await core.wikiLint(body as Parameters<typeof core.wikiLint>[0])
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
             // GET /v1/sessions/:id/summary
             const sessionMatch = /^\/v1\/sessions\/([^/]+)\/summary$/.exec(pathname)
             if (method === 'GET' && sessionMatch) {

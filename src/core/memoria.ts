@@ -19,10 +19,19 @@ import {
     buildMemoryIndex,
     recallTree,
     recallKeyword,
-    querySessionSummary
+    querySessionSummary,
+    listSourceRecords
 } from './db.js'
+import { importSourceFile } from './source-import.js'
+import { buildCompiledWiki } from './wiki-build.js'
+import { fileQueryResult } from './wiki-query.js'
+import { runWikiLint } from './wiki-lint.js'
 import type {
+    FiledQueryData,
+    FileQueryInput,
     MemoriaPaths,
+    ImportSourceInput,
+    ImportedSourceData,
     SessionData,
     MemoriaResult,
     RecallFilter,
@@ -32,7 +41,10 @@ import type {
     StatsData,
     RecallTelemetryData,
     GovernanceReviewData,
-    GovernanceReviewOptions
+    GovernanceReviewOptions,
+    WikiBuildResult,
+    WikiLintOptions,
+    WikiLintResult
 } from './types.js'
 
 export class MemoriaCore {
@@ -48,16 +60,202 @@ export class MemoriaCore {
         const dirs = [
             this.paths.memoryDir,
             this.paths.sessionsPath,
+            path.join(this.paths.memoryDir, 'sources'),
             path.join(this.paths.memoryDir, 'checkpoints'),
             path.join(this.paths.memoryDir, 'exports'),
             this.paths.knowledgeDir,
             path.join(this.paths.knowledgeDir, 'Daily'),
+            path.join(this.paths.knowledgeDir, 'Sources'),
             path.join(this.paths.knowledgeDir, 'Skills'),
             path.join(this.paths.knowledgeDir, 'Decisions'),
             this.paths.configPath
         ]
         await Promise.all(dirs.map((d) => fs.mkdir(d, { recursive: true })))
         initDatabase(this.paths.dbPath)
+    }
+
+    async addSource(input: ImportSourceInput): Promise<MemoriaResult<ImportedSourceData>> {
+        const start = Date.now()
+        try {
+            await this.init()
+            const data = await importSourceFile(this.paths, input)
+            await buildCompiledWiki(this.paths)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'markdown',
+                    evidence: [data.source.id, data.page.id],
+                    confidence: 1,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'markdown',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
+    }
+
+    async buildWiki(): Promise<MemoriaResult<WikiBuildResult>> {
+        const start = Date.now()
+        try {
+            await this.init()
+            const data = await buildCompiledWiki(this.paths)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'markdown',
+                    evidence: Object.values(data.specialPages),
+                    confidence: 1,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'markdown',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
+    }
+
+    async listSources(options?: { type?: string; scope?: string; limit?: number }): Promise<MemoriaResult<ReturnType<typeof listSourceRecords>>> {
+        const start = Date.now()
+        try {
+            if (!existsSync(this.paths.dbPath)) {
+                return {
+                    ok: true,
+                    data: [],
+                    meta: {
+                        source: 'sqlite',
+                        evidence: [],
+                        confidence: 1,
+                        timestamp: new Date().toISOString(),
+                        latency_ms: Date.now() - start
+                    }
+                }
+            }
+            initDatabase(this.paths.dbPath)
+            const data = listSourceRecords(this.paths.dbPath, options)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'sqlite',
+                    evidence: data.map((item) => item.id),
+                    confidence: 1,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'sqlite',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
+    }
+
+    async fileQuery(input: FileQueryInput): Promise<MemoriaResult<FiledQueryData>> {
+        const start = Date.now()
+        try {
+            await this.init()
+            const recallResult = await this.recall({
+                query: input.query,
+                scope: input.scope,
+                top_k: input.top_k,
+                time_window: input.time_window,
+                mode: input.mode
+            })
+            if (!recallResult.ok) {
+                throw new Error(recallResult.error)
+            }
+            const hits = recallResult.data ?? []
+            if (hits.length === 0) {
+                throw new Error('No recall hits found for file-query')
+            }
+            const data = await fileQueryResult(this.paths, input, hits)
+            await buildCompiledWiki(this.paths)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'markdown',
+                    evidence: [data.artifact.id, data.page.id, ...hits.map((hit) => hit.id)],
+                    confidence: hits[0]?.score ?? 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'markdown',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
+    }
+
+    async wikiLint(options?: WikiLintOptions): Promise<MemoriaResult<WikiLintResult>> {
+        const start = Date.now()
+        try {
+            await this.init()
+            const data = runWikiLint(this.paths, options)
+            return {
+                ok: true,
+                data,
+                meta: {
+                    source: 'sqlite',
+                    evidence: data.findings.map((finding) => finding.id),
+                    confidence: 1,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: {
+                    source: 'sqlite',
+                    evidence: [],
+                    confidence: 0,
+                    timestamp: new Date().toISOString(),
+                    latency_ms: Date.now() - start
+                }
+            }
+        }
     }
 
     // ─── remember() ──────────────────────────────────────────────────────────
@@ -79,6 +277,12 @@ export class MemoriaCore {
                 } catch {
                     // Keep remember() fail-open for indexing errors.
                 }
+            }
+
+            try {
+                await buildCompiledWiki(this.paths)
+            } catch {
+                // Keep remember() fail-open for wiki build errors.
             }
 
             return {

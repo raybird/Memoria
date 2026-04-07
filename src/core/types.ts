@@ -3,6 +3,24 @@
 
 export type Json = Record<string, unknown>
 
+export type SourceType = 'session' | 'note' | 'article' | 'document' | 'attachment'
+
+export type SourceStatus = 'active' | 'archived'
+
+export type SourceRecord = {
+    id: string
+    type: SourceType
+    scope: string
+    title: string
+    origin_path?: string
+    origin_url?: string
+    checksum?: string
+    created_at: string
+    imported_at: string
+    status: SourceStatus
+    metadata?: Json
+}
+
 export type SessionEvent = {
     id?: string
     timestamp?: string
@@ -28,6 +46,87 @@ export type MemoriaPaths = {
     dbPath: string
     sessionsPath: string
     configPath: string
+}
+
+export type WikiPageType =
+    | 'source-summary'
+    | 'entity'
+    | 'concept'
+    | 'synthesis'
+    | 'comparison'
+    | 'question'
+    | 'index-meta'
+
+export type WikiPageStatus = 'draft' | 'active' | 'archived'
+
+export type WikiPage = {
+    id: string
+    slug: string
+    title: string
+    page_type: WikiPageType
+    scope: string
+    summary: string
+    filepath?: string
+    status: WikiPageStatus
+    confidence?: number
+    last_built_at?: string
+    last_reviewed_at?: string
+    metadata?: Json
+}
+
+export type WikiPageSourceLink = {
+    page_id: string
+    source_id: string
+    relation_type: string
+    created_at: string
+}
+
+export type WikiPageLink = {
+    from_page_id: string
+    to_page_id: string
+    link_type: string
+    created_at: string
+}
+
+export type WikiLintFindingType =
+    | 'orphan-page'
+    | 'stale-page'
+    | 'missing-page'
+    | 'missing-link'
+    | 'contradiction'
+    | 'low-provenance'
+    | 'duplicate-page'
+    | 'source-not-compiled'
+
+export type WikiLintSeverity = 'high' | 'medium' | 'low'
+
+export type WikiLintFindingStatus = 'open' | 'resolved' | 'dismissed'
+
+export type WikiLintFinding = {
+    id: string
+    run_id?: string
+    finding_type: WikiLintFindingType
+    severity: WikiLintSeverity
+    page_id?: string
+    related_page_id?: string
+    source_id?: string
+    status: WikiLintFindingStatus
+    summary: string
+    details?: string
+    created_at: string
+    resolved_at?: string
+}
+
+export type WikiLintRun = {
+    id: string
+    status: 'completed' | 'failed'
+    summary?: string
+    created_at: string
+}
+
+export type WikiLintResult = {
+    run: WikiLintRun
+    findings: WikiLintFinding[]
 }
 
 export type VerifyStatus = 'pass' | 'fail'
@@ -221,4 +320,142 @@ export type GovernanceReviewItem = {
 export type GovernanceReviewData = {
     total: number
     items: GovernanceReviewItem[]
+}
+
+export type UpsertSourceInput = {
+    id: string
+    type: SourceType
+    scope: string
+    title: string
+    origin_path?: string
+    origin_url?: string
+    checksum?: string
+    created_at: string
+    imported_at?: string
+    status?: SourceStatus
+    metadata?: Json
+}
+
+export type UpsertWikiPageInput = {
+    id: string
+    slug: string
+    title: string
+    page_type: WikiPageType
+    scope: string
+    summary: string
+    filepath?: string
+    status?: WikiPageStatus
+    confidence?: number
+    last_built_at?: string
+    last_reviewed_at?: string
+    metadata?: Json
+}
+
+export type UpsertWikiPageSourceLinkInput = {
+    page_id: string
+    source_id: string
+    relation_type?: string
+    created_at?: string
+}
+
+export type UpsertWikiPageLinkInput = {
+    from_page_id: string
+    to_page_id: string
+    link_type?: string
+    created_at?: string
+}
+
+export type UpsertWikiLintRunInput = {
+    id: string
+    status?: 'completed' | 'failed'
+    summary?: string
+    created_at?: string
+}
+
+export type UpsertWikiLintFindingInput = {
+    id: string
+    run_id?: string
+    finding_type: WikiLintFindingType
+    severity: WikiLintSeverity
+    page_id?: string
+    related_page_id?: string
+    source_id?: string
+    status?: WikiLintFindingStatus
+    summary: string
+    details?: string
+    created_at?: string
+    resolved_at?: string
+}
+
+export type WikiQueryArtifactKind = 'synthesis' | 'comparison'
+
+export type WikiQueryArtifact = {
+    id: string
+    query: string
+    kind: WikiQueryArtifactKind
+    page_id: string
+    created_at: string
+    metadata?: Json
+}
+
+export type UpsertWikiQueryArtifactInput = {
+    id: string
+    query: string
+    kind: WikiQueryArtifactKind
+    page_id: string
+    created_at?: string
+    metadata?: Json
+}
+
+export type ImportSourceInput = {
+    filePath: string
+    type?: Extract<SourceType, 'note' | 'article' | 'document'>
+    title?: string
+    scope?: string
+}
+
+export type ImportedSourceData = {
+    source: SourceRecord
+    page: WikiPage
+    deduped: boolean
+}
+
+export type FileQueryInput = {
+    query: string
+    title: string
+    kind: WikiQueryArtifactKind
+    scope?: string
+    top_k?: number
+    time_window?: string
+    mode?: 'keyword' | 'tree' | 'hybrid'
+}
+
+export type FiledQueryData = {
+    artifact: WikiQueryArtifact
+    page: WikiPage
+    hits: RecallHit[]
+}
+
+export type WikiLintOptions = {
+    stale_days?: number
+    limit?: number
+}
+
+export type RecentSessionRecord = {
+    id: string
+    timestamp: string
+    project: string
+    scope: string
+    summary: string
+}
+
+export type WikiBuildResult = {
+    pagesSynced: number
+    sourceCount: number
+    pageCount: number
+    specialPages: {
+        index: string
+        log: string
+        overview: string
+    }
 }
