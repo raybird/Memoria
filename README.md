@@ -11,12 +11,12 @@
 ```bash
 # 1. 下載 installer 與 Linux x64 release artifact
 curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
-curl -fsSL -o memoria-linux-x64-v1.6.0.tar.gz \
-  https://github.com/raybird/Memoria/releases/download/v1.6.0/memoria-linux-x64-v1.6.0.tar.gz
+curl -fsSL -o memoria-linux-x64-v1.7.0.tar.gz \
+  https://github.com/raybird/Memoria/releases/download/v1.7.0/memoria-linux-x64-v1.7.0.tar.gz
 
 # 2. 安裝 runtime
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.6.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.7.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 
 # 3. 啟動 bootstrap

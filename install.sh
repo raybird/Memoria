@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# AI Agent 持久化記憶系統 - 快速安裝腳本 v1.6.0
+# AI Agent 持久化記憶系統 - 快速安裝腳本 v1.7.0
 
 set -euo pipefail
 
-VERSION="1.6.0"
+VERSION="1.7.0"
 PLATFORM="linux-x64"
 DEFAULT_ARTIFACT_NAME="memoria-${PLATFORM}-v${VERSION}.tar.gz"
 DEFAULT_RELEASE_URL="https://github.com/raybird/Memoria/releases/download/v${VERSION}/${DEFAULT_ARTIFACT_NAME}"

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-04-07
+
+### Added
+- Compiled wiki workflows for Memoria, including raw source import, generated `knowledge/index.md` / `log.md` / `overview.md`, query file-back, and durable wiki lint findings.
+- Focused wiki coverage in CI for ingest, build, query filing, and governance lint flows.
+
+### Changed
+- Agent guidance, operations docs, release SOP, and skill instructions now treat the compiled wiki as a first-class runtime workflow.
+
 ## [1.6.0] - 2026-04-01
 
 ### Added
