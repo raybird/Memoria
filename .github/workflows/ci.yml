@@ -51,6 +51,18 @@ jobs:
       - name: Run MCP end-to-end test
         run: bash scripts/test-mcp-e2e.sh
 
+      - name: Run wiki ingest test
+        run: bash scripts/test-wiki-ingest.sh
+
+      - name: Run wiki build test
+        run: bash scripts/test-wiki-build.sh
+
+      - name: Run wiki query file-back test
+        run: bash scripts/test-wiki-query-fileback.sh
+
+      - name: Run wiki lint test
+        run: bash scripts/test-wiki-lint.sh
+
       - name: Capture release version
         id: release_meta
         run: echo "version=$(node -e \"const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync('package.json','utf8')).version);\")" >> "$GITHUB_OUTPUT"
