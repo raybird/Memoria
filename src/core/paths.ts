@@ -20,6 +20,11 @@ export function getMemoriaHome(): string {
     const cwd = process.cwd()
     if (existsSync(path.join(cwd, '.memory')) || existsSync(path.join(cwd, 'knowledge'))) return cwd
 
+    const nestedMemoriaHome = path.join(cwd, 'memoria')
+    if (existsSync(path.join(nestedMemoriaHome, '.memory')) || existsSync(path.join(nestedMemoriaHome, 'knowledge'))) {
+        return nestedMemoriaHome
+    }
+
     return path.resolve(__dirname, '..', '..')
 }
 

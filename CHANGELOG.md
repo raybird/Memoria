@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-04-11
+
+### Added
+- Deployed skill packaging for no-clone installs, including runtime-safe `SKILL.md` and `REFERENCE.md` deployment into `<memoria-home>/.agents/memoria-memory-sync`.
+- Release-time validation for deployed skill version alignment, required asset completeness, and repo-only instruction leakage.
+
+### Changed
+- `setup` now ships a local `bin/memoria` wrapper with the deployed skill so installed agents can execute skill workflows without a cloned repo.
+- README, install guide, and release SOP now document deployed skill discovery, packaging guards, and no-clone release expectations.
+
 ## [1.7.0] - 2026-04-07
 
 ### Added

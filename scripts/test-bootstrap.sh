@@ -51,6 +51,23 @@ fi
 echo "✓ sessions.db exists"
 
 echo ""
+echo "[bootstrap] Step 3b: verify deployed skill"
+if [ ! -f "$TMP/.agents/memoria-memory-sync/SKILL.md" ]; then
+  echo "✗ deployed skill missing"
+  exit 1
+fi
+if [ ! -f "$TMP/.agents/memoria-memory-sync/REFERENCE.md" ]; then
+  echo "✗ deployed skill reference missing"
+  exit 1
+fi
+if grep -q './cli\|bash skills/\|node skills/\|git clone' "$TMP/.agents/memoria-memory-sync/SKILL.md"; then
+  echo "✗ deployed SKILL.md still contains repo-only guidance"
+  exit 1
+fi
+MEMORIA_BIN="$CLI" bash "$TMP/.agents/memoria-memory-sync/scripts/run-sync.sh" "$ROOT_DIR/examples/session.sample.json" "$TMP" >/dev/null
+echo "✓ deployed skill works"
+
+echo ""
 echo "[bootstrap] Step 4: setup --serve --json (background)"
 SERVE_PORT=13917
 MEMORIA_HOME="$TMP" "$CLI" setup --serve --port "$SERVE_PORT" --json &

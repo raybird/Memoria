@@ -11,17 +11,30 @@
 ```bash
 # 1. 下載 installer 與 Linux x64 release artifact
 curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
-curl -fsSL -o memoria-linux-x64-v1.7.0.tar.gz \
-  https://github.com/raybird/Memoria/releases/download/v1.7.0/memoria-linux-x64-v1.7.0.tar.gz
+curl -fsSL -o memoria-linux-x64-v1.8.0.tar.gz \
+  https://github.com/raybird/Memoria/releases/download/v1.8.0/memoria-linux-x64-v1.8.0.tar.gz
 
 # 2. 安裝 runtime
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.7.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.8.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 
-# 3. 啟動 bootstrap
+# 3. 啟動 bootstrap（資料預設寫到目前目錄的 ./memoria）
 $HOME/.local/share/memoria/bin/memoria setup --serve --json
+# 或顯式指定資料目錄
+$HOME/.local/share/memoria/bin/memoria setup --memoria-home "$(pwd)/memoria" --serve --json
 ```
+
+`setup` 也會把內建 agent skill 部署到 `<memoria-home>/.agents/memoria-memory-sync/`，其中包含 runtime-safe 的 `SKILL.md`、`REFERENCE.md`、helper scripts 與本地 `bin/memoria` wrapper，讓 agent 安裝後即可直接發現並使用對應 skill。
+
+安裝後若要讓 agent 直接走 deployed skill，可優先讀：
+
+```text
+<memoria-home>/.agents/memoria-memory-sync/SKILL.md
+<memoria-home>/.agents/memoria-memory-sync/REFERENCE.md
+```
+
+這兩份文件是 deployed runtime 的入口，不需要假設 repo 已 clone 到本機。
 
 輸出 JSON lines，每步一行：
 

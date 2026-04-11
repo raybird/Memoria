@@ -40,6 +40,32 @@ If `npm version patch` updates files beyond `package.json`, review them before c
 
 If the release includes the new no-clone installation path, prefer a minor release over a patch release.
 
+## Fast SOP
+
+Use this when you need the shortest human-friendly release checklist.
+
+1. Confirm working tree is clean with `git status`.
+2. Update versioned files:
+   - `package.json`
+   - `src/cli.ts`
+   - `install.sh`
+   - `CHANGELOG.md`
+   - docs affected by install / release / skill behavior
+3. Run the full pre-release checklist.
+4. Run `pnpm run release:package` again after the version bump.
+5. Confirm the artifact includes deployed skill docs and no-clone tests still pass.
+6. Commit release changes with `Release vX.Y.Z`.
+7. Create annotated tag `vX.Y.Z`.
+8. Push branch and tag.
+9. Publish or upload `dist/release/memoria-linux-x64-vX.Y.Z.tar.gz` to GitHub Releases.
+
+Release should stop immediately if any of these fail:
+
+- `pnpm run release:docs-check`
+- `pnpm run release:package`
+- `bash scripts/test-bootstrap.sh`
+- `bash scripts/test-no-clone-install.sh`
+
 ## Scope
 
 This process covers:
@@ -87,6 +113,12 @@ If any command fails, do not release.
 - `CHANGELOG.md` contains current version section
 - Core docs include current telemetry/index/incremental MCP behavior
 
+`release:package` 現在也會額外驗證 deployed skill packaging contract：
+
+- `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` version 必須等於 `package.json.version`
+- deployed skill artifact 必須含 `DEPLOYED_SKILL.md` / `DEPLOYED_REFERENCE.md`
+- deployed skill 文件不得殘留 repo-only 指令（例如 `./cli`, `bash skills/`, `node skills/`, `git clone`）
+
 ## Files to Update
 
 For a normal release, update:
@@ -99,6 +131,13 @@ For a normal release, update:
 6. Rebuild bundle: `pnpm run build` (updates `dist/cli.mjs`)
 7. Repackage release runtime: `pnpm run release:package` (updates `dist/install/memoria` and `dist/release/...tar.gz`)
 
+8. If skill or installer behavior changed, verify README / `docs/INSTALL.md` / deployed skill docs still match shipped runtime behavior
+
+9. If deployed skill behavior changed, verify these still agree with the shipped artifact:
+   - `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`
+   - `skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md`
+   - `skills/memoria-memory-sync/resources/mcp/INGEST_PLAYBOOK.md`
+
 ## Release Procedure
 
 1. Ensure working tree is clean:
@@ -110,6 +149,12 @@ git status
 2. Apply version/doc updates.
 
 3. Re-run verification commands (same as pre-release checklist).
+
+   Explicitly confirm these release-specific guards passed:
+
+   - deployed skill validator inside `pnpm run release:package`
+   - bootstrap deployed skill checks in `bash scripts/test-bootstrap.sh`
+   - no-clone deployed skill checks in `bash scripts/test-no-clone-install.sh`
 
 4. Commit release:
 
@@ -151,10 +196,26 @@ Artifact layout:
 
 - `bin/memoria`
 - `lib/cli.mjs`
+- `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`
+- `skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md`
 - `node_modules/`
 - `install.sh`
 
-CI packages this artifact on every PR/push, runs `bash scripts/test-no-clone-install.sh`, then uploads the tarball as a workflow artifact.
+After `setup`, these deploy into:
+
+- `<memoria-home>/.agents/memoria-memory-sync/SKILL.md`
+- `<memoria-home>/.agents/memoria-memory-sync/REFERENCE.md`
+- `<memoria-home>/.agents/memoria-memory-sync/bin/memoria`
+
+CI packages this artifact on every PR/push, runs `bash scripts/test-no-clone-install.sh`, and verifies the deployed skill layout before uploading the tarball as a workflow artifact.
+
+The release artifact is only considered valid if all of these are true:
+
+- installer boots the packaged runtime without repo source files
+- `setup` deploys `.agents/memoria-memory-sync/SKILL.md`
+- `setup` deploys `.agents/memoria-memory-sync/REFERENCE.md`
+- deployed docs remain runtime-safe
+- deployed wrapper can run sync workflows against the packaged runtime
 
 ## Post-Release Checks
 

@@ -2,6 +2,20 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOCAL_MEMORIA_BIN="$SKILL_ROOT/bin/memoria"
+
+if [ -x "$LOCAL_MEMORIA_BIN" ]; then
+  MEMORIA_BIN_DEFAULT="$LOCAL_MEMORIA_BIN"
+elif [ -x "./cli" ]; then
+  MEMORIA_BIN_DEFAULT="./cli"
+else
+  MEMORIA_BIN_DEFAULT="memoria"
+fi
+
+MEMORIA_BIN="${MEMORIA_BIN:-$MEMORIA_BIN_DEFAULT}"
+
 if [ "$#" -lt 1 ]; then
   echo "Usage: bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh <session-json> [memoria-home]"
   echo "Optional env: MEMORIA_MCP_ENHANCE_CMD, LIBSQL_URL, LIBSQL_AUTH_TOKEN, MEMORIA_MCP_STRICT, MEMORIA_MCP_SYNC_TARGET, MEMORIA_MCP_PAYLOAD_MODE"
@@ -18,28 +32,28 @@ if [ ! -f "$SESSION_JSON" ]; then
 fi
 
 echo "[memoria] init"
-MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" ./cli init
+MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" "$MEMORIA_BIN" init
 
 echo "[memoria] sync"
-MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" ./cli sync "$SESSION_JSON"
+MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" "$MEMORIA_BIN" sync "$SESSION_JSON"
 
 echo "[memoria] stats"
-MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" ./cli stats
+MEMORIA_HOME="$MEMORIA_HOME_OVERRIDE" "$MEMORIA_BIN" stats
 
 commit_sync_cursor() {
   if [ -z "${MEMORIA_MCP_PAYLOAD:-}" ]; then
     return 0
   fi
-  node skills/memoria-memory-sync/scripts/update-mcp-sync-state.mjs --payload "$MEMORIA_MCP_PAYLOAD"
+  node "$SCRIPT_DIR/update-mcp-sync-state.mjs" --payload "$MEMORIA_MCP_PAYLOAD"
 }
 
 if [ -n "${LIBSQL_URL:-}" ]; then
   echo "[enhance] building MCP bridge payload"
-  MCP_PAYLOAD_PATH="$(node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs --memoria-home "$MEMORIA_HOME_OVERRIDE")"
+  MCP_PAYLOAD_PATH="$(node "$SCRIPT_DIR/build-mcp-bridge-payload.mjs" --memoria-home "$MEMORIA_HOME_OVERRIDE")"
   export MEMORIA_MCP_PAYLOAD="$MCP_PAYLOAD_PATH"
   echo "[enhance] payload: $MEMORIA_MCP_PAYLOAD"
 
-  MCP_REQUESTS_PATH="$(node skills/memoria-memory-sync/scripts/build-mcp-tool-requests.mjs --payload "$MEMORIA_MCP_PAYLOAD")"
+  MCP_REQUESTS_PATH="$(node "$SCRIPT_DIR/build-mcp-tool-requests.mjs" --payload "$MEMORIA_MCP_PAYLOAD")"
   export MEMORIA_MCP_REQUESTS="$MCP_REQUESTS_PATH"
   echo "[enhance] tool requests: $MEMORIA_MCP_REQUESTS"
 
@@ -56,7 +70,7 @@ if [ -n "${LIBSQL_URL:-}" ]; then
     fi
   else
     echo "[enhance] command not set; using built-in MCP ingest"
-    if node skills/memoria-memory-sync/scripts/ingest-mcp-libsql.mjs --requests "$MEMORIA_MCP_REQUESTS"; then
+    if node "$SCRIPT_DIR/ingest-mcp-libsql.mjs" --requests "$MEMORIA_MCP_REQUESTS"; then
       commit_sync_cursor
       echo "[enhance] completed with built-in MCP ingest"
     elif [ "$MCP_STRICT" = "1" ]; then

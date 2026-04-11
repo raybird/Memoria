@@ -10,14 +10,14 @@
 
 ```bash
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.7.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.8.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 ```
 
 也可省略 `--artifact`，直接用 `--version` 從 GitHub release 下載：
 
 ```bash
-bash install.sh --version 1.7.0 --install-dir "$HOME/.local/share/memoria"
+bash install.sh --version 1.8.0 --install-dir "$HOME/.local/share/memoria"
 ```
 
 Installer behavior:
@@ -31,8 +31,13 @@ Installer behavior:
 
 ```bash
 $HOME/.local/share/memoria/bin/memoria preflight --json
+$HOME/.local/share/memoria/bin/memoria setup --memoria-home "$(pwd)/memoria" --serve --json
 $HOME/.local/share/memoria/bin/memoria setup --serve --json
 ```
+
+`setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`，而不是 runtime 安裝目錄。若要固定位置，請顯式傳入 `--memoria-home`。
+
+安裝完成後，內建 skill 也會部署到 `<memoria-home>/.agents/memoria-memory-sync/`，並提供 deploy 專用的 `SKILL.md` / `REFERENCE.md` 與本地 `bin/memoria` wrapper。
 
 常見失敗排查：
 

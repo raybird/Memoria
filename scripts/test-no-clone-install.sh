@@ -8,6 +8,7 @@ ARTIFACT_PATH="${1:-$ROOT_DIR/dist/release/memoria-linux-x64-v${VERSION}.tar.gz}
 TMP_DIR="$(mktemp -d)"
 INSTALL_DIR="$TMP_DIR/install"
 WORK_DIR="$TMP_DIR/work"
+DATA_DIR="$WORK_DIR/memoria"
 SESSION_FILE="$TMP_DIR/session.json"
 PORT=13918
 
@@ -63,6 +64,19 @@ if [ "$READY" -ne 1 ]; then
   echo "Installed server did not become ready"
   exit 1
 fi
+
+echo "[no-clone] verify separated data root"
+DOCTOR_OUTPUT="$(cd "$WORK_DIR" && "$INSTALL_DIR/bin/memoria" doctor --json)"
+echo "$DOCTOR_OUTPUT" | node -e "const fs=require('node:fs');const data=JSON.parse(fs.readFileSync(0,'utf8'));if(data.paths.memoriaHome!==process.argv[1]) process.exit(1);if(!data.checks.every((check)=>check.ok)) process.exit(1)" "$DATA_DIR"
+[ -f "$DATA_DIR/.agents/memoria-memory-sync/SKILL.md" ] || { echo "Expected deployed skill at $DATA_DIR/.agents/memoria-memory-sync/SKILL.md"; exit 1; }
+[ -f "$DATA_DIR/.agents/memoria-memory-sync/REFERENCE.md" ] || { echo "Expected deployed reference at $DATA_DIR/.agents/memoria-memory-sync/REFERENCE.md"; exit 1; }
+if grep -q './cli\|bash skills/\|node skills/\|git clone' "$DATA_DIR/.agents/memoria-memory-sync/SKILL.md"; then
+  echo "Deployed SKILL.md should not contain repo-only guidance"
+  exit 1
+fi
+MEMORIA_BIN="$INSTALL_DIR/bin/memoria" bash "$DATA_DIR/.agents/memoria-memory-sync/scripts/run-sync.sh" "$SESSION_FILE" "$DATA_DIR" >/dev/null
+[ ! -e "$INSTALL_DIR/.memory" ] || { echo "Install dir should not contain .memory"; exit 1; }
+[ ! -e "$INSTALL_DIR/knowledge" ] || { echo "Install dir should not contain knowledge"; exit 1; }
 
 echo "[no-clone] remember"
 REMEMBER_OUTPUT="$(curl -sf -X POST "http://localhost:$PORT/v1/remember" -H "Content-Type: application/json" -d "@$SESSION_FILE")"

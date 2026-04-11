@@ -3,5 +3,4 @@
 set -euo pipefail
 
 RUNTIME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export MEMORIA_HOME="${MEMORIA_HOME:-$RUNTIME_DIR}"
 exec node "$RUNTIME_DIR/lib/cli.mjs" "$@"

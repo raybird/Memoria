@@ -19,7 +19,9 @@ if ! command -v pnpm >/dev/null 2>&1; then
 fi
 
 rm -rf "$STAGE_DIR" "$ARTIFACT_TAR_PATH" "$ARTIFACT_PATH" "$INSTALL_DIR"
-mkdir -p "$STAGE_DIR/bin" "$STAGE_DIR/lib" "$INSTALL_DIR"
+mkdir -p "$STAGE_DIR/bin" "$STAGE_DIR/lib" "$STAGE_DIR/skills" "$INSTALL_DIR"
+
+node "$ROOT_DIR/scripts/check-deployed-skill-sync.mjs" --root "$ROOT_DIR"
 
 pnpm --dir "$ROOT_DIR" run build
 
@@ -27,6 +29,7 @@ cp "$ROOT_DIR/dist/cli.mjs" "$STAGE_DIR/lib/cli.mjs"
 cp "$ROOT_DIR/install.sh" "$STAGE_DIR/install.sh"
 cp "$ROOT_DIR/package.json" "$STAGE_DIR/package.json"
 cp "$ROOT_DIR/pnpm-lock.yaml" "$STAGE_DIR/pnpm-lock.yaml"
+cp -R "$ROOT_DIR/skills/memoria-memory-sync" "$STAGE_DIR/skills/memoria-memory-sync"
 
 cat <<'EOF' > "$INSTALL_DIR/memoria"
 #!/usr/bin/env bash
@@ -34,7 +37,6 @@ cat <<'EOF' > "$INSTALL_DIR/memoria"
 set -euo pipefail
 
 RUNTIME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export MEMORIA_HOME="${MEMORIA_HOME:-$RUNTIME_DIR}"
 exec node "$RUNTIME_DIR/lib/cli.mjs" "$@"
 EOF
 
@@ -63,6 +65,9 @@ gzip -n -f "$ARTIFACT_TAR_PATH"
 for required_entry in \
   "$ARTIFACT_BASENAME/bin/memoria" \
   "$ARTIFACT_BASENAME/lib/cli.mjs" \
+  "$ARTIFACT_BASENAME/skills/memoria-memory-sync/SKILL.md" \
+  "$ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md" \
+  "$ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md" \
   "$ARTIFACT_BASENAME/install.sh" \
   "$ARTIFACT_BASENAME/package.json" \
   "$ARTIFACT_BASENAME/node_modules/better-sqlite3"; do
@@ -78,6 +83,9 @@ echo "release_artifact=$ARTIFACT_PATH"
 echo "artifact_layout:"
 echo "  $ARTIFACT_BASENAME/bin/memoria"
 echo "  $ARTIFACT_BASENAME/lib/cli.mjs"
+echo "  $ARTIFACT_BASENAME/skills/memoria-memory-sync/SKILL.md"
+echo "  $ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md"
+echo "  $ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md"
 echo "  $ARTIFACT_BASENAME/install.sh"
 echo "  $ARTIFACT_BASENAME/package.json"
 echo "  $ARTIFACT_BASENAME/node_modules/better-sqlite3"

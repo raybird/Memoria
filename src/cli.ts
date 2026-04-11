@@ -173,6 +173,48 @@ function getRuntimeLayout(): RuntimeLayout {
   }
 }
 
+function getBundledSkillSourcePath(runtimeLayout: RuntimeLayout): string | undefined {
+  const skillSourcePath = path.join(runtimeLayout.runtimeRoot, 'skills', 'memoria-memory-sync')
+  return existsSync(path.join(skillSourcePath, 'SKILL.md')) ? skillSourcePath : undefined
+}
+
+function getSkillWrapperTarget(runtimeLayout: RuntimeLayout): string {
+  if (runtimeLayout.mode === 'repo') return path.join(runtimeLayout.runtimeRoot, 'cli')
+  return path.join(runtimeLayout.runtimeRoot, 'bin', 'memoria')
+}
+
+async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome: string): Promise<string | undefined> {
+  const skillSourcePath = getBundledSkillSourcePath(runtimeLayout)
+  if (!skillSourcePath) return undefined
+
+  const targetDir = path.join(memoriaHome, '.agents', 'memoria-memory-sync')
+  await fs.rm(targetDir, { recursive: true, force: true })
+  await fs.mkdir(path.dirname(targetDir), { recursive: true })
+  await fs.cp(skillSourcePath, targetDir, { recursive: true })
+
+  const wrapperDir = path.join(targetDir, 'bin')
+  const wrapperPath = path.join(wrapperDir, 'memoria')
+  const runtimeBin = getSkillWrapperTarget(runtimeLayout)
+  await fs.mkdir(wrapperDir, { recursive: true })
+  await fs.writeFile(
+    wrapperPath,
+    `#!/usr/bin/env bash\nset -euo pipefail\nexec \"${runtimeBin}\" \"$@\"\n`,
+    'utf8'
+  )
+  await fs.chmod(wrapperPath, 0o755)
+
+  const deployedSkillPath = path.join(skillSourcePath, 'deployed', 'DEPLOYED_SKILL.md')
+  const deployedReferencePath = path.join(skillSourcePath, 'deployed', 'DEPLOYED_REFERENCE.md')
+  if (existsSync(deployedSkillPath)) {
+    await fs.copyFile(deployedSkillPath, path.join(targetDir, 'SKILL.md'))
+  }
+  if (existsSync(deployedReferencePath)) {
+    await fs.copyFile(deployedReferencePath, path.join(targetDir, 'REFERENCE.md'))
+  }
+
+  return targetDir
+}
+
 // ─── Preflight checks ────────────────────────────────────────────────────────
 
 type PreflightCheck = { id: string; status: 'pass' | 'fail'; detail: string; fix?: string }
@@ -211,9 +253,11 @@ async function runPreflight(
   }
 
   // Disk space (>= 100 MB)
+  const probePath = existsSync(memoriaHome) ? memoriaHome : path.dirname(memoriaHome)
+
   try {
     const { statfs } = await import('node:fs/promises')
-    const st = await statfs(memoriaHome)
+    const st = await statfs(probePath)
     const availMB = Math.floor((st.bavail * st.bsize) / (1024 * 1024))
     checks.push({
       id: 'disk_space',
@@ -227,7 +271,7 @@ async function runPreflight(
 
   // Write permission on memoriaHome
   try {
-    const testPath = path.join(memoriaHome, `.memoria_preflight_${Date.now()}`)
+    const testPath = path.join(probePath, `.memoria_preflight_${Date.now()}`)
     await fs.writeFile(testPath, '')
     await fs.unlink(testPath)
     checks.push({ id: 'write_permission', status: 'pass', detail: memoriaHome })
@@ -253,7 +297,7 @@ async function run(): Promise<void> {
   const program = new Command()
     .name('memoria')
     .description('Memoria TypeScript CLI')
-    .version('1.7.0')
+    .version('1.8.0')
 
   // ── init ──────────────────────────────────────────────────────────────────
 
@@ -741,9 +785,14 @@ async function run(): Promise<void> {
     .description('One-shot setup: preflight → install deps → init → (optional serve)')
     .option('--serve', 'Start HTTP server after setup')
     .option('--port <port>', 'Port for serve (default: 3917)')
+    .option('--memoria-home <path>', 'Data root for .memory/ knowledge/ configs (default: ./memoria)')
     .option('--json', 'Emit JSON step logs for machine consumption')
-    .action(async (opts: { serve?: boolean; port?: string; json?: boolean }) => {
+    .action(async (opts: { serve?: boolean; port?: string; json?: boolean; memoriaHome?: string; ['memoria-home']?: string }) => {
       const jsonOut = Boolean(opts.json)
+      const requestedHome = opts.memoriaHome ?? opts['memoria-home'] ?? process.env.MEMORIA_HOME
+      const setupMemoriaHome = path.resolve(requestedHome ?? path.join(process.cwd(), 'memoria'))
+      const setupPaths = resolveMemoriaPaths(setupMemoriaHome)
+      const setupCore = new MemoriaCore(setupPaths)
 
       function stepLog(step: string, ok: boolean, extra: Record<string, unknown> = {}): void {
         const ms = Date.now() - stepStart
@@ -759,7 +808,7 @@ async function run(): Promise<void> {
 
       // Step 1: preflight
       stepStart = Date.now()
-      const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome, runtimeLayout)
+      const { ok: preflightOk, checks } = await runPreflight(setupPaths.memoriaHome, runtimeLayout)
       if (!preflightOk) {
         stepLog('preflight', false, { mode: runtimeLayout.mode, checks })
         process.exitCode = 1
@@ -788,7 +837,7 @@ async function run(): Promise<void> {
       // Step 3: init
       stepStart = Date.now()
       try {
-        await core.init()
+        await setupCore.init()
         stepLog('init', true)
       } catch (error) {
         stepLog('init', false, { error: error instanceof Error ? error.message : String(error) })
@@ -798,19 +847,26 @@ async function run(): Promise<void> {
 
       // Step 4: verify
       stepStart = Date.now()
-      const { ok: verifyOk, checks: verifyChecks } = await runVerify(paths)
+      const { ok: verifyOk, checks: verifyChecks } = await runVerify(setupPaths)
       stepLog('verify', verifyOk, verifyOk ? {} : { checks: verifyChecks.filter((c) => c.status === 'fail') })
       if (!verifyOk) {
         process.exitCode = 1
         return
       }
 
-      // Step 5 (optional): serve
+      // Step 5: deploy bundled agent skill
+      stepStart = Date.now()
+      const deployedSkillPath = await deployAgentSkill(runtimeLayout, setupPaths.memoriaHome)
+      if (deployedSkillPath) {
+        stepLog('skill', true, { path: deployedSkillPath })
+      }
+
+      // Step 6 (optional): serve
       if (opts.serve) {
         stepStart = Date.now()
         const { startServer } = await import('./server.js')
         const port = opts.port ? Number(opts.port) : undefined
-        const { server, port: actualPort } = await startServer(port)
+        const { server, port: actualPort } = await startServer(port, setupPaths.memoriaHome)
         stepLog('serve', true, { port: actualPort })
 
         const shutdown = () => { server.close(); process.exit(0) }
@@ -818,7 +874,8 @@ async function run(): Promise<void> {
         process.on('SIGTERM', shutdown)
       } else if (!jsonOut) {
         console.log('\n✅ Memoria setup complete!')
-        console.log(`   Run: MEMORIA_HOME="${paths.memoriaHome}" ./cli serve`)
+        console.log(`   Data root: ${setupPaths.memoriaHome}`)
+        console.log(`   Run: MEMORIA_HOME="${setupPaths.memoriaHome}" ./cli serve`)
       }
     })
 

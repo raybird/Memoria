@@ -3476,6 +3476,10 @@ function getMemoriaHome() {
   if (envHome) return path.resolve(envHome);
   const cwd = process.cwd();
   if (existsSync(path.join(cwd, ".memory")) || existsSync(path.join(cwd, "knowledge"))) return cwd;
+  const nestedMemoriaHome = path.join(cwd, "memoria");
+  if (existsSync(path.join(nestedMemoriaHome, ".memory")) || existsSync(path.join(nestedMemoriaHome, "knowledge"))) {
+    return nestedMemoriaHome;
+  }
   return path.resolve(__dirname, "..", "..");
 }
 function resolvePathFromEnv(raw) {
@@ -6848,8 +6852,8 @@ function createServer(core) {
     }
   });
 }
-async function startServer(port) {
-  const paths = resolveMemoriaPaths();
+async function startServer(port, memoriaHomeOverride) {
+  const paths = resolveMemoriaPaths(memoriaHomeOverride);
   const core = new MemoriaCore(paths);
   const actualPort = port ?? Number(process.env.MEMORIA_PORT ?? DEFAULT_PORT);
   const server = createServer(core);
@@ -20749,6 +20753,44 @@ function getRuntimeLayout() {
     canSelfInstallDeps: false
   };
 }
+function getBundledSkillSourcePath(runtimeLayout) {
+  const skillSourcePath = path7.join(runtimeLayout.runtimeRoot, "skills", "memoria-memory-sync");
+  return existsSync(path7.join(skillSourcePath, "SKILL.md")) ? skillSourcePath : void 0;
+}
+function getSkillWrapperTarget(runtimeLayout) {
+  if (runtimeLayout.mode === "repo") return path7.join(runtimeLayout.runtimeRoot, "cli");
+  return path7.join(runtimeLayout.runtimeRoot, "bin", "memoria");
+}
+async function deployAgentSkill(runtimeLayout, memoriaHome) {
+  const skillSourcePath = getBundledSkillSourcePath(runtimeLayout);
+  if (!skillSourcePath) return void 0;
+  const targetDir = path7.join(memoriaHome, ".agents", "memoria-memory-sync");
+  await fs6.rm(targetDir, { recursive: true, force: true });
+  await fs6.mkdir(path7.dirname(targetDir), { recursive: true });
+  await fs6.cp(skillSourcePath, targetDir, { recursive: true });
+  const wrapperDir = path7.join(targetDir, "bin");
+  const wrapperPath = path7.join(wrapperDir, "memoria");
+  const runtimeBin = getSkillWrapperTarget(runtimeLayout);
+  await fs6.mkdir(wrapperDir, { recursive: true });
+  await fs6.writeFile(
+    wrapperPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+exec "${runtimeBin}" "$@"
+`,
+    "utf8"
+  );
+  await fs6.chmod(wrapperPath, 493);
+  const deployedSkillPath = path7.join(skillSourcePath, "deployed", "DEPLOYED_SKILL.md");
+  const deployedReferencePath = path7.join(skillSourcePath, "deployed", "DEPLOYED_REFERENCE.md");
+  if (existsSync(deployedSkillPath)) {
+    await fs6.copyFile(deployedSkillPath, path7.join(targetDir, "SKILL.md"));
+  }
+  if (existsSync(deployedReferencePath)) {
+    await fs6.copyFile(deployedReferencePath, path7.join(targetDir, "REFERENCE.md"));
+  }
+  return targetDir;
+}
 async function runPreflight(memoriaHome, layout) {
   const checks = [];
   const nodeVer = process.versions.node;
@@ -20775,9 +20817,10 @@ async function runPreflight(memoriaHome, layout) {
   } else {
     checks.push({ id: "pnpm", status: "pass", detail: "not required in installed mode" });
   }
+  const probePath = existsSync(memoriaHome) ? memoriaHome : path7.dirname(memoriaHome);
   try {
     const { statfs } = await import("node:fs/promises");
-    const st = await statfs(memoriaHome);
+    const st = await statfs(probePath);
     const availMB = Math.floor(st.bavail * st.bsize / (1024 * 1024));
     checks.push({
       id: "disk_space",
@@ -20789,7 +20832,7 @@ async function runPreflight(memoriaHome, layout) {
     checks.push({ id: "disk_space", status: "pass", detail: "unknown (skipping check)" });
   }
   try {
-    const testPath = path7.join(memoriaHome, `.memoria_preflight_${Date.now()}`);
+    const testPath = path7.join(probePath, `.memoria_preflight_${Date.now()}`);
     await fs6.writeFile(testPath, "");
     await fs6.unlink(testPath);
     checks.push({ id: "write_permission", status: "pass", detail: memoriaHome });
@@ -20807,7 +20850,7 @@ async function run() {
   const paths = resolveMemoriaPaths();
   const runtimeLayout = getRuntimeLayout();
   const core = new MemoriaCore(paths);
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.7.0");
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.8.0");
   program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
     await core.init();
     if (opts.json) {
@@ -21119,8 +21162,12 @@ async function run() {
     }
     if (!ok) process.exitCode = 1;
   });
-  program2.command("setup").description("One-shot setup: preflight \u2192 install deps \u2192 init \u2192 (optional serve)").option("--serve", "Start HTTP server after setup").option("--port <port>", "Port for serve (default: 3917)").option("--json", "Emit JSON step logs for machine consumption").action(async (opts) => {
+  program2.command("setup").description("One-shot setup: preflight \u2192 install deps \u2192 init \u2192 (optional serve)").option("--serve", "Start HTTP server after setup").option("--port <port>", "Port for serve (default: 3917)").option("--memoria-home <path>", "Data root for .memory/ knowledge/ configs (default: ./memoria)").option("--json", "Emit JSON step logs for machine consumption").action(async (opts) => {
     const jsonOut = Boolean(opts.json);
+    const requestedHome = opts.memoriaHome ?? opts["memoria-home"] ?? process.env.MEMORIA_HOME;
+    const setupMemoriaHome = path7.resolve(requestedHome ?? path7.join(process.cwd(), "memoria"));
+    const setupPaths = resolveMemoriaPaths(setupMemoriaHome);
+    const setupCore = new MemoriaCore(setupPaths);
     function stepLog(step, ok, extra = {}) {
       const ms = Date.now() - stepStart;
       if (jsonOut) {
@@ -21132,7 +21179,7 @@ async function run() {
     }
     let stepStart = Date.now();
     stepStart = Date.now();
-    const { ok: preflightOk, checks } = await runPreflight(paths.memoriaHome, runtimeLayout);
+    const { ok: preflightOk, checks } = await runPreflight(setupPaths.memoriaHome, runtimeLayout);
     if (!preflightOk) {
       stepLog("preflight", false, { mode: runtimeLayout.mode, checks });
       process.exitCode = 1;
@@ -21157,7 +21204,7 @@ async function run() {
     }
     stepStart = Date.now();
     try {
-      await core.init();
+      await setupCore.init();
       stepLog("init", true);
     } catch (error48) {
       stepLog("init", false, { error: error48 instanceof Error ? error48.message : String(error48) });
@@ -21165,17 +21212,22 @@ async function run() {
       return;
     }
     stepStart = Date.now();
-    const { ok: verifyOk, checks: verifyChecks } = await runVerify(paths);
+    const { ok: verifyOk, checks: verifyChecks } = await runVerify(setupPaths);
     stepLog("verify", verifyOk, verifyOk ? {} : { checks: verifyChecks.filter((c) => c.status === "fail") });
     if (!verifyOk) {
       process.exitCode = 1;
       return;
     }
+    stepStart = Date.now();
+    const deployedSkillPath = await deployAgentSkill(runtimeLayout, setupPaths.memoriaHome);
+    if (deployedSkillPath) {
+      stepLog("skill", true, { path: deployedSkillPath });
+    }
     if (opts.serve) {
       stepStart = Date.now();
       const { startServer: startServer2 } = await Promise.resolve().then(() => (init_server(), server_exports));
       const port = opts.port ? Number(opts.port) : void 0;
-      const { server, port: actualPort } = await startServer2(port);
+      const { server, port: actualPort } = await startServer2(port, setupPaths.memoriaHome);
       stepLog("serve", true, { port: actualPort });
       const shutdown = () => {
         server.close();
@@ -21185,7 +21237,8 @@ async function run() {
       process.on("SIGTERM", shutdown);
     } else if (!jsonOut) {
       console.log("\n\u2705 Memoria setup complete!");
-      console.log(`   Run: MEMORIA_HOME="${paths.memoriaHome}" ./cli serve`);
+      console.log(`   Data root: ${setupPaths.memoriaHome}`);
+      console.log(`   Run: MEMORIA_HOME="${setupPaths.memoriaHome}" ./cli serve`);
     }
   });
   await program2.parseAsync(process.argv);

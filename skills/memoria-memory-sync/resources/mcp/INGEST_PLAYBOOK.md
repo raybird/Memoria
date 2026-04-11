@@ -3,7 +3,11 @@
 Use this after running:
 
 ```bash
-LIBSQL_URL="file:/path/to/memory-tool.db" bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/session.sample.json
+SKILL_ROOT="<memoria-home>/.agents/memoria-memory-sync"
+MEMORIA_BIN="$SKILL_ROOT/bin/memoria"
+LIBSQL_URL="file:/path/to/memory-tool.db" \
+  MEMORIA_BIN="$MEMORIA_BIN" \
+  bash "$SKILL_ROOT/scripts/run-sync-with-enhancement.sh" /absolute/path/to/session.json "<memoria-home>"
 ```
 
 By default, this command now performs automatic MCP ingestion using:
@@ -31,8 +35,8 @@ The script exports:
 Built-in runner:
 
 ```bash
-node skills/memoria-memory-sync/scripts/ingest-mcp-libsql.mjs --requests "$MEMORIA_MCP_REQUESTS"
-node skills/memoria-memory-sync/scripts/update-mcp-sync-state.mjs --payload "$MEMORIA_MCP_PAYLOAD"
+node "$SKILL_ROOT/scripts/ingest-mcp-libsql.mjs" --requests "$MEMORIA_MCP_REQUESTS"
+node "$SKILL_ROOT/scripts/update-mcp-sync-state.mjs" --payload "$MEMORIA_MCP_PAYLOAD"
 ```
 
 `run-sync-with-enhancement.sh` executes both steps automatically on success.

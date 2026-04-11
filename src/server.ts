@@ -184,8 +184,8 @@ export function createServer(core: MemoriaCore): http.Server {
     })
 }
 
-export async function startServer(port?: number): Promise<{ server: http.Server; port: number }> {
-    const paths = resolveMemoriaPaths()
+export async function startServer(port?: number, memoriaHomeOverride?: string): Promise<{ server: http.Server; port: number }> {
+    const paths = resolveMemoriaPaths(memoriaHomeOverride)
     const core = new MemoriaCore(paths)
     const actualPort = port ?? Number(process.env.MEMORIA_PORT ?? DEFAULT_PORT)
 
