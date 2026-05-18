@@ -34,3 +34,5 @@ knowledge/Skills/**
 # Sensitive files
 configs/secrets.yaml
 **/secrets/
+
+.gitnexus/
