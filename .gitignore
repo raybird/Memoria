@@ -36,3 +36,6 @@ configs/secrets.yaml
 **/secrets/
 
 .gitnexus/
+
+# Claude Code local config (not part of the repo)
+.claude/
