@@ -20,6 +20,8 @@ node dist/cli.mjs --help            # smoke-check the production bundle
 bash -n install.sh                  # syntax-check the installer
 ```
 
+`dist/` is gitignored — run `pnpm run build` once after cloning if you want the production bundle. The `./cli` wrapper falls back to `tsx` when `dist/cli.mjs` is missing, so most dev flows work without it.
+
 ## Tests
 
 There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts under `scripts/` that exercise the CLI end-to-end. To run a single flow, invoke its script directly:
