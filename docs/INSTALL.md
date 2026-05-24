@@ -10,7 +10,7 @@
 
 ```bash
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.8.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.9.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 ```
 
@@ -109,3 +109,26 @@ Release artifact 與 repo dist mode 不同：
 
 - repo dist mode: 仍在原始碼樹內執行 `node dist/cli.mjs`
 - no-clone mode: 使用 release tarball 內的 `bin/memoria`
+
+## Container
+
+Memoria 附有基礎 `Dockerfile` 供快速容器使用。
+
+```bash
+docker build -t memoria:local .
+docker run --rm memoria:local
+```
+
+預設容器指令執行 `./cli verify` 與 `node dist/cli.mjs --help`。
+
+互動式用法：
+
+```bash
+docker run --rm -it -v "$(pwd)":/workspace -w /workspace memoria:local bash
+./cli init
+./cli verify
+```
+
+- Base image: `node:22-slim`
+- `pnpm` 透過 `corepack` 啟用
+- Build stage 產出 `dist/cli.mjs`
