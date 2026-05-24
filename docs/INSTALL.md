@@ -3,10 +3,24 @@
 ## Environment
 
 - Node.js `>=18`（建議 20/22）
+- npm 安裝跨平台（Linux / macOS / Windows，`better-sqlite3` 自帶 prebuilt binaries）
 - no-clone release artifact 目前只支援 Linux x64
 - repo 開發模式需要 `pnpm`
 
-## Method A: No-Clone Install (Recommended)
+## Method A: npm Install (Recommended)
+
+```bash
+# 一次性執行（無須全域安裝）
+npx @raybird.chen/memoria setup --serve --json
+
+# 或全域安裝
+npm install -g @raybird.chen/memoria
+memoria setup --serve --json
+```
+
+`setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
+
+## Method B: No-Clone Tarball Install
 
 ```bash
 bash install.sh \
@@ -46,7 +60,7 @@ $HOME/.local/share/memoria/bin/memoria setup --serve --json
 - `Node.js >= 18 is required`: 升級 Node.js 後重試
 - `artifact missing required path`: 重新下載 tarball，確認不是 repo source archive
 
-## Method B: Developer Setup From Repo
+## Method C: Developer Setup From Repo
 
 ```bash
 git clone https://github.com/raybird/Memoria Memoria

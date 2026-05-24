@@ -14,45 +14,35 @@
 
 ## 🤖 AI Agent Quick Install
 
-> **Agent 看到這裡就夠了。** 先走 no-clone 安裝；開發者再走 repo mode。
+> **Agent 看到這裡就夠了。** 用 npm 安裝；其他路徑見下方文件。
 
-### Self-Hosted Without Clone
+### 從 npm 安裝（推薦）
 
 ```bash
-# 1. 下載 installer 與 Linux x64 release artifact
-curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
-curl -fsSL -o memoria-linux-x64-v1.9.0.tar.gz \
-  https://github.com/raybird/Memoria/releases/download/v1.9.0/memoria-linux-x64-v1.9.0.tar.gz
+# 一次性執行（無須安裝）
+npx @raybird.chen/memoria setup --serve --json
 
-# 2. 安裝 runtime
-bash install.sh \
-  --artifact ./memoria-linux-x64-v1.9.0.tar.gz \
-  --install-dir "$HOME/.local/share/memoria"
-
-# 3. 啟動 bootstrap（資料預設寫到目前目錄的 ./memoria）
-$HOME/.local/share/memoria/bin/memoria setup --serve --json
-# 或顯式指定資料目錄
-$HOME/.local/share/memoria/bin/memoria setup --memoria-home "$(pwd)/memoria" --serve --json
+# 或全域安裝
+npm install -g @raybird.chen/memoria
+memoria setup --serve --json
 ```
 
 `setup` 也會把內建 agent skill 部署到 `<memoria-home>/.agents/memoria-memory-sync/`，其中包含 runtime-safe 的 `SKILL.md`、`REFERENCE.md`、helper scripts 與本地 `bin/memoria` wrapper，讓 agent 安裝後即可直接發現並使用對應 skill。
 
-安裝後若要讓 agent 直接走 deployed skill，可優先讀：
+安裝後若要讓 agent 直接走 deployed skill：
 
 ```text
 <memoria-home>/.agents/memoria-memory-sync/SKILL.md
 <memoria-home>/.agents/memoria-memory-sync/REFERENCE.md
 ```
 
-這兩份文件是 deployed runtime 的入口，不需要假設 repo 已 clone 到本機。
-
 輸出 JSON lines，每步一行：
 
 ```json
 {"step":"preflight","ok":true,"ms":120,"mode":"installed"}
-{"step":"install","ok":true,"ms":0,"skipped":true,"reason":"installed runtime already packaged"}
 {"step":"init","ok":true,"ms":85}
 {"step":"verify","ok":true,"ms":42}
+{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/memoria-memory-sync"}
 {"step":"serve","ok":true,"port":3917}
 ```
 
@@ -62,39 +52,23 @@ $HOME/.local/share/memoria/bin/memoria setup --memoria-home "$(pwd)/memoria" --s
 curl -sf http://localhost:3917/v1/health
 ```
 
-### Developer Setup From Repo
+啟動後可透過 HTTP API 使用：
 
 ```bash
-# 1. Clone
-git clone https://github.com/raybird/Memoria && cd Memoria
-
-# 2. 一鍵安裝（preflight → install → init → verify → serve）
-./cli setup --serve --json
-
-# 3. 確認就緒
-curl -sf http://localhost:3917/v1/health
-```
-
-安裝成功後即可透過 HTTP API 使用：
-
-```bash
-# 寫入記憶
 curl -X POST http://localhost:3917/v1/remember \
   -H 'Content-Type: application/json' \
   -d @examples/session.sample.json
 
-# 檢索記憶
 curl -X POST http://localhost:3917/v1/recall \
   -H 'Content-Type: application/json' \
   -d '{"query":"SQLite migration","top_k":5}'
 
-# 查看統計
 curl http://localhost:3917/v1/stats
 ```
 
-**no-clone 前置需求**：Node.js ≥ 18、下載 release artifact 的能力、Linux x64。
+**前置需求**：Node.js ≥ 18。`better-sqlite3` 自帶 Linux / macOS / Windows prebuilt binaries。
 
-**repo mode 前置需求**：Node.js ≥ 18、pnpm（檢查：`./cli preflight --json`）
+**其他安裝路徑**：no-clone tarball（`install.sh`）與 repo 開發模式請見 [docs/INSTALL.md](docs/INSTALL.md)。
 
 **完整 Agent 整合指南**：[AGENTS.md](AGENTS.md)（含 Core Architecture / HTTP API / Bootstrap 章節）
 

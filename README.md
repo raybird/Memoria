@@ -14,25 +14,17 @@ Cross-session, traceable, self-hostable persistent memory for AI agents.
 
 ## 🤖 AI Agent Quick Install
 
-> **Agents — this section is all you need.** Start with the no-clone install; developers can drop down to repo mode below.
+> **Agents — this section is all you need.** Use npm; everything else is below.
 
-### Self-Hosted Without Clone
+### Install from npm (Recommended)
 
 ```bash
-# 1. Download the installer and the Linux x64 release artifact
-curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
-curl -fsSL -o memoria-linux-x64-v1.9.0.tar.gz \
-  https://github.com/raybird/Memoria/releases/download/v1.9.0/memoria-linux-x64-v1.9.0.tar.gz
+# One-shot via npx (no install needed)
+npx @raybird.chen/memoria setup --serve --json
 
-# 2. Install the runtime
-bash install.sh \
-  --artifact ./memoria-linux-x64-v1.9.0.tar.gz \
-  --install-dir "$HOME/.local/share/memoria"
-
-# 3. Bootstrap (data lands in ./memoria by default)
-$HOME/.local/share/memoria/bin/memoria setup --serve --json
-# Or pin the data directory explicitly
-$HOME/.local/share/memoria/bin/memoria setup --memoria-home "$(pwd)/memoria" --serve --json
+# Or install globally
+npm install -g @raybird.chen/memoria
+memoria setup --serve --json
 ```
 
 `setup` also deploys the built-in agent skill into `<memoria-home>/.agents/memoria-memory-sync/`, including a runtime-safe `SKILL.md`, `REFERENCE.md`, helper scripts, and a local `bin/memoria` wrapper — so agents can discover and use the skill immediately after install.
@@ -44,15 +36,13 @@ To point agents at the deployed skill, use:
 <memoria-home>/.agents/memoria-memory-sync/REFERENCE.md
 ```
 
-These are the deployed-runtime entry points and do not assume the repo has been cloned locally.
-
 Output is JSON Lines, one row per step:
 
 ```json
 {"step":"preflight","ok":true,"ms":120,"mode":"installed"}
-{"step":"install","ok":true,"ms":0,"skipped":true,"reason":"installed runtime already packaged"}
 {"step":"init","ok":true,"ms":85}
 {"step":"verify","ok":true,"ms":42}
+{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/memoria-memory-sync"}
 {"step":"serve","ok":true,"port":3917}
 ```
 
@@ -62,39 +52,23 @@ Check readiness:
 curl -sf http://localhost:3917/v1/health
 ```
 
-### Developer Setup From Repo
-
-```bash
-# 1. Clone
-git clone https://github.com/raybird/Memoria && cd Memoria
-
-# 2. One-shot install (preflight → install → init → verify → serve)
-./cli setup --serve --json
-
-# 3. Check readiness
-curl -sf http://localhost:3917/v1/health
-```
-
 Once running, use the HTTP API:
 
 ```bash
-# Write memory
 curl -X POST http://localhost:3917/v1/remember \
   -H 'Content-Type: application/json' \
   -d @examples/session.sample.json
 
-# Recall memory
 curl -X POST http://localhost:3917/v1/recall \
   -H 'Content-Type: application/json' \
   -d '{"query":"SQLite migration","top_k":5}'
 
-# Inspect stats
 curl http://localhost:3917/v1/stats
 ```
 
-**No-clone prerequisites**: Node.js ≥ 18, ability to download a release artifact, Linux x64.
+**Prerequisites**: Node.js ≥ 18. `better-sqlite3` ships prebuilt binaries for Linux / macOS / Windows.
 
-**Repo-mode prerequisites**: Node.js ≥ 18, pnpm (check with `./cli preflight --json`).
+**Other install paths**: no-clone tarball (`install.sh`) and repo-mode developer setup are documented in [docs/INSTALL.md](docs/INSTALL.md).
 
 **Full agent integration guide**: [AGENTS.md](AGENTS.md) (covers Core Architecture / HTTP API / Bootstrap).
 

@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- npm publish target: `@raybird.chen/memoria` (scoped public package). `npx @raybird.chen/memoria setup` or `npm install -g @raybird.chen/memoria` now works on Linux / macOS / Windows.
+- `scripts/build.mjs` build entry point that emits `dist/cli.mjs` with `#!/usr/bin/env node` shebang and executable permission, so npm-installed users get a working `memoria` binary.
+- `scripts/bump-version.mjs` single-command version bump across `package.json`, `src/cli.ts`, `install.sh`, deployed skill, and `docs/INSTALL.md`.
+- `.github/workflows/release.yml` — tag-driven release: pushing `v*` runs the pre-release checks, creates the GitHub Release with extracted CHANGELOG notes, and publishes to npm with provenance.
+
+### Changed
+- `package.json` flipped from `private: true` to public (`@raybird.chen/memoria`) with a `files` whitelist (9-file, ~148 kB tarball).
+- `bin` now points to `dist/cli.mjs` directly instead of the bash wrapper `./cli`, so the npm install entrypoint works cross-platform.
+- README / docs/INSTALL.md promote npm as Method A; no-clone tarball and repo dev mode move to Method B / Method C.
+- RELEASE.md simplified to the new tag-driven SOP (`release:bump` → CHANGELOG edit → tag push → CI publishes).
+
 ## [1.9.0] - 2026-05-24
 
 ### Changed

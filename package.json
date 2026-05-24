@@ -1,18 +1,54 @@
 {
-  "name": "memoria",
+  "name": "@raybird.chen/memoria",
   "version": "1.9.0",
-  "private": true,
   "type": "module",
+  "description": "Cross-session, traceable, self-hostable persistent memory for AI agents — SQLite-backed CLI + HTTP API + Node SDK.",
+  "keywords": [
+    "memory",
+    "ai",
+    "agent",
+    "llm",
+    "sqlite",
+    "cli",
+    "persistent-memory",
+    "rag",
+    "wiki"
+  ],
+  "homepage": "https://github.com/raybird/Memoria",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raybird/Memoria.git"
+  },
+  "bugs": {
+    "url": "https://github.com/raybird/Memoria/issues"
+  },
+  "license": "MIT",
+  "author": "raybird",
   "bin": {
-    "memoria": "./cli"
+    "memoria": "dist/cli.mjs"
+  },
+  "files": [
+    "dist/cli.mjs",
+    "skills/memoria-memory-sync/deployed/",
+    "examples/session.sample.json",
+    "README.md",
+    "README.zh-TW.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "memoria": "tsx src/cli.ts",
     "check": "tsc --noEmit",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node18 --external:better-sqlite3 --banner:js=\"import { createRequire } from 'node:module';const require = createRequire(import.meta.url);\" --outfile=dist/cli.mjs",
+    "build": "node scripts/build.mjs",
     "memoria:dist": "node dist/cli.mjs",
     "release:docs-check": "node scripts/check-release-doc-sync.mjs",
-    "release:package": "bash scripts/package-release-artifacts.sh"
+    "release:package": "bash scripts/package-release-artifacts.sh",
+    "release:bump": "node scripts/bump-version.mjs",
+    "prepublishOnly": "pnpm run check && pnpm run build"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
