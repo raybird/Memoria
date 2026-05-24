@@ -65,7 +65,9 @@ jobs:
 
       - name: Capture release version
         id: release_meta
-        run: echo "version=$(node -e \"const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync('package.json','utf8')).version);\")" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Package release artifact
         run: pnpm run release:package
