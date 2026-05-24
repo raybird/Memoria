@@ -1,5 +1,67 @@
 import Database from 'better-sqlite3'
 
+type Migration = {
+    id: number
+    name: string
+    up: (db: Database.Database) => void
+}
+
+const MIGRATIONS: Migration[] = [
+    {
+        id: 1,
+        name: 'sessions_add_scope',
+        up: (db) => {
+            const cols = new Set((db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('scope')) {
+                db.exec(`ALTER TABLE sessions ADD COLUMN scope TEXT`)
+                db.exec(`UPDATE sessions SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
+            }
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_scope_timestamp ON sessions(scope, timestamp)`)
+        }
+    },
+    {
+        id: 2,
+        name: 'memory_nodes_add_scope',
+        up: (db) => {
+            const cols = new Set((db.prepare('PRAGMA table_info(memory_nodes)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('scope')) {
+                db.exec(`ALTER TABLE memory_nodes ADD COLUMN scope TEXT`)
+                db.exec(`UPDATE memory_nodes SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
+            }
+            db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_level ON memory_nodes(scope, level)`)
+        }
+    },
+    {
+        id: 3,
+        name: 'wiki_lint_findings_add_run_id',
+        up: (db) => {
+            const cols = new Set((db.prepare('PRAGMA table_info(wiki_lint_findings)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('run_id')) {
+                db.exec(`ALTER TABLE wiki_lint_findings ADD COLUMN run_id TEXT`)
+            }
+        }
+    }
+]
+
+function runMigrations(db: Database.Database): void {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `)
+    const applied = new Set((db.prepare('SELECT id FROM schema_migrations').all() as { id: number }[]).map((r) => r.id))
+    const insertStmt = db.prepare('INSERT INTO schema_migrations (id, name) VALUES (?, ?)')
+    for (const migration of MIGRATIONS) {
+        if (applied.has(migration.id)) continue
+        db.transaction(() => {
+            migration.up(db)
+            insertStmt.run(migration.id, migration.name)
+        })()
+    }
+}
+
 export function initDatabase(dbPath: string): void {
     const db = new Database(dbPath)
     try {
@@ -218,24 +280,7 @@ export function initDatabase(dbPath: string): void {
       ON wiki_query_artifacts(kind, created_at);
     `)
 
-        const sessionColumns = new Set((db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((r) => r.name))
-        if (!sessionColumns.has('scope')) {
-            db.exec(`ALTER TABLE sessions ADD COLUMN scope TEXT`)
-            db.exec(`UPDATE sessions SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
-        }
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_scope_timestamp ON sessions(scope, timestamp)`)
-
-        const memoryNodeColumns = new Set((db.prepare('PRAGMA table_info(memory_nodes)').all() as { name: string }[]).map((r) => r.name))
-        if (!memoryNodeColumns.has('scope')) {
-            db.exec(`ALTER TABLE memory_nodes ADD COLUMN scope TEXT`)
-            db.exec(`UPDATE memory_nodes SET scope = CASE WHEN project IS NOT NULL AND TRIM(project) <> '' THEN 'project:' || project ELSE 'global' END WHERE scope IS NULL OR TRIM(scope) = ''`)
-        }
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_nodes_scope_level ON memory_nodes(scope, level)`)
-
-        const wikiLintColumns = new Set((db.prepare('PRAGMA table_info(wiki_lint_findings)').all() as { name: string }[]).map((r) => r.name))
-        if (!wikiLintColumns.has('run_id')) {
-            db.exec(`ALTER TABLE wiki_lint_findings ADD COLUMN run_id TEXT`)
-        }
+        runMigrations(db)
     } finally {
         db.close()
     }
