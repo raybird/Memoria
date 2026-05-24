@@ -8,7 +8,7 @@ Cross-session, traceable, self-hostable persistent memory for AI agents.
 
 - **Problem**: LLM agents start from scratch every conversation — last session's decisions, pitfalls, and learned skills are all lost.
 - **Solution**: Persist sessions into a local SQLite store; pull relevant fragments back through keyword / tree / hybrid recall. An optional markdown view (compiled wiki) keeps everything human-readable.
-- **Shape**: Node.js CLI (`./cli`) + HTTP API (`:3917`) + Node SDK (`MemoriaClient`) sharing one core; agent adapters (Gemini / OpenCode) included.
+- **Shape**: Node.js CLI (`./cli`) + HTTP API (`:3917`) + Node SDK (`MemoriaClient`) sharing one core; agent adapters (Claude Code / Gemini / OpenCode) included.
 - **Footprint**: Three runtime npm deps (`better-sqlite3` / `commander` / `zod`); HTTP runs on `node:http`. Fully offline.
 - **Extension**: An MCP/libSQL cross-node semantic graph is opt-in via the `LIBSQL_URL` env var.
 
@@ -78,7 +78,7 @@ curl http://localhost:3917/v1/stats
 
 | Area | Capabilities |
 |------|--------------|
-| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (11 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Gemini / OpenCode reference impls) ｜ Every command supports `--json` machine-readable output |
+| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (11 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Gemini / OpenCode) ｜ Every command supports `--json` machine-readable output |
 | **Storage** | SQLite + markdown dual persistence ｜ Time-decay scoring (90-day half-life) + consolidation + stale eviction ｜ Backward-compatible schema auto-upgrades |
 | **Retrieval** | `keyword / tree / hybrid` recall ｜ Adaptive gate skips trivial queries ｜ Lightweight scope isolation (`global / project / agent / user`) ｜ Recall routing telemetry (`stats` + API) |
 | **Wiki workflows** | Raw source import (markdown/text) ｜ Compiled wiki special pages (`index / log / overview`) ｜ Query file-back (`synthesis / comparison`) ｜ Wiki governance lint |
@@ -184,7 +184,27 @@ const context = await adapter.beforePrompt({ userMessage, conversationId })
 await adapter.afterResponse({ response, conversationId, userMessage })
 ```
 
-Reference implementations: `src/adapter/gemini-adapter.ts`, `src/adapter/opencode-adapter.ts`.
+Reference implementations: `src/adapter/gemini-adapter.ts`, `src/adapter/opencode-adapter.ts`, `src/adapter/claude-code-adapter.ts`.
+
+### Claude Code (zero-code integration via hooks)
+
+Wire Memoria into Claude Code via its hook system — no SDK needed, just the CLI:
+
+```jsonc
+// ~/.claude/settings.json (or .claude/settings.json per project)
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
+    ]
+  }
+}
+```
+
+`UserPromptSubmit` injects relevant past memory as `additionalContext`; `Stop` writes the just-completed turn back to Memoria. Both fail-open so a Memoria outage never blocks your Claude Code session. Requires `memoria serve` running on `localhost:3917` (override with `--server` or `MEMORIA_SERVER_URL`).
 
 ## Project Layout
 
@@ -196,7 +216,7 @@ src/
   sdk.ts        # MemoriaClient SDK
   core/         # All business logic (types / paths / utils / db/ / memoria / source-import / wiki-*)
   core/db/      # SQLite ops by domain (schema / session / source / wiki / lint / sync / telemetry / verify / prune-export / recall / mappers)
-  adapter/      # BaseAdapter + Gemini / OpenCode reference impls
+  adapter/      # BaseAdapter + Claude Code / Gemini / OpenCode adapters
 scripts/        # End-to-end bash tests (test-*.sh) + release packaging
 skills/         # memoria-memory-sync agent skill
 examples/       # session.sample.json

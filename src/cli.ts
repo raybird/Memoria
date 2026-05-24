@@ -15,6 +15,7 @@ import { registerExportCommand } from './cli/commands/export.js'
 import { registerServeCommand } from './cli/commands/serve.js'
 import { registerPreflightCommand } from './cli/commands/preflight-cmd.js'
 import { registerSetupCommand } from './cli/commands/setup.js'
+import { registerAdapterCommand } from './cli/commands/adapter.js'
 
 async function run(): Promise<void> {
   const paths = resolveMemoriaPaths()
@@ -40,6 +41,7 @@ async function run(): Promise<void> {
   registerServeCommand(program)
   registerPreflightCommand(program, paths, runtimeLayout)
   registerSetupCommand(program, runtimeLayout)
+  registerAdapterCommand(program)
 
   await program.parseAsync(process.argv)
 }

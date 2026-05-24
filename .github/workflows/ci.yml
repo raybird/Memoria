@@ -48,6 +48,9 @@ jobs:
       - name: Run adapter runtime test
         run: bash scripts/test-adapter-runtime.sh
 
+      - name: Run Claude Code adapter test
+        run: bash scripts/test-claude-code-adapter.sh
+
       - name: Run MCP end-to-end test
         run: bash scripts/test-mcp-e2e.sh
 

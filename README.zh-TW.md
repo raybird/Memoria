@@ -8,7 +8,7 @@
 
 - **問題**：LLM Agent 每次對話都從零開始 — 上次的決定、踩過的雷、學到的技能，全都丟掉。
 - **解法**：把 session 寫進本機 SQLite，需要時用 keyword / tree / hybrid recall 撈回相關片段；可選 markdown 衍生視圖（compiled wiki）供人類審閱。
-- **形狀**：Node.js CLI（`./cli`）+ HTTP API（`:3917`）+ Node SDK（`MemoriaClient`）共用同一個 core；agent adapter（Gemini / OpenCode）開箱即用。
+- **形狀**：Node.js CLI（`./cli`）+ HTTP API（`:3917`）+ Node SDK（`MemoriaClient`）共用同一個 core；agent adapter（Claude Code / Gemini / OpenCode）開箱即用。
 - **依賴**：runtime 只用三個 npm 套件（`better-sqlite3` / `commander` / `zod`），HTTP 走 `node:http`，全離線可跑。
 - **擴充**：MCP/libSQL 跨節點語意圖譜為 optional，由 `LIBSQL_URL` env 啟用。
 
@@ -78,7 +78,7 @@ curl http://localhost:3917/v1/stats
 
 | 領域 | 能力 |
 |------|------|
-| **入口** | CLI（init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（11 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Gemini / OpenCode 參考實作）｜所有指令支援 `--json` 機器可讀輸出 |
+| **入口** | CLI（init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（11 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Claude Code / Gemini / OpenCode）｜所有指令支援 `--json` 機器可讀輸出 |
 | **儲存** | SQLite + markdown 雙軌持久化｜時間衰減評分（halfLife 90 天）+ 合併 + 過期清理｜backward-compatible schema 自動升級 |
 | **檢索** | `keyword / tree / hybrid` 三種 recall｜adaptive gate 跳過 trivial query｜Lightweight scope isolation（`global / project / agent / user`）｜Recall 路由 telemetry（`stats` + API） |
 | **Wiki 工作流** | Raw source 匯入（markdown/text）｜Compiled wiki special pages（`index / log / overview`）｜Query file-back（`synthesis / comparison`）｜Wiki governance lint |
@@ -184,7 +184,27 @@ const context = await adapter.beforePrompt({ userMessage, conversationId })
 await adapter.afterResponse({ response, conversationId, userMessage })
 ```
 
-參考實作：`src/adapter/gemini-adapter.ts`、`src/adapter/opencode-adapter.ts`
+參考實作：`src/adapter/gemini-adapter.ts`、`src/adapter/opencode-adapter.ts`、`src/adapter/claude-code-adapter.ts`
+
+### Claude Code（透過 hook 零程式碼整合）
+
+把 Memoria 接到 Claude Code 完全不用寫程式，只需 CLI：
+
+```jsonc
+// ~/.claude/settings.json（或專案的 .claude/settings.json）
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
+    ]
+  }
+}
+```
+
+`UserPromptSubmit` 會把相關過往記憶以 `additionalContext` 注入；`Stop` 會把剛完成的這一輪寫回 Memoria。兩者都 fail-open，Memoria 故障不會打斷 Claude Code session。需要 `memoria serve` 在 `localhost:3917`（可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫）。
 
 ## 專案結構
 
@@ -196,7 +216,7 @@ src/
   sdk.ts        # MemoriaClient SDK
   core/         # 所有業務邏輯（types / paths / utils / db/ / memoria / source-import / wiki-*）
   core/db/      # SQLite 操作按領域拆分（schema / session / source / wiki / lint / sync / telemetry / verify / prune-export / recall / mappers）
-  adapter/      # BaseAdapter + Gemini / OpenCode 參考實作
+  adapter/      # BaseAdapter + Claude Code / Gemini / OpenCode adapter
 scripts/        # bash 端對端測試（test-*.sh）+ release 打包
 skills/         # memoria-memory-sync agent skill
 examples/       # session.sample.json
