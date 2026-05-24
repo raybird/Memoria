@@ -49,7 +49,8 @@ export {
     buildMemoryIndex,
     recallTree,
     recallKeyword,
-    querySessionSummary
+    querySessionSummary,
+    closeAllConnections
 } from './db/index.js'
 export {
     safeDate, slugify, stableStringify, shortHash, deriveScope,

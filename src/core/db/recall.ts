@@ -1,8 +1,8 @@
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate } from '../utils.js'
 import { safeDate } from '../utils.js'
 import { initDatabase } from './schema.js'
+import { withDb } from './connection.js'
 import { truncateText } from './mappers.js'
 import type { Json, MemoryIndexBuildOptions, MemoryIndexBuildResult, RecallHit } from '../types.js'
 
@@ -64,7 +64,7 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
     }
     initDatabase(dbPath)
 
-    const db = new Database(dbPath)
+    return withDb(dbPath, (db) => {
     const nowIso = new Date().toISOString()
     const dryRun = Boolean(options.dryRun)
     const projectFilter = options.project?.trim()
@@ -72,7 +72,6 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
     const since = parseBoundaryDate(options.since, '--since')
     const specificSessionId = options.sessionId?.trim()
 
-    try {
         const sessions = db.prepare(`
           SELECT id, timestamp, project, scope, summary
           FROM sessions
@@ -226,9 +225,7 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
             nodesUpserted,
             linksUpserted
         }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function recallTree(
@@ -240,8 +237,7 @@ export function recallTree(
 ): RecallHit[] {
     if (!existsSync(dbPath)) return []
 
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, (db) => {
         const allNodes = db.prepare(`
           SELECT id, parent_id, project, scope, title, summary, level, updated_at
           FROM memory_nodes
@@ -351,19 +347,14 @@ export function recallTree(
         try {
             const hitNodeIds = [...new Set(finalHits.map((h) => h.node_id).filter(Boolean))]
             if (hitNodeIds.length > 0) {
-                const dbW = new Database(dbPath)
-                try {
-                    const now = new Date().toISOString()
-                    const stmt = dbW.prepare('UPDATE memory_nodes SET last_synced_at = ? WHERE id = ?')
-                    dbW.transaction(() => { for (const id of hitNodeIds) stmt.run(now, id) })()
-                } finally { dbW.close() }
+                const now = new Date().toISOString()
+                const stmt = db.prepare('UPDATE memory_nodes SET last_synced_at = ? WHERE id = ?')
+                db.transaction(() => { for (const id of hitNodeIds) stmt.run(now, id) })()
             }
         } catch { /* fail-open: tracking failure must not affect recall results */ }
 
         return finalHits
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function recallKeyword(
@@ -374,9 +365,8 @@ export function recallKeyword(
     topK = 5,
     afterDate?: Date
 ): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }> {
-    const db = new Database(dbPath, { readonly: true })
-    const q = `%${query.toLowerCase()}%`
-    try {
+    return withDb(dbPath, (db) => {
+        const q = `%${query.toLowerCase()}%`
         const decisionRows = db.prepare(`
       SELECT e.id, e.session_id, e.timestamp, e.content, s.project
       FROM events e JOIN sessions s ON s.id = e.session_id
@@ -439,7 +429,5 @@ export function recallKeyword(
                 return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             })
             .slice(0, topK)
-    } finally {
-        db.close()
-    }
+    })
 }

@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { closeAllConnections } from '../../core/index.js'
 
 export function registerServeCommand(program: Command): void {
     program
@@ -26,6 +27,7 @@ export function registerServeCommand(program: Command): void {
 
             const shutdown = () => {
                 server.close()
+                closeAllConnections()
                 process.exit(0)
             }
             process.on('SIGINT', shutdown)

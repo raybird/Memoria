@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { Command } from 'commander'
-import { MemoriaCore, resolveMemoriaPaths, runVerify, existsSync } from '../../core/index.js'
+import { MemoriaCore, resolveMemoriaPaths, runVerify, existsSync, closeAllConnections } from '../../core/index.js'
 import { runPreflight } from '../preflight.js'
 import { deployAgentSkill } from '../runtime.js'
 import type { RuntimeLayout } from '../runtime.js'
@@ -95,7 +95,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 const { server, port: actualPort } = await startServer(port, setupPaths.memoriaHome)
                 stepLog('serve', true, { port: actualPort })
 
-                const shutdown = () => { server.close(); process.exit(0) }
+                const shutdown = () => { server.close(); closeAllConnections(); process.exit(0) }
                 process.on('SIGINT', shutdown)
                 process.on('SIGTERM', shutdown)
             } else if (!jsonOut) {

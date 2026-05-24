@@ -1,7 +1,7 @@
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { shortHash, maybeParseJson, normalizeSkillKey, parseCreatedAt } from '../utils.js'
 import { initDatabase } from './schema.js'
+import { withDb } from './connection.js'
 import type { Json, StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
 
 export function logRecallTelemetry(
@@ -10,8 +10,7 @@ export function logRecallTelemetry(
 ): void {
     if (!existsSync(dbPath)) return
 
-    const db = new Database(dbPath)
-    try {
+    withDb(dbPath, (db) => {
         db.exec(`
           CREATE TABLE IF NOT EXISTS recall_telemetry (
             id TEXT PRIMARY KEY,
@@ -39,14 +38,11 @@ export function logRecallTelemetry(
             Math.max(0, Math.floor(input.latencyMs)),
             createdAt
         )
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function queryStats(dbPath: string): StatsData {
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, (db) => {
         const sessions = Number((db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c)
         const events = Number((db.prepare('SELECT COUNT(*) AS c FROM events').get() as { c: number }).c)
         const skills = Number((db.prepare('SELECT COUNT(*) AS c FROM skills').get() as { c: number }).c)
@@ -117,17 +113,14 @@ export function queryStats(dbPath: string): StatsData {
         }
 
         return { sessions, events, skills, lastSession, topSkills, recallRouting }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function queryRecallTelemetry(
     dbPath: string,
     options?: { window?: string; limit?: number }
 ): RecallTelemetryData {
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, (db) => {
         const window = options?.window && /^P\d+D$/.test(options.window) ? options.window : 'P7D'
         const limitRaw = options?.limit ?? 100
         const limit = Math.min(500, Math.max(1, Math.floor(limitRaw)))
@@ -171,9 +164,7 @@ export function queryRecallTelemetry(
                 created_at: r.created_at
             }))
         }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function queryGovernanceReview(
@@ -181,8 +172,7 @@ export function queryGovernanceReview(
     options: GovernanceReviewOptions = {}
 ): GovernanceReviewData {
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, (db) => {
         const projectFilter = options.project?.trim()
         const scopeFilter = options.scope?.trim()
         const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 20)))
@@ -323,7 +313,5 @@ export function queryGovernanceReview(
             total: items.length,
             items
         }
-    } finally {
-        db.close()
-    }
+    })
 }

@@ -18,3 +18,4 @@ export { logRecallTelemetry, queryStats, queryRecallTelemetry, queryGovernanceRe
 export { runVerify } from './verify.js'
 export { runPrune, exportMemory } from './prune-export.js'
 export { buildMemoryIndex, recallTree, recallKeyword } from './recall.js'
+export { closeAllConnections } from './connection.js'
