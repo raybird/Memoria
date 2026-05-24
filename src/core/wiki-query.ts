@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { upsertWikiPage, upsertWikiQueryArtifact } from './db.js'
+import { upsertWikiPage, upsertWikiQueryArtifact } from './db/index.js'
 import type { FileQueryInput, FiledQueryData, MemoriaPaths, RecallHit, WikiPageType } from './types.js'
 import { shortHash, slugify } from './utils.js'
 

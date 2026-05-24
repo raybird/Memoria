@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-05-24
+
+### Changed
+- Split `src/core/db.ts` (2409 lines, 8 domains) into 11 focused modules under `src/core/db/` (`schema`, `session`, `source`, `wiki`, `lint`, `sync`, `telemetry`, `verify`, `prune-export`, `recall`, `mappers`). Public API surface (`src/core/index.ts`) is unchanged — all 32 exports remain.
+- Split `src/cli.ts` (~890 lines, 16 commands) into a thin 50-line Commander registration shell, extracting each command into its own module under `src/cli/commands/`, plus shared helpers (`shared.ts`, `runtime.ts`, `preflight.ts`).
+- Updated AGENTS.md, README.md, and README.zh-TW.md to reflect the new `src/core/db/` and `src/cli/` directory structure.
+
 ## [1.8.0] - 2026-04-11
 
 ### Added

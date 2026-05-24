@@ -7,7 +7,7 @@ import {
     listWikiPageSourceLinks,
     upsertWikiLintFinding,
     upsertWikiLintRun
-} from './db.js'
+} from './db/index.js'
 import type { MemoriaPaths, WikiLintFinding, WikiLintOptions, WikiLintResult } from './types.js'
 import { shortHash } from './utils.js'
 

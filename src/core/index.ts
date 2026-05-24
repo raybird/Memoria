@@ -50,7 +50,7 @@ export {
     recallTree,
     recallKeyword,
     querySessionSummary
-} from './db.js'
+} from './db/index.js'
 export {
     safeDate, slugify, stableStringify, shortHash, deriveScope,
     resolveSessionId, resolveEventId,

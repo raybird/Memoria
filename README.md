@@ -21,12 +21,12 @@ Cross-session, traceable, self-hostable persistent memory for AI agents.
 ```bash
 # 1. Download the installer and the Linux x64 release artifact
 curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
-curl -fsSL -o memoria-linux-x64-v1.8.0.tar.gz \
-  https://github.com/raybird/Memoria/releases/download/v1.8.0/memoria-linux-x64-v1.8.0.tar.gz
+curl -fsSL -o memoria-linux-x64-v1.9.0.tar.gz \
+  https://github.com/raybird/Memoria/releases/download/v1.9.0/memoria-linux-x64-v1.9.0.tar.gz
 
 # 2. Install the runtime
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.8.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.9.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 
 # 3. Bootstrap (data lands in ./memoria by default)
@@ -216,10 +216,12 @@ Reference implementations: `src/adapter/gemini-adapter.ts`, `src/adapter/opencod
 
 ```text
 src/
-  cli.ts        # Commander thin shell (~350 lines)
+  cli.ts        # Commander registration shell (~50 lines)
+  cli/          # Per-command modules + shared helpers (shared.ts / runtime.ts / preflight.ts / commands/)
   server.ts     # HTTP API server (node:http, zero extra deps)
   sdk.ts        # MemoriaClient SDK
-  core/         # All business logic (types / paths / utils / db / memoria / source-import / wiki-*)
+  core/         # All business logic (types / paths / utils / db/ / memoria / source-import / wiki-*)
+  core/db/      # SQLite ops by domain (schema / session / source / wiki / lint / sync / telemetry / verify / prune-export / recall / mappers)
   adapter/      # BaseAdapter + Gemini / OpenCode reference impls
 scripts/        # End-to-end bash tests (test-*.sh) + release packaging
 skills/         # memoria-memory-sync agent skill

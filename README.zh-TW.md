@@ -21,12 +21,12 @@
 ```bash
 # 1. 下載 installer 與 Linux x64 release artifact
 curl -fsSL -o install.sh https://raw.githubusercontent.com/raybird/Memoria/main/install.sh
-curl -fsSL -o memoria-linux-x64-v1.8.0.tar.gz \
-  https://github.com/raybird/Memoria/releases/download/v1.8.0/memoria-linux-x64-v1.8.0.tar.gz
+curl -fsSL -o memoria-linux-x64-v1.9.0.tar.gz \
+  https://github.com/raybird/Memoria/releases/download/v1.9.0/memoria-linux-x64-v1.9.0.tar.gz
 
 # 2. 安裝 runtime
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.8.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.9.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 
 # 3. 啟動 bootstrap（資料預設寫到目前目錄的 ./memoria）
@@ -216,10 +216,12 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 
 ```text
 src/
-  cli.ts        # Commander 薄殼（~350 行）
+  cli.ts        # Commander 指令注冊殼（~50 行）
+  cli/          # 各指令模組 + 共用輔助（shared.ts / runtime.ts / preflight.ts / commands/）
   server.ts     # HTTP API Server（node:http，零外部依賴）
   sdk.ts        # MemoriaClient SDK
-  core/         # 所有業務邏輯（types / paths / utils / db / memoria / source-import / wiki-*）
+  core/         # 所有業務邏輯（types / paths / utils / db/ / memoria / source-import / wiki-*）
+  core/db/      # SQLite 操作按領域拆分（schema / session / source / wiki / lint / sync / telemetry / verify / prune-export / recall / mappers）
   adapter/      # BaseAdapter + Gemini / OpenCode 參考實作
 scripts/        # bash 端對端測試（test-*.sh）+ release 打包
 skills/         # memoria-memory-sync agent skill

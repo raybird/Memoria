@@ -7,7 +7,7 @@ import {
     upsertSourceRecord,
     upsertWikiPage,
     upsertWikiPageSourceLink
-} from './db.js'
+} from './db/index.js'
 import type { ImportSourceInput, ImportedSourceData, MemoriaPaths, SourceType } from './types.js'
 import { shortHash, slugify } from './utils.js'
 

@@ -1,0 +1,329 @@
+import Database from 'better-sqlite3'
+import { existsSync } from '../paths.js'
+import { shortHash, maybeParseJson, normalizeSkillKey, parseCreatedAt } from '../utils.js'
+import { initDatabase } from './schema.js'
+import type { Json, StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
+
+export function logRecallTelemetry(
+    dbPath: string,
+    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number }
+): void {
+    if (!existsSync(dbPath)) return
+
+    const db = new Database(dbPath)
+    try {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS recall_telemetry (
+            id TEXT PRIMARY KEY,
+            route_mode TEXT,
+            fallback_used INTEGER,
+            hit_count INTEGER,
+            latency_ms INTEGER,
+            created_at DATETIME
+          );
+          CREATE INDEX IF NOT EXISTS idx_recall_telemetry_created ON recall_telemetry(created_at);
+          CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route ON recall_telemetry(route_mode, created_at);
+        `)
+
+        const createdAt = new Date().toISOString()
+        const id = `rt_${shortHash(`${createdAt}:${input.routeMode}:${input.latencyMs}:${input.hitCount}`, 24)}`
+        db.prepare(`
+          INSERT OR REPLACE INTO recall_telemetry
+          (id, route_mode, fallback_used, hit_count, latency_ms, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+            id,
+            input.routeMode,
+            input.fallbackUsed ? 1 : 0,
+            Math.max(0, Math.floor(input.hitCount)),
+            Math.max(0, Math.floor(input.latencyMs)),
+            createdAt
+        )
+    } finally {
+        db.close()
+    }
+}
+
+export function queryStats(dbPath: string): StatsData {
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const sessions = Number((db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c)
+        const events = Number((db.prepare('SELECT COUNT(*) AS c FROM events').get() as { c: number }).c)
+        const skills = Number((db.prepare('SELECT COUNT(*) AS c FROM skills').get() as { c: number }).c)
+
+        const lastSession = db
+            .prepare('SELECT id, timestamp, project FROM sessions ORDER BY timestamp DESC LIMIT 1')
+            .get() as { id: string; timestamp: string; project: string } | undefined
+
+        const topSkills = db
+            .prepare('SELECT name, use_count, success_rate FROM skills ORDER BY use_count DESC, name ASC LIMIT 5')
+            .all() as { name: string; use_count: number; success_rate: number }[]
+
+        const window = 'P7D'
+        const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+        const recallTelemetryTable = db
+            .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_telemetry' LIMIT 1`)
+            .get() as { ok: number } | undefined
+        const telemetryRows = recallTelemetryTable
+            ? db
+                .prepare(`
+                  SELECT route_mode, fallback_used, hit_count, latency_ms
+                  FROM recall_telemetry
+                  WHERE created_at >= ?
+                `)
+                .all(sinceIso) as Array<{ route_mode: string; fallback_used: number; hit_count: number; latency_ms: number }>
+            : []
+
+        const routeCounts = {
+            skipped: 0,
+            keyword: 0,
+            tree: 0,
+            hybrid_tree: 0,
+            hybrid_fallback: 0
+        }
+        let fallbackCount = 0
+        let hitCountSum = 0
+        const latencies: number[] = []
+
+        for (const row of telemetryRows) {
+            const mode = row.route_mode
+            if (mode in routeCounts) {
+                routeCounts[mode as keyof typeof routeCounts] += 1
+            }
+            if (row.fallback_used === 1) fallbackCount += 1
+            hitCountSum += Number(row.hit_count ?? 0)
+            latencies.push(Number(row.latency_ms ?? 0))
+        }
+
+        latencies.sort((a, b) => a - b)
+        const totalQueries = telemetryRows.length
+        const avgLatencyMs = totalQueries > 0
+            ? Number((latencies.reduce((sum, x) => sum + x, 0) / totalQueries).toFixed(2))
+            : 0
+        const p95LatencyMs = totalQueries > 0
+            ? latencies[Math.min(latencies.length - 1, Math.floor((latencies.length - 1) * 0.95))]
+            : 0
+        const fallbackRate = totalQueries > 0 ? Number((fallbackCount / totalQueries).toFixed(4)) : 0
+        const avgHitCount = totalQueries > 0 ? Number((hitCountSum / totalQueries).toFixed(2)) : 0
+
+        const recallRouting = {
+            window,
+            totalQueries,
+            routeCounts,
+            fallbackRate,
+            avgLatencyMs,
+            p95LatencyMs,
+            avgHitCount
+        }
+
+        return { sessions, events, skills, lastSession, topSkills, recallRouting }
+    } finally {
+        db.close()
+    }
+}
+
+export function queryRecallTelemetry(
+    dbPath: string,
+    options?: { window?: string; limit?: number }
+): RecallTelemetryData {
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const window = options?.window && /^P\d+D$/.test(options.window) ? options.window : 'P7D'
+        const limitRaw = options?.limit ?? 100
+        const limit = Math.min(500, Math.max(1, Math.floor(limitRaw)))
+        const days = Number(/^P(\d+)D$/.exec(window)?.[1] ?? '7')
+        const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
+        const tableExists = db
+            .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_telemetry' LIMIT 1`)
+            .get() as { ok: number } | undefined
+
+        if (!tableExists) {
+            return { window, total: 0, rows: [] }
+        }
+
+        const rows = db
+            .prepare(`
+              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at
+              FROM recall_telemetry
+              WHERE created_at >= ?
+              ORDER BY created_at DESC
+              LIMIT ?
+            `)
+            .all(sinceIso, limit) as Array<{
+            id: string
+            route_mode: string
+            fallback_used: number
+            hit_count: number
+            latency_ms: number
+            created_at: string
+        }>
+
+        return {
+            window,
+            total: rows.length,
+            rows: rows.map((r) => ({
+                id: r.id,
+                route_mode: r.route_mode,
+                fallback_used: r.fallback_used === 1,
+                hit_count: Number(r.hit_count ?? 0),
+                latency_ms: Number(r.latency_ms ?? 0),
+                created_at: r.created_at
+            }))
+        }
+    } finally {
+        db.close()
+    }
+}
+
+export function queryGovernanceReview(
+    dbPath: string,
+    options: GovernanceReviewOptions = {}
+): GovernanceReviewData {
+    initDatabase(dbPath)
+    const db = new Database(dbPath, { readonly: true })
+    try {
+        const projectFilter = options.project?.trim()
+        const scopeFilter = options.scope?.trim()
+        const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 20)))
+
+        const decisionRows = db.prepare(`
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
+          FROM events e JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'DecisionMade'
+            ${projectFilter ? 'AND s.project = ?' : ''}
+            ${scopeFilter ? 'AND s.scope = ?' : ''}
+          ORDER BY e.timestamp DESC
+        `).all(...[...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : [])]) as Array<{
+            id: string
+            session_id: string
+            timestamp: string
+            content: string
+            project: string
+            scope: string
+        }>
+
+        const skillRows = db.prepare(`
+          SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
+          FROM events e JOIN sessions s ON s.id = e.session_id
+          WHERE e.event_type = 'SkillLearned'
+            ${projectFilter ? 'AND s.project = ?' : ''}
+            ${scopeFilter ? 'AND s.scope = ?' : ''}
+          ORDER BY e.timestamp DESC
+        `).all(...[...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : [])]) as Array<{
+            id: string
+            session_id: string
+            timestamp: string
+            content: string
+            project: string
+            scope: string
+        }>
+
+        type CandidateAccum = {
+            kind: 'decision' | 'skill'
+            title: string
+            normalized_title: string
+            latest_session_id: string
+            latest_timestamp: string
+            sessionIds: Set<string>
+            highImpact: boolean
+        }
+
+        const byKey = new Map<string, CandidateAccum>()
+
+        for (const row of decisionRows) {
+            const parsed = maybeParseJson(row.content)
+            const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : {}
+            const title = String(obj.decision ?? '').trim()
+            if (!title) continue
+            const normalized = normalizeSkillKey(title)
+            const key = `decision:${normalized}`
+            const impact = String(obj.impact_level ?? 'medium').toLowerCase() === 'high'
+            const existing = byKey.get(key)
+            if (!existing) {
+                byKey.set(key, {
+                    kind: 'decision',
+                    title,
+                    normalized_title: normalized,
+                    latest_session_id: row.session_id,
+                    latest_timestamp: row.timestamp,
+                    sessionIds: new Set([row.session_id]),
+                    highImpact: impact
+                })
+                continue
+            }
+            existing.sessionIds.add(row.session_id)
+            existing.highImpact = existing.highImpact || impact
+            if (parseCreatedAt(row.timestamp) > parseCreatedAt(existing.latest_timestamp)) {
+                existing.latest_timestamp = row.timestamp
+                existing.latest_session_id = row.session_id
+                existing.title = title
+            }
+        }
+
+        for (const row of skillRows) {
+            const parsed = maybeParseJson(row.content)
+            const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : {}
+            const title = String(obj.skill_name ?? '').trim()
+            if (!title) continue
+            const normalized = normalizeSkillKey(title)
+            const key = `skill:${normalized}`
+            const existing = byKey.get(key)
+            if (!existing) {
+                byKey.set(key, {
+                    kind: 'skill',
+                    title,
+                    normalized_title: normalized,
+                    latest_session_id: row.session_id,
+                    latest_timestamp: row.timestamp,
+                    sessionIds: new Set([row.session_id]),
+                    highImpact: false
+                })
+                continue
+            }
+            existing.sessionIds.add(row.session_id)
+            if (parseCreatedAt(row.timestamp) > parseCreatedAt(existing.latest_timestamp)) {
+                existing.latest_timestamp = row.timestamp
+                existing.latest_session_id = row.session_id
+                existing.title = title
+            }
+        }
+
+        const items: GovernanceReviewItem[] = Array.from(byKey.values())
+            .map((entry) => {
+                const sourceCount = entry.sessionIds.size
+                const repeated = sourceCount >= 2
+                const rationale: GovernanceReviewItem['rationale'] | null = repeated
+                    ? 'repeated'
+                    : entry.kind === 'decision' && entry.highImpact
+                        ? 'high-impact'
+                        : null
+                if (!rationale) return null
+                const score = sourceCount * 10 + (entry.highImpact ? 5 : 0)
+                return {
+                    id: `${entry.kind}:${entry.normalized_title}`,
+                    kind: entry.kind,
+                    title: entry.title,
+                    normalized_title: entry.normalized_title,
+                    source_count: sourceCount,
+                    latest_session_id: entry.latest_session_id,
+                    latest_timestamp: entry.latest_timestamp,
+                    rationale,
+                    score
+                }
+            })
+            .filter((item): item is GovernanceReviewItem => item !== null)
+            .sort((a, b) => {
+                if (b.score !== a.score) return b.score - a.score
+                return parseCreatedAt(b.latest_timestamp) - parseCreatedAt(a.latest_timestamp)
+            })
+            .slice(0, limit)
+
+        return {
+            total: items.length,
+            items
+        }
+    } finally {
+        db.close()
+    }
+}

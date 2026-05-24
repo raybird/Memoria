@@ -8,7 +8,7 @@ import {
     queryStats,
     queryWikiBuildResult,
     upsertWikiPage
-} from './db.js'
+} from './db/index.js'
 import type { MemoriaPaths, WikiBuildResult, WikiPageType } from './types.js'
 import {
     renderWikiIndexPage,

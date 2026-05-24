@@ -21,7 +21,7 @@ import {
     recallKeyword,
     querySessionSummary,
     listSourceRecords
-} from './db.js'
+} from './db/index.js'
 import { importSourceFile } from './source-import.js'
 import { buildCompiledWiki } from './wiki-build.js'
 import { fileQueryResult } from './wiki-query.js'

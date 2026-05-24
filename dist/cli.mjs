@@ -1201,8 +1201,8 @@ var require_command = __commonJS({
   "node_modules/.pnpm/commander@14.0.3/node_modules/commander/lib/command.js"(exports) {
     var EventEmitter = __require("node:events").EventEmitter;
     var childProcess = __require("node:child_process");
-    var path8 = __require("node:path");
-    var fs7 = __require("node:fs");
+    var path15 = __require("node:path");
+    var fs10 = __require("node:fs");
     var process3 = __require("node:process");
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -2196,7 +2196,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs7.existsSync(executableFile)) return;
+        if (fs10.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -2214,11 +2214,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = path8.resolve(baseDir, baseName);
-          if (fs7.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path8.extname(baseName))) return void 0;
+          const localBin = path15.resolve(baseDir, baseName);
+          if (fs10.existsSync(localBin)) return localBin;
+          if (sourceExt.includes(path15.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs7.existsSync(`${localBin}${ext}`)
+            (ext) => fs10.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -2230,21 +2230,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs7.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs10.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = path8.resolve(
-            path8.dirname(resolvedScriptPath),
+          executableDir = path15.resolve(
+            path15.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = path8.basename(
+            const legacyName = path15.basename(
               this._scriptPath,
-              path8.extname(this._scriptPath)
+              path15.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -2255,7 +2255,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        launchWithNode = sourceExt.includes(path8.extname(executableFile));
+        launchWithNode = sourceExt.includes(path15.extname(executableFile));
         let proc;
         if (process3.platform !== "win32") {
           if (launchWithNode) {
@@ -3170,7 +3170,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = path8.basename(filename, path8.extname(filename));
+        this._name = path15.basename(filename, path15.extname(filename));
         return this;
       }
       /**
@@ -3184,9 +3184,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} [path]
        * @return {(string|null|Command)}
        */
-      executableDir(path9) {
-        if (path9 === void 0) return this._executableDir;
-        this._executableDir = path9;
+      executableDir(path16) {
+        if (path16 === void 0) return this._executableDir;
+        this._executableDir = path16;
         return this;
       }
       /**
@@ -3511,206 +3511,7 @@ var init_paths = __esm({
   }
 });
 
-// src/core/utils.ts
-import { createHash } from "node:crypto";
-function safeDate(raw) {
-  const d = raw ? new Date(raw) : /* @__PURE__ */ new Date();
-  return Number.isNaN(d.getTime()) ? /* @__PURE__ */ new Date() : d;
-}
-function slugify2(input) {
-  const cleaned = input.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
-  return cleaned || "untitled";
-}
-function stableStringify(value) {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
-  }
-  const obj = value;
-  const keys = Object.keys(obj).sort();
-  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`);
-  return `{${entries.join(",")}}`;
-}
-function shortHash(input, length = 16) {
-  return createHash("sha256").update(input).digest("hex").slice(0, length);
-}
-function resolveSessionId(sessionData) {
-  const explicit = sessionData.id?.trim();
-  if (explicit) return explicit;
-  const events = (sessionData.events ?? []).map((event) => ({
-    timestamp: event.timestamp ?? "",
-    event_type: event.type ?? event.event_type ?? "UnknownEvent",
-    content: event.content ?? "",
-    metadata: event.metadata ?? {}
-  }));
-  const fingerprint = stableStringify({
-    timestamp: sessionData.timestamp ?? "",
-    project: sessionData.project ?? "default",
-    scope: deriveScope(sessionData),
-    summary: sessionData.summary ?? "",
-    events
-  });
-  return `session_${shortHash(fingerprint)}`;
-}
-function resolveEventId(event, sessionId, index) {
-  const explicit = event.id?.trim();
-  if (explicit) return explicit;
-  const fingerprint = stableStringify({
-    session_id: sessionId,
-    index,
-    timestamp: event.timestamp ?? "",
-    event_type: event.type ?? event.event_type ?? "UnknownEvent",
-    content: event.content ?? "",
-    metadata: event.metadata ?? {}
-  });
-  return `evt_${shortHash(fingerprint)}`;
-}
-function deriveScope(sessionData) {
-  const explicit = sessionData.scope?.trim();
-  if (explicit) return explicit;
-  const project = sessionData.project?.trim();
-  return project ? `project:${project}` : "global";
-}
-function getEventType(event) {
-  return event.type ?? event.event_type ?? "UnknownEvent";
-}
-function getEventContentObject(event) {
-  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
-    return event.content;
-  }
-  return {};
-}
-function maybeParseJson(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-}
-function normalizeSkillKey(name) {
-  return slugify2(name).toLowerCase();
-}
-function parseDaysOption(raw, optionName) {
-  if (raw === void 0) return void 0;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`Invalid ${optionName}: expected non-negative number, got '${raw}'`);
-  }
-  return value;
-}
-function parseBoundaryDate(raw, optionName) {
-  if (!raw) return void 0;
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`Invalid ${optionName}: expected ISO date/time, got '${raw}'`);
-  }
-  return d;
-}
-function inDateRange(ts, from, to) {
-  const t = new Date(ts);
-  if (Number.isNaN(t.getTime())) return false;
-  if (from && t < from) return false;
-  if (to && t > to) return false;
-  return true;
-}
-function parseCreatedAt(raw) {
-  if (!raw) return 0;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
-}
-function isLowValueMemoryText(raw) {
-  const text = (raw ?? "").trim().toLowerCase();
-  if (!text) return true;
-  if (TRIVIAL_SUMMARY_SET.has(text)) return true;
-  if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i.test(text)) return true;
-  return text.length < 8;
-}
-function extractEventText(event) {
-  if (typeof event.content === "string") return event.content.trim();
-  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
-    const obj = event.content;
-    const preferredFields = ["decision", "skill_name", "text", "summary", "pattern"];
-    for (const key of preferredFields) {
-      const value = obj[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
-    }
-    for (const value of Object.values(obj)) {
-      if (typeof value === "string" && value.trim()) return value.trim();
-    }
-  }
-  return "";
-}
-function sanitizeSessionDataForImport(sessionData) {
-  const originalEvents = sessionData.events ?? [];
-  const dedupedEvents = [];
-  const seenKeys = /* @__PURE__ */ new Set();
-  for (const event of originalEvents) {
-    const dedupeKey = stableStringify({
-      timestamp: event.timestamp ?? "",
-      event_type: event.type ?? event.event_type ?? "UnknownEvent",
-      content: event.content ?? "",
-      metadata: event.metadata ?? {}
-    });
-    if (seenKeys.has(dedupeKey)) continue;
-    seenKeys.add(dedupeKey);
-    dedupedEvents.push(event);
-  }
-  const summary = sessionData.summary?.trim() ?? "";
-  if (!isLowValueMemoryText(summary)) {
-    return { ...sessionData, summary, events: dedupedEvents };
-  }
-  const signalEvent = dedupedEvents.find((event) => {
-    const eventType = getEventType(event);
-    return eventType === "DecisionMade" || eventType === "SkillLearned" || eventType === "UserMessage";
-  });
-  const derivedSummary = extractEventText(signalEvent ?? dedupedEvents[0] ?? {});
-  return {
-    ...sessionData,
-    summary: derivedSummary || summary,
-    events: dedupedEvents
-  };
-}
-var TRIVIAL_SUMMARY_SET;
-var init_utils = __esm({
-  "src/core/utils.ts"() {
-    "use strict";
-    TRIVIAL_SUMMARY_SET = /* @__PURE__ */ new Set([
-      "",
-      "ok",
-      "okay",
-      "thanks",
-      "thank you",
-      "got it",
-      "sounds good",
-      "cool",
-      "yes",
-      "no",
-      "hi",
-      "hello",
-      "hey",
-      "yo",
-      "sure",
-      "nice",
-      "great",
-      "\u{1F44D}",
-      "\u{1F44C}",
-      "\u6536\u5230",
-      "\u597D",
-      "\u597D\u7684",
-      "\u8B1D\u8B1D",
-      "\u8C22\u8C22",
-      "\u4F60\u597D",
-      "\u54C8\u56C9",
-      "\u55E8"
-    ]);
-  }
-});
-
-// src/core/db.ts
-import fs from "node:fs/promises";
-import path2 from "node:path";
+// src/core/db/schema.ts
 import Database from "better-sqlite3";
 function initDatabase(dbPath) {
   const db = new Database(dbPath);
@@ -3949,6 +3750,305 @@ function initDatabase(dbPath) {
     db.close();
   }
 }
+var init_schema = __esm({
+  "src/core/db/schema.ts"() {
+    "use strict";
+  }
+});
+
+// src/core/utils.ts
+import { createHash } from "node:crypto";
+function safeDate(raw) {
+  const d = raw ? new Date(raw) : /* @__PURE__ */ new Date();
+  return Number.isNaN(d.getTime()) ? /* @__PURE__ */ new Date() : d;
+}
+function slugify(input) {
+  const cleaned = input.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned || "untitled";
+}
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const obj = value;
+  const keys = Object.keys(obj).sort();
+  const entries = keys.map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`);
+  return `{${entries.join(",")}}`;
+}
+function shortHash(input, length = 16) {
+  return createHash("sha256").update(input).digest("hex").slice(0, length);
+}
+function resolveSessionId(sessionData) {
+  const explicit = sessionData.id?.trim();
+  if (explicit) return explicit;
+  const events = (sessionData.events ?? []).map((event) => ({
+    timestamp: event.timestamp ?? "",
+    event_type: event.type ?? event.event_type ?? "UnknownEvent",
+    content: event.content ?? "",
+    metadata: event.metadata ?? {}
+  }));
+  const fingerprint = stableStringify({
+    timestamp: sessionData.timestamp ?? "",
+    project: sessionData.project ?? "default",
+    scope: deriveScope(sessionData),
+    summary: sessionData.summary ?? "",
+    events
+  });
+  return `session_${shortHash(fingerprint)}`;
+}
+function resolveEventId(event, sessionId, index) {
+  const explicit = event.id?.trim();
+  if (explicit) return explicit;
+  const fingerprint = stableStringify({
+    session_id: sessionId,
+    index,
+    timestamp: event.timestamp ?? "",
+    event_type: event.type ?? event.event_type ?? "UnknownEvent",
+    content: event.content ?? "",
+    metadata: event.metadata ?? {}
+  });
+  return `evt_${shortHash(fingerprint)}`;
+}
+function deriveScope(sessionData) {
+  const explicit = sessionData.scope?.trim();
+  if (explicit) return explicit;
+  const project = sessionData.project?.trim();
+  return project ? `project:${project}` : "global";
+}
+function getEventType(event) {
+  return event.type ?? event.event_type ?? "UnknownEvent";
+}
+function getEventContentObject(event) {
+  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
+    return event.content;
+  }
+  return {};
+}
+function maybeParseJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+function normalizeSkillKey(name) {
+  return slugify(name).toLowerCase();
+}
+function parseDaysOption(raw, optionName) {
+  if (raw === void 0) return void 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`Invalid ${optionName}: expected non-negative number, got '${raw}'`);
+  }
+  return value;
+}
+function parseBoundaryDate(raw, optionName) {
+  if (!raw) return void 0;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`Invalid ${optionName}: expected ISO date/time, got '${raw}'`);
+  }
+  return d;
+}
+function inDateRange(ts, from, to) {
+  const t = new Date(ts);
+  if (Number.isNaN(t.getTime())) return false;
+  if (from && t < from) return false;
+  if (to && t > to) return false;
+  return true;
+}
+function parseCreatedAt(raw) {
+  if (!raw) return 0;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+function isLowValueMemoryText(raw) {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (!text) return true;
+  if (TRIVIAL_SUMMARY_SET.has(text)) return true;
+  if (/^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i.test(text)) return true;
+  return text.length < 8;
+}
+function extractEventText(event) {
+  if (typeof event.content === "string") return event.content.trim();
+  if (event.content && typeof event.content === "object" && !Array.isArray(event.content)) {
+    const obj = event.content;
+    const preferredFields = ["decision", "skill_name", "text", "summary", "pattern"];
+    for (const key of preferredFields) {
+      const value = obj[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    for (const value of Object.values(obj)) {
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+  return "";
+}
+function sanitizeSessionDataForImport(sessionData) {
+  const originalEvents = sessionData.events ?? [];
+  const dedupedEvents = [];
+  const seenKeys = /* @__PURE__ */ new Set();
+  for (const event of originalEvents) {
+    const dedupeKey = stableStringify({
+      timestamp: event.timestamp ?? "",
+      event_type: event.type ?? event.event_type ?? "UnknownEvent",
+      content: event.content ?? "",
+      metadata: event.metadata ?? {}
+    });
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
+    dedupedEvents.push(event);
+  }
+  const summary = sessionData.summary?.trim() ?? "";
+  if (!isLowValueMemoryText(summary)) {
+    return { ...sessionData, summary, events: dedupedEvents };
+  }
+  const signalEvent = dedupedEvents.find((event) => {
+    const eventType = getEventType(event);
+    return eventType === "DecisionMade" || eventType === "SkillLearned" || eventType === "UserMessage";
+  });
+  const derivedSummary = extractEventText(signalEvent ?? dedupedEvents[0] ?? {});
+  return {
+    ...sessionData,
+    summary: derivedSummary || summary,
+    events: dedupedEvents
+  };
+}
+var TRIVIAL_SUMMARY_SET;
+var init_utils = __esm({
+  "src/core/utils.ts"() {
+    "use strict";
+    TRIVIAL_SUMMARY_SET = /* @__PURE__ */ new Set([
+      "",
+      "ok",
+      "okay",
+      "thanks",
+      "thank you",
+      "got it",
+      "sounds good",
+      "cool",
+      "yes",
+      "no",
+      "hi",
+      "hello",
+      "hey",
+      "yo",
+      "sure",
+      "nice",
+      "great",
+      "\u{1F44D}",
+      "\u{1F44C}",
+      "\u6536\u5230",
+      "\u597D",
+      "\u597D\u7684",
+      "\u8B1D\u8B1D",
+      "\u8C22\u8C22",
+      "\u4F60\u597D",
+      "\u54C8\u56C9",
+      "\u55E8"
+    ]);
+  }
+});
+
+// src/core/db/session.ts
+import Database2 from "better-sqlite3";
+function importSession(dbPath, sessionData) {
+  const db = new Database2(dbPath);
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const sanitized = sanitizeSessionDataForImport(sessionData);
+  const sessionId = resolveSessionId(sanitized);
+  const timestamp = safeDate(sanitized.timestamp).toISOString();
+  const scope = deriveScope(sanitized);
+  const events = sanitized.events ?? [];
+  try {
+    const upsertSession = db.prepare(`
+      INSERT OR REPLACE INTO sessions (id, timestamp, project, scope, event_count, summary)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    upsertSession.run(
+      sessionId,
+      timestamp,
+      sanitized.project ?? "default",
+      scope,
+      events.length,
+      sanitized.summary ?? ""
+    );
+    const upsertEvent = db.prepare(`
+      INSERT OR REPLACE INTO events (id, session_id, timestamp, event_type, content, metadata)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const [index, event] of events.entries()) {
+      const eventId = resolveEventId(event, sessionId, index);
+      const eventTime = safeDate(event.timestamp ?? nowIso).toISOString();
+      const eventType = event.type ?? event.event_type ?? "UnknownEvent";
+      const content = JSON.stringify(event.content ?? "");
+      const metadata = JSON.stringify(event.metadata ?? {});
+      upsertEvent.run(eventId, sessionId, eventTime, eventType, content, metadata);
+    }
+  } finally {
+    db.close();
+  }
+  return sessionId;
+}
+function listRecentSessions(dbPath, limitRaw = 10) {
+  if (!existsSync(dbPath)) return [];
+  initDatabase(dbPath);
+  const db = new Database2(dbPath, { readonly: true });
+  try {
+    const limit = Math.min(100, Math.max(1, Math.floor(limitRaw)));
+    return db.prepare(`
+          SELECT id, timestamp, project, scope, summary
+          FROM sessions
+          ORDER BY timestamp DESC
+          LIMIT ?
+        `).all(limit);
+  } finally {
+    db.close();
+  }
+}
+function querySessionSummary(dbPath, sessionId) {
+  const db = new Database2(dbPath, { readonly: true });
+  try {
+    const session = db.prepare("SELECT id, timestamp, project, scope, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
+    if (!session) return null;
+    const decisionEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'DecisionMade'`).all(sessionId);
+    const skillEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'SkillLearned'`).all(sessionId);
+    const decisions = decisionEvents.map((row) => {
+      const c = maybeParseJson(row.content);
+      const obj = c && typeof c === "object" && !Array.isArray(c) ? c : {};
+      return {
+        id: row.id,
+        decision: String(obj.decision ?? ""),
+        impact_level: String(obj.impact_level ?? "medium")
+      };
+    });
+    const skills = skillEvents.map((row) => {
+      const c = maybeParseJson(row.content);
+      const obj = c && typeof c === "object" && !Array.isArray(c) ? c : {};
+      return {
+        id: row.id,
+        skill_name: String(obj.skill_name ?? ""),
+        category: String(obj.category ?? "general")
+      };
+    });
+    return { session, decisions, skills };
+  } finally {
+    db.close();
+  }
+}
+var init_session = __esm({
+  "src/core/db/session.ts"() {
+    "use strict";
+    init_paths();
+    init_utils();
+    init_schema();
+  }
+});
+
+// src/core/db/mappers.ts
 function stringifyJson(value) {
   return stableStringify(value ?? {});
 }
@@ -3956,6 +4056,11 @@ function parseJsonRecord(value) {
   if (!value) return void 0;
   const parsed = maybeParseJson(value);
   return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+}
+function truncateText(input, max = 180) {
+  const clean = input.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  return `${clean.slice(0, Math.max(0, max - 1))}\u2026`;
 }
 function mapSourceRecord(row) {
   return {
@@ -4022,47 +4127,18 @@ function mapWikiQueryArtifact(row) {
     metadata: parseJsonRecord(row.metadata)
   };
 }
-function importSession(dbPath, sessionData) {
-  const db = new Database(dbPath);
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const sanitized = sanitizeSessionDataForImport(sessionData);
-  const sessionId = resolveSessionId(sanitized);
-  const timestamp = safeDate(sanitized.timestamp).toISOString();
-  const scope = deriveScope(sanitized);
-  const events = sanitized.events ?? [];
-  try {
-    const upsertSession = db.prepare(`
-      INSERT OR REPLACE INTO sessions (id, timestamp, project, scope, event_count, summary)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    upsertSession.run(
-      sessionId,
-      timestamp,
-      sanitized.project ?? "default",
-      scope,
-      events.length,
-      sanitized.summary ?? ""
-    );
-    const upsertEvent = db.prepare(`
-      INSERT OR REPLACE INTO events (id, session_id, timestamp, event_type, content, metadata)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    for (const [index, event] of events.entries()) {
-      const eventId = resolveEventId(event, sessionId, index);
-      const eventTime = safeDate(event.timestamp ?? nowIso).toISOString();
-      const eventType = event.type ?? event.event_type ?? "UnknownEvent";
-      const content = JSON.stringify(event.content ?? "");
-      const metadata = JSON.stringify(event.metadata ?? {});
-      upsertEvent.run(eventId, sessionId, eventTime, eventType, content, metadata);
-    }
-  } finally {
-    db.close();
+var init_mappers = __esm({
+  "src/core/db/mappers.ts"() {
+    "use strict";
+    init_utils();
   }
-  return sessionId;
-}
+});
+
+// src/core/db/source.ts
+import Database3 from "better-sqlite3";
 function upsertSourceRecord(dbPath, input) {
   initDatabase(dbPath);
-  const db = new Database(dbPath);
+  const db = new Database3(dbPath);
   try {
     const importedAt = input.imported_at ?? (/* @__PURE__ */ new Date()).toISOString();
     db.prepare(`
@@ -4106,7 +4182,7 @@ function upsertSourceRecord(dbPath, input) {
 function listSourceRecords(dbPath, options) {
   if (!existsSync(dbPath)) return [];
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database3(dbPath, { readonly: true });
   try {
     const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)));
     const rows = db.prepare(`
@@ -4129,9 +4205,20 @@ function listSourceRecords(dbPath, options) {
     db.close();
   }
 }
+var init_source = __esm({
+  "src/core/db/source.ts"() {
+    "use strict";
+    init_paths();
+    init_schema();
+    init_mappers();
+  }
+});
+
+// src/core/db/wiki.ts
+import Database4 from "better-sqlite3";
 function upsertWikiPage(dbPath, input) {
   initDatabase(dbPath);
-  const db = new Database(dbPath);
+  const db = new Database4(dbPath);
   try {
     db.prepare(`
           INSERT INTO wiki_pages
@@ -4176,7 +4263,7 @@ function upsertWikiPage(dbPath, input) {
 function getWikiPageBySlug(dbPath, slug) {
   if (!existsSync(dbPath)) return void 0;
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database4(dbPath, { readonly: true });
   try {
     const row = db.prepare(`
           SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
@@ -4191,7 +4278,7 @@ function getWikiPageBySlug(dbPath, slug) {
 function listWikiPages(dbPath, options) {
   if (!existsSync(dbPath)) return [];
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database4(dbPath, { readonly: true });
   try {
     const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)));
     const rows = db.prepare(`
@@ -4214,28 +4301,12 @@ function listWikiPages(dbPath, options) {
     db.close();
   }
 }
-function listRecentSessions(dbPath, limitRaw = 10) {
-  if (!existsSync(dbPath)) return [];
-  initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const limit = Math.min(100, Math.max(1, Math.floor(limitRaw)));
-    return db.prepare(`
-          SELECT id, timestamp, project, scope, summary
-          FROM sessions
-          ORDER BY timestamp DESC
-          LIMIT ?
-        `).all(limit);
-  } finally {
-    db.close();
-  }
-}
 function queryWikiBuildResult(dbPath) {
   if (!existsSync(dbPath)) {
     return { sourceCount: 0, pageCount: 0, pageTypeCounts: {} };
   }
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database4(dbPath, { readonly: true });
   try {
     const sourceCount = Number(db.prepare("SELECT COUNT(*) AS c FROM sources").get().c);
     const pageCount = Number(db.prepare("SELECT COUNT(*) AS c FROM wiki_pages").get().c);
@@ -4253,7 +4324,7 @@ function queryWikiBuildResult(dbPath) {
 }
 function upsertWikiPageSourceLink(dbPath, input) {
   initDatabase(dbPath);
-  const db = new Database(dbPath);
+  const db = new Database4(dbPath);
   try {
     db.prepare(`
           INSERT OR REPLACE INTO wiki_page_sources (page_id, source_id, relation_type, created_at)
@@ -4266,7 +4337,7 @@ function upsertWikiPageSourceLink(dbPath, input) {
 function listWikiPageSourceLinks(dbPath) {
   if (!existsSync(dbPath)) return [];
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database4(dbPath, { readonly: true });
   try {
     return db.prepare(`
           SELECT page_id, source_id, relation_type, created_at
@@ -4280,7 +4351,7 @@ function listWikiPageSourceLinks(dbPath) {
 function listWikiPageLinks(dbPath) {
   if (!existsSync(dbPath)) return [];
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database4(dbPath, { readonly: true });
   try {
     return db.prepare(`
           SELECT from_page_id, to_page_id, link_type, created_at
@@ -4291,9 +4362,51 @@ function listWikiPageLinks(dbPath) {
     db.close();
   }
 }
+function upsertWikiQueryArtifact(dbPath, input) {
+  initDatabase(dbPath);
+  const db = new Database4(dbPath);
+  try {
+    db.prepare(`
+          INSERT INTO wiki_query_artifacts (id, query, kind, page_id, created_at, metadata)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            query = excluded.query,
+            kind = excluded.kind,
+            page_id = excluded.page_id,
+            created_at = excluded.created_at,
+            metadata = excluded.metadata
+        `).run(
+      input.id,
+      input.query,
+      input.kind,
+      input.page_id,
+      input.created_at ?? (/* @__PURE__ */ new Date()).toISOString(),
+      stringifyJson(input.metadata)
+    );
+    const row = db.prepare(`
+          SELECT id, query, kind, page_id, created_at, metadata
+          FROM wiki_query_artifacts
+          WHERE id = ?
+        `).get(input.id);
+    return mapWikiQueryArtifact(row);
+  } finally {
+    db.close();
+  }
+}
+var init_wiki = __esm({
+  "src/core/db/wiki.ts"() {
+    "use strict";
+    init_paths();
+    init_schema();
+    init_mappers();
+  }
+});
+
+// src/core/db/lint.ts
+import Database5 from "better-sqlite3";
 function upsertWikiLintRun(dbPath, input) {
   initDatabase(dbPath);
-  const db = new Database(dbPath);
+  const db = new Database5(dbPath);
   try {
     db.prepare(`
           INSERT OR REPLACE INTO wiki_lint_runs (id, status, summary, created_at)
@@ -4306,7 +4419,7 @@ function upsertWikiLintRun(dbPath, input) {
 function getWikiLintRun(dbPath, id) {
   if (!existsSync(dbPath)) return void 0;
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database5(dbPath, { readonly: true });
   try {
     const row = db.prepare(`
           SELECT id, status, summary, created_at
@@ -4320,7 +4433,7 @@ function getWikiLintRun(dbPath, id) {
 }
 function upsertWikiLintFinding(dbPath, input) {
   initDatabase(dbPath);
-  const db = new Database(dbPath);
+  const db = new Database5(dbPath);
   try {
     db.prepare(`
           INSERT OR REPLACE INTO wiki_lint_findings
@@ -4353,7 +4466,7 @@ function upsertWikiLintFinding(dbPath, input) {
 function listWikiLintFindings(dbPath, options) {
   if (!existsSync(dbPath)) return [];
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database5(dbPath, { readonly: true });
   try {
     const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)));
     const rows = db.prepare(`
@@ -4369,39 +4482,21 @@ function listWikiLintFindings(dbPath, options) {
     db.close();
   }
 }
-function upsertWikiQueryArtifact(dbPath, input) {
-  initDatabase(dbPath);
-  const db = new Database(dbPath);
-  try {
-    db.prepare(`
-          INSERT INTO wiki_query_artifacts (id, query, kind, page_id, created_at, metadata)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            query = excluded.query,
-            kind = excluded.kind,
-            page_id = excluded.page_id,
-            created_at = excluded.created_at,
-            metadata = excluded.metadata
-        `).run(
-      input.id,
-      input.query,
-      input.kind,
-      input.page_id,
-      input.created_at ?? (/* @__PURE__ */ new Date()).toISOString(),
-      stringifyJson(input.metadata)
-    );
-    const row = db.prepare(`
-          SELECT id, query, kind, page_id, created_at, metadata
-          FROM wiki_query_artifacts
-          WHERE id = ?
-        `).get(input.id);
-    return mapWikiQueryArtifact(row);
-  } finally {
-    db.close();
+var init_lint = __esm({
+  "src/core/db/lint.ts"() {
+    "use strict";
+    init_paths();
+    init_schema();
+    init_mappers();
   }
-}
+});
+
+// src/core/db/sync.ts
+import fs from "node:fs/promises";
+import path2 from "node:path";
+import Database6 from "better-sqlite3";
 async function syncDailyNote(memoriaHome, dbPath, sessionId) {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database6(dbPath, { readonly: true });
   try {
     const row = db.prepare("SELECT timestamp, project, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
     if (!row) return;
@@ -4429,7 +4524,7 @@ ${newEntry}`;
   }
 }
 async function extractDecisions(memoriaHome, dbPath, sessionId) {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database6(dbPath, { readonly: true });
   try {
     const rows = db.prepare(`
         SELECT id, timestamp, content
@@ -4445,7 +4540,7 @@ async function extractDecisions(memoriaHome, dbPath, sessionId) {
       }
       const decisionTitle = typeof contentData.decision === "string" && contentData.decision.trim() ? contentData.decision.trim() : "Untitled Decision";
       const date5 = safeDate(row.timestamp).toISOString().slice(0, 10);
-      const filename = `${date5}_${slugify2(decisionTitle).slice(0, 40)}_${slugify2(row.id).slice(0, 8)}.md`;
+      const filename = `${date5}_${slugify(decisionTitle).slice(0, 40)}_${slugify(row.id).slice(0, 8)}.md`;
       const filePath = path2.join(memoriaHome, "knowledge", "Decisions", filename);
       const alternatives = Array.isArray(contentData.alternatives_considered) ? contentData.alternatives_considered.map((a) => `- ${String(a)}`).join("\n") : "- (none)";
       const decisionDoc = `# ${decisionTitle}
@@ -4476,7 +4571,7 @@ ${typeof contentData.impact_level === "string" ? contentData.impact_level : "med
   }
 }
 async function extractSkills(memoriaHome, dbPath, sessionId) {
-  const db = new Database(dbPath);
+  const db = new Database6(dbPath);
   try {
     const rows = db.prepare(`
         SELECT id, timestamp, content
@@ -4500,7 +4595,7 @@ async function extractSkills(memoriaHome, dbPath, sessionId) {
       const successRate = Number.isFinite(successRateRaw) ? successRateRaw : 0;
       const category = typeof contentData.category === "string" ? contentData.category : "general";
       const date5 = safeDate(row.timestamp).toISOString().slice(0, 10);
-      const filename = `${slugify2(skillName)}.md`;
+      const filename = `${slugify(skillName)}.md`;
       const filePath = path2.join(memoriaHome, "knowledge", "Skills", filename);
       const examples = Array.isArray(contentData.examples) ? contentData.examples.map((e) => `- ${String(e)}`).join("\n") : "- (none)";
       const skillDoc = `# ${skillName}
@@ -4522,7 +4617,7 @@ ${examples}
 `;
       await fs.writeFile(filePath, skillDoc, "utf8");
       upsertSkill.run(
-        slugify2(skillName).toLowerCase(),
+        slugify(skillName).toLowerCase(),
         skillName,
         category,
         row.timestamp,
@@ -4535,9 +4630,19 @@ ${examples}
     db.close();
   }
 }
+var init_sync = __esm({
+  "src/core/db/sync.ts"() {
+    "use strict";
+    init_paths();
+    init_utils();
+  }
+});
+
+// src/core/db/telemetry.ts
+import Database7 from "better-sqlite3";
 function logRecallTelemetry(dbPath, input) {
   if (!existsSync(dbPath)) return;
-  const db = new Database(dbPath);
+  const db = new Database7(dbPath);
   try {
     db.exec(`
           CREATE TABLE IF NOT EXISTS recall_telemetry (
@@ -4570,7 +4675,7 @@ function logRecallTelemetry(dbPath, input) {
   }
 }
 function queryStats(dbPath) {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database7(dbPath, { readonly: true });
   try {
     const sessions = Number(db.prepare("SELECT COUNT(*) AS c FROM sessions").get().c);
     const events = Number(db.prepare("SELECT COUNT(*) AS c FROM events").get().c);
@@ -4625,7 +4730,7 @@ function queryStats(dbPath) {
   }
 }
 function queryRecallTelemetry(dbPath, options) {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database7(dbPath, { readonly: true });
   try {
     const window = options?.window && /^P\d+D$/.test(options.window) ? options.window : "P7D";
     const limitRaw = options?.limit ?? 100;
@@ -4661,7 +4766,7 @@ function queryRecallTelemetry(dbPath, options) {
 }
 function queryGovernanceReview(dbPath, options = {}) {
   initDatabase(dbPath);
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database7(dbPath, { readonly: true });
   try {
     const projectFilter = options.project?.trim();
     const scopeFilter = options.scope?.trim();
@@ -4768,6 +4873,18 @@ function queryGovernanceReview(dbPath, options = {}) {
     db.close();
   }
 }
+var init_telemetry = __esm({
+  "src/core/db/telemetry.ts"() {
+    "use strict";
+    init_paths();
+    init_utils();
+    init_schema();
+  }
+});
+
+// src/core/db/verify.ts
+import path3 from "node:path";
+import Database8 from "better-sqlite3";
 async function canWrite(targetPath) {
   try {
     const { constants: fsConstants, access } = await import("node:fs/promises");
@@ -4798,7 +4915,7 @@ async function runVerify(paths) {
   }
   for (const item of pathChecks) {
     const id = item.id.replace("_exists", "_writable");
-    const ok = await canWrite(item.p) || (existsSync(item.p) ? false : await canWrite(path2.dirname(item.p)));
+    const ok = await canWrite(item.p) || (existsSync(item.p) ? false : await canWrite(path3.dirname(item.p)));
     add(id, ok ? "pass" : "fail", `${item.label} writable: ${item.p}`);
   }
   if (!existsSync(paths.dbPath)) {
@@ -4808,7 +4925,7 @@ async function runVerify(paths) {
   initDatabase(paths.dbPath);
   let db = null;
   try {
-    db = new Database(paths.dbPath, { readonly: true, fileMustExist: true });
+    db = new Database8(paths.dbPath, { readonly: true, fileMustExist: true });
     add("db_connect", "pass", `connected: ${paths.dbPath}`);
     const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all();
     const tableSet = new Set(tableRows.map((r) => r.name));
@@ -4840,12 +4957,24 @@ async function runVerify(paths) {
   }
   return { ok: checks.every((c) => c.status === "pass"), checks };
 }
+var init_verify = __esm({
+  "src/core/db/verify.ts"() {
+    "use strict";
+    init_paths();
+    init_schema();
+  }
+});
+
+// src/core/db/prune-export.ts
+import fs2 from "node:fs/promises";
+import path4 from "node:path";
+import Database9 from "better-sqlite3";
 async function collectFilesRecursively(dirPath) {
   if (!existsSync(dirPath)) return [];
-  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const entries = await fs2.readdir(dirPath, { withFileTypes: true });
   const files = [];
   for (const entry of entries) {
-    const fullPath = path2.join(dirPath, entry.name);
+    const fullPath = path4.join(dirPath, entry.name);
     if (entry.isDirectory()) {
       files.push(...await collectFilesRecursively(fullPath));
     } else if (entry.isFile()) {
@@ -4859,12 +4988,12 @@ async function pruneFilesByAge(label, dirPath, olderThanDays, dryRun) {
   const files = await collectFilesRecursively(dirPath);
   let matched = 0, removed = 0, bytes = 0;
   for (const filePath of files) {
-    const stat = await fs.stat(filePath);
+    const stat = await fs2.stat(filePath);
     if (stat.mtimeMs >= cutoffMs) continue;
     matched += 1;
     bytes += stat.size;
     if (!dryRun) {
-      await fs.unlink(filePath);
+      await fs2.unlink(filePath);
       removed += 1;
     }
   }
@@ -4872,7 +5001,7 @@ async function pruneFilesByAge(label, dirPath, olderThanDays, dryRun) {
 }
 function pruneSkillsDuplicates(dbPath, dryRun) {
   if (!existsSync(dbPath)) return { duplicateGroups: 0, removed: 0 };
-  const db = new Database(dbPath);
+  const db = new Database9(dbPath);
   try {
     const rows = db.prepare("SELECT id, name, created_date, use_count FROM skills").all();
     const groups = /* @__PURE__ */ new Map();
@@ -4910,7 +5039,7 @@ function pruneSkillsDuplicates(dbPath, dryRun) {
 }
 function pruneConsolidate(dbPath, cutoffDays, dryRun) {
   if (!existsSync(dbPath)) return { groupsFound: 0, sessionsConsolidated: 0, nodesRemoved: 0 };
-  const db = new Database(dbPath);
+  const db = new Database9(dbPath);
   try {
     const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1e3).toISOString();
     const topicGroups = db.prepare(`
@@ -4971,7 +5100,7 @@ function pruneConsolidate(dbPath, cutoffDays, dryRun) {
 }
 function pruneStaleMemory(dbPath, cutoffDays, dryRun) {
   if (!existsSync(dbPath)) return { staleNodes: 0, staleSessions: 0, removedNodes: 0, removedSessions: 0 };
-  const db = new Database(dbPath);
+  const db = new Database9(dbPath);
   try {
     const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1e3).toISOString();
     const staleNodes = db.prepare(`
@@ -5025,11 +5154,11 @@ async function runPrune(paths, options) {
   }
   const result = {};
   if (exportsDays !== void 0) {
-    const r = await pruneFilesByAge("exports", path2.join(paths.memoryDir, "exports"), exportsDays, dryRun);
+    const r = await pruneFilesByAge("exports", path4.join(paths.memoryDir, "exports"), exportsDays, dryRun);
     result.exports = { matched: r.matched, removed: r.removed, bytes: r.bytes };
   }
   if (checkpointsDays !== void 0) {
-    const r = await pruneFilesByAge("checkpoints", path2.join(paths.memoryDir, "checkpoints"), checkpointsDays, dryRun);
+    const r = await pruneFilesByAge("checkpoints", path4.join(paths.memoryDir, "checkpoints"), checkpointsDays, dryRun);
     result.checkpoints = { matched: r.matched, removed: r.removed, bytes: r.bytes };
   }
   if (dedupeSkills) {
@@ -5054,8 +5183,8 @@ async function exportMemory(paths, options) {
   const scopeFilter = options.scope?.trim();
   const type = options.type ?? "all";
   const format = options.format ?? "json";
-  const outDir = options.out ? path2.resolve(options.out) : path2.join(paths.memoryDir, "exports");
-  const db = new Database(paths.dbPath, { readonly: true });
+  const outDir = options.out ? path4.resolve(options.out) : path4.join(paths.memoryDir, "exports");
+  const db = new Database9(paths.dbPath, { readonly: true });
   try {
     const decisionsRows = type === "all" || type === "decisions" ? db.prepare(`
             SELECT e.id, e.session_id, e.timestamp, e.content, s.project, s.scope
@@ -5093,11 +5222,11 @@ async function exportMemory(paths, options) {
         pattern: String(c.pattern ?? "")
       };
     });
-    await fs.mkdir(outDir, { recursive: true });
+    await fs2.mkdir(outDir, { recursive: true });
     const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-    const projectPart = projectFilter ? `_${slugify2(projectFilter).slice(0, 30)}` : "";
+    const projectPart = projectFilter ? `_${slugify(projectFilter).slice(0, 30)}` : "";
     const ext = format === "json" ? "json" : "md";
-    const filePath = path2.join(outDir, `memoria-export_${type}${projectPart}_${stamp}.${ext}`);
+    const filePath = path4.join(outDir, `memoria-export_${type}${projectPart}_${stamp}.${ext}`);
     const payload = {
       generated_at: (/* @__PURE__ */ new Date()).toISOString(),
       filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, scope: scopeFilter ?? null, type, format },
@@ -5106,7 +5235,7 @@ async function exportMemory(paths, options) {
       skills
     };
     if (format === "json") {
-      await fs.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
+      await fs2.writeFile(filePath, JSON.stringify(payload, null, 2), "utf8");
     } else {
       const decisionBlock = decisions.map((d) => `- [${d.timestamp}] (${d.project}) ${d.decision || "(untitled)"} | impact=${d.impact_level} | session=${d.session_id}`).join("\n");
       const skillBlock = skills.map((s) => `- [${s.timestamp}] (${s.project}) ${s.skill_name || "(untitled)"} | category=${s.category}`).join("\n");
@@ -5131,20 +5260,27 @@ ${decisionBlock || "- (none)"}
 ## Skills
 ${skillBlock || "- (none)"}
 `;
-      await fs.writeFile(filePath, md, "utf8");
+      await fs2.writeFile(filePath, md, "utf8");
     }
     return { filePath, decisions, skills };
   } finally {
     db.close();
   }
 }
-function truncateText(input, max = 180) {
-  const clean = input.replace(/\s+/g, " ").trim();
-  if (clean.length <= max) return clean;
-  return `${clean.slice(0, Math.max(0, max - 1))}\u2026`;
-}
+var init_prune_export = __esm({
+  "src/core/db/prune-export.ts"() {
+    "use strict";
+    init_paths();
+    init_utils();
+    init_schema();
+    init_mappers();
+  }
+});
+
+// src/core/db/recall.ts
+import Database10 from "better-sqlite3";
 function tokenizeQuery(query) {
-  const tokens = query.toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
+  const tokens = query.toLowerCase().split(/[^a-z0-9一-鿿]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
   return Array.from(new Set(tokens));
 }
 function computeDecayFactor(timestamp, halfLifeDays = DEFAULT_DECAY_HALF_LIFE_DAYS) {
@@ -5185,7 +5321,7 @@ function buildMemoryIndex(dbPath, options = {}) {
     throw new Error(`sessions.db not found: ${dbPath}`);
   }
   initDatabase(dbPath);
-  const db = new Database(dbPath);
+  const db = new Database10(dbPath);
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const dryRun = Boolean(options.dryRun);
   const projectFilter = options.project?.trim();
@@ -5241,8 +5377,8 @@ function buildMemoryIndex(dbPath, options = {}) {
       for (const session of sessions) {
         const project = (session.project ?? "default").trim() || "default";
         const scope = (session.scope ?? deriveScope(session)).trim() || deriveScope(session);
-        const projectSlug = slugify2(project).toLowerCase();
-        const scopeSlug = slugify2(scope).toLowerCase();
+        const projectSlug = slugify(project).toLowerCase();
+        const scopeSlug = slugify(scope).toLowerCase();
         const rootNodeId = `node:project:${scopeSlug}:${projectSlug}`;
         const rootPathKey = `${scopeSlug}/${projectSlug}`;
         if (!dryRun) {
@@ -5278,7 +5414,7 @@ function buildMemoryIndex(dbPath, options = {}) {
           if (decisionText && skillText) break;
         }
         const topic = extractTopicFromSession(session.summary ?? "", decisionText, skillText, session.timestamp);
-        const topicSlug = slugify2(topic.title).toLowerCase();
+        const topicSlug = slugify(topic.title).toLowerCase();
         const topicNodeId = `node:topic:${scopeSlug}:${projectSlug}:${shortHash(topicSlug, 20)}`;
         const topicPathKey = `${rootPathKey}/${topicSlug}`;
         if (!dryRun) {
@@ -5301,7 +5437,7 @@ function buildMemoryIndex(dbPath, options = {}) {
         const sessionNodeId = `node:session:${session.id}`;
         const sessionTitle = truncateText(session.summary?.trim() || session.id, 80);
         const sessionSummary = truncateText(session.summary?.trim() || `Session ${session.id}`, 180);
-        const sessionPathKey = `${topicPathKey}/${slugify2(session.id).toLowerCase()}`;
+        const sessionPathKey = `${topicPathKey}/${slugify(session.id).toLowerCase()}`;
         if (!dryRun) {
           upsertNode.run(
             sessionNodeId,
@@ -5337,7 +5473,7 @@ function buildMemoryIndex(dbPath, options = {}) {
 }
 function recallTree(dbPath, query, projectFilter, scopeFilter, topK = 5) {
   if (!existsSync(dbPath)) return [];
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database10(dbPath, { readonly: true });
   try {
     const allNodes = db.prepare(`
           SELECT id, parent_id, project, scope, title, summary, level, updated_at
@@ -5415,7 +5551,7 @@ function recallTree(dbPath, query, projectFilter, scopeFilter, topK = 5) {
     try {
       const hitNodeIds = [...new Set(finalHits.map((h) => h.node_id).filter(Boolean))];
       if (hitNodeIds.length > 0) {
-        const dbW = new Database(dbPath);
+        const dbW = new Database10(dbPath);
         try {
           const now = (/* @__PURE__ */ new Date()).toISOString();
           const stmt = dbW.prepare("UPDATE memory_nodes SET last_synced_at = ? WHERE id = ?");
@@ -5434,7 +5570,7 @@ function recallTree(dbPath, query, projectFilter, scopeFilter, topK = 5) {
   }
 }
 function recallKeyword(dbPath, query, projectFilter, scopeFilter, topK = 5, afterDate) {
-  const db = new Database(dbPath, { readonly: true });
+  const db = new Database10(dbPath, { readonly: true });
   const q = `%${query.toLowerCase()}%`;
   try {
     const decisionRows = db.prepare(`
@@ -5489,52 +5625,42 @@ function recallKeyword(dbPath, query, projectFilter, scopeFilter, topK = 5, afte
     db.close();
   }
 }
-function querySessionSummary(dbPath, sessionId) {
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const session = db.prepare("SELECT id, timestamp, project, scope, event_count, summary FROM sessions WHERE id = ?").get(sessionId);
-    if (!session) return null;
-    const decisionEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'DecisionMade'`).all(sessionId);
-    const skillEvents = db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'SkillLearned'`).all(sessionId);
-    const decisions = decisionEvents.map((row) => {
-      const c = maybeParseJson(row.content);
-      const obj = c && typeof c === "object" && !Array.isArray(c) ? c : {};
-      return {
-        id: row.id,
-        decision: String(obj.decision ?? ""),
-        impact_level: String(obj.impact_level ?? "medium")
-      };
-    });
-    const skills = skillEvents.map((row) => {
-      const c = maybeParseJson(row.content);
-      const obj = c && typeof c === "object" && !Array.isArray(c) ? c : {};
-      return {
-        id: row.id,
-        skill_name: String(obj.skill_name ?? ""),
-        category: String(obj.category ?? "general")
-      };
-    });
-    return { session, decisions, skills };
-  } finally {
-    db.close();
-  }
-}
 var DEFAULT_DECAY_HALF_LIFE_DAYS;
-var init_db = __esm({
-  "src/core/db.ts"() {
+var init_recall = __esm({
+  "src/core/db/recall.ts"() {
     "use strict";
     init_paths();
     init_utils();
+    init_utils();
+    init_schema();
+    init_mappers();
     DEFAULT_DECAY_HALF_LIFE_DAYS = 90;
+  }
+});
+
+// src/core/db/index.ts
+var init_db = __esm({
+  "src/core/db/index.ts"() {
+    "use strict";
+    init_schema();
+    init_session();
+    init_source();
+    init_wiki();
+    init_lint();
+    init_sync();
+    init_telemetry();
+    init_verify();
+    init_prune_export();
+    init_recall();
   }
 });
 
 // src/core/source-import.ts
 import crypto from "node:crypto";
-import fs2 from "node:fs/promises";
-import path3 from "node:path";
+import fs3 from "node:fs/promises";
+import path5 from "node:path";
 function inferSourceType(filePath) {
-  const ext = path3.extname(filePath).toLowerCase();
+  const ext = path5.extname(filePath).toLowerCase();
   if (ext === ".md" || ext === ".markdown") return "article";
   if (ext === ".txt") return "note";
   return "document";
@@ -5549,7 +5675,7 @@ function inferSourceTitle(raw, absolutePath, explicitTitle) {
   if (trimmedTitle) return trimmedTitle;
   const heading = raw.match(/^#\s+(.+)$/m)?.[1]?.trim();
   if (heading) return heading;
-  return path3.basename(absolutePath, path3.extname(absolutePath));
+  return path5.basename(absolutePath, path5.extname(absolutePath));
 }
 function renderSourceSummaryPage(input) {
   return `# ${input.title}
@@ -5567,8 +5693,8 @@ ${input.summary}
 `;
 }
 async function importSourceFile(paths, input) {
-  const absolutePath = path3.resolve(input.filePath);
-  const raw = await fs2.readFile(absolutePath, "utf8");
+  const absolutePath = path5.resolve(input.filePath);
+  const raw = await fs3.readFile(absolutePath, "utf8");
   const checksum = crypto.createHash("sha256").update(raw).digest("hex");
   const importedAt = (/* @__PURE__ */ new Date()).toISOString();
   const createdAt = importedAt;
@@ -5577,7 +5703,7 @@ async function importSourceFile(paths, input) {
   const scope = input.scope?.trim() || "global";
   const dedupedExisting = listSourceRecords(paths.dbPath, { limit: 500 }).find((record2) => record2.checksum === checksum);
   if (dedupedExisting) {
-    const existingSlug = `source-${slugify2(dedupedExisting.title).toLowerCase()}-${shortHash(dedupedExisting.id, 8)}`;
+    const existingSlug = `source-${slugify(dedupedExisting.title).toLowerCase()}-${shortHash(dedupedExisting.id, 8)}`;
     const existingPage = getWikiPageBySlug(paths.dbPath, existingSlug);
     if (!existingPage) {
       throw new Error(`Source record exists without source-summary page: ${dedupedExisting.id}`);
@@ -5585,16 +5711,16 @@ async function importSourceFile(paths, input) {
     return { source: dedupedExisting, page: existingPage, deduped: true };
   }
   const sourceId = `src_${shortHash(`${absolutePath}:${checksum}`, 24)}`;
-  const slugStem = slugify2(sourceTitle).toLowerCase() || "source";
+  const slugStem = slugify(sourceTitle).toLowerCase() || "source";
   const sourceSlug = `source-${slugStem}-${shortHash(sourceId, 8)}`;
-  const sourceDir = path3.join(paths.memoryDir, "sources");
-  const sourceExt = path3.extname(absolutePath).toLowerCase() || ".txt";
-  const storedSourcePath = path3.join(sourceDir, `${sourceId}${sourceExt}`);
-  const pageDir = path3.join(paths.knowledgeDir, "Sources");
-  const pagePath = path3.join(pageDir, `${sourceSlug}.md`);
-  await fs2.mkdir(sourceDir, { recursive: true });
-  await fs2.mkdir(pageDir, { recursive: true });
-  await fs2.writeFile(storedSourcePath, raw, "utf8");
+  const sourceDir = path5.join(paths.memoryDir, "sources");
+  const sourceExt = path5.extname(absolutePath).toLowerCase() || ".txt";
+  const storedSourcePath = path5.join(sourceDir, `${sourceId}${sourceExt}`);
+  const pageDir = path5.join(paths.knowledgeDir, "Sources");
+  const pagePath = path5.join(pageDir, `${sourceSlug}.md`);
+  await fs3.mkdir(sourceDir, { recursive: true });
+  await fs3.mkdir(pageDir, { recursive: true });
+  await fs3.writeFile(storedSourcePath, raw, "utf8");
   const source = upsertSourceRecord(paths.dbPath, {
     id: sourceId,
     type: sourceType,
@@ -5633,7 +5759,7 @@ async function importSourceFile(paths, input) {
     relation_type: "summarizes",
     created_at: importedAt
   });
-  await fs2.writeFile(pagePath, renderSourceSummaryPage({
+  await fs3.writeFile(pagePath, renderSourceSummaryPage({
     title: sourceTitle,
     sourceId: source.id,
     type: source.type,
@@ -5713,22 +5839,22 @@ ${Object.entries(input.pageTypeCounts).sort(([a], [b]) => a.localeCompare(b)).ma
 ${input.stats.lastSession ? `- ${input.stats.lastSession.id} (${input.stats.lastSession.project}, ${input.stats.lastSession.timestamp})` : "- (none)"}
 `;
 }
-var init_wiki = __esm({
+var init_wiki2 = __esm({
   "src/core/wiki.ts"() {
     "use strict";
   }
 });
 
 // src/core/wiki-build.ts
-import fs3 from "node:fs/promises";
-import path4 from "node:path";
+import fs4 from "node:fs/promises";
+import path6 from "node:path";
 async function ensureWikiDirectories(knowledgeDir) {
   await Promise.all([
-    path4.join(knowledgeDir, "Daily"),
-    path4.join(knowledgeDir, "Decisions"),
-    path4.join(knowledgeDir, "Skills"),
-    path4.join(knowledgeDir, "Sources")
-  ].map((dir) => fs3.mkdir(dir, { recursive: true })));
+    path6.join(knowledgeDir, "Daily"),
+    path6.join(knowledgeDir, "Decisions"),
+    path6.join(knowledgeDir, "Skills"),
+    path6.join(knowledgeDir, "Sources")
+  ].map((dir) => fs4.mkdir(dir, { recursive: true })));
 }
 function inferWikiPageType(dirName) {
   if (dirName === "Sources") return "source-summary";
@@ -5741,15 +5867,15 @@ async function syncFilesystemPages(paths) {
   const subdirs = ["Daily", "Decisions", "Skills", "Sources"];
   let synced = 0;
   for (const subdir of subdirs) {
-    const absDir = path4.join(paths.knowledgeDir, subdir);
-    const entries = await fs3.readdir(absDir, { withFileTypes: true });
+    const absDir = path6.join(paths.knowledgeDir, subdir);
+    const entries = await fs4.readdir(absDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-      const filepath = path4.join(absDir, entry.name);
-      const content = await fs3.readFile(filepath, "utf8");
-      const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim() || path4.basename(entry.name, ".md");
+      const filepath = path6.join(absDir, entry.name);
+      const content = await fs4.readFile(filepath, "utf8");
+      const title = content.match(/^#\s+(.+)$/m)?.[1]?.trim() || path6.basename(entry.name, ".md");
       const summary = content.replace(/^#.*$/m, "").split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 2).join(" ").slice(0, 220) || `${title} page`;
-      const slug = slugify2(path4.basename(entry.name, ".md")).toLowerCase() || shortHash(filepath, 8);
+      const slug = slugify(path6.basename(entry.name, ".md")).toLowerCase() || shortHash(filepath, 8);
       const pageType = inferWikiPageType(subdir);
       if (!pageType) continue;
       const existingPage = getWikiPageBySlug(paths.dbPath, slug);
@@ -5782,13 +5908,13 @@ async function buildCompiledWiki(paths) {
   const buildSummary = queryWikiBuildResult(paths.dbPath);
   const stats = queryStats(paths.dbPath);
   const specialPages = {
-    index: path4.join(paths.knowledgeDir, "index.md"),
-    log: path4.join(paths.knowledgeDir, "log.md"),
-    overview: path4.join(paths.knowledgeDir, "overview.md")
+    index: path6.join(paths.knowledgeDir, "index.md"),
+    log: path6.join(paths.knowledgeDir, "log.md"),
+    overview: path6.join(paths.knowledgeDir, "overview.md")
   };
-  await fs3.writeFile(specialPages.index, renderWikiIndexPage({ pages, pageTypeCounts: buildSummary.pageTypeCounts }), "utf8");
-  await fs3.writeFile(specialPages.log, renderWikiLogPage({ sources, sessions }), "utf8");
-  await fs3.writeFile(specialPages.overview, renderWikiOverviewPage({
+  await fs4.writeFile(specialPages.index, renderWikiIndexPage({ pages, pageTypeCounts: buildSummary.pageTypeCounts }), "utf8");
+  await fs4.writeFile(specialPages.log, renderWikiLogPage({ sources, sessions }), "utf8");
+  await fs4.writeFile(specialPages.overview, renderWikiOverviewPage({
     build: { pagesSynced, sourceCount: buildSummary.sourceCount, pageCount: buildSummary.pageCount, specialPages },
     stats,
     pageTypeCounts: buildSummary.pageTypeCounts
@@ -5804,14 +5930,14 @@ var init_wiki_build = __esm({
   "src/core/wiki-build.ts"() {
     "use strict";
     init_db();
-    init_wiki();
+    init_wiki2();
     init_utils();
   }
 });
 
 // src/core/wiki-query.ts
-import fs4 from "node:fs/promises";
-import path5 from "node:path";
+import fs5 from "node:fs/promises";
+import path7 from "node:path";
 function renderFiledQueryPage(input) {
   const evidence = input.hits.map((hit) => `- ${hit.type} \`${hit.id}\` (${hit.project}, ${hit.timestamp})
   - ${hit.snippet}`).join("\n");
@@ -5833,12 +5959,12 @@ async function fileQueryResult(paths, input, hits) {
   const createdAt = (/* @__PURE__ */ new Date()).toISOString();
   const scope = input.scope?.trim() || "global";
   const pageType = input.kind;
-  const slug = `${input.kind}-${slugify2(input.title).toLowerCase() || shortHash(input.query, 8)}-${shortHash(`${input.query}:${createdAt}`, 8)}`;
+  const slug = `${input.kind}-${slugify(input.title).toLowerCase() || shortHash(input.query, 8)}-${shortHash(`${input.query}:${createdAt}`, 8)}`;
   const subdir = input.kind === "comparison" ? "Comparisons" : "Syntheses";
-  const dirPath = path5.join(paths.knowledgeDir, subdir);
-  const pagePath = path5.join(dirPath, `${slug}.md`);
+  const dirPath = path7.join(paths.knowledgeDir, subdir);
+  const pagePath = path7.join(dirPath, `${slug}.md`);
   const pageId = `page_${shortHash(pagePath, 24)}`;
-  await fs4.mkdir(dirPath, { recursive: true });
+  await fs5.mkdir(dirPath, { recursive: true });
   const page = upsertWikiPage(paths.dbPath, {
     id: pageId,
     slug,
@@ -5855,7 +5981,7 @@ async function fileQueryResult(paths, input, hits) {
       hit_count: hits.length
     }
   });
-  await fs4.writeFile(pagePath, renderFiledQueryPage({ title: input.title, query: input.query, kind: pageType, scope, hits }), "utf8");
+  await fs5.writeFile(pagePath, renderFiledQueryPage({ title: input.title, query: input.query, kind: pageType, scope, hits }), "utf8");
   const artifact = upsertWikiQueryArtifact(paths.dbPath, {
     id: `qa_${shortHash(`${input.query}:${page.id}:${createdAt}`, 24)}`,
     query: input.query,
@@ -6004,8 +6130,8 @@ var init_wiki_lint = __esm({
 });
 
 // src/core/memoria.ts
-import fs5 from "node:fs/promises";
-import path6 from "node:path";
+import fs6 from "node:fs/promises";
+import path8 from "node:path";
 function isEmojiOnlyQuery(query) {
   const stripped = query.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]/gu, "");
   return stripped.length === 0 && query.trim().length > 0;
@@ -6063,17 +6189,17 @@ var init_memoria = __esm({
         const dirs = [
           this.paths.memoryDir,
           this.paths.sessionsPath,
-          path6.join(this.paths.memoryDir, "sources"),
-          path6.join(this.paths.memoryDir, "checkpoints"),
-          path6.join(this.paths.memoryDir, "exports"),
+          path8.join(this.paths.memoryDir, "sources"),
+          path8.join(this.paths.memoryDir, "checkpoints"),
+          path8.join(this.paths.memoryDir, "exports"),
           this.paths.knowledgeDir,
-          path6.join(this.paths.knowledgeDir, "Daily"),
-          path6.join(this.paths.knowledgeDir, "Sources"),
-          path6.join(this.paths.knowledgeDir, "Skills"),
-          path6.join(this.paths.knowledgeDir, "Decisions"),
+          path8.join(this.paths.knowledgeDir, "Daily"),
+          path8.join(this.paths.knowledgeDir, "Sources"),
+          path8.join(this.paths.knowledgeDir, "Skills"),
+          path8.join(this.paths.knowledgeDir, "Decisions"),
           this.paths.configPath
         ];
-        await Promise.all(dirs.map((d) => fs5.mkdir(d, { recursive: true })));
+        await Promise.all(dirs.map((d) => fs6.mkdir(d, { recursive: true })));
         initDatabase(this.paths.dbPath);
       }
       async addSource(input) {
@@ -6684,7 +6810,7 @@ var init_core = __esm({
     init_wiki_build();
     init_wiki_query();
     init_wiki_lint();
-    init_wiki();
+    init_wiki2();
     init_db();
     init_utils();
   }
@@ -6870,10 +6996,112 @@ var init_server = __esm({
   }
 });
 
+// node_modules/.pnpm/commander@14.0.3/node_modules/commander/esm.mjs
+var import_index = __toESM(require_commander(), 1);
+var {
+  program,
+  createCommand,
+  createArgument,
+  createOption,
+  CommanderError,
+  InvalidArgumentError,
+  InvalidOptionArgumentError,
+  // deprecated old name
+  Command,
+  Argument,
+  Option,
+  Help
+} = import_index.default;
+
 // src/cli.ts
-import fs6 from "node:fs/promises";
-import path7 from "node:path";
+init_core();
+
+// src/cli/runtime.ts
+init_core();
+import fs7 from "node:fs/promises";
+import path9 from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
+function hasRepoMarkers(candidateRoot) {
+  return existsSync(path9.join(candidateRoot, "package.json")) && existsSync(path9.join(candidateRoot, "src", "cli.ts"));
+}
+function getRuntimeLayout() {
+  const moduleDir = path9.dirname(fileURLToPath2(import.meta.url));
+  const candidateRoots = [moduleDir, path9.resolve(moduleDir, "..")];
+  for (const candidateRoot of candidateRoots) {
+    if (hasRepoMarkers(candidateRoot)) {
+      return {
+        mode: "repo",
+        runtimeRoot: candidateRoot,
+        canSelfInstallDeps: true
+      };
+    }
+  }
+  return {
+    mode: "installed",
+    runtimeRoot: path9.resolve(moduleDir, ".."),
+    canSelfInstallDeps: false
+  };
+}
+function getBundledSkillSourcePath(runtimeLayout) {
+  const skillSourcePath = path9.join(runtimeLayout.runtimeRoot, "skills", "memoria-memory-sync");
+  return existsSync(path9.join(skillSourcePath, "SKILL.md")) ? skillSourcePath : void 0;
+}
+function getSkillWrapperTarget(runtimeLayout) {
+  if (runtimeLayout.mode === "repo") return path9.join(runtimeLayout.runtimeRoot, "cli");
+  return path9.join(runtimeLayout.runtimeRoot, "bin", "memoria");
+}
+async function deployAgentSkill(runtimeLayout, memoriaHome) {
+  const skillSourcePath = getBundledSkillSourcePath(runtimeLayout);
+  if (!skillSourcePath) return void 0;
+  const targetDir = path9.join(memoriaHome, ".agents", "memoria-memory-sync");
+  await fs7.rm(targetDir, { recursive: true, force: true });
+  await fs7.mkdir(path9.dirname(targetDir), { recursive: true });
+  await fs7.cp(skillSourcePath, targetDir, { recursive: true });
+  const wrapperDir = path9.join(targetDir, "bin");
+  const wrapperPath = path9.join(wrapperDir, "memoria");
+  const runtimeBin = getSkillWrapperTarget(runtimeLayout);
+  await fs7.mkdir(wrapperDir, { recursive: true });
+  await fs7.writeFile(
+    wrapperPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+exec "${runtimeBin}" "$@"
+`,
+    "utf8"
+  );
+  await fs7.chmod(wrapperPath, 493);
+  const deployedSkillPath = path9.join(skillSourcePath, "deployed", "DEPLOYED_SKILL.md");
+  const deployedReferencePath = path9.join(skillSourcePath, "deployed", "DEPLOYED_REFERENCE.md");
+  if (existsSync(deployedSkillPath)) {
+    await fs7.copyFile(deployedSkillPath, path9.join(targetDir, "SKILL.md"));
+  }
+  if (existsSync(deployedReferencePath)) {
+    await fs7.copyFile(deployedReferencePath, path9.join(targetDir, "REFERENCE.md"));
+  }
+  return targetDir;
+}
+
+// src/cli/commands/init.ts
+function registerInitCommand(program2, paths, core) {
+  program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
+    await core.init();
+    if (opts.json) {
+      console.log(JSON.stringify({ ok: true, step: "init", paths: { memoriaHome: paths.memoriaHome, db: paths.dbPath } }));
+    } else {
+      console.log(`\u2713 \u521D\u59CB\u5316\u5B8C\u6210: ${paths.memoriaHome}`);
+      console.log(`- db path: ${paths.dbPath}`);
+      console.log(`- sessions path: ${paths.sessionsPath}`);
+      console.log(`- config path: ${paths.configPath}`);
+    }
+  });
+}
+
+// src/cli/commands/sync.ts
+import path11 from "node:path";
+
+// src/cli/shared.ts
+import fs8 from "node:fs/promises";
+import path10 from "node:path";
 
 // node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -7528,7 +7756,7 @@ __export(util_exports, {
   required: () => required,
   safeExtend: () => safeExtend,
   shallowClone: () => shallowClone,
-  slugify: () => slugify,
+  slugify: () => slugify2,
   stringifyPrimitive: () => stringifyPrimitive,
   uint8ArrayToBase64: () => uint8ArrayToBase64,
   uint8ArrayToBase64url: () => uint8ArrayToBase64url,
@@ -7642,10 +7870,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path8) {
-  if (!path8)
+function getElementAtPath(obj, path15) {
+  if (!path15)
     return obj;
-  return path8.reduce((acc, key) => acc?.[key], obj);
+  return path15.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -7669,7 +7897,7 @@ function randomString(length = 10) {
 function esc(str) {
   return JSON.stringify(str);
 }
-function slugify(input) {
+function slugify2(input) {
   return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 var captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {
@@ -8028,11 +8256,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path8, issues) {
+function prefixIssues(path15, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path8);
+    iss.path.unshift(path15);
     return iss;
   });
 }
@@ -8215,7 +8443,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error49, path8 = []) => {
+  const processError = (error49, path15 = []) => {
     var _a2, _b;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -8225,7 +8453,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path8, ...issue2.path];
+        const fullpath = [...path15, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -8257,8 +8485,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path8 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path8) {
+  const path15 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path15) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -17403,7 +17631,7 @@ function _toUpperCase() {
 }
 // @__NO_SIDE_EFFECTS__
 function _slugify() {
-  return /* @__PURE__ */ _overwrite((input) => slugify(input));
+  return /* @__PURE__ */ _overwrite((input) => slugify2(input));
 }
 // @__NO_SIDE_EFFECTS__
 function _array(Class2, element, params) {
@@ -20235,13 +20463,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path8 = ref.slice(1).split("/").filter(Boolean);
-  if (path8.length === 0) {
+  const path15 = ref.slice(1).split("/").filter(Boolean);
+  if (path15.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path8[0] === defsKey) {
-    const key = path8[1];
+  if (path15[0] === defsKey) {
+    const key = path15[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -20643,24 +20871,7 @@ function date4(params) {
 // node_modules/.pnpm/zod@4.3.6/node_modules/zod/v4/classic/external.js
 config(en_default());
 
-// node_modules/.pnpm/commander@14.0.3/node_modules/commander/esm.mjs
-var import_index = __toESM(require_commander(), 1);
-var {
-  program,
-  createCommand,
-  createArgument,
-  createOption,
-  CommanderError,
-  InvalidArgumentError,
-  InvalidOptionArgumentError,
-  // deprecated old name
-  Command,
-  Argument,
-  Option,
-  Help
-} = import_index.default;
-
-// src/cli.ts
+// src/cli/shared.ts
 init_core();
 var sessionEventSchema = external_exports.object({
   id: external_exports.string().optional(),
@@ -20679,7 +20890,7 @@ var sessionSchema = external_exports.object({
   events: external_exports.array(sessionEventSchema).default([])
 }).passthrough();
 async function readSession(sessionFile) {
-  const raw = await fs6.readFile(sessionFile, "utf8");
+  const raw = await fs8.readFile(sessionFile, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -20706,18 +20917,18 @@ function previewSync(paths, sessionFile, sessionData) {
   const timestamp = safeDate(sessionData.timestamp).toISOString();
   const events = sessionData.events ?? [];
   const date5 = safeDate(timestamp).toISOString().slice(0, 10);
-  const dailyPath = path7.join(paths.knowledgeDir, "Daily", `${date5}.md`);
+  const dailyPath = path10.join(paths.knowledgeDir, "Daily", `${date5}.md`);
   const decisionPaths = events.map((event, index) => ({ event, index })).filter(({ event }) => getEventType(event) === "DecisionMade").map(({ event, index }) => {
     const content = getEventContentObject(event);
     const decisionTitle = typeof content.decision === "string" && content.decision.trim() ? content.decision.trim() : "Untitled Decision";
     const eventId = resolveEventId(event, sessionId, index);
-    const filename = `${date5}_${slugify2(decisionTitle).slice(0, 40)}_${slugify2(eventId).slice(0, 8)}.md`;
-    return path7.join(paths.knowledgeDir, "Decisions", filename);
+    const filename = `${date5}_${slugify(decisionTitle).slice(0, 40)}_${slugify(eventId).slice(0, 8)}.md`;
+    return path10.join(paths.knowledgeDir, "Decisions", filename);
   });
   const skillPaths = events.filter((e) => getEventType(e) === "SkillLearned").map((event) => {
     const content = getEventContentObject(event);
     const skillName = typeof content.skill_name === "string" && content.skill_name.trim() ? content.skill_name.trim() : "Untitled Skill";
-    return path7.join(paths.knowledgeDir, "Skills", `${slugify2(skillName)}.md`);
+    return path10.join(paths.knowledgeDir, "Skills", `${slugify(skillName)}.md`);
   });
   console.log("\u{1F9EA} Dry run (no files written)");
   console.log(`- session file: ${sessionFile}`);
@@ -20732,138 +20943,11 @@ function previewSync(paths, sessionFile, sessionData) {
   console.log(`- skills to write: ${skillPaths.length}`);
   for (const p of skillPaths.slice(0, 5)) console.log(`  - ${p}`);
 }
-function hasRepoMarkers(candidateRoot) {
-  return existsSync(path7.join(candidateRoot, "package.json")) && existsSync(path7.join(candidateRoot, "src", "cli.ts"));
-}
-function getRuntimeLayout() {
-  const moduleDir = path7.dirname(fileURLToPath2(import.meta.url));
-  const candidateRoots = [moduleDir, path7.resolve(moduleDir, "..")];
-  for (const candidateRoot of candidateRoots) {
-    if (hasRepoMarkers(candidateRoot)) {
-      return {
-        mode: "repo",
-        runtimeRoot: candidateRoot,
-        canSelfInstallDeps: true
-      };
-    }
-  }
-  return {
-    mode: "installed",
-    runtimeRoot: path7.resolve(moduleDir, ".."),
-    canSelfInstallDeps: false
-  };
-}
-function getBundledSkillSourcePath(runtimeLayout) {
-  const skillSourcePath = path7.join(runtimeLayout.runtimeRoot, "skills", "memoria-memory-sync");
-  return existsSync(path7.join(skillSourcePath, "SKILL.md")) ? skillSourcePath : void 0;
-}
-function getSkillWrapperTarget(runtimeLayout) {
-  if (runtimeLayout.mode === "repo") return path7.join(runtimeLayout.runtimeRoot, "cli");
-  return path7.join(runtimeLayout.runtimeRoot, "bin", "memoria");
-}
-async function deployAgentSkill(runtimeLayout, memoriaHome) {
-  const skillSourcePath = getBundledSkillSourcePath(runtimeLayout);
-  if (!skillSourcePath) return void 0;
-  const targetDir = path7.join(memoriaHome, ".agents", "memoria-memory-sync");
-  await fs6.rm(targetDir, { recursive: true, force: true });
-  await fs6.mkdir(path7.dirname(targetDir), { recursive: true });
-  await fs6.cp(skillSourcePath, targetDir, { recursive: true });
-  const wrapperDir = path7.join(targetDir, "bin");
-  const wrapperPath = path7.join(wrapperDir, "memoria");
-  const runtimeBin = getSkillWrapperTarget(runtimeLayout);
-  await fs6.mkdir(wrapperDir, { recursive: true });
-  await fs6.writeFile(
-    wrapperPath,
-    `#!/usr/bin/env bash
-set -euo pipefail
-exec "${runtimeBin}" "$@"
-`,
-    "utf8"
-  );
-  await fs6.chmod(wrapperPath, 493);
-  const deployedSkillPath = path7.join(skillSourcePath, "deployed", "DEPLOYED_SKILL.md");
-  const deployedReferencePath = path7.join(skillSourcePath, "deployed", "DEPLOYED_REFERENCE.md");
-  if (existsSync(deployedSkillPath)) {
-    await fs6.copyFile(deployedSkillPath, path7.join(targetDir, "SKILL.md"));
-  }
-  if (existsSync(deployedReferencePath)) {
-    await fs6.copyFile(deployedReferencePath, path7.join(targetDir, "REFERENCE.md"));
-  }
-  return targetDir;
-}
-async function runPreflight(memoriaHome, layout) {
-  const checks = [];
-  const nodeVer = process.versions.node;
-  const [major] = nodeVer.split(".").map(Number);
-  checks.push({
-    id: "node_version",
-    status: major >= 18 ? "pass" : "fail",
-    detail: `v${nodeVer}`,
-    fix: major < 18 ? "Install Node.js >= 18 via nvm/fnm: https://github.com/nvm-sh/nvm" : void 0
-  });
-  if (layout.canSelfInstallDeps) {
-    try {
-      const { execSync } = await import("node:child_process");
-      const pnpmVer = execSync("pnpm --version", { stdio: "pipe" }).toString().trim();
-      checks.push({ id: "pnpm", status: "pass", detail: pnpmVer });
-    } catch {
-      checks.push({
-        id: "pnpm",
-        status: "fail",
-        detail: "not found",
-        fix: "Install pnpm: npm install -g pnpm"
-      });
-    }
-  } else {
-    checks.push({ id: "pnpm", status: "pass", detail: "not required in installed mode" });
-  }
-  const probePath = existsSync(memoriaHome) ? memoriaHome : path7.dirname(memoriaHome);
-  try {
-    const { statfs } = await import("node:fs/promises");
-    const st = await statfs(probePath);
-    const availMB = Math.floor(st.bavail * st.bsize / (1024 * 1024));
-    checks.push({
-      id: "disk_space",
-      status: availMB >= 100 ? "pass" : "fail",
-      detail: `${availMB}MB available`,
-      fix: availMB < 100 ? "Free up disk space." : void 0
-    });
-  } catch {
-    checks.push({ id: "disk_space", status: "pass", detail: "unknown (skipping check)" });
-  }
-  try {
-    const testPath = path7.join(probePath, `.memoria_preflight_${Date.now()}`);
-    await fs6.writeFile(testPath, "");
-    await fs6.unlink(testPath);
-    checks.push({ id: "write_permission", status: "pass", detail: memoriaHome });
-  } catch {
-    checks.push({
-      id: "write_permission",
-      status: "fail",
-      detail: `Cannot write to ${memoriaHome}`,
-      fix: `Fix permissions: chmod u+w "${memoriaHome}"`
-    });
-  }
-  return { ok: checks.every((c) => c.status === "pass"), checks };
-}
-async function run() {
-  const paths = resolveMemoriaPaths();
-  const runtimeLayout = getRuntimeLayout();
-  const core = new MemoriaCore(paths);
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.8.0");
-  program2.command("init").description("Initialize memory database and directories").option("--json", "Machine-readable JSON output").action(async (opts) => {
-    await core.init();
-    if (opts.json) {
-      console.log(JSON.stringify({ ok: true, step: "init", paths: { memoriaHome: paths.memoriaHome, db: paths.dbPath } }));
-    } else {
-      console.log(`\u2713 \u521D\u59CB\u5316\u5B8C\u6210: ${paths.memoriaHome}`);
-      console.log(`- db path: ${paths.dbPath}`);
-      console.log(`- sessions path: ${paths.sessionsPath}`);
-      console.log(`- config path: ${paths.configPath}`);
-    }
-  });
+
+// src/cli/commands/sync.ts
+function registerSyncCommand(program2, paths, core) {
   program2.command("sync").description("Import session JSON and sync notes").argument("<sessionFile>", "Path to session JSON file").option("--dry-run", "Validate and preview without writing files").option("--json", "Machine-readable JSON output").action(async (sessionFile, options) => {
-    const absSessionPath = path7.resolve(sessionFile);
+    const absSessionPath = path11.resolve(sessionFile);
     const sessionData = await readSession(absSessionPath);
     if (options.dryRun) {
       previewSync(paths, absSessionPath, sessionData);
@@ -20878,10 +20962,15 @@ async function run() {
       console.log("\u2705 \u540C\u6B65\u5B8C\u6210!");
     }
   });
+}
+
+// src/cli/commands/source.ts
+import path12 from "node:path";
+function registerSourceCommand(program2, core) {
   const sourceCommand = program2.command("source").description("Import and inspect non-session raw sources");
   sourceCommand.command("add").description("Import a markdown or text source and generate a source-summary page").argument("<file>", "Path to source file").option("--type <type>", "Override source type: note|article|document").option("--title <title>", "Override source title").option("--scope <scope>", "Scope for the imported source").option("--json", "Machine-readable JSON output").action(async (file2, options) => {
     const result = await core.addSource({
-      filePath: path7.resolve(file2),
+      filePath: path12.resolve(file2),
       type: options.type,
       title: options.title,
       scope: options.scope
@@ -20911,6 +21000,10 @@ async function run() {
       }
     }
   });
+}
+
+// src/cli/commands/wiki.ts
+function registerWikiCommand(program2, core) {
   const wikiCommand = program2.command("wiki").description("Build and inspect compiled wiki artifacts");
   wikiCommand.command("build").description("Build compiled wiki special pages from current memory state").option("--json", "Machine-readable JSON output").action(async (options) => {
     const result = await core.buildWiki();
@@ -20968,6 +21061,10 @@ async function run() {
       }
     }
   });
+}
+
+// src/cli/commands/stats.ts
+function registerStatsCommand(program2, paths, core) {
   program2.command("stats").description("Show session, event, and skill statistics").option("--json", "Machine-readable JSON output").action(async (opts) => {
     const result = await core.stats();
     if (!result.ok) throw new Error(result.error);
@@ -20999,6 +21096,11 @@ async function run() {
       }
     }
   });
+}
+
+// src/cli/commands/index-cmd.ts
+init_core();
+function registerIndexCommand(program2, paths) {
   const indexCommand = program2.command("index").description("Build and inspect lightweight tree memory index");
   indexCommand.command("build").description("Build incremental tree index from unindexed sessions").option("--project <name>", "Scope build to one project").option("--scope <name>", "Scope build to one memory scope (e.g. global, agent:main)").option("--since <isoDate>", "Only include sessions at/after this ISO date").option("--session-id <id>", "Build index for one specific session id").option("--dry-run", "Show what would be indexed without writing nodes").option("--json", "Machine-readable JSON output").action(async (options) => {
     const result = buildMemoryIndex(paths.dbPath, options);
@@ -21012,6 +21114,10 @@ async function run() {
       console.log(`- source links upserted: ${result.linksUpserted}`);
     }
   });
+}
+
+// src/cli/commands/govern.ts
+function registerGovernCommand(program2, core) {
   const governCommand = program2.command("govern").description("Review higher-signal governance candidates from memory");
   governCommand.command("review").description("Review repeated decisions and skills worth extracting").option("--project <name>", "Filter candidates by project").option("--scope <name>", "Filter candidates by scope").option("--limit <n>", "Maximum number of candidates to return", "20").option("--json", "Machine-readable JSON output").action(async (options) => {
     const limit = Number(options.limit ?? "20");
@@ -21034,6 +21140,11 @@ async function run() {
       }
     }
   });
+}
+
+// src/cli/commands/doctor.ts
+init_core();
+function registerDoctorCommand(program2, paths) {
   program2.command("doctor").description("Check local runtime and directory health").option("--json", "Machine-readable JSON output").action(async (opts) => {
     const envDetails = [
       `- MEMORIA_DB_PATH=${process.env.MEMORIA_DB_PATH ?? "(not set)"}`,
@@ -21058,6 +21169,11 @@ async function run() {
       }
     }
   });
+}
+
+// src/cli/commands/verify.ts
+init_core();
+function registerVerifyCommand(program2, paths) {
   program2.command("verify").description("Run runtime, schema, and writeability verification checks").option("--json", "Output machine-readable JSON report").action(async (options) => {
     const { ok, checks } = await runVerify(paths);
     if (options.json) {
@@ -21072,6 +21188,11 @@ async function run() {
     }
     if (!ok) process.exitCode = 1;
   });
+}
+
+// src/cli/commands/prune.ts
+init_core();
+function registerPruneCommand(program2, paths) {
   program2.command("prune").description("Prune old runtime artifacts and optional duplicate skills").option("--exports-days <days>", "Remove export files older than N days").option("--checkpoints-days <days>", "Remove checkpoints older than N days").option("--dedupe-skills", "Delete duplicate skills by normalized skill name").option("--consolidate-days <days>", "Consolidate old session nodes under same topic older than N days").option("--stale-days <days>", "Remove memory nodes and sessions never recalled and older than N days").option("--all", "Apply default pruning targets (30 days + dedupe + consolidate 90d + stale 180d)").option("--dry-run", "Preview prune actions without deleting").option("--json", "Machine-readable JSON output").action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     const result = await runPrune(paths, options);
@@ -21101,6 +21222,11 @@ async function run() {
       }
     }
   });
+}
+
+// src/cli/commands/export.ts
+init_core();
+function registerExportCommand(program2, paths) {
   program2.command("export").description("Export decisions/skills by time range and project").option("--from <isoDate>", "Include records at/after this ISO date").option("--to <isoDate>", "Include records at/before this ISO date").option("--project <name>", "Filter by project name").option("--scope <name>", "Filter by memory scope").option("--type <type>", "Export type: all|decisions|skills", "all").option("--format <fmt>", "Output format: json|markdown", "json").option("--out <path>", "Output directory (default: .memory/exports)").option("--json", "Machine-readable summary output").action(async (options) => {
     const type = options.type ?? "all";
     const format = options.format ?? "json";
@@ -21120,6 +21246,10 @@ async function run() {
       console.log(`- skills: ${result.skills.length}`);
     }
   });
+}
+
+// src/cli/commands/serve.ts
+function registerServeCommand(program2) {
   program2.command("serve").description("Start Memoria HTTP API server").option("--port <port>", "Port to listen on (default: 3917 or MEMORIA_PORT)").option("--json", "Emit JSON status line on startup").action(async (opts) => {
     const { startServer: startServer2 } = await Promise.resolve().then(() => (init_server(), server_exports));
     const port = opts.port ? Number(opts.port) : void 0;
@@ -21143,6 +21273,70 @@ async function run() {
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
   });
+}
+
+// src/cli/preflight.ts
+init_core();
+import fs9 from "node:fs/promises";
+import path13 from "node:path";
+async function runPreflight(memoriaHome, layout) {
+  const checks = [];
+  const nodeVer = process.versions.node;
+  const [major] = nodeVer.split(".").map(Number);
+  checks.push({
+    id: "node_version",
+    status: major >= 18 ? "pass" : "fail",
+    detail: `v${nodeVer}`,
+    fix: major < 18 ? "Install Node.js >= 18 via nvm/fnm: https://github.com/nvm-sh/nvm" : void 0
+  });
+  if (layout.canSelfInstallDeps) {
+    try {
+      const { execSync } = await import("node:child_process");
+      const pnpmVer = execSync("pnpm --version", { stdio: "pipe" }).toString().trim();
+      checks.push({ id: "pnpm", status: "pass", detail: pnpmVer });
+    } catch {
+      checks.push({
+        id: "pnpm",
+        status: "fail",
+        detail: "not found",
+        fix: "Install pnpm: npm install -g pnpm"
+      });
+    }
+  } else {
+    checks.push({ id: "pnpm", status: "pass", detail: "not required in installed mode" });
+  }
+  const probePath = existsSync(memoriaHome) ? memoriaHome : path13.dirname(memoriaHome);
+  try {
+    const { statfs } = await import("node:fs/promises");
+    const st = await statfs(probePath);
+    const availMB = Math.floor(st.bavail * st.bsize / (1024 * 1024));
+    checks.push({
+      id: "disk_space",
+      status: availMB >= 100 ? "pass" : "fail",
+      detail: `${availMB}MB available`,
+      fix: availMB < 100 ? "Free up disk space." : void 0
+    });
+  } catch {
+    checks.push({ id: "disk_space", status: "pass", detail: "unknown (skipping check)" });
+  }
+  try {
+    const testPath = path13.join(probePath, `.memoria_preflight_${Date.now()}`);
+    await fs9.writeFile(testPath, "");
+    await fs9.unlink(testPath);
+    checks.push({ id: "write_permission", status: "pass", detail: memoriaHome });
+  } catch {
+    checks.push({
+      id: "write_permission",
+      status: "fail",
+      detail: `Cannot write to ${memoriaHome}`,
+      fix: `Fix permissions: chmod u+w "${memoriaHome}"`
+    });
+  }
+  return { ok: checks.every((c) => c.status === "pass"), checks };
+}
+
+// src/cli/commands/preflight-cmd.ts
+function registerPreflightCommand(program2, paths, runtimeLayout) {
   program2.command("preflight").description("Check prerequisites (Node.js, pnpm, disk space, write permission)").option("--json", "Machine-readable JSON output").action(async (opts) => {
     const { ok, checks } = await runPreflight(paths.memoriaHome, runtimeLayout);
     if (opts.json) {
@@ -21162,10 +21356,16 @@ async function run() {
     }
     if (!ok) process.exitCode = 1;
   });
+}
+
+// src/cli/commands/setup.ts
+init_core();
+import path14 from "node:path";
+function registerSetupCommand(program2, runtimeLayout) {
   program2.command("setup").description("One-shot setup: preflight \u2192 install deps \u2192 init \u2192 (optional serve)").option("--serve", "Start HTTP server after setup").option("--port <port>", "Port for serve (default: 3917)").option("--memoria-home <path>", "Data root for .memory/ knowledge/ configs (default: ./memoria)").option("--json", "Emit JSON step logs for machine consumption").action(async (opts) => {
     const jsonOut = Boolean(opts.json);
     const requestedHome = opts.memoriaHome ?? opts["memoria-home"] ?? process.env.MEMORIA_HOME;
-    const setupMemoriaHome = path7.resolve(requestedHome ?? path7.join(process.cwd(), "memoria"));
+    const setupMemoriaHome = path14.resolve(requestedHome ?? path14.join(process.cwd(), "memoria"));
     const setupPaths = resolveMemoriaPaths(setupMemoriaHome);
     const setupCore = new MemoriaCore(setupPaths);
     function stepLog(step, ok, extra = {}) {
@@ -21187,7 +21387,7 @@ async function run() {
     }
     stepLog("preflight", true, { mode: runtimeLayout.mode });
     const pkgDir = runtimeLayout.runtimeRoot;
-    if (runtimeLayout.canSelfInstallDeps && !existsSync(path7.join(pkgDir, "node_modules"))) {
+    if (runtimeLayout.canSelfInstallDeps && !existsSync(path14.join(pkgDir, "node_modules"))) {
       stepStart = Date.now();
       try {
         const { execSync } = await import("node:child_process");
@@ -21241,6 +21441,28 @@ async function run() {
       console.log(`   Run: MEMORIA_HOME="${setupPaths.memoriaHome}" ./cli serve`);
     }
   });
+}
+
+// src/cli.ts
+async function run() {
+  const paths = resolveMemoriaPaths();
+  const runtimeLayout = getRuntimeLayout();
+  const core = new MemoriaCore(paths);
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.9.0");
+  registerInitCommand(program2, paths, core);
+  registerSyncCommand(program2, paths, core);
+  registerSourceCommand(program2, core);
+  registerWikiCommand(program2, core);
+  registerStatsCommand(program2, paths, core);
+  registerIndexCommand(program2, paths);
+  registerGovernCommand(program2, core);
+  registerDoctorCommand(program2, paths);
+  registerVerifyCommand(program2, paths);
+  registerPruneCommand(program2, paths);
+  registerExportCommand(program2, paths);
+  registerServeCommand(program2);
+  registerPreflightCommand(program2, paths, runtimeLayout);
+  registerSetupCommand(program2, runtimeLayout);
   await program2.parseAsync(process.argv);
 }
 run().catch((error48) => {
