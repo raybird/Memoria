@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-05-24
+
 ### Added
 - npm publish target: `@raybird.chen/memoria` (scoped public package). `npx @raybird.chen/memoria setup` or `npm install -g @raybird.chen/memoria` now works on Linux / macOS / Windows.
 - `scripts/build.mjs` build entry point that emits `dist/cli.mjs` with `#!/usr/bin/env node` shebang and executable permission, so npm-installed users get a working `memoria` binary.

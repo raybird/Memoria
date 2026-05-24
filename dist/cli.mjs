@@ -21449,7 +21449,7 @@ async function run() {
   const paths = resolveMemoriaPaths();
   const runtimeLayout = getRuntimeLayout();
   const core = new MemoriaCore(paths);
-  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.9.0");
+  const program2 = new Command().name("memoria").description("Memoria TypeScript CLI").version("1.10.0");
   registerInitCommand(program2, paths, core);
   registerSyncCommand(program2, paths, core);
   registerSourceCommand(program2, core);
