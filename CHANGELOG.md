@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-05-24
+
 ### Added
 - Claude Code adapter: wire Memoria into Anthropic's Claude Code via its hook system without writing any code. One CLI command (`memoria adapter claude-code`) handles both `UserPromptSubmit` (injects recall as `additionalContext`) and `Stop` (writes the just-completed turn from the transcript). Both fail-open so a Memoria outage never disrupts the agent loop.
 - `scripts/test-claude-code-adapter.sh` end-to-end test, wired into `ci.yml`.

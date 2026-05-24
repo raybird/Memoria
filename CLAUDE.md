@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ 最重要規則
+
+**Git commit 訊息絕對不可包含 `Co-Authored-By: Claude` 或任何 AI 署名資訊。** 只寫功能描述，不附加任何尾行。
+
 ## Project Snapshot
 
 Memoria is a TypeScript CLI + HTTP service that gives AI agents cross-session persistent memory. Runtime is Node.js (≥18, CI uses Node 22) with `better-sqlite3` and `zod`. Package manager is **pnpm** (lockfile is authoritative). ESM-only (`"type": "module"`), TS strict mode.

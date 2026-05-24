@@ -43,7 +43,9 @@ console.log(`  ✓ package.json`)
 await patch('src/cli.ts', (s) => s.replace(`.version('${oldV}')`, `.version('${next}')`))
 await patch('install.sh', (s) => s.replace(`v${oldV}`, `v${next}`).replace(`VERSION="${oldV}"`, `VERSION="${next}"`))
 await patch('skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md', (s) => s.replace(`version: "${oldV}"`, `version: "${next}"`))
-await patch('docs/INSTALL.md', (s) => s.replaceAll(`v${oldV}`, `v${next}`))
+await patch('docs/INSTALL.md', (s) => s
+    .replaceAll(`v${oldV}`, `v${next}`)
+    .replaceAll(`--version ${oldV}`, `--version ${next}`))
 
 console.log(`\nNext steps:`)
 console.log(`  1. Edit CHANGELOG.md: add ## [${next}] - $(date +%Y-%m-%d) section`)
