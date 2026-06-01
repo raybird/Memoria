@@ -85,6 +85,8 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             const deployedSkillPath = await deployAgentSkill(runtimeLayout, setupPaths.memoriaHome)
             if (deployedSkillPath) {
                 stepLog('skill', true, { path: deployedSkillPath })
+            } else {
+                stepLog('skill', false, { skipped: true, reason: 'bundled skill source not found (incomplete package?)' })
             }
 
             // Step 6 (optional): serve

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- npm-installed `setup` now deploys the full agent skill. The `files` whitelist only published `skills/memoria-memory-sync/deployed/`, so the npm tarball was missing `SKILL.md`, `scripts/`, and `resources/` — `getBundledSkillSourcePath()` found no `SKILL.md` and `deployAgentSkill` was silently skipped, leaving `.agents/memoria-memory-sync/` undeployed. Whitelist now ships the whole `skills/memoria-memory-sync/` directory.
+- `setup` now logs a `✗ [skill]` step when the bundled skill source is missing, instead of skipping the step with no output.
+
 ## [1.11.0] - 2026-05-24
 
 ### Added

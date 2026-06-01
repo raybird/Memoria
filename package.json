@@ -29,7 +29,7 @@
   },
   "files": [
     "dist/cli.mjs",
-    "skills/memoria-memory-sync/deployed/",
+    "skills/memoria-memory-sync/",
     "examples/session.sample.json",
     "README.md",
     "README.zh-TW.md",
