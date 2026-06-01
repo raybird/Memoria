@@ -3,7 +3,7 @@ name: memoria-memory-sync
 description: Runtime-safe Memoria skill for installed agents. Use it to initialize memory, sync session JSON, inspect runtime health, build wiki outputs, and optionally run MCP enhancement flows without assuming a cloned repo.
 license: MIT
 compatibility: Designed for filesystem-based coding agents with bash access. Requires Node.js >=18.
-version: "1.11.0"
+version: "1.11.1"
 deployment_mode: installed
 repository: Memoria
 ---
