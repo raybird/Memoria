@@ -27,13 +27,13 @@ npm install -g @raybird.chen/memoria
 memoria setup --serve --json
 ```
 
-`setup` 也會把內建 agent skill 部署到 `<memoria-home>/.agents/memoria-memory-sync/`，其中包含 runtime-safe 的 `SKILL.md`、`REFERENCE.md`、helper scripts 與本地 `bin/memoria` wrapper，讓 agent 安裝後即可直接發現並使用對應 skill。
+`setup` 也會把內建 agent skill 部署到 `<memoria-home>/.agents/skills/memoria/`(在 active_skills 中以 **memoria** 名稱出現),其中包含 runtime-safe 的 `SKILL.md`、`REFERENCE.md`、helper scripts 與本地 `bin/memoria` wrapper,讓 agent 安裝後即可直接發現並使用。每個資料夾各有獨立 data root,所以只要在乾淨資料夾執行 `setup`,該資料夾就能擁有自己的記憶。
 
 安裝後若要讓 agent 直接走 deployed skill：
 
 ```text
-<memoria-home>/.agents/memoria-memory-sync/SKILL.md
-<memoria-home>/.agents/memoria-memory-sync/REFERENCE.md
+<memoria-home>/.agents/skills/memoria/SKILL.md
+<memoria-home>/.agents/skills/memoria/REFERENCE.md
 ```
 
 輸出 JSON lines，每步一行：
@@ -42,7 +42,7 @@ memoria setup --serve --json
 {"step":"preflight","ok":true,"ms":120,"mode":"installed"}
 {"step":"init","ok":true,"ms":85}
 {"step":"verify","ok":true,"ms":42}
-{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/memoria-memory-sync"}
+{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/skills/memoria"}
 {"step":"serve","ok":true,"port":3917}
 ```
 

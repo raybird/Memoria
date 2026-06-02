@@ -27,13 +27,13 @@ npm install -g @raybird.chen/memoria
 memoria setup --serve --json
 ```
 
-`setup` also deploys the built-in agent skill into `<memoria-home>/.agents/memoria-memory-sync/`, including a runtime-safe `SKILL.md`, `REFERENCE.md`, helper scripts, and a local `bin/memoria` wrapper — so agents can discover and use the skill immediately after install.
+`setup` also deploys the built-in agent skill into `<memoria-home>/.agents/skills/memoria/` (discoverable as the **memoria** skill), including a runtime-safe `SKILL.md`, `REFERENCE.md`, helper scripts, and a local `bin/memoria` wrapper — so agents can discover and use it immediately after install. Each folder gets its own data root, so you can give a clean folder its own memory by running `setup` there.
 
 To point agents at the deployed skill, use:
 
 ```text
-<memoria-home>/.agents/memoria-memory-sync/SKILL.md
-<memoria-home>/.agents/memoria-memory-sync/REFERENCE.md
+<memoria-home>/.agents/skills/memoria/SKILL.md
+<memoria-home>/.agents/skills/memoria/REFERENCE.md
 ```
 
 Output is JSON Lines, one row per step:
@@ -42,7 +42,7 @@ Output is JSON Lines, one row per step:
 {"step":"preflight","ok":true,"ms":120,"mode":"installed"}
 {"step":"init","ok":true,"ms":85}
 {"step":"verify","ok":true,"ms":42}
-{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/memoria-memory-sync"}
+{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/skills/memoria"}
 {"step":"serve","ok":true,"port":3917}
 ```
 

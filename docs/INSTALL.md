@@ -51,7 +51,7 @@ $HOME/.local/share/memoria/bin/memoria setup --serve --json
 
 `setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`，而不是 runtime 安裝目錄。若要固定位置，請顯式傳入 `--memoria-home`。
 
-安裝完成後，內建 skill 也會部署到 `<memoria-home>/.agents/memoria-memory-sync/`，並提供 deploy 專用的 `SKILL.md` / `REFERENCE.md` 與本地 `bin/memoria` wrapper。
+安裝完成後，內建 skill 也會部署到 `<memoria-home>/.agents/skills/memoria/`（在 active_skills 中以 **memoria** 名稱出現），並提供 deploy 專用的 `SKILL.md` / `REFERENCE.md` 與本地 `bin/memoria` wrapper。
 
 常見失敗排查：
 
