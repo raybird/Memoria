@@ -48,7 +48,7 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
     const skillSourcePath = getBundledSkillSourcePath(runtimeLayout)
     if (!skillSourcePath) return undefined
 
-    const targetDir = path.join(memoriaHome, '.agents', 'memoria-memory-sync')
+    const targetDir = path.join(memoriaHome, '.agents', 'skills', 'memoria')
     await fs.rm(targetDir, { recursive: true, force: true })
     await fs.mkdir(path.dirname(targetDir), { recursive: true })
     await fs.cp(skillSourcePath, targetDir, { recursive: true })

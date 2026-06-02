@@ -52,19 +52,31 @@ echo "✓ sessions.db exists"
 
 echo ""
 echo "[bootstrap] Step 3b: verify deployed skill"
-if [ ! -f "$TMP/.agents/memoria-memory-sync/SKILL.md" ]; then
+if [ ! -f "$TMP/.agents/skills/memoria/SKILL.md" ]; then
   echo "✗ deployed skill missing"
   exit 1
 fi
-if [ ! -f "$TMP/.agents/memoria-memory-sync/REFERENCE.md" ]; then
+if [ ! -f "$TMP/.agents/skills/memoria/REFERENCE.md" ]; then
   echo "✗ deployed skill reference missing"
   exit 1
 fi
-if grep -q './cli\|bash skills/\|node skills/\|git clone' "$TMP/.agents/memoria-memory-sync/SKILL.md"; then
+if grep -q './cli\|bash skills/\|node skills/\|git clone' "$TMP/.agents/skills/memoria/SKILL.md"; then
   echo "✗ deployed SKILL.md still contains repo-only guidance"
   exit 1
 fi
-MEMORIA_BIN="$CLI" bash "$TMP/.agents/memoria-memory-sync/scripts/run-sync.sh" "$ROOT_DIR/examples/session.sample.json" "$TMP" >/dev/null
+if ! grep -q '^name: memoria$' "$TMP/.agents/skills/memoria/SKILL.md"; then
+  echo "✗ deployed SKILL.md must expose 'name: memoria' for active_skills discovery"
+  exit 1
+fi
+if ! grep -q 'homeSource' "$TMP/.agents/skills/memoria/SKILL.md"; then
+  echo "✗ deployed SKILL.md missing fail-closed guidance (doctor homeSource check)"
+  exit 1
+fi
+if ! grep -q 'memoria setup\|memoria" setup\|MEMORIA_BIN" setup' "$TMP/.agents/skills/memoria/SKILL.md"; then
+  echo "✗ deployed SKILL.md missing new-folder setup guidance"
+  exit 1
+fi
+MEMORIA_BIN="$CLI" bash "$TMP/.agents/skills/memoria/scripts/run-sync.sh" "$ROOT_DIR/examples/session.sample.json" "$TMP" >/dev/null
 echo "✓ deployed skill works"
 
 echo ""

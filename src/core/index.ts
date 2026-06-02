@@ -2,7 +2,8 @@
 // Import from here when consuming MemoriaCore in CLI, HTTP server, or SDK.
 
 export { MemoriaCore } from './memoria.js'
-export { resolveMemoriaPaths, getMemoriaHome, existsSync } from './paths.js'
+export { resolveMemoriaPaths, getMemoriaHome, resolveMemoriaHomeInfo, existsSync } from './paths.js'
+export type { MemoriaHomeSource, MemoriaHomeResolution } from './paths.js'
 export { importSourceFile } from './source-import.js'
 export { buildCompiledWiki } from './wiki-build.js'
 export { fileQueryResult } from './wiki-query.js'

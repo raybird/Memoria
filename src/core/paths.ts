@@ -13,19 +13,34 @@ export function existsSync(targetPath: string): boolean {
     return fsExistsSync(targetPath)
 }
 
-export function getMemoriaHome(): string {
+export type MemoriaHomeSource = 'env' | 'detected' | 'fallback'
+
+export type MemoriaHomeResolution = {
+    home: string
+    source: MemoriaHomeSource
+}
+
+// Resolve MEMORIA_HOME and report HOW it was resolved so callers (doctor/preflight)
+// can warn when we silently fell back to the runtime root instead of a real data root.
+export function resolveMemoriaHomeInfo(): MemoriaHomeResolution {
     const envHome = process.env.MEMORIA_HOME
-    if (envHome) return path.resolve(envHome)
+    if (envHome) return { home: path.resolve(envHome), source: 'env' }
 
     const cwd = process.cwd()
-    if (existsSync(path.join(cwd, '.memory')) || existsSync(path.join(cwd, 'knowledge'))) return cwd
+    if (existsSync(path.join(cwd, '.memory')) || existsSync(path.join(cwd, 'knowledge'))) {
+        return { home: cwd, source: 'detected' }
+    }
 
     const nestedMemoriaHome = path.join(cwd, 'memoria')
     if (existsSync(path.join(nestedMemoriaHome, '.memory')) || existsSync(path.join(nestedMemoriaHome, 'knowledge'))) {
-        return nestedMemoriaHome
+        return { home: nestedMemoriaHome, source: 'detected' }
     }
 
-    return path.resolve(__dirname, '..', '..')
+    return { home: path.resolve(__dirname, '..', '..'), source: 'fallback' }
+}
+
+export function getMemoriaHome(): string {
+    return resolveMemoriaHomeInfo().home
 }
 
 function resolvePathFromEnv(raw: string | undefined): string | undefined {
