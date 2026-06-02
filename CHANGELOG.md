@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-06-02
+
+### Added
+- Per-folder memory is now first-class: the deployed agent skill explains that runtime and data root (`MEMORIA_HOME`) are separate, so any clean folder can get its own memory by running `setup` there. Deployed `SKILL.md` adds self-location of the data root, a fail-closed "check before write" flow, and a new-folder setup walkthrough.
+- `resolveMemoriaHomeInfo()` reports how `MEMORIA_HOME` was resolved (`env` / `detected` / `fallback`). `getMemoriaHome()` delegates to it with unchanged behavior and return type.
+
+### Changed
+- `doctor` no longer reports `MEMORIA_HOME` as always healthy. When the home was resolved by silent `fallback` (folder never set up, no env), the check now fails with an actionable `fix` hint, and `doctor --json` exposes a `homeSource` field.
+- The deployed agent skill now installs to `<memoria-home>/.agents/skills/memoria/` (was `<memoria-home>/.agents/memoria-memory-sync/`) and is named `memoria`, so agents discover it as the **memoria** skill in `active_skills`. The repo-side source directory `skills/memoria-memory-sync/` is unchanged.
+- README / README.zh-TW / docs/INSTALL.md updated for the new deployed path, skill name, and per-folder memory model.
+
 ## [1.11.1] - 2026-06-01
 
 ### Fixed
