@@ -173,9 +173,9 @@ const summary = await client.summarizeSession('session_abc')
 ## Agent Adapter
 
 ```typescript
-import { CodexAdapter } from './src/adapter/index.js'
+import { OpenCodeAdapter } from './src/adapter/index.js'
 
-const adapter = new CodexAdapter({ client, project: 'my-project' })
+const adapter = new OpenCodeAdapter({ client, project: 'my-project' })
 
 // Before prompt: inject historical memory
 const context = await adapter.beforePrompt({ userMessage, conversationId })
@@ -185,6 +185,8 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 ```
 
 Reference implementations: `src/adapter/antigravity-adapter.ts`, `src/adapter/codex-adapter.ts`, `src/adapter/opencode-adapter.ts`, `src/adapter/claude-code-adapter.ts`.
+
+Claude Code, Codex CLI, and Antigravity CLI all ship **zero-code hook integrations** — one CLI command wires both recall injection and turn write-back. All three fail-open so a Memoria outage never blocks the agent, and all require `memoria serve` running on `localhost:3917` (override with `--server` or `MEMORIA_SERVER_URL`).
 
 ### Claude Code (zero-code integration via hooks)
 
@@ -205,6 +207,46 @@ Wire Memoria into Claude Code via its hook system — no SDK needed, just the CL
 ```
 
 `UserPromptSubmit` injects relevant past memory as `additionalContext`; `Stop` writes the just-completed turn back to Memoria. Both fail-open so a Memoria outage never blocks your Claude Code session. Requires `memoria serve` running on `localhost:3917` (override with `--server` or `MEMORIA_SERVER_URL`).
+
+### Codex CLI (zero-code integration via hooks)
+
+Codex CLI's hook system mirrors Claude Code's (JSON on stdin, JSON on stdout). Wire it into a `hooks.json` next to your Codex config, or an inline `[hooks]` table in `~/.codex/config.toml`:
+
+```jsonc
+// ~/.codex/hooks.json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+    ]
+  }
+}
+```
+
+`UserPromptSubmit` injects recalled memory as `additionalContext` (added as extra developer context); `Stop` persists the turn from the payload's `last_assistant_message`.
+
+### Antigravity CLI (zero-code integration via hooks)
+
+Antigravity CLI (`agy`) exposes agent lifecycle hooks (JSON on stdin/stdout). Register the handler in your `hooks.json` under the customization directory:
+
+```jsonc
+// .agents/hooks/hooks.json (or settings.json "hooks")
+{
+  "memoria": {
+    "PreInvocation": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+    ]
+  }
+}
+```
+
+`PreInvocation` recalls memory and injects it before the model runs (emitted as both top-level `additionalContext` and nested `hookSpecificOutput.additionalContext` for build compatibility); `Stop` persists the completed turn. The handler assumes Claude Code-compatible payload fields (`prompt`, `last_assistant_message`) — verify against your `agy` version, as it degrades to a no-op when those fields are absent.
 
 ## Project Layout
 

@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import { ClaudeCodeAdapter } from '../../adapter/index.js'
+import { ClaudeCodeAdapter, CodexAdapter, AntigravityAdapter } from '../../adapter/index.js'
 import { MemoriaClient } from '../../sdk.js'
 
 async function readStdin(): Promise<string> {
@@ -10,13 +10,34 @@ async function readStdin(): Promise<string> {
     return data
 }
 
-export function registerAdapterCommand(program: Command): void {
-    const adapter = program.command('adapter').description('Agent adapter integrations (hook handlers)')
+/** Adapters that handle a stdin→stdout hook exchange share this shape. */
+interface HookAdapter {
+    handleHookEvent(input: Record<string, unknown>): Promise<unknown>
+}
+type HookAdapterCtor = new (config: {
+    client: MemoriaClient
+    project: string
+    recallTopK: number
+    failOpen: boolean
+}) => HookAdapter
 
-    adapter
-        .command('claude-code')
-        .description('Claude Code hook handler — reads hook JSON from stdin, writes hook JSON to stdout')
-        .option('--project <name>', 'Project tag for written sessions (default: claude-code)')
+/**
+ * Register a `memoria adapter <name>` hook handler. Reads one hook JSON object
+ * from stdin, dispatches it through the adapter, and writes the JSON response
+ * to stdout. Fail-open: any error (or empty stdin) emits `{}` so a Memoria
+ * outage never disturbs the host agent's loop.
+ */
+function registerHookHandler(
+    parent: Command,
+    name: string,
+    description: string,
+    defaultProject: string,
+    Ctor: HookAdapterCtor
+): void {
+    parent
+        .command(name)
+        .description(description)
+        .option('--project <name>', `Project tag for written sessions (default: ${defaultProject})`)
         .option('--server <url>', 'Memoria server URL (default: http://localhost:3917 or MEMORIA_SERVER_URL)')
         .option('--recall-top-k <n>', 'Max recall hits to inject (default: 5)')
         .action(async (opts: { project?: string; server?: string; recallTopK?: string }) => {
@@ -29,18 +50,44 @@ export function registerAdapterCommand(program: Command): void {
             try {
                 const input = JSON.parse(raw) as Record<string, unknown>
                 const serverUrl = opts.server ?? process.env.MEMORIA_SERVER_URL ?? 'http://localhost:3917'
-                const adapterInstance = new ClaudeCodeAdapter({
+                const adapter = new Ctor({
                     client: new MemoriaClient(serverUrl),
-                    project: opts.project ?? 'claude-code',
+                    project: opts.project ?? defaultProject,
                     recallTopK: opts.recallTopK ? Number(opts.recallTopK) : 5,
                     failOpen: true
                 })
 
-                const output = await adapterInstance.handleHookEvent(input)
+                const output = await adapter.handleHookEvent(input)
                 process.stdout.write(JSON.stringify(output) + '\n')
             } catch {
                 // Fail-open: never disturb the agent loop on hook error
                 process.stdout.write('{}\n')
             }
         })
+}
+
+export function registerAdapterCommand(program: Command): void {
+    const adapter = program.command('adapter').description('Agent adapter integrations (hook handlers)')
+
+    registerHookHandler(
+        adapter,
+        'claude-code',
+        'Claude Code hook handler — reads hook JSON from stdin, writes hook JSON to stdout',
+        'claude-code',
+        ClaudeCodeAdapter
+    )
+    registerHookHandler(
+        adapter,
+        'codex',
+        'Codex CLI hook handler — reads hook JSON from stdin, writes hook JSON to stdout',
+        'codex',
+        CodexAdapter
+    )
+    registerHookHandler(
+        adapter,
+        'antigravity',
+        'Antigravity CLI hook handler — reads hook JSON from stdin, writes hook JSON to stdout',
+        'antigravity',
+        AntigravityAdapter
+    )
 }

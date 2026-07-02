@@ -1,119 +1,132 @@
-// Codex CLI Adapter (reference implementation)
-// Phase 2: Shows how to integrate Memoria into OpenAI's Codex CLI workflows.
+// Codex CLI Adapter
 //
-// Codex CLI integration points:
-//   - Instruction / developer message (per-session context injection)
-//   - Turn completion (write memory after each turn; Codex CLI can invoke an
-//     external `notify` program with a JSON payload on turn events)
+// Integrates Memoria into OpenAI's Codex CLI via its hook system. Codex hooks
+// receive one JSON object on stdin and may return JSON on stdout to inject
+// context or take action (the same shape Claude Code uses). Wire the adapter
+// into a `hooks.json` next to your Codex config, or an inline `[hooks]` table
+// in ~/.codex/config.toml:
 //
-// Codex also speaks MCP: see resources/mcp/codex-cli.mcp.json for a
-// declarative wiring of the mcp-memory-libsql server.
+//   {
+//     "hooks": {
+//       "UserPromptSubmit": [
+//         { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+//       ],
+//       "Stop": [
+//         { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+//       ]
+//     }
+//   }
 //
-// Integration pattern (Responses-style message array):
-//
-//   import { CodexAdapter } from './src/adapter/codex-adapter.js'
-//
-//   const adapter = new CodexAdapter({
-//     client: new MemoriaClient(),
-//     project: 'my-codex-project',
-//     recallTopK: 5,
-//   })
-//
-//   // Before each turn: build the message array with memory context prepended
-//   const messages = await adapter.buildCodexMessages(userInput, session.id)
-//
-//   // Model call with injected memory
-//   const result = await codex.respond({ messages })
-//
-//   // After response: write to Memoria
-//   await adapter.afterResponse({
-//     response: result.text,
-//     conversationId: session.id,
-//     userMessage: userInput,
-//   })
+// The same command handles both events; it dispatches on hook_event_name from
+// the JSON payload. `UserPromptSubmit` injects recalled memory via
+// hookSpecificOutput.additionalContext (added as extra developer context);
+// `Stop` persists the completed turn from the payload's last_assistant_message.
 
 import { BaseAdapter } from './adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
 import type { RecallHit } from '../core/types.js'
 
-export interface CodexAdapterConfig extends MemoriaAdapterConfig {
-    /**
-     * Whether to inject memory as a dedicated developer message or as a
-     * text prefix in the user turn (default: 'developer-message').
-     */
-    injectionMode?: 'developer-message' | 'user-prefix'
+export interface CodexAdapterConfig extends MemoriaAdapterConfig {}
+
+/** Shape of the JSON Codex writes to a hook's stdin. Fields are optional because they vary by event. */
+export interface CodexHookInput {
+    hook_event_name?: string
+    session_id?: string
+    transcript_path?: string
+    cwd?: string
+    /** UserPromptSubmit: the text the user just submitted */
+    prompt?: string
+    /** Stop: the assistant's final message for the turn */
+    last_assistant_message?: string | null
+    stop_hook_active?: boolean
 }
 
-// Minimal Codex / OpenAI Responses message shape (avoids an SDK import dep)
-export interface CodexMessage {
-    role: 'system' | 'developer' | 'user' | 'assistant'
-    content: string
+/** Hook response Codex expects on stdout. */
+export interface CodexHookOutput {
+    hookSpecificOutput?: {
+        hookEventName: string
+        additionalContext?: string
+    }
 }
 
 export class CodexAdapter extends BaseAdapter {
-    private readonly injectionMode: 'developer-message' | 'user-prefix'
-
     constructor(config: CodexAdapterConfig) {
         super(config)
-        this.injectionMode = config.injectionMode ?? 'developer-message'
     }
 
     /**
-     * Build a `messages` array for a Codex turn with memory context prepended.
-     * Pass the result directly to the model call.
+     * Dispatch on hook_event_name. Always resolves; never throws.
+     * Errors are swallowed when failOpen is true (the default).
      */
-    async buildCodexMessages(
-        userMessage: string,
-        conversationId: string,
-        priorMessages: CodexMessage[] = []
-    ): Promise<CodexMessage[]> {
-        const context = await this.recallForContext({ userMessage, conversationId })
-
-        if (!context.injectedText) {
-            return [...priorMessages, { role: 'user', content: userMessage }]
+    async handleHookEvent(input: CodexHookInput): Promise<CodexHookOutput> {
+        const event = input.hook_event_name ?? ''
+        if (event === 'UserPromptSubmit') return this.handleUserPromptSubmit(input)
+        if (event === 'Stop') {
+            await this.handleStop(input)
+            return {}
         }
-
-        if (this.injectionMode === 'developer-message') {
-            // Inject memory as a developer instruction turn before the user message
-            return [
-                ...priorMessages,
-                { role: 'developer', content: context.injectedText },
-                { role: 'user', content: userMessage }
-            ]
-        }
-
-        // Prefix memory context directly in the user turn
-        const prefixed = `${context.injectedText}\n\n---\n\n${userMessage}`
-        return [...priorMessages, { role: 'user', content: prefixed }]
+        return {}
     }
 
-    /**
-     * Get a developer instruction string for the Codex session.
-     * Send once per session as a `developer` role message (or fold into AGENTS.md).
-     */
-    getDeveloperInstruction(): string {
-        return [
-            'You have access to a persistent memory system called Memoria.',
-            'When relevant context from past sessions is provided between "--- Memoria Context ---" markers,',
-            'use that information to provide coherent, contextually-aware responses.',
-            'Do not fabricate memories. If no context is provided, proceed normally.'
-        ].join(' ')
+    /** Recall relevant memory and inject it via additionalContext. */
+    async handleUserPromptSubmit(input: CodexHookInput): Promise<CodexHookOutput> {
+        const userMessage = (input.prompt ?? '').trim()
+        const conversationId = input.session_id ?? 'codex-session'
+        if (!userMessage) {
+            return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
+        }
+
+        try {
+            const rc = await this.recallForContext({ userMessage, conversationId })
+            return {
+                hookSpecificOutput: {
+                    hookEventName: 'UserPromptSubmit',
+                    additionalContext: rc.injectedText
+                }
+            }
+        } catch (error) {
+            if (!this.config.failOpen) throw error
+            return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
+        }
+    }
+
+    /** Persist the completed turn using the payload's last_assistant_message. */
+    async handleStop(input: CodexHookInput): Promise<void> {
+        try {
+            const conversationId = input.session_id ?? 'codex-session'
+            const assistant = (input.last_assistant_message ?? '').trim()
+            if (!assistant) return
+            if (!this.shouldWrite(conversationId)) return
+
+            await this.client.remember({
+                timestamp: new Date().toISOString(),
+                project: this.config.project,
+                summary: assistant.slice(0, 200),
+                events: [
+                    {
+                        event_type: 'ConversationTurn',
+                        timestamp: new Date().toISOString(),
+                        content: { user: '', assistant }
+                    }
+                ]
+            })
+            this.markWritten(conversationId)
+        } catch (error) {
+            if (!this.config.failOpen) throw error
+        }
     }
 
     protected override formatRecallText(hits: RecallHit[]): string {
         if (hits.length === 0) return ''
-
         const lines = hits.map((h) => {
             const date = h.timestamp.slice(0, 10)
-            const type = h.type === 'decision' ? 'Decision' : h.type === 'skill' ? 'Skill' : 'Session'
-            return `- [${type} ${date} @ ${h.project}] ${h.snippet}`
+            const tag = h.type === 'decision' ? 'Decision' : h.type === 'skill' ? 'Skill' : 'Session'
+            return `- [${tag} ${date} @ ${h.project}] ${h.snippet}`
         })
-
         return [
-            '--- Memoria Context (past session memory, confidence: ' +
-            (hits[0].score * 100).toFixed(0) + '%) ---',
+            '## Memoria — Relevant past memory',
             ...lines,
-            '--- end of Memoria Context ---'
+            ''
         ].join('\n')
     }
 }

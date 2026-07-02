@@ -173,9 +173,9 @@ const summary = await client.summarizeSession('session_abc')
 ## Agent Adapter
 
 ```typescript
-import { CodexAdapter } from './src/adapter/index.js'
+import { OpenCodeAdapter } from './src/adapter/index.js'
 
-const adapter = new CodexAdapter({ client, project: 'my-project' })
+const adapter = new OpenCodeAdapter({ client, project: 'my-project' })
 
 // Before prompt: 注入歷史記憶
 const context = await adapter.beforePrompt({ userMessage, conversationId })
@@ -185,6 +185,8 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 ```
 
 參考實作：`src/adapter/antigravity-adapter.ts`、`src/adapter/codex-adapter.ts`、`src/adapter/opencode-adapter.ts`、`src/adapter/claude-code-adapter.ts`
+
+Claude Code、Codex CLI、Antigravity CLI 都提供**零程式碼 hook 整合**——一行 CLI 指令同時處理 recall 注入與回合寫回。三者都 fail-open，Memoria 故障不會打斷 agent；都需要 `memoria serve` 在 `localhost:3917`（可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫）。
 
 ### Claude Code（透過 hook 零程式碼整合）
 
@@ -205,6 +207,46 @@ await adapter.afterResponse({ response, conversationId, userMessage })
 ```
 
 `UserPromptSubmit` 會把相關過往記憶以 `additionalContext` 注入；`Stop` 會把剛完成的這一輪寫回 Memoria。兩者都 fail-open，Memoria 故障不會打斷 Claude Code session。需要 `memoria serve` 在 `localhost:3917`（可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫）。
+
+### Codex CLI（透過 hook 零程式碼整合）
+
+Codex CLI 的 hook 系統與 Claude Code 相同（stdin 收 JSON、stdout 回 JSON）。接進 Codex 設定旁的 `hooks.json`，或 `~/.codex/config.toml` 內的 `[hooks]` 表：
+
+```jsonc
+// ~/.codex/hooks.json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+    ]
+  }
+}
+```
+
+`UserPromptSubmit` 把 recall 到的記憶以 `additionalContext`（額外 developer context）注入；`Stop` 用 payload 的 `last_assistant_message` 寫回這一輪。
+
+### Antigravity CLI（透過 hook 零程式碼整合）
+
+Antigravity CLI（`agy`）提供 agent 生命週期 hook（stdin/stdout 走 JSON）。在客製目錄的 `hooks.json` 註冊 handler：
+
+```jsonc
+// .agents/hooks/hooks.json（或 settings.json 的 "hooks"）
+{
+  "memoria": {
+    "PreInvocation": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+    ]
+  }
+}
+```
+
+`PreInvocation` 在模型執行前 recall 並注入記憶（同時輸出 top-level `additionalContext` 與巢狀 `hookSpecificOutput.additionalContext` 以相容不同版本）；`Stop` 寫回完成的這一輪。此 handler 假設 payload 帶有與 Claude Code 相容的欄位（`prompt`、`last_assistant_message`）——請對照你的 `agy` 版本確認，缺欄位時會降級為 no-op。
 
 ## 專案結構
 

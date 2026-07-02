@@ -51,6 +51,12 @@ jobs:
       - name: Run Claude Code adapter test
         run: bash scripts/test-claude-code-adapter.sh
 
+      - name: Run Codex adapter test
+        run: bash scripts/test-codex-adapter.sh
+
+      - name: Run Antigravity adapter test
+        run: bash scripts/test-antigravity-adapter.sh
+
       - name: Run MCP end-to-end test
         run: bash scripts/test-mcp-e2e.sh
 
