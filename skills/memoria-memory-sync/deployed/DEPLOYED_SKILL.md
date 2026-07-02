@@ -3,7 +3,7 @@ name: memoria
 description: You have persistent cross-session memory via Memoria. Use this skill to check whether memory is ready in the current folder, set it up if not, and persist/recall sessions. Each folder keeps its own memory (its own data root), independent of where the Memoria runtime is installed.
 license: MIT
 compatibility: Designed for filesystem-based coding agents with bash access. Requires Node.js >=18.
-version: "1.12.0"
+version: "1.13.0"
 deployment_mode: installed
 repository: Memoria
 ---

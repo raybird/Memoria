@@ -25,7 +25,7 @@ async function run(): Promise<void> {
   const program = new Command()
     .name('memoria')
     .description('Memoria TypeScript CLI')
-    .version('1.12.0')
+    .version('1.13.0')
 
   registerInitCommand(program, paths, core)
   registerSyncCommand(program, paths, core)

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-07-02
+
+### Added
+- Codex CLI and Antigravity CLI agent adapters with zero-code hook integration. `memoria adapter codex` and `memoria adapter antigravity` read hook JSON on stdin and return JSON on stdout, mirroring `memoria adapter claude-code`. Codex dispatches `UserPromptSubmit` (recall → `additionalContext`) and `Stop` (writes the turn from `last_assistant_message`); Antigravity dispatches `PreInvocation`/`Stop` and emits `additionalContext` both top-level and nested under `hookSpecificOutput` for build compatibility. Both fail-open so a Memoria outage never disrupts the host agent. The three hook handlers now share one `registerHookHandler` in `src/cli/commands/adapter.ts`.
+- `scripts/test-codex-adapter.sh` and `scripts/test-antigravity-adapter.sh` end-to-end tests, wired into `ci.yml`.
+- Bundled agent hook wiring templates deployed with the skill: `resources/hooks/{claude-code,codex,antigravity}.hooks.json`, added to the deployed-skill required-asset check. `docs/INSTALL.md` gains a post-install "Agent Hook Integration" section and `SKILL.md` lists the templates.
+
+### Changed
+- The Gemini MCP config template is replaced by Codex/Antigravity ones: `resources/mcp/{antigravity-cli,codex-cli}.mcp.json` (was `gemini-cli.mcp.json`). README / README.zh-TW / docs updated to list Claude Code / Antigravity CLI / Codex CLI / OpenCode adapters.
+
+### Removed
+- **Breaking (SDK):** the `GeminiAdapter` reference adapter and its `gemini-cli.mcp.json` template are removed. Code importing `GeminiAdapter` from `src/adapter/index.js` should migrate to `CodexAdapter` / `AntigravityAdapter` / `OpenCodeAdapter`. CLI commands and stored data are unaffected.
+
 ## [1.12.0] - 2026-06-02
 
 ### Added
