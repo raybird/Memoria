@@ -24,7 +24,7 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 ## Current Snapshot
 
 - Context compression in core: `idea`
-- Native semantic search in core: `idea`
+- Native semantic search in core: `blocked` — needs embedding-backend decision; Phase 0 found `mcp-memory-libsql` is text-search only. See [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md)
 - OpenCode plugin in-repo: `idea`
 - Expanded verify checks and schema migration helpers: `planned`
 - Adaptive retrieval gate: `done`
@@ -181,6 +181,15 @@ Recommended next implementation step:
 3. Defer `extract-skill` write path until review output stabilizes
 
 This keeps the first governance release small, inspectable, and easy to test.
+
+## Detailed Designs
+
+Standalone design docs that expand a candidate direction into an implementable plan:
+
+- [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md) — Candidate Direction #2. Adds a
+  `vector` recall mode fused with lexical recall via RRF. `blocked`: Phase 0 found
+  `mcp-memory-libsql` is text-search only (no embeddings in any version), so the design now
+  needs a native embedding backend decision (local model vs API; `sqlite-vec` vs libSQL).
 
 ## Recommended Execution Order
 

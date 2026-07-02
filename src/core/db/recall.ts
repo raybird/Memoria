@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate } from '../utils.js'
 import { safeDate } from '../utils.js'
@@ -357,6 +358,81 @@ export function recallTree(
     })
 }
 
+type KeywordRow = { type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }
+
+const FTS_MIN_TERM_LEN = 3
+
+function buildFtsMatch(query: string): string {
+    // Trigram FTS terms need >=3 chars. Quote each as an FTS5 string literal (escaping embedded
+    // quotes) and OR-join so bm25 ranks by how many / how rare the matched terms are.
+    const terms = query
+        .toLowerCase()
+        .split(/[^a-z0-9一-鿿]+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= FTS_MIN_TERM_LEN)
+    return Array.from(new Set(terms))
+        .map((t) => `"${t.replace(/"/g, '""')}"`)
+        .join(' OR ')
+}
+
+function bm25ToRelevance(rank: number): number {
+    // bm25() returns <= 0 with more-negative = more relevant. Map to [0,1), monotonic increasing.
+    const x = rank < 0 ? -rank : 0
+    return x / (1 + x)
+}
+
+function queryRecallFts(
+    db: Database.Database,
+    match: string,
+    projectFilter?: string,
+    scopeFilter?: string,
+    topK = 5,
+    afterDate?: Date
+): KeywordRow[] {
+    const rows = db.prepare(`
+      SELECT recall_fts.kind AS kind,
+             recall_fts.ref_id AS id,
+             recall_fts.session_id AS session_id,
+             COALESCE(s.timestamp, se.timestamp) AS timestamp,
+             COALESCE(s.project, ss.project) AS project,
+             recall_fts.body AS content,
+             bm25(recall_fts) AS rank
+      FROM recall_fts
+      LEFT JOIN sessions s  ON recall_fts.kind = 'session' AND s.id = recall_fts.ref_id
+      LEFT JOIN events   se ON recall_fts.kind IN ('decision', 'skill') AND se.id = recall_fts.ref_id
+      LEFT JOIN sessions ss ON recall_fts.kind IN ('decision', 'skill') AND ss.id = recall_fts.session_id
+      WHERE recall_fts MATCH ?
+        AND (recall_fts.kind = 'session' OR ss.id IS NOT NULL)
+        ${projectFilter ? 'AND COALESCE(s.project, ss.project) = ?' : ''}
+        ${scopeFilter ? 'AND COALESCE(s.scope, ss.scope) = ?' : ''}
+        ${afterDate ? 'AND COALESCE(s.timestamp, se.timestamp) >= ?' : ''}
+      ORDER BY rank
+      LIMIT ?
+    `).all(...[
+        match,
+        ...(projectFilter ? [projectFilter] : []),
+        ...(scopeFilter ? [scopeFilter] : []),
+        ...(afterDate ? [afterDate.toISOString()] : []),
+        Math.max(1, topK) * 4
+    ]) as { kind: string; id: string; session_id: string; timestamp: string; project: string; content: string; rank: number }[]
+
+    return rows
+        .map((r) => {
+            const parsed = maybeParseJson(r.content)
+            const snippet =
+                typeof parsed === 'object' && parsed !== null
+                    ? JSON.stringify(parsed).slice(0, 200)
+                    : String(r.content).slice(0, 200)
+            const score = bm25ToRelevance(r.rank) * computeDecayFactor(r.timestamp)
+            return { type: r.kind, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score }
+        })
+        .sort((a, b) => {
+            if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score
+            return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        })
+        .slice(0, topK)
+}
+
 export function recallKeyword(
     dbPath: string,
     query: string,
@@ -366,6 +442,31 @@ export function recallKeyword(
     afterDate?: Date
 ): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }> {
     return withDb(dbPath, (db) => {
+        // Primary path: FTS5 + bm25 over the trigram-indexed corpus.
+        try {
+            const match = buildFtsMatch(query)
+            if (match) {
+                const ftsRows = queryRecallFts(db, match, projectFilter, scopeFilter, topK, afterDate)
+                if (ftsRows.length > 0) return ftsRows
+            }
+        } catch {
+            // recall_fts missing (pre-migration DB) or a malformed MATCH → fall through to LIKE.
+        }
+        // Fallback path: original LIKE scan. Covers sub-trigram (1-2 char) / CJK-short queries and
+        // any query the FTS index does not answer, so behaviour is a strict superset of before.
+        return queryRecallLike(db, query, projectFilter, scopeFilter, topK, afterDate)
+    })
+}
+
+function queryRecallLike(
+    db: Database.Database,
+    query: string,
+    projectFilter?: string,
+    scopeFilter?: string,
+    topK = 5,
+    afterDate?: Date
+): KeywordRow[] {
+    {
         const q = `%${query.toLowerCase()}%`
         const decisionRows = db.prepare(`
       SELECT e.id, e.session_id, e.timestamp, e.content, s.project
@@ -429,5 +530,5 @@ export function recallKeyword(
                 return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             })
             .slice(0, topK)
-    })
+    }
 }

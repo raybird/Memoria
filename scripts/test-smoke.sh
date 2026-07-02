@@ -165,6 +165,12 @@ SCOPE_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: 
 node -e "const data=JSON.parse(process.argv[1]); if(!Array.isArray(data?.data) || data.data.length<1){ throw new Error('expected scoped recall hits') }" "$SCOPE_JSON"
 WRONG_SCOPE_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"planning","scope":"agent:beta","mode":"keyword"}')
 node -e "const data=JSON.parse(process.argv[1]); if(!Array.isArray(data?.data) || data.data.length!==0){ throw new Error('expected empty recall hits for wrong scope') }" "$WRONG_SCOPE_JSON"
+# FTS5/BM25 keyword route: a multi-word discriminative query returns a real bm25 score, not the old recency floor
+FTS_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"scope-filtered planning","scope":"agent:alpha","mode":"keyword"}')
+node -e "const d=JSON.parse(process.argv[1]); if(d?.meta?.route_mode!=='keyword' || !(d?.data?.length>=1) || !(Number(d?.meta?.confidence)>0)){ throw new Error('expected FTS keyword hit with positive bm25 confidence, got '+process.argv[1]) }" "$FTS_JSON"
+# Sub-trigram / 2-char CJK query must still resolve through the LIKE fallback (no regression)
+CJK_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"示範","mode":"keyword"}')
+node -e "const d=JSON.parse(process.argv[1]); if(!(d?.data?.length>=1)){ throw new Error('expected CJK fallback recall hit, got '+process.argv[1]) }" "$CJK_JSON"
 kill $SERVER_PID 2>/dev/null || true
 wait $SERVER_PID 2>/dev/null || true
 trap 'rm -rf "$TMP_MEMORIA_HOME"' EXIT

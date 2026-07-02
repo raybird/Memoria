@@ -40,6 +40,81 @@ const MIGRATIONS: Migration[] = [
                 db.exec(`ALTER TABLE wiki_lint_findings ADD COLUMN run_id TEXT`)
             }
         }
+    },
+    {
+        id: 4,
+        name: 'recall_fts5_index',
+        up: (db) => {
+            // Full-text index over the keyword-recall corpus (session summaries + Decision/Skill
+            // events). Uses the trigram tokenizer for mixed English/CJK substring matching; bm25()
+            // ranks hits. recallKeyword falls back to LIKE for sub-trigram (1-2 char) queries and
+            // when FTS returns nothing, so short/CJK terms never regress. Triggers keep the index
+            // in sync so TS write paths stay untouched.
+            db.exec(`
+              CREATE VIRTUAL TABLE IF NOT EXISTS recall_fts USING fts5(
+                kind UNINDEXED,
+                ref_id UNINDEXED,
+                session_id UNINDEXED,
+                body,
+                tokenize='trigram'
+              );
+
+              CREATE TRIGGER IF NOT EXISTS trg_recall_fts_sessions_ai
+              AFTER INSERT ON sessions BEGIN
+                INSERT INTO recall_fts(kind, ref_id, session_id, body)
+                VALUES ('session', new.id, new.id, COALESCE(new.summary, '') || ' ' || COALESCE(new.project, ''));
+              END;
+
+              CREATE TRIGGER IF NOT EXISTS trg_recall_fts_sessions_au
+              AFTER UPDATE ON sessions BEGIN
+                DELETE FROM recall_fts WHERE kind = 'session' AND ref_id = old.id;
+                INSERT INTO recall_fts(kind, ref_id, session_id, body)
+                VALUES ('session', new.id, new.id, COALESCE(new.summary, '') || ' ' || COALESCE(new.project, ''));
+              END;
+
+              CREATE TRIGGER IF NOT EXISTS trg_recall_fts_sessions_ad
+              AFTER DELETE ON sessions BEGIN
+                DELETE FROM recall_fts WHERE kind = 'session' AND ref_id = old.id;
+              END;
+
+              CREATE TRIGGER IF NOT EXISTS trg_recall_fts_events_ai
+              AFTER INSERT ON events WHEN new.event_type IN ('DecisionMade', 'SkillLearned') BEGIN
+                INSERT INTO recall_fts(kind, ref_id, session_id, body)
+                VALUES (
+                  CASE new.event_type WHEN 'DecisionMade' THEN 'decision' ELSE 'skill' END,
+                  new.id, new.session_id, COALESCE(new.content, '')
+                );
+              END;
+
+              CREATE TRIGGER IF NOT EXISTS trg_recall_fts_events_au
+              AFTER UPDATE ON events BEGIN
+                DELETE FROM recall_fts WHERE kind IN ('decision', 'skill') AND ref_id = old.id;
+                INSERT INTO recall_fts(kind, ref_id, session_id, body)
+                SELECT CASE event_type WHEN 'DecisionMade' THEN 'decision' ELSE 'skill' END,
+                       id, session_id, COALESCE(content, '')
+                FROM events
+                WHERE id = new.id AND event_type IN ('DecisionMade', 'SkillLearned');
+              END;
+
+              CREATE TRIGGER IF NOT EXISTS trg_recall_fts_events_ad
+              AFTER DELETE ON events BEGIN
+                DELETE FROM recall_fts WHERE kind IN ('decision', 'skill') AND ref_id = old.id;
+              END;
+            `)
+
+            // Backfill existing rows once. Empty on a fresh DB; triggers maintain it afterwards.
+            db.exec(`
+              INSERT INTO recall_fts(kind, ref_id, session_id, body)
+              SELECT 'session', id, id, COALESCE(summary, '') || ' ' || COALESCE(project, '')
+              FROM sessions;
+
+              INSERT INTO recall_fts(kind, ref_id, session_id, body)
+              SELECT CASE event_type WHEN 'DecisionMade' THEN 'decision' ELSE 'skill' END,
+                     id, session_id, COALESCE(content, '')
+              FROM events
+              WHERE event_type IN ('DecisionMade', 'SkillLearned');
+            `)
+        }
     }
 ]
 
