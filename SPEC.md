@@ -42,7 +42,7 @@ This document is the source of truth for what Memoria currently implements.
   - exposed via `memoria govern review`
 - Time-decay recall scoring:
   - `scoreNode()` applies `1 / (1 + ageDays / halfLife)` decay (halfLife=90 days)
-  - `recallKeyword()` computes per-result relevance scores (token match × decay)
+  - `recallKeyword()` ranks with SQLite FTS5 + `bm25()` over a `trigram`-indexed corpus (× decay), falling back to a `LIKE` scan for sub-trigram / CJK-short queries and any FTS miss
   - recall hit tracking: `recallTree` updates `last_synced_at` on matched nodes
 - Prune memory management:
   - `--consolidate-days <N>`: merges old session nodes under same topic

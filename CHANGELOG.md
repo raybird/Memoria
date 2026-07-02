@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-07-02
+
 ### Changed
 - Keyword recall (`recall` mode `keyword`) now ranks with SQLite FTS5 + BM25 instead of a whole-query `LIKE '%q%'` scan plus substring scoring. A new migration (`recall_fts5_index`) adds a `trigram`-tokenized `recall_fts` virtual table over session summaries and Decision/Skill events, kept in sync by triggers with a one-time backfill for existing databases. `recallKeyword` runs FTS5 `MATCH` + `bm25()` as the primary path (folded into the existing time-decay envelope) and falls back to the original `LIKE` scan for sub-trigram (1–2 char) / CJK-short queries and any FTS miss, so behaviour is a strict superset with no regression. Multi-word queries now match on any term and rank documents containing more / rarer terms higher.
 
