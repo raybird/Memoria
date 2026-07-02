@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-07-02
+
 ### Added
 - Recall telemetry now records a privacy-preserving `query_hash`, query `token_count`, and the calibrated `top_confidence` per query (migration `recall_telemetry_add_query_metrics`). `stats.recallRouting` / `GET /v1/stats` gain `zeroHitRate` and `avgConfidence` computed over non-skipped queries; `GET /v1/telemetry/recall` rows expose the new per-query fields. `/v1/telemetry/recall` gains its first end-to-end test coverage in `test-smoke.sh`.
 
