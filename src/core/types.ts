@@ -215,7 +215,8 @@ export type RecallHit = {
     timestamp: string
     project: string
     snippet: string
-    score: number
+    score: number          // ranking score = relevance × time-decay (drives ordering)
+    relevance?: number     // decay-free match quality (0–1); basis for meta.confidence
     node_id?: string
     reasoning_path?: string[]
 }
@@ -281,6 +282,8 @@ export type StatsData = {
         avgLatencyMs: number
         p95LatencyMs: number
         avgHitCount: number
+        zeroHitRate: number      // fraction of non-skipped queries that returned no hits
+        avgConfidence: number    // mean calibrated top confidence over non-skipped queries
     }
 }
 
@@ -291,6 +294,9 @@ export type RecallTelemetryPoint = {
     hit_count: number
     latency_ms: number
     created_at: string
+    query_hash?: string       // privacy-preserving hash of the normalized query (not raw text)
+    token_count?: number      // number of distinct query tokens
+    top_confidence?: number   // calibrated top-hit confidence for this query
 }
 
 export type RecallTelemetryData = {

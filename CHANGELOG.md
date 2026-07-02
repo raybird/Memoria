@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Recall telemetry now records a privacy-preserving `query_hash`, query `token_count`, and the calibrated `top_confidence` per query (migration `recall_telemetry_add_query_metrics`). `stats.recallRouting` / `GET /v1/stats` gain `zeroHitRate` and `avgConfidence` computed over non-skipped queries; `GET /v1/telemetry/recall` rows expose the new per-query fields. `/v1/telemetry/recall` gains its first end-to-end test coverage in `test-smoke.sh`.
+
+### Changed
+- Recall `meta.confidence` is now the top hit's decay-free match quality — a new per-hit `relevance` field (fraction of query tokens matched) — decoupled from time-decay. Previously `confidence` was the ranking score, so a strong match on an old memory reported a low value, and a query whose terms appear in every indexed document reported ~0 (bm25 IDF). Ranking (`score` = relevance × time-decay) is unchanged, so ordering is unaffected.
+
 ## [1.14.0] - 2026-07-02
 
 ### Changed

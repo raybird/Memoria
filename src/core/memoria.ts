@@ -337,7 +337,9 @@ export class MemoriaCore {
                         routeMode: 'skipped',
                         fallbackUsed: false,
                         hitCount: 0,
-                        latencyMs: Date.now() - start
+                        latencyMs: Date.now() - start,
+                        query: filter.query,
+                        topConfidence: 0
                     })
                 } catch {
                     // Keep recall fail-open when telemetry logging fails.
@@ -388,6 +390,7 @@ export class MemoriaCore {
                 project: string
                 snippet: string
                 score?: number
+                relevance?: number
                 node_id?: string
                 reasoning_path?: string[]
             }
@@ -422,8 +425,9 @@ export class MemoriaCore {
                 timestamp: r.timestamp,
                 project: r.project,
                 snippet: r.snippet,
-                // Score based on recency: most recent → score 1.0
+                // score = relevance × time-decay (ranking); relevance is the decay-free match quality
                 score: Number.isFinite(r.score) ? Number(r.score) : 0,
+                relevance: Number.isFinite(r.relevance) ? Number(r.relevance) : undefined,
                 node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
                 reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
             }))
@@ -433,7 +437,9 @@ export class MemoriaCore {
                     routeMode,
                     fallbackUsed,
                     hitCount: hits.length,
-                    latencyMs: Date.now() - start
+                    latencyMs: Date.now() - start,
+                    query: filter.query,
+                    topConfidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0
                 })
             } catch {
                 // Keep recall fail-open when telemetry logging fails.
@@ -445,7 +451,9 @@ export class MemoriaCore {
                 meta: {
                     source: 'sqlite',
                     evidence: hits.map((h) => h.id),
-                    confidence: hits.length > 0 ? hits[0].score : 0,
+                    // Confidence reflects match quality (decay-free), not recency; fall back to score
+                    // for rows that predate the relevance field.
+                    confidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0,
                     reasoning_path: hits[0]?.reasoning_path,
                     route_mode: routeMode,
                     fallback_used: fallbackUsed,

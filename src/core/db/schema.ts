@@ -115,6 +115,19 @@ const MIGRATIONS: Migration[] = [
               WHERE event_type IN ('DecisionMade', 'SkillLearned');
             `)
         }
+    },
+    {
+        id: 5,
+        name: 'recall_telemetry_add_query_metrics',
+        up: (db) => {
+            // Enrich recall telemetry with per-query observability: a privacy-preserving query hash,
+            // query token count, and the calibrated top confidence. Enables zero-hit-rate and
+            // recall-quality metrics without storing raw query text.
+            const cols = new Set((db.prepare('PRAGMA table_info(recall_telemetry)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('query_hash')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN query_hash TEXT`)
+            if (!cols.has('token_count')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN token_count INTEGER`)
+            if (!cols.has('top_confidence')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN top_confidence REAL`)
+        }
     }
 ]
 
@@ -206,7 +219,10 @@ export function initDatabase(dbPath: string): void {
         fallback_used INTEGER,
         hit_count INTEGER,
         latency_ms INTEGER,
-        created_at DATETIME
+        created_at DATETIME,
+        query_hash TEXT,
+        token_count INTEGER,
+        top_confidence REAL
       );
 
       CREATE TABLE IF NOT EXISTS sources (

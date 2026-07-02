@@ -325,6 +325,7 @@ export function recallTree(
                     project: session.project,
                     snippet: truncateText(session.summary ?? entry.node.summary ?? entry.node.title, 200),
                     score: entry.score,
+                    relevance: scoreNode(entry.node.title ?? '', entry.node.summary ?? '', tokens),
                     node_id: entry.node.id,
                     reasoning_path: reasoningPath
                 })
@@ -358,9 +359,21 @@ export function recallTree(
     })
 }
 
-type KeywordRow = { type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }
+type KeywordRow = { type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number; relevance: number }
 
 const FTS_MIN_TERM_LEN = 3
+
+function tokenCoverage(query: string, text: string): number {
+    // Decay-free match quality: fraction of distinct query tokens present in the text. Basis for
+    // meta.confidence so it reflects how well the query matched, independent of the hit's age and
+    // independent of bm25 IDF (which collapses to ~0 for terms present in every indexed document).
+    const tokens = tokenizeQuery(query)
+    if (tokens.length === 0) return 0
+    const haystack = text.toLowerCase()
+    let found = 0
+    for (const token of tokens) if (haystack.includes(token)) found += 1
+    return found / tokens.length
+}
 
 function buildFtsMatch(query: string): string {
     // Trigram FTS terms need >=3 chars. Quote each as an FTS5 string literal (escaping embedded
@@ -383,6 +396,7 @@ function bm25ToRelevance(rank: number): number {
 
 function queryRecallFts(
     db: Database.Database,
+    query: string,
     match: string,
     projectFilter?: string,
     scopeFilter?: string,
@@ -423,8 +437,9 @@ function queryRecallFts(
                 typeof parsed === 'object' && parsed !== null
                     ? JSON.stringify(parsed).slice(0, 200)
                     : String(r.content).slice(0, 200)
+            const relevance = tokenCoverage(query, String(r.content))
             const score = bm25ToRelevance(r.rank) * computeDecayFactor(r.timestamp)
-            return { type: r.kind, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score }
+            return { type: r.kind, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score, relevance }
         })
         .sort((a, b) => {
             if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score
@@ -440,13 +455,13 @@ export function recallKeyword(
     scopeFilter?: string,
     topK = 5,
     afterDate?: Date
-): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number }> {
+): Array<{ type: string; id: string; session_id: string; timestamp: string; project: string; snippet: string; score: number; relevance: number }> {
     return withDb(dbPath, (db) => {
         // Primary path: FTS5 + bm25 over the trigram-indexed corpus.
         try {
             const match = buildFtsMatch(query)
             if (match) {
-                const ftsRows = queryRecallFts(db, match, projectFilter, scopeFilter, topK, afterDate)
+                const ftsRows = queryRecallFts(db, query, match, projectFilter, scopeFilter, topK, afterDate)
                 if (ftsRows.length > 0) return ftsRows
             }
         } catch {
@@ -521,9 +536,10 @@ function queryRecallLike(
                     typeof parsed === 'object' && parsed !== null
                         ? JSON.stringify(parsed).slice(0, 200)
                         : String(r.content).slice(0, 200)
-                const relevance = scoreNode('', snippet, tokens, r.timestamp)
-                const score = Math.max(relevance, computeDecayFactor(r.timestamp) * 0.1)
-                return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score }
+                const scored = scoreNode('', snippet, tokens, r.timestamp)
+                const score = Math.max(scored, computeDecayFactor(r.timestamp) * 0.1)
+                const relevance = tokenCoverage(query, String(r.content))
+                return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score, relevance }
             })
             .sort((a, b) => {
                 if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score

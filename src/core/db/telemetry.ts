@@ -4,9 +4,15 @@ import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
 import type { Json, StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
 
+function countQueryTokens(query: string): number {
+    return new Set(
+        query.toLowerCase().split(/[^a-z0-9一-鿿]+/).map((t) => t.trim()).filter((t) => t.length >= 2)
+    ).size
+}
+
 export function logRecallTelemetry(
     dbPath: string,
-    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number }
+    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number; query?: string; topConfidence?: number }
 ): void {
     if (!existsSync(dbPath)) return
 
@@ -18,7 +24,10 @@ export function logRecallTelemetry(
             fallback_used INTEGER,
             hit_count INTEGER,
             latency_ms INTEGER,
-            created_at DATETIME
+            created_at DATETIME,
+            query_hash TEXT,
+            token_count INTEGER,
+            top_confidence REAL
           );
           CREATE INDEX IF NOT EXISTS idx_recall_telemetry_created ON recall_telemetry(created_at);
           CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route ON recall_telemetry(route_mode, created_at);
@@ -26,17 +35,28 @@ export function logRecallTelemetry(
 
         const createdAt = new Date().toISOString()
         const id = `rt_${shortHash(`${createdAt}:${input.routeMode}:${input.latencyMs}:${input.hitCount}`, 24)}`
+        // Store a privacy-preserving hash of the query (not the raw text) plus token count / top confidence.
+        const queryHash = typeof input.query === 'string' && input.query.trim()
+            ? shortHash(input.query.trim().toLowerCase(), 16)
+            : null
+        const tokenCount = typeof input.query === 'string' ? countQueryTokens(input.query) : null
+        const topConfidence = typeof input.topConfidence === 'number' && Number.isFinite(input.topConfidence)
+            ? Number(input.topConfidence)
+            : null
         db.prepare(`
           INSERT OR REPLACE INTO recall_telemetry
-          (id, route_mode, fallback_used, hit_count, latency_ms, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+          (id, route_mode, fallback_used, hit_count, latency_ms, created_at, query_hash, token_count, top_confidence)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
             id,
             input.routeMode,
             input.fallbackUsed ? 1 : 0,
             Math.max(0, Math.floor(input.hitCount)),
             Math.max(0, Math.floor(input.latencyMs)),
-            createdAt
+            createdAt,
+            queryHash,
+            tokenCount,
+            topConfidence
         )
     })
 }
@@ -63,11 +83,11 @@ export function queryStats(dbPath: string): StatsData {
         const telemetryRows = recallTelemetryTable
             ? db
                 .prepare(`
-                  SELECT route_mode, fallback_used, hit_count, latency_ms
+                  SELECT route_mode, fallback_used, hit_count, latency_ms, top_confidence
                   FROM recall_telemetry
                   WHERE created_at >= ?
                 `)
-                .all(sinceIso) as Array<{ route_mode: string; fallback_used: number; hit_count: number; latency_ms: number }>
+                .all(sinceIso) as Array<{ route_mode: string; fallback_used: number; hit_count: number; latency_ms: number; top_confidence: number | null }>
             : []
 
         const routeCounts = {
@@ -80,6 +100,12 @@ export function queryStats(dbPath: string): StatsData {
         let fallbackCount = 0
         let hitCountSum = 0
         const latencies: number[] = []
+        // Zero-hit rate and avg confidence are computed over non-skipped queries only: a skipped
+        // query intentionally returns no hits (adaptive gate), so it is not a recall miss.
+        let nonSkippedCount = 0
+        let zeroHitCount = 0
+        let confidenceSum = 0
+        let confidenceCount = 0
 
         for (const row of telemetryRows) {
             const mode = row.route_mode
@@ -89,6 +115,14 @@ export function queryStats(dbPath: string): StatsData {
             if (row.fallback_used === 1) fallbackCount += 1
             hitCountSum += Number(row.hit_count ?? 0)
             latencies.push(Number(row.latency_ms ?? 0))
+            if (mode !== 'skipped') {
+                nonSkippedCount += 1
+                if (Number(row.hit_count ?? 0) === 0) zeroHitCount += 1
+                if (row.top_confidence != null) {
+                    confidenceSum += Number(row.top_confidence)
+                    confidenceCount += 1
+                }
+            }
         }
 
         latencies.sort((a, b) => a - b)
@@ -101,6 +135,8 @@ export function queryStats(dbPath: string): StatsData {
             : 0
         const fallbackRate = totalQueries > 0 ? Number((fallbackCount / totalQueries).toFixed(4)) : 0
         const avgHitCount = totalQueries > 0 ? Number((hitCountSum / totalQueries).toFixed(2)) : 0
+        const zeroHitRate = nonSkippedCount > 0 ? Number((zeroHitCount / nonSkippedCount).toFixed(4)) : 0
+        const avgConfidence = confidenceCount > 0 ? Number((confidenceSum / confidenceCount).toFixed(4)) : 0
 
         const recallRouting = {
             window,
@@ -109,7 +145,9 @@ export function queryStats(dbPath: string): StatsData {
             fallbackRate,
             avgLatencyMs,
             p95LatencyMs,
-            avgHitCount
+            avgHitCount,
+            zeroHitRate,
+            avgConfidence
         }
 
         return { sessions, events, skills, lastSession, topSkills, recallRouting }
@@ -137,7 +175,7 @@ export function queryRecallTelemetry(
 
         const rows = db
             .prepare(`
-              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at
+              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at, query_hash, token_count, top_confidence
               FROM recall_telemetry
               WHERE created_at >= ?
               ORDER BY created_at DESC
@@ -150,6 +188,9 @@ export function queryRecallTelemetry(
             hit_count: number
             latency_ms: number
             created_at: string
+            query_hash: string | null
+            token_count: number | null
+            top_confidence: number | null
         }>
 
         return {
@@ -161,7 +202,10 @@ export function queryRecallTelemetry(
                 fallback_used: r.fallback_used === 1,
                 hit_count: Number(r.hit_count ?? 0),
                 latency_ms: Number(r.latency_ms ?? 0),
-                created_at: r.created_at
+                created_at: r.created_at,
+                query_hash: r.query_hash ?? undefined,
+                token_count: r.token_count == null ? undefined : Number(r.token_count),
+                top_confidence: r.top_confidence == null ? undefined : Number(r.top_confidence)
             }))
         }
     })
