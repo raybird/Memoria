@@ -137,8 +137,9 @@ src/core/
     verify.ts      – runVerify
     prune-export.ts – runPrune, exportMemory
     recall.ts      – buildMemoryIndex, recallTree, recallKeyword
+    connection.ts  – cached SQLite connection pool (withDb, closeAllConnections); HTTP hot path reuses connections
     mappers.ts     – shared row-to-type mappers + truncateText
-    index.ts       – barrel re-export (all 32 public functions)
+    index.ts       – barrel re-export (all 33 public functions)
   source-import.ts – raw markdown/text source import
   wiki.ts      – wiki constants + markdown render helpers
   wiki-build.ts – compiled wiki special pages (`index/log/overview`)
@@ -400,7 +401,7 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Memoria** (1453 symbols, 2207 relationships, 83 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Memoria** (1476 symbols, 2437 relationships, 118 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

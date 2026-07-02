@@ -52,7 +52,8 @@ async function main() {
     path.join(skillRoot, 'scripts', 'run-sync.sh'),
     path.join(skillRoot, 'scripts', 'run-sync-with-enhancement.sh'),
     path.join(skillRoot, 'resources', 'mcp', 'INGEST_PLAYBOOK.md'),
-    path.join(skillRoot, 'resources', 'mcp', 'gemini-cli.mcp.json'),
+    path.join(skillRoot, 'resources', 'mcp', 'antigravity-cli.mcp.json'),
+    path.join(skillRoot, 'resources', 'mcp', 'codex-cli.mcp.json'),
     path.join(skillRoot, 'resources', 'mcp', 'opencode.mcp.json')
   ]
 

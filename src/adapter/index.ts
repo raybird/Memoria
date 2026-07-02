@@ -8,8 +8,11 @@ export type {
     RecallContext
 } from './adapter.js'
 
-export { GeminiAdapter } from './gemini-adapter.js'
-export type { GeminiAdapterConfig, GeminiContent } from './gemini-adapter.js'
+export { AntigravityAdapter } from './antigravity-adapter.js'
+export type { AntigravityAdapterConfig, AntigravityContent } from './antigravity-adapter.js'
+
+export { CodexAdapter } from './codex-adapter.js'
+export type { CodexAdapterConfig, CodexMessage } from './codex-adapter.js'
 
 export { OpenCodeAdapter } from './opencode-adapter.js'
 export type { OpenCodeAdapterConfig, OpenCodeToolResult } from './opencode-adapter.js'

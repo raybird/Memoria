@@ -188,7 +188,8 @@ Example MCP server config:
 
 Client templates in this skill:
 
-- Gemini CLI: `resources/mcp/gemini-cli.mcp.json`
+- Antigravity CLI: `resources/mcp/antigravity-cli.mcp.json`
+- Codex CLI: `resources/mcp/codex-cli.mcp.json`
 - OpenCode: `resources/mcp/opencode.mcp.json`
 
 These are intentionally template-first (similar to `ts-cli-skill` resource pattern):

@@ -170,7 +170,8 @@ Example MCP server config (from `mcp-memory-libsql` style):
 
 Template files (ts-cli-skill style resources):
 
-- `resources/mcp/gemini-cli.mcp.json`
+- `resources/mcp/antigravity-cli.mcp.json`
+- `resources/mcp/codex-cli.mcp.json`
 - `resources/mcp/opencode.mcp.json`
 - `resources/mcp/INGEST_PLAYBOOK.md`
 

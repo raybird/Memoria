@@ -7,7 +7,7 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 1. Context condensation/checkpoint recovery orchestration in core CLI
 2. Native semantic retrieval workflows (beyond MCP bridge)
 3. Richer schema migration/versioning strategy
-4. Client-specific MCP adapters for Gemini/OpenCode auto wiring
+4. Client-specific MCP adapters for Antigravity/Codex/OpenCode auto wiring
 5. Additional observability and performance profiling commands
 6. Adaptive retrieval gate to skip unnecessary memory lookups on greetings / control prompts
 7. Lightweight multi-scope isolation beyond `project` (for example `agent`, `user`, `global`)

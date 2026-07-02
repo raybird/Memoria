@@ -67,8 +67,9 @@ The CLI (`src/cli.ts`, ~50 lines) is a thin Commander registration shell — it 
   - `verify.ts` — `runVerify`
   - `prune-export.ts` — `runPrune`, `exportMemory`
   - `recall.ts` — `buildMemoryIndex`, `recallTree`, `recallKeyword`
+  - `connection.ts` — cached SQLite connection pool (`withDb`, `closeAllConnections`); HTTP hot path reuses connections instead of open/close per call
   - `mappers.ts` — shared row-to-type mappers + `truncateText`
-  - `index.ts` — barrel re-export (all 32 public functions)
+  - `index.ts` — barrel re-export (all 33 public functions)
 - `core/types.ts` — `MemoriaResult<T>` envelope, `RecallFilter`, etc.
 - `core/paths.ts` — `resolveMemoriaPaths()`, `getMemoriaHome()`
 - `core/utils.ts` — pure helpers (`safeDate`, `slugify`, `stableStringify`, etc.)
@@ -88,7 +89,7 @@ Three entrypoints consume `core/`:
 - `src/server.ts` — HTTP API on `node:http` (zero extra deps), default port 3917, env `MEMORIA_PORT`
 - `src/sdk.ts` — `MemoriaClient` Node SDK
 
-Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific agent runtimes (Gemini, OpenCode).
+Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific agent runtimes (Antigravity CLI, Codex CLI, OpenCode, Claude Code).
 
 **Every public API returns `MemoriaResult<T>`** with `evidence[]`, `confidence`, `latency_ms`. Preserve this envelope when adding new endpoints/methods.
 
@@ -123,7 +124,7 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Memoria** (1453 symbols, 2207 relationships, 83 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Memoria** (1476 symbols, 2437 relationships, 118 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

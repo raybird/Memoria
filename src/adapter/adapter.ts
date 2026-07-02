@@ -2,7 +2,7 @@
 // Phase 2: Provider-agnostic hooks for AI Agent orchestration layers
 //
 // Usage pattern:
-//   const adapter = new GeminiAdapter({ client, project: 'my-project' })
+//   const adapter = new CodexAdapter({ client, project: 'my-project' })
 //   const injected = await adapter.beforePrompt({ userMessage, conversationId })
 //   // → send `injected` as system context to model
 //   await adapter.afterResponse({ response, conversationId, userMessage })

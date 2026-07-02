@@ -1,74 +1,72 @@
-// Gemini CLI Adapter (reference implementation)
-// Phase 2: Shows how to integrate Memoria into Gemini CLI / Gemini API workflows
+// Antigravity CLI Adapter (reference implementation)
+// Phase 2: Shows how to integrate Memoria into Google's Antigravity CLI workflows.
 //
-// Gemini CLI hook points:
+// Antigravity is built on Gemini models and consumes a Gemini-style `contents`
+// array. Integration points:
 //   - System instruction (per-session context injection)
 //   - Response callback (write memory after each turn)
 //
-// Integration pattern (Gemini API / Gemini CLI extension):
+// Antigravity also speaks MCP: see resources/mcp/antigravity-cli.mcp.json for a
+// declarative wiring of the mcp-memory-libsql server.
 //
-//   import { GeminiAdapter } from './src/adapter/gemini-adapter.js'
+// Integration pattern:
 //
-//   const adapter = new GeminiAdapter({
+//   import { AntigravityAdapter } from './src/adapter/antigravity-adapter.js'
+//
+//   const adapter = new AntigravityAdapter({
 //     client: new MemoriaClient(),
-//     project: 'my-gemini-project',
+//     project: 'my-antigravity-project',
 //     recallTopK: 5,
 //   })
 //
-//   // Before each turn: inject context
-//   const context = await adapter.beforePrompt({
-//     userMessage: userInput,
-//     conversationId: session.id,
-//   })
+//   // Before each turn: build contents with injected memory
+//   const contents = await adapter.buildContents(userInput, session.id)
 //
-//   // Build Gemini contents with injected memory
-//   const contents = adapter.buildGeminiContents(userInput, context)
-//
-//   // Gemini API call
-//   const result = await gemini.generateContent({ contents, systemInstruction })
+//   // Model call
+//   const result = await model.generateContent({ contents, systemInstruction })
 //
 //   // After response: write to Memoria
 //   await adapter.afterResponse({
-//     response: result.response.text(),
+//     response: result.text,
 //     conversationId: session.id,
 //     userMessage: userInput,
 //   })
 
 import { BaseAdapter } from './adapter.js'
-import type { MemoriaAdapterConfig, AdapterContext } from './adapter.js'
+import type { MemoriaAdapterConfig } from './adapter.js'
 import type { RecallHit } from '../core/types.js'
 
-export interface GeminiAdapterConfig extends MemoriaAdapterConfig {
+export interface AntigravityAdapterConfig extends MemoriaAdapterConfig {
     /**
-     * Whether to inject memory as a dedicated system turn or as a
+     * Whether to inject memory as a dedicated context turn or as a
      * text prefix in the user turn (default: 'system-turn').
      */
     injectionMode?: 'system-turn' | 'user-prefix'
 }
 
-// Minimal type for Gemini `Content` object (avoids @google/generative-ai import dep)
-export interface GeminiContent {
+// Minimal Gemini-style `Content` object (avoids a generative-ai import dep)
+export interface AntigravityContent {
     role: 'user' | 'model' | 'system'
     parts: Array<{ text: string }>
 }
 
-export class GeminiAdapter extends BaseAdapter {
+export class AntigravityAdapter extends BaseAdapter {
     private readonly injectionMode: 'system-turn' | 'user-prefix'
 
-    constructor(config: GeminiAdapterConfig) {
+    constructor(config: AntigravityAdapterConfig) {
         super(config)
         this.injectionMode = config.injectionMode ?? 'system-turn'
     }
 
     /**
-     * Build a `contents` array for the Gemini API with memory context prepended.
+     * Build a `contents` array with memory context prepended.
      * Pass the result directly to `generateContent({ contents })`.
      */
-    async buildGeminiContents(
+    async buildContents(
         userMessage: string,
         conversationId: string,
-        priorContents: GeminiContent[] = []
-    ): Promise<GeminiContent[]> {
+        priorContents: AntigravityContent[] = []
+    ): Promise<AntigravityContent[]> {
         const context = await this.recallForContext({ userMessage, conversationId })
 
         if (!context.injectedText) {
@@ -82,15 +80,15 @@ export class GeminiAdapter extends BaseAdapter {
                 { role: 'model', parts: [{ text: context.injectedText }] },
                 { role: 'user', parts: [{ text: userMessage }] }
             ]
-        } else {
-            // Prefix memory context directly in user turn
-            const prefixed = `${context.injectedText}\n\n---\n\nUser: ${userMessage}`
-            return [...priorContents, { role: 'user', parts: [{ text: prefixed }] }]
         }
+
+        // Prefix memory context directly in the user turn
+        const prefixed = `${context.injectedText}\n\n---\n\nUser: ${userMessage}`
+        return [...priorContents, { role: 'user', parts: [{ text: prefixed }] }]
     }
 
     /**
-     * Get system instruction string for Gemini API.
+     * Get a system instruction string for the Antigravity session.
      * Call once per session and pass as `systemInstruction.parts[0].text`.
      */
     getSystemInstruction(): string {

@@ -79,7 +79,8 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 
 ## MCP Templates
 
-- Gemini CLI: `skills/memoria-memory-sync/resources/mcp/gemini-cli.mcp.json`
+- Antigravity CLI: `skills/memoria-memory-sync/resources/mcp/antigravity-cli.mcp.json`
+- Codex CLI: `skills/memoria-memory-sync/resources/mcp/codex-cli.mcp.json`
 - OpenCode: `skills/memoria-memory-sync/resources/mcp/opencode.mcp.json`
 - Playbook: `skills/memoria-memory-sync/resources/mcp/INGEST_PLAYBOOK.md`
 
