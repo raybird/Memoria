@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "memoria": {
+    "PreInvocation": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+    ]
+  }
+}

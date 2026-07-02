@@ -75,6 +75,26 @@ MEMORIA_HOME=$(pwd) ./cli verify
 MEMORIA_HOME=$(pwd) ./cli index build
 ```
 
+## Agent Hook Integration (post-install)
+
+安裝後不需再寫程式，就能把 Memoria 接進支援 hook 的 agent CLI。三個整合都由 `memoria adapter <name>` 提供（讀 stdin JSON、回 stdout JSON），並且 fail-open——Memoria 沒開或故障都不會打斷 agent。
+
+先確保 server 在跑（`memoria setup --serve` 或 `memoria serve`），再把對應 hook 貼進該 CLI 的設定：
+
+| Host CLI | 接線位置 | 指令 |
+|----------|----------|------|
+| Claude Code | `~/.claude/settings.json` 的 `hooks` | `memoria adapter claude-code` |
+| Codex CLI | `~/.codex/hooks.json`（或 `config.toml` 的 `[hooks]`） | `memoria adapter codex` |
+| Antigravity CLI | 客製目錄的 `hooks.json`（或 `settings.json` 的 `hooks`） | `memoria adapter antigravity` |
+
+可直接複製部署好的範本（`setup` 後位於 `<memoria-home>/.agents/skills/memoria/resources/hooks/`，repo 內為 `skills/memoria-memory-sync/resources/hooks/`）：
+
+- `claude-code.hooks.json`
+- `codex.hooks.json`
+- `antigravity.hooks.json`
+
+完整片段與各事件說明見 [README](../README.md#agent-adapter)。預設連 `localhost:3917`，可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫，`--project` 指定寫入的 project tag。
+
 ## Path Overrides
 
 Priority:

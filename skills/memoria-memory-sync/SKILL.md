@@ -175,6 +175,12 @@ Template files (ts-cli-skill style resources):
 - `resources/mcp/opencode.mcp.json`
 - `resources/mcp/INGEST_PLAYBOOK.md`
 
+Agent hook integration templates (wire `memoria adapter <name>` into a host CLI's hooks):
+
+- `resources/hooks/claude-code.hooks.json`
+- `resources/hooks/codex.hooks.json`
+- `resources/hooks/antigravity.hooks.json`
+
 Expected behavior:
 
 - If `LIBSQL_URL` is set: bridge payload is generated from Memoria DB (incremental by default)

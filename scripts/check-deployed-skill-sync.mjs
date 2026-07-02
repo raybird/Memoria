@@ -54,7 +54,10 @@ async function main() {
     path.join(skillRoot, 'resources', 'mcp', 'INGEST_PLAYBOOK.md'),
     path.join(skillRoot, 'resources', 'mcp', 'antigravity-cli.mcp.json'),
     path.join(skillRoot, 'resources', 'mcp', 'codex-cli.mcp.json'),
-    path.join(skillRoot, 'resources', 'mcp', 'opencode.mcp.json')
+    path.join(skillRoot, 'resources', 'mcp', 'opencode.mcp.json'),
+    path.join(skillRoot, 'resources', 'hooks', 'claude-code.hooks.json'),
+    path.join(skillRoot, 'resources', 'hooks', 'codex.hooks.json'),
+    path.join(skillRoot, 'resources', 'hooks', 'antigravity.hooks.json')
   ]
 
   await Promise.all(requiredFiles.map(ensureExists))
