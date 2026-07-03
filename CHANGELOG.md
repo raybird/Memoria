@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.2] - 2026-07-03
+
 ### Changed
 - HTTP request bodies for all POST endpoints (`/v1/remember`, `/v1/recall`, `/v1/sources`, `/v1/wiki/file-query`, `/v1/wiki/lint`) are now validated with Zod at the boundary instead of ad-hoc field-presence checks plus `as` casts. Malformed payloads — a wrong-typed field, an invalid `mode` / `kind` / `type` enum value, or a non-array `events` — are rejected with a descriptive `400` before reaching core, rather than being cast through and potentially crashing it. Valid requests are unaffected. Covered by new `test-http-api.sh` assertions.
 

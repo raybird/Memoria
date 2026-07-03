@@ -24,14 +24,14 @@ memoria setup --serve --json
 
 ```bash
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.16.1.tar.gz \
+  --artifact ./memoria-linux-x64-v1.16.2.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 ```
 
 也可省略 `--artifact`，直接用 `--version` 從 GitHub release 下載：
 
 ```bash
-bash install.sh --version 1.16.1 --install-dir "$HOME/.local/share/memoria"
+bash install.sh --version 1.16.2 --install-dir "$HOME/.local/share/memoria"
 ```
 
 Installer behavior:
