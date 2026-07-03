@@ -32,10 +32,12 @@ There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts
 
 ```bash
 bash scripts/test-smoke.sh                  # CLI full flow (most common)
+bash scripts/test-migrations.sh             # schema migration upgrade on a populated old DB
 bash scripts/test-bootstrap.sh              # ./cli setup self-install
 bash scripts/test-adapter-runtime.sh        # adapter ESM runtime
 bash scripts/test-no-clone-install.sh       # install.sh from release tarball
 bash scripts/test-mcp-e2e.sh                # MCP/libSQL hybrid + incremental
+bash scripts/test-http-api.sh               # HTTP endpoint contracts (sources/wiki/summary)
 bash scripts/test-wiki-ingest.sh            # raw source ingest
 bash scripts/test-wiki-build.sh             # compiled wiki special pages
 bash scripts/test-wiki-query-fileback.sh    # query file-back

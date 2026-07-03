@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Schema migration upgrade regression test (`scripts/test-migrations.sh`) and HTTP endpoint contract test (`scripts/test-http-api.sh`), both wired into CI. The migration test exercises the previously-untested path of upgrading a *populated* pre-migration database — DDL re-application, data backfill (`recall_fts`, telemetry columns), row preservation, and idempotency. The HTTP test covers `GET /v1/sessions/:id/summary`, `POST`/`GET /v1/sources`, and `POST /v1/wiki/build|file-query|lint` plus their 400/404 error paths (also covering the `summarizeSession` / `listSources` read methods).
+
 ### Changed
 - The Codex, Antigravity, and Claude Code hook adapters now share a `StdinHookAdapter` base (new SDK export) that centralizes hook-event dispatch, recall + prompt-buffering on inject, dedupe + write on stop, and injected-context formatting. Each concrete adapter now only declares its event names, conversation-id default, turn extraction, and output shape — removing the ~90% duplication between them with no behavior change.
 

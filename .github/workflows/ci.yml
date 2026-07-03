@@ -42,6 +42,9 @@ jobs:
       - name: Run smoke test
         run: bash scripts/test-smoke.sh
 
+      - name: Run schema migration regression test
+        run: bash scripts/test-migrations.sh
+
       - name: Run bootstrap test
         run: bash scripts/test-bootstrap.sh
 
@@ -71,6 +74,9 @@ jobs:
 
       - name: Run wiki lint test
         run: bash scripts/test-wiki-lint.sh
+
+      - name: Run HTTP API contract test
+        run: bash scripts/test-http-api.sh
 
       - name: Capture release version
         id: release_meta
