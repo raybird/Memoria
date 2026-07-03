@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-07-03
+
 ### Fixed
 - **Antigravity CLI adapter now matches the real hook contract** (it was previously guessed and effectively non-functional). Verified against Antigravity's hook docs: Antigravity delivers no `prompt` / `last_assistant_message` payload fields — both the user prompt and assistant reply are read from `transcript_path` (like Claude Code) — and its output schema rejects a nested `hookSpecificOutput` wrapper. The adapter is now transcript-based and emits **flat** top-level `additionalContext`. (The remaining assumption is the transcript line format; capture a real payload to confirm — see below.)
 
