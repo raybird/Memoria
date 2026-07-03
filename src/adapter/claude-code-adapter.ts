@@ -15,14 +15,14 @@
 //     }
 //   }
 //
-// The same command handles both events; it dispatches on hook_event_name
-// from the JSON payload.
+// The same command handles both events; it dispatches on hook_event_name.
+// Unlike the Codex/Antigravity adapters, `Stop` recovers both the user and
+// assistant text from the session transcript file rather than the payload.
 
 import { readFile } from 'node:fs/promises'
-import { BaseAdapter } from './adapter.js'
+import { StdinHookAdapter } from './stdin-hook-adapter.js'
+import type { HookInput, HookTurn } from './stdin-hook-adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
-import { hashTurn } from './hook-state.js'
-import type { RecallHit } from '../core/types.js'
 
 export interface ClaudeCodeAdapterConfig extends MemoriaAdapterConfig {
     /** Max transcript lines to scan backwards when locating the last turn (default: 50) */
@@ -46,7 +46,11 @@ export interface ClaudeCodeHookOutput {
     }
 }
 
-export class ClaudeCodeAdapter extends BaseAdapter {
+export class ClaudeCodeAdapter extends StdinHookAdapter {
+    protected readonly injectEvents = ['UserPromptSubmit'] as const
+    protected readonly stopEvents = ['Stop'] as const
+    protected readonly defaultConversationId = 'claude-code-session'
+
     private readonly transcriptScanLimit: number
 
     constructor(config: ClaudeCodeAdapterConfig) {
@@ -54,70 +58,17 @@ export class ClaudeCodeAdapter extends BaseAdapter {
         this.transcriptScanLimit = config.transcriptScanLimit ?? 50
     }
 
-    /**
-     * Dispatch on hook_event_name. Always resolves; never throws.
-     * Errors are swallowed when failOpen is true (the default).
-     */
-    async handleHookEvent(input: ClaudeCodeHookInput): Promise<ClaudeCodeHookOutput> {
-        const event = input.hook_event_name ?? ''
-        if (event === 'UserPromptSubmit') return this.handleUserPromptSubmit(input)
-        if (event === 'Stop') {
-            await this.handleStop(input)
-            return {}
-        }
-        return {}
+    /** Recover the completed turn from the session transcript rather than the payload. */
+    protected async extractTurn(input: HookInput): Promise<HookTurn | null> {
+        const transcriptPath = typeof input.transcript_path === 'string' ? input.transcript_path : ''
+        if (!transcriptPath) return null
+        return this.readLastTurn(transcriptPath)
     }
 
-    /** Recall relevant memory and inject it via additionalContext. */
-    async handleUserPromptSubmit(input: ClaudeCodeHookInput): Promise<ClaudeCodeHookOutput> {
-        const userMessage = (input.prompt ?? '').trim()
-        const conversationId = input.session_id ?? 'claude-code-session'
-        if (!userMessage) {
-            return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
-        }
-
-        try {
-            const rc = await this.recallForContext({ userMessage, conversationId })
-            return {
-                hookSpecificOutput: {
-                    hookEventName: 'UserPromptSubmit',
-                    additionalContext: rc.injectedText
-                }
-            }
-        } catch (error) {
-            if (!this.config.failOpen) throw error
-            return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
-        }
-    }
-
-    /** Persist the last user/assistant turn from the transcript file. */
-    async handleStop(input: ClaudeCodeHookInput): Promise<void> {
-        try {
-            const transcriptPath = input.transcript_path
-            const conversationId = input.session_id ?? 'claude-code-session'
-            if (!transcriptPath) return
-
-            const turn = await this.readLastTurn(transcriptPath)
-            if (!turn) return
-            const contentHash = hashTurn(`${turn.user}\n${turn.assistant}`)
-            if (!this.shouldWrite(conversationId, contentHash)) return
-
-            await this.client.remember({
-                timestamp: new Date().toISOString(),
-                project: this.config.project,
-                summary: turn.assistant.slice(0, 200),
-                events: [
-                    {
-                        event_type: 'ConversationTurn',
-                        timestamp: new Date().toISOString(),
-                        content: { user: turn.user, assistant: turn.assistant }
-                    }
-                ]
-            })
-            this.markWritten(conversationId, contentHash)
-        } catch (error) {
-            if (!this.config.failOpen) throw error
-        }
+    protected buildInjectOutput(eventName: string, text?: string): ClaudeCodeHookOutput {
+        const output: ClaudeCodeHookOutput = { hookSpecificOutput: { hookEventName: eventName } }
+        if (text !== undefined) output.hookSpecificOutput!.additionalContext = text
+        return output
     }
 
     /**
@@ -125,7 +76,7 @@ export class ClaudeCodeAdapter extends BaseAdapter {
      * user/assistant pair. Each transcript line is a message envelope
      * like `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}`.
      */
-    private async readLastTurn(transcriptPath: string): Promise<{ user: string; assistant: string } | null> {
+    private async readLastTurn(transcriptPath: string): Promise<HookTurn | null> {
         const raw = await readFile(transcriptPath, 'utf8').catch(() => '')
         if (!raw) return null
         const lines = raw.split('\n').filter(Boolean).slice(-this.transcriptScanLimit)
@@ -142,20 +93,6 @@ export class ClaudeCodeAdapter extends BaseAdapter {
         }
         if (!lastUser || !lastAssistant) return null
         return { user: lastUser, assistant: lastAssistant }
-    }
-
-    protected override formatRecallText(hits: RecallHit[]): string {
-        if (hits.length === 0) return ''
-        const lines = hits.map((h) => {
-            const date = h.timestamp.slice(0, 10)
-            const tag = h.type === 'decision' ? 'Decision' : h.type === 'skill' ? 'Skill' : 'Session'
-            return `- [${tag} ${date} @ ${h.project}] ${h.snippet}`
-        })
-        return [
-            '## Memoria — Relevant past memory',
-            ...lines,
-            ''
-        ].join('\n')
     }
 }
 

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- The Codex, Antigravity, and Claude Code hook adapters now share a `StdinHookAdapter` base (new SDK export) that centralizes hook-event dispatch, recall + prompt-buffering on inject, dedupe + write on stop, and injected-context formatting. Each concrete adapter now only declares its event names, conversation-id default, turn extraction, and output shape — removing the ~90% duplication between them with no behavior change.
+
 ## [1.15.1] - 2026-07-02
 
 ### Fixed

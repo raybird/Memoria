@@ -8,6 +8,9 @@ export type {
     RecallContext
 } from './adapter.js'
 
+export { StdinHookAdapter } from './stdin-hook-adapter.js'
+export type { HookInput, HookTurn } from './stdin-hook-adapter.js'
+
 export { AntigravityAdapter } from './antigravity-adapter.js'
 export type { AntigravityAdapterConfig, AntigravityHookInput, AntigravityHookOutput } from './antigravity-adapter.js'
 
