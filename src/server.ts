@@ -11,11 +11,76 @@
 //   GET  /v1/sessions/:id/summary
 
 import http from 'node:http'
+import { z } from 'zod'
 import { MemoriaCore } from './core/index.js'
 import { resolveMemoriaPaths } from './core/index.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const DEFAULT_PORT = 3917
+
+// ─── Request body schemas (validate at the HTTP boundary; unknown → parse) ──────
+// Known fields are type-checked; extra fields pass through for forward compatibility.
+
+const recallModeSchema = z.enum(['keyword', 'tree', 'hybrid'])
+
+const rememberSchema = z
+    .object({
+        id: z.string().optional(),
+        timestamp: z.string().optional(),
+        project: z.string().optional(),
+        scope: z.string().optional(),
+        summary: z.string().optional(),
+        events: z
+            .array(z.object({
+                id: z.string().optional(),
+                timestamp: z.string().optional(),
+                type: z.string().optional(),
+                event_type: z.string().optional(),
+                content: z.unknown().optional(),
+                metadata: z.unknown().optional()
+            }).passthrough())
+            .optional()
+    })
+    .passthrough()
+
+const recallSchema = z
+    .object({
+        query: z.string(),
+        project: z.string().optional(),
+        scope: z.string().optional(),
+        top_k: z.number().optional(),
+        time_window: z.string().optional(),
+        mode: recallModeSchema.optional()
+    })
+    .passthrough()
+
+const sourcesSchema = z
+    .object({
+        filePath: z.string(),
+        type: z.enum(['note', 'article', 'document']).optional(),
+        title: z.string().optional(),
+        scope: z.string().optional()
+    })
+    .passthrough()
+
+const fileQuerySchema = z
+    .object({
+        query: z.string(),
+        title: z.string(),
+        kind: z.enum(['synthesis', 'comparison']).optional(),
+        scope: z.string().optional(),
+        top_k: z.number().optional(),
+        time_window: z.string().optional(),
+        mode: recallModeSchema.optional()
+    })
+    .passthrough()
+
+const wikiLintSchema = z
+    .object({
+        stale_days: z.number().optional(),
+        limit: z.number().optional()
+    })
+    .passthrough()
 
 function readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -34,6 +99,45 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 
 function sendError(res: ServerResponse, status: number, message: string): void {
     send(res, status, { ok: false, error: message })
+}
+
+function formatZodError(error: z.ZodError): string {
+    return error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
+}
+
+/**
+ * Read a JSON request body and validate it against a Zod schema. Sends a 400 and
+ * returns null on invalid JSON or schema failure; otherwise returns the parsed value.
+ * When allowEmpty is set, an empty body validates as `{}`.
+ */
+async function readValidatedBody<S extends z.ZodTypeAny>(
+    req: IncomingMessage,
+    res: ServerResponse,
+    schema: S,
+    opts: { allowEmpty?: boolean } = {}
+): Promise<z.infer<S> | null> {
+    const raw = await readBody(req)
+    let value: unknown
+    if (!raw.trim()) {
+        if (!opts.allowEmpty) {
+            sendError(res, 400, 'Invalid JSON body')
+            return null
+        }
+        value = {}
+    } else {
+        try {
+            value = JSON.parse(raw)
+        } catch {
+            sendError(res, 400, 'Invalid JSON body')
+            return null
+        }
+    }
+    const result = schema.safeParse(value)
+    if (!result.success) {
+        sendError(res, 400, `Invalid request body: ${formatZodError(result.error)}`)
+        return null
+    }
+    return result.data
 }
 
 export function createServer(core: MemoriaCore): http.Server {
@@ -74,12 +178,8 @@ export function createServer(core: MemoriaCore): http.Server {
 
             // POST /v1/remember
             if (method === 'POST' && pathname === '/v1/remember') {
-                const raw = await readBody(req)
-                let body: unknown
-                try { body = JSON.parse(raw) } catch {
-                    sendError(res, 400, 'Invalid JSON body')
-                    return
-                }
+                const body = await readValidatedBody(req, res, rememberSchema)
+                if (body === null) return
                 const result = await core.remember(body as Parameters<typeof core.remember>[0])
                 send(res, result.ok ? 200 : 500, result)
                 return
@@ -87,32 +187,16 @@ export function createServer(core: MemoriaCore): http.Server {
 
             // POST /v1/recall
             if (method === 'POST' && pathname === '/v1/recall') {
-                const raw = await readBody(req)
-                let body: unknown
-                try { body = JSON.parse(raw) } catch {
-                    sendError(res, 400, 'Invalid JSON body')
-                    return
-                }
-                if (typeof body !== 'object' || body === null || !('query' in body)) {
-                    sendError(res, 400, 'Body must include "query" field')
-                    return
-                }
+                const body = await readValidatedBody(req, res, recallSchema)
+                if (body === null) return
                 const result = await core.recall(body as Parameters<typeof core.recall>[0])
                 send(res, result.ok ? 200 : 500, result)
                 return
             }
 
             if (method === 'POST' && pathname === '/v1/sources') {
-                const raw = await readBody(req)
-                let body: unknown
-                try { body = JSON.parse(raw) } catch {
-                    sendError(res, 400, 'Invalid JSON body')
-                    return
-                }
-                if (typeof body !== 'object' || body === null || !('filePath' in body) || typeof body.filePath !== 'string') {
-                    sendError(res, 400, 'Body must include "filePath" field')
-                    return
-                }
+                const body = await readValidatedBody(req, res, sourcesSchema)
+                if (body === null) return
                 const result = await core.addSource(body as Parameters<typeof core.addSource>[0])
                 send(res, result.ok ? 200 : 500, result)
                 return
@@ -139,30 +223,16 @@ export function createServer(core: MemoriaCore): http.Server {
             }
 
             if (method === 'POST' && pathname === '/v1/wiki/file-query') {
-                const raw = await readBody(req)
-                let body: unknown
-                try { body = JSON.parse(raw) } catch {
-                    sendError(res, 400, 'Invalid JSON body')
-                    return
-                }
-                if (typeof body !== 'object' || body === null || !('query' in body) || !('title' in body)) {
-                    sendError(res, 400, 'Body must include "query" and "title" fields')
-                    return
-                }
+                const body = await readValidatedBody(req, res, fileQuerySchema)
+                if (body === null) return
                 const result = await core.fileQuery(body as Parameters<typeof core.fileQuery>[0])
                 send(res, result.ok ? 200 : 500, result)
                 return
             }
 
             if (method === 'POST' && pathname === '/v1/wiki/lint') {
-                const raw = await readBody(req)
-                let body: unknown = {}
-                if (raw.trim()) {
-                    try { body = JSON.parse(raw) } catch {
-                        sendError(res, 400, 'Invalid JSON body')
-                        return
-                    }
-                }
+                const body = await readValidatedBody(req, res, wikiLintSchema, { allowEmpty: true })
+                if (body === null) return
                 const result = await core.wikiLint(body as Parameters<typeof core.wikiLint>[0])
                 send(res, result.ok ? 200 : 500, result)
                 return

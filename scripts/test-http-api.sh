@@ -79,4 +79,13 @@ echo "[http] POST /v1/wiki/lint"
 assert_ok "$(curl -sf -X POST "$SERVER_URL/v1/wiki/lint" -H 'Content-Type: application/json' -d '{}')"
 echo "  wiki lint ok"
 
+echo "[http] Zod boundary rejects malformed bodies with 400"
+# wrong type on a required field (query as number) — old hand-validation only checked presence
+assert_status 400 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":123}'
+# invalid enum value for recall mode
+assert_status 400 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"x","mode":"bogus"}'
+# wrong type on a nested field (events must be an array)
+assert_status 400 -X POST "$SERVER_URL/v1/remember" -H 'Content-Type: application/json' -d '{"events":"not-an-array"}'
+echo "  malformed bodies rejected (400)"
+
 echo "[http] ok"
