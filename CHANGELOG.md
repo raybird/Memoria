@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-07-02
+
 ### Fixed
 - Agent hook adapters (Codex / Antigravity / Claude Code) now deduplicate writes across hook processes. Each `memoria adapter <name>` invocation is a separate short-lived process, so the previous in-memory throttle state reset every time and a duplicate `Stop` (double-fire / re-run) re-wrote the same turn. Throttle/dedupe state now persists per conversation — under `MEMORIA_ADAPTER_STATE_DIR`, else `$MEMORIA_HOME/.memory/adapter-state`, else the system temp dir — keyed by a turn content hash: identical repeats are skipped while distinct turns always write (no turn is dropped). The previously-dead `dedupeWindowSec` config now bounds this dedupe window (0 = always skip an identical repeat).
 - Codex / Antigravity `Stop` turns now carry the user prompt. The prompt from `UserPromptSubmit` / `PreInvocation` is buffered and read back on `Stop`, so persisted `ConversationTurn` events contain both `user` and `assistant` text instead of `user: ''` (which degraded later recall relevance).
