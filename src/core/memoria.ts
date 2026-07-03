@@ -753,6 +753,19 @@ function isEmojiOnlyQuery(query: string): boolean {
     return stripped.length === 0 && query.trim().length > 0
 }
 
+// CJK scripts (ideographs, kana, hangul) are information-dense: a 2–4 character CJK query is
+// usually a real question, whereas a 2–4 character ASCII query is often a fragment. Weight CJK
+// characters so the length gate treats "連線池設定" (meaningful) differently from "next" (noise).
+// ASCII-only queries keep their original character-count behaviour (weight 1 → no regression).
+const CJK_CHAR = /[぀-ヿ㐀-鿿가-힣]/
+const CJK_WEIGHT = 4
+
+function weightedQueryLength(text: string): number {
+    let weight = 0
+    for (const ch of text) weight += CJK_CHAR.test(ch) ? CJK_WEIGHT : 1
+    return weight
+}
+
 function shouldSkipAdaptiveRecall(filter: RecallFilter): boolean {
     if (typeof filter.mode === 'string') return false
 
@@ -767,12 +780,16 @@ function shouldSkipAdaptiveRecall(filter: RecallFilter): boolean {
     const normalized = lower.replace(/\s+/g, ' ').trim()
     const trivialPhrases = new Set([
         'ok', 'okay', 'thanks', 'thank you', 'got it', 'sounds good', 'cool', 'yes', 'no',
-        'hi', 'hello', 'hey', 'yo', 'sure', 'nice', 'great', '👍', '👌'
+        'hi', 'hello', 'hey', 'yo', 'sure', 'nice', 'great', '👍', '👌',
+        // Common short Chinese confirmations (2–4 chars would otherwise pass the CJK-weighted gate).
+        '好', '好的', '好喔', '了解', '收到', '知道了', '沒問題', '是的', '對啊', '謝謝', '感謝', '沒事'
     ])
     if (trivialPhrases.has(normalized)) return true
 
     const greetingPattern = /^(hi|hello|hey|yo|good morning|good afternoon|good evening|哈囉|你好|嗨|安安)[!.!\s]*$/i
     if (greetingPattern.test(query)) return true
 
-    return normalized.length < 8
+    // Script-aware length gate: CJK chars are weighted (see weightedQueryLength) so a short but
+    // meaningful CJK query is recalled, while short ASCII fragments are still skipped.
+    return weightedQueryLength(normalized) < 8
 }

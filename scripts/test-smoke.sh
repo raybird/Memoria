@@ -161,6 +161,12 @@ trap 'kill $SERVER_PID 2>/dev/null || true; rm -rf "$TMP_MEMORIA_HOME"' EXIT
 sleep 1
 SKIP_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"hi"}')
 node -e "const data=JSON.parse(process.argv[1]); if(data?.meta?.route_mode!=='skipped'){ throw new Error('expected skipped route_mode') }" "$SKIP_JSON"
+# CJK-aware adaptive gate: a short but meaningful CJK query must NOT be skipped (info-dense);
+# a short Chinese confirmation still skips.
+CJK_RECALL_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"連線池設定"}')
+node -e "const d=JSON.parse(process.argv[1]); if(d?.meta?.route_mode==='skipped'){ throw new Error('short CJK query was wrongly skipped: '+process.argv[1]) }" "$CJK_RECALL_JSON"
+CJK_SKIP_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"好的"}')
+node -e "const d=JSON.parse(process.argv[1]); if(d?.meta?.route_mode!=='skipped'){ throw new Error('Chinese confirmation should skip: '+process.argv[1]) }" "$CJK_SKIP_JSON"
 SCOPE_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"planning","scope":"agent:alpha","mode":"keyword"}')
 node -e "const data=JSON.parse(process.argv[1]); if(!Array.isArray(data?.data) || data.data.length<1){ throw new Error('expected scoped recall hits') }" "$SCOPE_JSON"
 WRONG_SCOPE_JSON=$(curl -sf -X POST http://localhost:3941/v1/recall -H 'Content-Type: application/json' -d '{"query":"planning","scope":"agent:beta","mode":"keyword"}')

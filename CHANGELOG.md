@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- The adaptive recall gate no longer over-skips short CJK queries. Its length threshold counted every character equally, so an information-dense query like `連線池設定` (5 chars) fell under the 8-character floor and was skipped without recalling. CJK characters (ideographs, kana, hangul) are now weighted, so short meaningful CJK queries recall while short ASCII fragments, greetings, and common Chinese confirmations still skip. ASCII query behaviour is unchanged.
+
 ## [1.16.0] - 2026-07-03
 
 ### Added
