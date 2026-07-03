@@ -246,7 +246,7 @@ Antigravity CLI (`agy`) exposes agent lifecycle hooks (JSON on stdin/stdout). Re
 }
 ```
 
-`PreInvocation` recalls memory and injects it before the model runs (emitted as both top-level `additionalContext` and nested `hookSpecificOutput.additionalContext` for build compatibility); `Stop` persists the completed turn. The handler assumes Claude Code-compatible payload fields (`prompt`, `last_assistant_message`) — verify against your `agy` version, as it degrades to a no-op when those fields are absent.
+`PreInvocation` recalls memory and injects it before the model runs, emitted as **flat** top-level `additionalContext` (the Antigravity output schema rejects a nested `hookSpecificOutput` wrapper); `Stop` persists the completed turn. Antigravity delivers the conversation via `transcript_path` rather than payload fields, so the adapter reads the transcript (like Claude Code). The transcript line format is assumed to match Claude Code's JSONL — set `MEMORIA_ADAPTER_DEBUG=<file>` to capture a real payload from your `agy` build and confirm it.
 
 ## Project Layout
 

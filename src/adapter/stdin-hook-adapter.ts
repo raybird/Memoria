@@ -52,9 +52,9 @@ export abstract class StdinHookAdapter extends BaseAdapter {
         return (typeof input.session_id === 'string' && input.session_id.trim()) || this.defaultConversationId
     }
 
-    /** User turn text for an inject event (default: the `prompt` field). */
-    protected extractUserMessage(input: HookInput): string {
-        return (typeof input.prompt === 'string' ? input.prompt : '').trim()
+    /** User turn text for an inject event (default: the `prompt` field; may be async). */
+    protected extractUserMessage(input: HookInput): string | Promise<string> {
+        return typeof input.prompt === 'string' ? input.prompt : ''
     }
 
     /** The turn to persist on a stop event, or null to skip. */
@@ -64,7 +64,7 @@ export abstract class StdinHookAdapter extends BaseAdapter {
     protected abstract buildInjectOutput(eventName: string, text?: string): unknown
 
     protected async handleInject(input: HookInput, event: string): Promise<unknown> {
-        const userMessage = this.extractUserMessage(input)
+        const userMessage = (await this.extractUserMessage(input)).trim()
         const conversationId = this.conversationId(input)
         if (!userMessage) return this.buildInjectOutput(event)
         // Buffer the prompt so a later Stop hook (a separate process) can attach it to the turn.

@@ -20,6 +20,10 @@
 // `UserPromptSubmit` injects recalled memory via hookSpecificOutput.additionalContext
 // (buffering the prompt); `Stop` persists the completed turn from the payload's
 // last_assistant_message plus the buffered prompt.
+//
+// Contract (verified against Codex hook docs, July 2026): `hook_event_name`,
+// `UserPromptSubmit`+`prompt`, `Stop`+`last_assistant_message` (string | null), and
+// the `hookSpecificOutput.additionalContext` injection shape are all real Codex fields.
 
 import { StdinHookAdapter } from './stdin-hook-adapter.js'
 import type { HookInput, HookTurn } from './stdin-hook-adapter.js'

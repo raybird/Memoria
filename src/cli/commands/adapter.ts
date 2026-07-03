@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs'
 import type { Command } from 'commander'
 import { ClaudeCodeAdapter, CodexAdapter, AntigravityAdapter } from '../../adapter/index.js'
 import { MemoriaClient } from '../../sdk.js'
@@ -8,6 +9,21 @@ async function readStdin(): Promise<string> {
     process.stdin.setEncoding('utf8')
     for await (const chunk of process.stdin) data += chunk
     return data
+}
+
+/**
+ * When MEMORIA_ADAPTER_DEBUG points at a file, append the raw hook payload to it
+ * (one JSON line per invocation). Lets you capture the real stdin shape from a host
+ * CLI to verify adapter field mappings. Fail-open: never disturbs the hook.
+ */
+function captureDebugPayload(name: string, raw: string): void {
+    const target = process.env.MEMORIA_ADAPTER_DEBUG?.trim()
+    if (!target) return
+    try {
+        appendFileSync(target, JSON.stringify({ adapter: name, received_at: new Date().toISOString(), raw }) + '\n')
+    } catch {
+        // fail-open: capture must never disturb the hook
+    }
 }
 
 /** Adapters that handle a stdin→stdout hook exchange share this shape. */
@@ -42,6 +58,7 @@ function registerHookHandler(
         .option('--recall-top-k <n>', 'Max recall hits to inject (default: 5)')
         .action(async (opts: { project?: string; server?: string; recallTopK?: string }) => {
             const raw = await readStdin()
+            captureDebugPayload(name, raw)
             if (!raw.trim()) {
                 process.stdout.write('{}\n')
                 return

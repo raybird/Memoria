@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Antigravity CLI adapter now matches the real hook contract** (it was previously guessed and effectively non-functional). Verified against Antigravity's hook docs: Antigravity delivers no `prompt` / `last_assistant_message` payload fields — both the user prompt and assistant reply are read from `transcript_path` (like Claude Code) — and its output schema rejects a nested `hookSpecificOutput` wrapper. The adapter is now transcript-based and emits **flat** top-level `additionalContext`. (The remaining assumption is the transcript line format; capture a real payload to confirm — see below.)
+
+### Added
+- `MEMORIA_ADAPTER_DEBUG=<file>`: when set, `memoria adapter <name>` appends each raw hook payload (one JSON line) to the file. Use it to capture the real stdin shape from a host CLI and verify adapter field mappings against reality.
+- `src/adapter/transcript.ts`: shared JSONL transcript parsing, now used by both the Claude Code and Antigravity adapters.
+
+### Changed
+- The Codex CLI adapter's field mapping was verified against Codex's official hook docs (`hook_event_name`, `UserPromptSubmit`+`prompt`, `Stop`+`last_assistant_message` string|null, `hookSpecificOutput.additionalContext`) and confirmed correct — comment updated, no logic change.
+
 ## [1.16.3] - 2026-07-03
 
 ### Changed

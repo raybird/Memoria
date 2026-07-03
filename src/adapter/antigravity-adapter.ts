@@ -2,8 +2,9 @@
 //
 // Integrates Memoria into Google's Antigravity CLI (`agy`) via its agent hook
 // system. Hooks receive one JSON object on stdin and return JSON on stdout to
-// inject context or gate actions. Wire the adapter into your hooks.json under
-// the customization directory (`.agents/hooks/` / settings.json `hooks`):
+// inject context or gate actions. Wire the adapter into a hooks.json under the
+// project agents dir (`<project>/.agents/hooks.json`); the top-level key is an
+// arbitrary hook-group name (we use "memoria"):
 //
 //   {
 //     "memoria": {
@@ -16,58 +17,78 @@
 //     }
 //   }
 //
-// The same command handles both events; it dispatches on hook_event_name.
-// `PreInvocation` recalls memory and injects it before the model runs (buffering
-// the prompt); `Stop` persists the completed turn. Antigravity's context-injection
-// field is `additionalContext`; some builds expect it at the top level and some
-// nested under hookSpecificOutput (Claude Code compatible), so we emit both.
+// Contract (verified against Antigravity hook docs, July 2026):
+//   - `PreInvocation` injects context before the model runs; `Stop` marks turn end.
+//   - Antigravity does NOT deliver the user prompt or assistant message as payload
+//     fields — both are recovered from `transcript_path`, so this adapter is
+//     transcript-based (like Claude Code), not payload-field-based (like Codex).
+//   - Injection output MUST be flat `{ "additionalContext": "..." }`; wrapping it
+//     under `hookSpecificOutput` fails Antigravity's schema validation.
+// The remaining unverified detail is the transcript line FORMAT (assumed to match
+// the Claude Code JSONL envelope); capture a real payload with MEMORIA_ADAPTER_DEBUG
+// to confirm.
 
 import { StdinHookAdapter } from './stdin-hook-adapter.js'
 import type { HookInput, HookTurn } from './stdin-hook-adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
+import { readLastTurn, readLatestUserMessage } from './transcript.js'
 
-export interface AntigravityAdapterConfig extends MemoriaAdapterConfig {}
+export interface AntigravityAdapterConfig extends MemoriaAdapterConfig {
+    /** Max transcript lines to scan backwards when locating the turn (default: 50) */
+    transcriptScanLimit?: number
+}
 
 /** Shape of the JSON Antigravity writes to a hook's stdin. Fields are optional because they vary by event. */
 export interface AntigravityHookInput {
     hook_event_name?: string
     session_id?: string
+    /** Path to the session transcript log (both spellings observed across builds). */
     transcript_path?: string
+    transcriptPath?: string
     cwd?: string
-    timestamp?: string
-    /** PreInvocation: the text the user just submitted (Claude Code compatible field) */
-    prompt?: string
-    /** Stop: the assistant's final message for the turn */
-    last_assistant_message?: string | null
 }
 
-/** Hook response Antigravity accepts on stdout (top-level + nested for max compatibility). */
+/** Hook response Antigravity accepts on stdout (flat — no legacy hookSpecificOutput wrapper). */
 export interface AntigravityHookOutput {
     additionalContext?: string
-    hookSpecificOutput?: {
-        hookEventName: string
-        additionalContext?: string
-    }
 }
 
 export class AntigravityAdapter extends StdinHookAdapter {
-    // PreInvocation is Antigravity's context-injection point; UserPromptSubmit is the Claude-compatible alias.
+    // PreInvocation is Antigravity's context-injection point; UserPromptSubmit is a Claude-compatible alias.
     protected readonly injectEvents = ['PreInvocation', 'UserPromptSubmit'] as const
     // Stop / PostInvocation mark turn completion.
     protected readonly stopEvents = ['Stop', 'PostInvocation'] as const
     protected readonly defaultConversationId = 'antigravity-session'
 
-    protected extractTurn(input: HookInput, conversationId: string): HookTurn | null {
-        const assistant = (typeof input.last_assistant_message === 'string' ? input.last_assistant_message : '').trim()
-        if (!assistant) return null
-        return { user: this.takeUserPrompt(conversationId), assistant }
+    private readonly transcriptScanLimit: number
+
+    constructor(config: AntigravityAdapterConfig) {
+        super(config)
+        this.transcriptScanLimit = config.transcriptScanLimit ?? 50
     }
 
-    protected buildInjectOutput(eventName: string, text?: string): AntigravityHookOutput {
-        if (!text) return {}
-        return {
-            additionalContext: text,
-            hookSpecificOutput: { hookEventName: eventName, additionalContext: text }
-        }
+    private transcriptPath(input: HookInput): string {
+        if (typeof input.transcript_path === 'string' && input.transcript_path) return input.transcript_path
+        if (typeof input.transcriptPath === 'string' && input.transcriptPath) return input.transcriptPath
+        return ''
+    }
+
+    /** Antigravity has no `prompt` field; read the latest user message from the transcript. */
+    protected override async extractUserMessage(input: HookInput): Promise<string> {
+        const path = this.transcriptPath(input)
+        if (!path) return ''
+        return readLatestUserMessage(path, this.transcriptScanLimit)
+    }
+
+    /** Antigravity has no `last_assistant_message` field; read the last turn from the transcript. */
+    protected async extractTurn(input: HookInput): Promise<HookTurn | null> {
+        const path = this.transcriptPath(input)
+        if (!path) return null
+        return readLastTurn(path, this.transcriptScanLimit)
+    }
+
+    protected buildInjectOutput(_eventName: string, text?: string): AntigravityHookOutput {
+        // Flat output only — a nested hookSpecificOutput copy fails Antigravity schema validation.
+        return text ? { additionalContext: text } : {}
     }
 }

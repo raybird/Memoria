@@ -246,7 +246,7 @@ Antigravity CLI（`agy`）提供 agent 生命週期 hook（stdin/stdout 走 JSON
 }
 ```
 
-`PreInvocation` 在模型執行前 recall 並注入記憶（同時輸出 top-level `additionalContext` 與巢狀 `hookSpecificOutput.additionalContext` 以相容不同版本）；`Stop` 寫回完成的這一輪。此 handler 假設 payload 帶有與 Claude Code 相容的欄位（`prompt`、`last_assistant_message`）——請對照你的 `agy` 版本確認，缺欄位時會降級為 no-op。
+`PreInvocation` 在模型執行前 recall 並注入記憶，輸出為**扁平**的 top-level `additionalContext`（Antigravity 的輸出 schema 會拒絕巢狀 `hookSpecificOutput` 包裝）；`Stop` 寫回完成的這一輪。Antigravity 透過 `transcript_path` 傳遞對話（而非 payload 欄位），因此 adapter 改讀 transcript（如同 Claude Code）。transcript 行格式假設與 Claude Code 的 JSONL 相同——設 `MEMORIA_ADAPTER_DEBUG=<file>` 擷取你 `agy` 版本的真實 payload 來確認。
 
 ## 專案結構
 
