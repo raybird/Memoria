@@ -26,6 +26,7 @@
 
 import { BaseAdapter } from './adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
+import { hashTurn } from './hook-state.js'
 import type { RecallHit } from '../core/types.js'
 
 export interface AntigravityAdapterConfig extends MemoriaAdapterConfig {}
@@ -79,6 +80,8 @@ export class AntigravityAdapter extends BaseAdapter {
         const conversationId = input.session_id ?? 'antigravity-session'
         const eventName = input.hook_event_name ?? 'PreInvocation'
         if (!userMessage) return {}
+        // Buffer the prompt so the later Stop hook (a separate process) can attach it to the turn.
+        this.rememberUserPrompt(conversationId, userMessage)
 
         try {
             const rc = await this.recallForContext({ userMessage, conversationId })
@@ -99,7 +102,9 @@ export class AntigravityAdapter extends BaseAdapter {
             const conversationId = input.session_id ?? 'antigravity-session'
             const assistant = (input.last_assistant_message ?? '').trim()
             if (!assistant) return
-            if (!this.shouldWrite(conversationId)) return
+            const user = this.takeUserPrompt(conversationId)
+            const contentHash = hashTurn(`${user}\n${assistant}`)
+            if (!this.shouldWrite(conversationId, contentHash)) return
 
             await this.client.remember({
                 timestamp: new Date().toISOString(),
@@ -109,11 +114,11 @@ export class AntigravityAdapter extends BaseAdapter {
                     {
                         event_type: 'ConversationTurn',
                         timestamp: new Date().toISOString(),
-                        content: { user: '', assistant }
+                        content: { user, assistant }
                     }
                 ]
             })
-            this.markWritten(conversationId)
+            this.markWritten(conversationId, contentHash)
         } catch (error) {
             if (!this.config.failOpen) throw error
         }

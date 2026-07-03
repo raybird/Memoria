@@ -24,6 +24,7 @@
 
 import { BaseAdapter } from './adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
+import { hashTurn } from './hook-state.js'
 import type { RecallHit } from '../core/types.js'
 
 export interface CodexAdapterConfig extends MemoriaAdapterConfig {}
@@ -75,6 +76,8 @@ export class CodexAdapter extends BaseAdapter {
         if (!userMessage) {
             return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit' } }
         }
+        // Buffer the prompt so the later Stop hook (a separate process) can attach it to the turn.
+        this.rememberUserPrompt(conversationId, userMessage)
 
         try {
             const rc = await this.recallForContext({ userMessage, conversationId })
@@ -96,7 +99,9 @@ export class CodexAdapter extends BaseAdapter {
             const conversationId = input.session_id ?? 'codex-session'
             const assistant = (input.last_assistant_message ?? '').trim()
             if (!assistant) return
-            if (!this.shouldWrite(conversationId)) return
+            const user = this.takeUserPrompt(conversationId)
+            const contentHash = hashTurn(`${user}\n${assistant}`)
+            if (!this.shouldWrite(conversationId, contentHash)) return
 
             await this.client.remember({
                 timestamp: new Date().toISOString(),
@@ -106,11 +111,11 @@ export class CodexAdapter extends BaseAdapter {
                     {
                         event_type: 'ConversationTurn',
                         timestamp: new Date().toISOString(),
-                        content: { user: '', assistant }
+                        content: { user, assistant }
                     }
                 ]
             })
-            this.markWritten(conversationId)
+            this.markWritten(conversationId, contentHash)
         } catch (error) {
             if (!this.config.failOpen) throw error
         }

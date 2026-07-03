@@ -8,6 +8,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
+# Isolate cross-process hook state so throttle/dedupe/prompt-buffer don't leak across test runs.
+export MEMORIA_ADAPTER_STATE_DIR="$TMP_DIR/adapter-state"
 PORT=$((20000 + RANDOM % 10000))
 SERVER_URL="http://localhost:${PORT}"
 SERVER_PID=""
@@ -68,5 +70,30 @@ if [ "$AFTER" -le "$BEFORE" ]; then
     exit 1
 fi
 echo "  Stop hook wrote events ($BEFORE -> $AFTER)"
+
+echo "[antigravity] Stop turn carries the user prompt buffered by PreInvocation"
+node -e "
+const D = require('$ROOT_DIR/node_modules/better-sqlite3');
+const db = new D('$TMP_DIR/home/.memory/sessions.db', { readonly: true });
+const row = db.prepare(\"SELECT content FROM events WHERE event_type='ConversationTurn' ORDER BY timestamp DESC LIMIT 1\").get();
+db.close();
+if (!row) { console.error('  ✗ no ConversationTurn event written'); process.exit(1); }
+const c = JSON.parse(row.content);
+if (!String(c.user || '').includes('npm publish')) { console.error('  ✗ user prompt not attached to turn: ' + row.content); process.exit(1); }
+console.log('  user prompt attached to turn: ' + c.user);
+"
+
+echo "[antigravity] duplicate Stop is deduped (no double write)"
+echo "$STOP_JSON" | "$ROOT_DIR/cli" adapter antigravity --server "$SERVER_URL" --project antigravity >/dev/null
+sleep 0.3
+AFTER2=$(curl -sf "$SERVER_URL/v1/stats" | node -e "
+const r = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(String(r?.data?.events ?? 0));
+")
+if [ "$AFTER2" -ne "$AFTER" ]; then
+    echo "  ✗ duplicate Stop wrote again (after=$AFTER, after2=$AFTER2)"
+    exit 1
+fi
+echo "  duplicate Stop deduped (events stayed $AFTER2)"
 
 echo "[antigravity] ok"

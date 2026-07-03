@@ -8,6 +8,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
+# Isolate cross-process hook state so throttle/dedupe don't leak across test runs.
+export MEMORIA_ADAPTER_STATE_DIR="$TMP_DIR/adapter-state"
 PORT=$((20000 + RANDOM % 10000))
 SERVER_URL="http://localhost:${PORT}"
 SERVER_PID=""

@@ -10,6 +10,7 @@
 
 import { MemoriaClient } from '../sdk.js'
 import type { RecallHit } from '../core/types.js'
+import { readConversationState, updateConversationState, hashTurn } from './hook-state.js'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ export interface MemoriaAdapterConfig {
     throttleMs?: number
     /** If true (default), errors are swallowed and never bubble to the agent */
     failOpen?: boolean
-    /** Deduplicate: skip write if same conversationId wrote within this many seconds (default: 0 = off) */
+    /** Deduplicate: skip a write whose content matches the previous write for the same conversationId within this many seconds (default: 0 = always skip an identical consecutive write) */
     dedupeWindowSec?: number
     /** Optional time window for recall, ISO duration e.g. 'P7D' */
     recallTimeWindow?: string
@@ -62,9 +63,6 @@ export interface RecallContext {
 export abstract class BaseAdapter {
     protected readonly client: MemoriaClient
     protected readonly config: Required<Omit<MemoriaAdapterConfig, 'client'>>
-
-    /** Track last-write timestamp per conversationId for throttling */
-    private readonly lastWriteAt = new Map<string, number>()
 
     constructor(config: MemoriaAdapterConfig) {
         if (typeof config.client === 'string') {
@@ -107,10 +105,11 @@ export abstract class BaseAdapter {
      */
     async afterResponse(response: AdapterResponse): Promise<void> {
         try {
-            if (!this.shouldWrite(response.conversationId)) return
+            const contentHash = hashTurn(`${response.userMessage ?? ''}\n${response.response}`)
+            if (!this.shouldWrite(response.conversationId, contentHash)) return
             const sessionData = this.buildSessionData(response)
             await this.client.remember(sessionData)
-            this.markWritten(response.conversationId)
+            this.markWritten(response.conversationId, contentHash)
         } catch (error) {
             if (!this.config.failOpen) throw error
         }
@@ -173,14 +172,38 @@ export abstract class BaseAdapter {
         }
     }
 
-    /** Throttle + dedupe check – subclass-accessible */
-    protected shouldWrite(conversationId: string): boolean {
-        const last = this.lastWriteAt.get(conversationId)
-        if (!last) return true
-        return Date.now() - last >= this.config.throttleMs
+    /**
+     * Throttle + dedupe check, backed by cross-process conversation state so it
+     * works across separate hook invocations (each hook is its own process).
+     * Skips the write when the content duplicates the last write (bounded by
+     * dedupeWindowSec) or when it lands within throttleMs of the last write.
+     */
+    protected shouldWrite(conversationId: string, contentHash?: string): boolean {
+        const state = readConversationState(conversationId)
+        if (state.lastWriteAt === undefined) return true
+        const elapsed = Date.now() - state.lastWriteAt
+        if (contentHash !== undefined) {
+            // Content-aware: suppress only an identical repeat write (bounded by dedupeWindowSec);
+            // a distinct turn always writes, so no legitimate turn is ever dropped.
+            if (state.lastWriteHash !== contentHash) return true
+            const windowMs = this.config.dedupeWindowSec > 0 ? this.config.dedupeWindowSec * 1000 : Infinity
+            return elapsed >= windowMs
+        }
+        // No content signal (e.g. the reference SDK path) → fall back to the time throttle.
+        return elapsed >= this.config.throttleMs
     }
 
-    protected markWritten(conversationId: string): void {
-        this.lastWriteAt.set(conversationId, Date.now())
+    protected markWritten(conversationId: string, contentHash?: string): void {
+        updateConversationState(conversationId, { lastWriteAt: Date.now(), lastWriteHash: contentHash })
+    }
+
+    /** Buffer the user prompt (UserPromptSubmit) so a later Stop hook can attach it to the turn. */
+    protected rememberUserPrompt(conversationId: string, prompt: string): void {
+        updateConversationState(conversationId, { lastUserPrompt: prompt })
+    }
+
+    /** Read the buffered user prompt for this conversation ('' if none). */
+    protected takeUserPrompt(conversationId: string): string {
+        return readConversationState(conversationId).lastUserPrompt ?? ''
     }
 }

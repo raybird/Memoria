@@ -21,6 +21,7 @@
 import { readFile } from 'node:fs/promises'
 import { BaseAdapter } from './adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
+import { hashTurn } from './hook-state.js'
 import type { RecallHit } from '../core/types.js'
 
 export interface ClaudeCodeAdapterConfig extends MemoriaAdapterConfig {
@@ -95,10 +96,11 @@ export class ClaudeCodeAdapter extends BaseAdapter {
             const transcriptPath = input.transcript_path
             const conversationId = input.session_id ?? 'claude-code-session'
             if (!transcriptPath) return
-            if (!this.shouldWrite(conversationId)) return
 
             const turn = await this.readLastTurn(transcriptPath)
             if (!turn) return
+            const contentHash = hashTurn(`${turn.user}\n${turn.assistant}`)
+            if (!this.shouldWrite(conversationId, contentHash)) return
 
             await this.client.remember({
                 timestamp: new Date().toISOString(),
@@ -112,7 +114,7 @@ export class ClaudeCodeAdapter extends BaseAdapter {
                     }
                 ]
             })
-            this.markWritten(conversationId)
+            this.markWritten(conversationId, contentHash)
         } catch (error) {
             if (!this.config.failOpen) throw error
         }
