@@ -25,6 +25,7 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 
 - Context compression in core: `idea`
 - Native semantic search in core: `blocked` — needs embedding-backend decision; Phase 0 found `mcp-memory-libsql` is text-search only. See [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md)
+- Recall utility feedback loop: `proposed` — no embeddings, not blocked; awaits Phase 0 spike on reuse-signal discriminative power. See [RFC: Recall Utility Feedback Loop](docs/RFC-utility-feedback.md)
 - OpenCode plugin in-repo: `idea`
 - Expanded verify checks and schema migration helpers: `planned`
 - Adaptive retrieval gate: `done`
@@ -190,6 +191,13 @@ Standalone design docs that expand a candidate direction into an implementable p
   `vector` recall mode fused with lexical recall via RRF. `blocked`: Phase 0 found
   `mcp-memory-libsql` is text-search only (no embeddings in any version), so the design now
   needs a native embedding backend decision (local model vs API; `sqlite-vec` vs libSQL).
+- [RFC: Recall Utility Feedback Loop](docs/RFC-utility-feedback.md) — Candidate Direction #8
+  (score hygiene) + #5 (observability). Closes the open recall loop: `recall()` surfaces a
+  `recall_id`, and downstream reports back whether the injected memory was actually reused
+  next turn, so `confidence` can be calibrated. No embeddings, not blocked; also the eval
+  yardstick for the semantic RFC above.
+- [Assessment: Memory Mechanism](docs/memory-mechanism-assessment.md) — pros/cons review of the
+  current memory stack; the utility-feedback RFC expands its top actionable weakness.
 
 ## Recommended Execution Order
 
