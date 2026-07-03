@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Decision/Skill event field extraction (title, rationale, impact level, skill name, success rate, examples, …) is centralized in `src/core/extract.ts` (`parseDecisionEvent` / `parseSkillEvent`), replacing three copies of the same JSON-field heuristic in sync (markdown generation), recall (tree indexing), and telemetry (governance review). Behavior is unchanged; the standalone MCP bridge script keeps its own copy (separate Node runtime).
+
 ## [1.16.2] - 2026-07-03
 
 ### Changed

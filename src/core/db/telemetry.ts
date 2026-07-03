@@ -1,8 +1,9 @@
 import { existsSync } from '../paths.js'
-import { shortHash, maybeParseJson, normalizeSkillKey, parseCreatedAt } from '../utils.js'
+import { shortHash, normalizeSkillKey, parseCreatedAt } from '../utils.js'
+import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
-import type { Json, StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
+import type { StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
 
 function countQueryTokens(query: string): number {
     return new Set(
@@ -266,13 +267,12 @@ export function queryGovernanceReview(
         const byKey = new Map<string, CandidateAccum>()
 
         for (const row of decisionRows) {
-            const parsed = maybeParseJson(row.content)
-            const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : {}
-            const title = String(obj.decision ?? '').trim()
+            const fields = parseDecisionEvent(row.content)
+            const title = fields.decision.trim()
             if (!title) continue
             const normalized = normalizeSkillKey(title)
             const key = `decision:${normalized}`
-            const impact = String(obj.impact_level ?? 'medium').toLowerCase() === 'high'
+            const impact = fields.impact_level.toLowerCase() === 'high'
             const existing = byKey.get(key)
             if (!existing) {
                 byKey.set(key, {
@@ -296,9 +296,8 @@ export function queryGovernanceReview(
         }
 
         for (const row of skillRows) {
-            const parsed = maybeParseJson(row.content)
-            const obj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Json : {}
-            const title = String(obj.skill_name ?? '').trim()
+            const fields = parseSkillEvent(row.content)
+            const title = fields.skill_name.trim()
             if (!title) continue
             const normalized = normalizeSkillKey(title)
             const key = `skill:${normalized}`

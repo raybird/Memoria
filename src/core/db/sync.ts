@@ -3,7 +3,7 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { safeDate, slugify } from '../utils.js'
-import type { Json } from '../types.js'
+import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 
 export async function syncDailyNote(memoriaHome: string, dbPath: string, sessionId: string): Promise<void> {
     const db = new Database(dbPath, { readonly: true })
@@ -45,45 +45,33 @@ export async function extractDecisions(memoriaHome: string, dbPath: string, sess
             .all(sessionId) as { id: string; timestamp: string; content: string }[]
 
         for (const row of rows) {
-            let contentData: Json = {}
-            try {
-                contentData = JSON.parse(row.content) as Json
-            } catch {
-                contentData = {}
-            }
-
-            const decisionTitle =
-                typeof contentData.decision === 'string' && contentData.decision.trim()
-                    ? contentData.decision.trim()
-                    : 'Untitled Decision'
+            const fields = parseDecisionEvent(row.content)
 
             const date = safeDate(row.timestamp).toISOString().slice(0, 10)
-            const filename = `${date}_${slugify(decisionTitle).slice(0, 40)}_${slugify(row.id).slice(0, 8)}.md`
+            const filename = `${date}_${slugify(fields.title).slice(0, 40)}_${slugify(row.id).slice(0, 8)}.md`
             const filePath = path.join(memoriaHome, 'knowledge', 'Decisions', filename)
 
-            const alternatives = Array.isArray(contentData.alternatives_considered)
-                ? (contentData.alternatives_considered as unknown[])
-                    .map((a) => `- ${String(a)}`)
-                    .join('\n')
+            const alternatives = fields.alternatives.length > 0
+                ? fields.alternatives.map((a) => `- ${a}`).join('\n')
                 : '- (none)'
 
-            const decisionDoc = `# ${decisionTitle}
+            const decisionDoc = `# ${fields.title}
 
 ## 元數據
 - **日期**: ${row.timestamp}
 - **Session ID**: \`${sessionId}\`
 
 ## 決策內容
-${typeof contentData.decision === 'string' ? contentData.decision : ''}
+${fields.decision}
 
 ## 理由
-${typeof contentData.rationale === 'string' ? contentData.rationale : ''}
+${fields.rationale}
 
 ## 考慮的替代方案
 ${alternatives}
 
 ## 影響等級
-${typeof contentData.impact_level === 'string' ? contentData.impact_level : 'medium'}
+${fields.impact_level}
 
 ## 相關連結
 [[${date}]]
@@ -114,40 +102,26 @@ export async function extractSkills(memoriaHome: string, dbPath: string, session
     `)
 
         for (const row of rows) {
-            let contentData: Json = {}
-            try {
-                contentData = JSON.parse(row.content) as Json
-            } catch {
-                contentData = {}
-            }
-
-            const skillName =
-                typeof contentData.skill_name === 'string' && contentData.skill_name.trim()
-                    ? contentData.skill_name.trim()
-                    : 'Untitled Skill'
-            const successRateRaw =
-                typeof contentData.success_rate === 'number' ? contentData.success_rate : Number(contentData.success_rate ?? 0)
-            const successRate = Number.isFinite(successRateRaw) ? successRateRaw : 0
-            const category = typeof contentData.category === 'string' ? contentData.category : 'general'
+            const fields = parseSkillEvent(row.content)
             const date = safeDate(row.timestamp).toISOString().slice(0, 10)
 
-            const filename = `${slugify(skillName)}.md`
+            const filename = `${slugify(fields.title)}.md`
             const filePath = path.join(memoriaHome, 'knowledge', 'Skills', filename)
 
-            const examples = Array.isArray(contentData.examples)
-                ? (contentData.examples as unknown[]).map((e) => `- ${String(e)}`).join('\n')
+            const examples = fields.examples.length > 0
+                ? fields.examples.map((e) => `- ${e}`).join('\n')
                 : '- (none)'
 
-            const skillDoc = `# ${skillName}
+            const skillDoc = `# ${fields.title}
 
 ## 元數據
 - **創建日期**: ${row.timestamp}
-- **類別**: ${category}
-- **成功率**: ${(successRate * 100).toFixed(1)}%
+- **類別**: ${fields.category}
+- **成功率**: ${(fields.success_rate * 100).toFixed(1)}%
 - **使用次數**: 1
 
 ## 模式描述
-${typeof contentData.pattern === 'string' ? contentData.pattern : ''}
+${fields.pattern}
 
 ## 實際案例
 ${examples}
@@ -159,11 +133,11 @@ ${examples}
             await fs.writeFile(filePath, skillDoc, 'utf8')
 
             upsertSkill.run(
-                slugify(skillName).toLowerCase(),
-                skillName,
-                category,
+                slugify(fields.title).toLowerCase(),
+                fields.title,
+                fields.category,
                 row.timestamp,
-                successRate,
+                fields.success_rate,
                 1,
                 filePath
             )

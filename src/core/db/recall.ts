@@ -2,10 +2,11 @@ import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate } from '../utils.js'
 import { safeDate } from '../utils.js'
+import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
 import { truncateText } from './mappers.js'
-import type { Json, MemoryIndexBuildOptions, MemoryIndexBuildResult, RecallHit } from '../types.js'
+import type { MemoryIndexBuildOptions, MemoryIndexBuildResult, RecallHit } from '../types.js'
 
 function tokenizeQuery(query: string): string[] {
     const tokens = query
@@ -154,14 +155,11 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
                 let decisionText = ''
                 let skillText = ''
                 for (const row of eventRows) {
-                    const parsed = maybeParseJson(row.content)
-                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue
-                    const parsedObj = parsed as Json
-                    if (!decisionText && row.event_type === 'DecisionMade' && typeof parsedObj.decision === 'string') {
-                        decisionText = parsedObj.decision
+                    if (!decisionText && row.event_type === 'DecisionMade') {
+                        decisionText = parseDecisionEvent(row.content).decision
                     }
-                    if (!skillText && row.event_type === 'SkillLearned' && typeof parsedObj.skill_name === 'string') {
-                        skillText = parsedObj.skill_name
+                    if (!skillText && row.event_type === 'SkillLearned') {
+                        skillText = parseSkillEvent(row.content).skill_name
                     }
                     if (decisionText && skillText) break
                 }
