@@ -76,6 +76,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "dist/release/memoria-linux-x64-$GITHUB_REF_NAME.tar.gz" \
+            "dist/release/memoria-linux-x64-$GITHUB_REF_NAME.tar.gz.sha256" \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md
 

@@ -69,6 +69,14 @@ download_artifact() {
   cp "$source" "$destination"
 }
 
+validate_version() {
+  local clean="${1#v}"
+  # Accept semver (1.2.3) with an optional pre-release/build suffix; reject anything else before
+  # it is interpolated into a download URL.
+  [[ "$clean" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$ ]] \
+    || fail "invalid --version: '$1' (expected a semver like 1.2.3 or v1.2.3)"
+}
+
 resolve_release_url() {
   local raw_version="$1"
   local normalized="$raw_version"
@@ -79,6 +87,41 @@ resolve_release_url() {
 
   local clean_version="${normalized#v}"
   printf 'https://github.com/raybird/Memoria/releases/download/%s/memoria-%s-v%s.tar.gz\n' "$normalized" "$PLATFORM" "$clean_version"
+}
+
+# Verify the downloaded tarball against a SHA256 sidecar (<source>.sha256). The sidecar is fetched
+# from the same URL, or read next to a local artifact. If none is available (older release, local
+# build), it warns and continues; a present-but-mismatching checksum is a hard failure.
+verify_checksum() {
+  local artifact_path="$1" checksum_source="$2"
+  local sums_file="$TMP_DIR/artifact.sha256"
+
+  if [[ "$checksum_source" =~ ^https?:// ]]; then
+    if ! (has_cmd curl && curl -fsSL "$checksum_source" -o "$sums_file" 2>/dev/null); then
+      echo "⚠ no checksum published at $checksum_source — skipping integrity verification" >&2
+      return 0
+    fi
+  elif [ -f "$checksum_source" ]; then
+    cp "$checksum_source" "$sums_file"
+  else
+    echo "⚠ no checksum sidecar ($checksum_source) — skipping integrity verification" >&2
+    return 0
+  fi
+
+  local hasher=""
+  if has_cmd sha256sum; then hasher="sha256sum"
+  elif has_cmd shasum; then hasher="shasum -a 256"
+  else
+    echo "⚠ no sha256sum/shasum available — skipping integrity verification" >&2
+    return 0
+  fi
+
+  local expected actual
+  expected="$(awk 'NF {print $1; exit}' "$sums_file")"
+  [ -n "$expected" ] || { echo "⚠ empty checksum sidecar — skipping verification" >&2; return 0; }
+  actual="$($hasher "$artifact_path" | awk '{print $1}')"
+  [ "$expected" = "$actual" ] || fail "checksum mismatch (expected $expected, got $actual) — refusing to install"
+  echo "✓ checksum verified (sha256)"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -95,6 +138,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --version)
       [ "$#" -ge 2 ] || fail "missing value for --version"
+      validate_version "$2"
       REQUESTED_VERSION="$2"
       shift 2
       ;;
@@ -143,6 +187,7 @@ echo ""
 
 mkdir -p "$EXTRACT_DIR" "$INSTALL_DIR"
 download_artifact "$ARTIFACT_SOURCE" "$ARTIFACT_PATH"
+verify_checksum "$ARTIFACT_PATH" "${ARTIFACT_SOURCE}.sha256"
 tar -C "$EXTRACT_DIR" -xzf "$ARTIFACT_PATH"
 
 EXTRACTED_ROOTS=("$EXTRACT_DIR"/*)

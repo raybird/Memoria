@@ -33,8 +33,34 @@ fi
 
 mkdir -p "$WORK_DIR"
 
-echo "[no-clone] install artifact"
-bash "$ROOT_DIR/install.sh" --artifact "$ARTIFACT_PATH" --install-dir "$INSTALL_DIR"
+# Packaging emits the SHA256 sidecar; generate it for standalone runs so the checksum path is
+# always exercised deterministically (the build dir is gitignored, so this is harmless).
+if [ ! -f "${ARTIFACT_PATH}.sha256" ]; then
+  ( cd "$(dirname "$ARTIFACT_PATH")" && sha256sum "$(basename "$ARTIFACT_PATH")" > "$(basename "$ARTIFACT_PATH").sha256" )
+fi
+
+echo "[no-clone] install artifact (with checksum verification)"
+INSTALL_OUT="$(bash "$ROOT_DIR/install.sh" --artifact "$ARTIFACT_PATH" --install-dir "$INSTALL_DIR")"
+echo "$INSTALL_OUT"
+echo "$INSTALL_OUT" | grep -q "checksum verified" || { echo "expected checksum verification during install"; exit 1; }
+
+echo "[no-clone] tampered checksum is rejected"
+BAD_DIR="$TMP_DIR/bad"
+mkdir -p "$BAD_DIR"
+cp "$ARTIFACT_PATH" "$BAD_DIR/artifact.tar.gz"
+printf '%s  artifact.tar.gz\n' "0000000000000000000000000000000000000000000000000000000000000000" > "$BAD_DIR/artifact.tar.gz.sha256"
+if bash "$ROOT_DIR/install.sh" --artifact "$BAD_DIR/artifact.tar.gz" --install-dir "$TMP_DIR/bad-install" >/dev/null 2>&1; then
+  echo "install should have failed on checksum mismatch"
+  exit 1
+fi
+echo "[no-clone] tampered checksum rejected"
+
+echo "[no-clone] reject malformed --version"
+if bash "$ROOT_DIR/install.sh" --version "not-a-version" --install-dir "$TMP_DIR/bad-install2" >/dev/null 2>&1; then
+  echo "install should have rejected a malformed --version"
+  exit 1
+fi
+echo "[no-clone] malformed --version rejected"
 
 echo "[no-clone] verify installed launcher"
 (cd "$WORK_DIR" && "$INSTALL_DIR/bin/memoria" --help >/dev/null)

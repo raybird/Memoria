@@ -62,6 +62,11 @@ tar \
 
 gzip -n -f "$ARTIFACT_TAR_PATH"
 
+# Emit a SHA256 sidecar (relative filename so `sha256sum -c` works from the release dir) so
+# install.sh can verify tarball integrity before extracting.
+CHECKSUM_PATH="${ARTIFACT_PATH}.sha256"
+( cd "$RELEASE_DIR" && sha256sum "${ARTIFACT_BASENAME}.tar.gz" > "${ARTIFACT_BASENAME}.tar.gz.sha256" )
+
 for required_entry in \
   "$ARTIFACT_BASENAME/bin/memoria" \
   "$ARTIFACT_BASENAME/lib/cli.mjs" \
@@ -80,6 +85,7 @@ done
 echo "release_stage=$STAGE_DIR"
 echo "release_launcher=$INSTALL_DIR/memoria"
 echo "release_artifact=$ARTIFACT_PATH"
+echo "release_checksum=$CHECKSUM_PATH"
 echo "artifact_layout:"
 echo "  $ARTIFACT_BASENAME/bin/memoria"
 echo "  $ARTIFACT_BASENAME/lib/cli.mjs"

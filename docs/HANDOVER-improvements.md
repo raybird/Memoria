@@ -21,9 +21,11 @@
 | P5 | `f1e4400` | 抽 `utils.tokenizeQuery` 統一三處；CJK 範圍差異常數化+註記（行為不變） |
 | P7 | `894ca65` | CI 拆平行 job（static/test 矩陣/node18/release）+ Node 18 smoke + docs-check 進 CI |
 | P8 | `676274a` | 連線收斂到 `withDb`（支援 RW/RO options），消除 20+ 處直接 `new Database` |
-| P6 | (本次) | UFL Phase 0 shadow spike：reuse 訊號 Gate 通過（非退化、有鑑別力）；固化 `test-utility-shadow.sh`；未動 recall()/schema |
+| P6 | `dfea241` | UFL Phase 0 shadow spike：reuse 訊號 Gate 通過（非退化、有鑑別力）；固化 `test-utility-shadow.sh`；未動 recall()/schema |
+| P9 | `0ae0264` | recall.ts 抽 buildSnippet/buildScopeClause、統一 keyword 重複 SQL；未動 recall()，輸出 byte-identical |
+| P10 | (本次) | install.sh 加 SHA256 checksum 驗證 + `--version` 格式檢查；打包產 `.sha256`、release 上傳；backward-compat（無 sidecar 則警告續行） |
 
-**剩餘（未動）**：P9（recall.ts 重構，CRITICAL）、P10（install.sh checksum）。**UFL 主線下一步 = Phase 1 MVP**（見 `docs/RFC-utility-feedback.md` §10/§14）。P5 的 CJK 範圍對齊方向仍為待決。
+**P1–P10 全數完成。** 剩下的是記憶智能主線：**UFL Phase 1 MVP**（見 `docs/RFC-utility-feedback.md` §10/§14）——會真正動 `recall()`（加 `recall_id`）+ Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome`。P5 的 CJK 範圍對齊方向仍為待決。
 
 **P8 補充**：`withDb` 現以 `<mode>:<dbPath>` 為 pool key，readonly 與 read-write handle 分開池化（readonly caller 保留 SQLite 寫入保護）。唯一保留直接 `new Database` 的是 `schema.ts` 的 `initDatabase`（DDL/migration bootstrap，刻意不動）。踩到的坑：better-sqlite3 不接受 `fileMustExist: undefined`，需強制 boolean。
 
