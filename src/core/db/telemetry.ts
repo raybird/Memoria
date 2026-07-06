@@ -1,14 +1,12 @@
 import { existsSync } from '../paths.js'
-import { shortHash, normalizeSkillKey, parseCreatedAt } from '../utils.js'
+import { shortHash, normalizeSkillKey, parseCreatedAt, tokenizeQuery } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
 import type { StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
 
 function countQueryTokens(query: string): number {
-    return new Set(
-        query.toLowerCase().split(/[^a-z0-9一-鿿]+/).map((t) => t.trim()).filter((t) => t.length >= 2)
-    ).size
+    return tokenizeQuery(query).length
 }
 
 export function logRecallTelemetry(

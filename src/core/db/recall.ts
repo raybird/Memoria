@@ -1,21 +1,12 @@
 import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
-import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate } from '../utils.js'
+import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery } from '../utils.js'
 import { safeDate } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
 import { truncateText } from './mappers.js'
 import type { MemoryIndexBuildOptions, MemoryIndexBuildResult, RecallHit } from '../types.js'
-
-function tokenizeQuery(query: string): string[] {
-    const tokens = query
-        .toLowerCase()
-        .split(/[^a-z0-9一-鿿]+/)
-        .map((t) => t.trim())
-        .filter((t) => t.length >= 2)
-    return Array.from(new Set(tokens))
-}
 
 const DEFAULT_DECAY_HALF_LIFE_DAYS = 90
 
@@ -376,12 +367,7 @@ function tokenCoverage(query: string, text: string): number {
 function buildFtsMatch(query: string): string {
     // Trigram FTS terms need >=3 chars. Quote each as an FTS5 string literal (escaping embedded
     // quotes) and OR-join so bm25 ranks by how many / how rare the matched terms are.
-    const terms = query
-        .toLowerCase()
-        .split(/[^a-z0-9一-鿿]+/)
-        .map((t) => t.trim())
-        .filter((t) => t.length >= FTS_MIN_TERM_LEN)
-    return Array.from(new Set(terms))
+    return tokenizeQuery(query, FTS_MIN_TERM_LEN)
         .map((t) => `"${t.replace(/"/g, '""')}"`)
         .join(' OR ')
 }

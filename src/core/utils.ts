@@ -9,6 +9,30 @@ export function safeDate(raw?: string): Date {
     return Number.isNaN(d.getTime()) ? new Date() : d
 }
 
+// Word-token pattern for recall/telemetry tokenization: ASCII alphanumerics plus CJK
+// unified ideographs (U+4E00–U+9FFF); everything else is a delimiter.
+//
+// NOTE: this range is intentionally NARROWER than the adaptive-gate CJK class in
+// memoria.ts (CJK_CHAR, which also spans kana U+3040–U+30FF and hangul U+AC00–U+D7A3).
+// A short pure-kana/hangul query can therefore pass the length gate yet yield no tokens
+// here. Unifying the two ranges is a deliberate open decision (up: index kana/hangul in
+// the keyword path; down: stop weighting scripts the tokenizer drops) — see
+// docs/HANDOVER-improvements.md P5. Kept behaviour-preserving for now.
+export const TOKEN_SPLIT_PATTERN = /[^a-z0-9一-鿿]+/
+
+// Lowercase, split on non-token chars, trim, keep tokens >= minLength, dedupe.
+export function tokenizeQuery(query: string, minLength = 2): string[] {
+    return Array.from(
+        new Set(
+            query
+                .toLowerCase()
+                .split(TOKEN_SPLIT_PATTERN)
+                .map((t) => t.trim())
+                .filter((t) => t.length >= minLength)
+        )
+    )
+}
+
 export function slugify(input: string): string {
     const cleaned = input
         .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
