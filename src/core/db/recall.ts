@@ -228,13 +228,13 @@ export function recallTree(
     if (!existsSync(dbPath)) return []
 
     return withDb(dbPath, (db) => {
+        const filter = buildScopeClause({ project: 'project', scope: 'scope' }, { projectFilter, scopeFilter })
         const allNodes = db.prepare(`
           SELECT id, parent_id, project, scope, title, summary, level, updated_at
           FROM memory_nodes
           WHERE 1 = 1
-          ${projectFilter ? 'AND project = ?' : ''}
-          ${scopeFilter ? 'AND scope = ?' : ''}
-        `).all(...[...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : [])]) as {
+          ${filter.sql}
+        `).all(...filter.params) as {
             id: string
             parent_id: string | null
             project: string
@@ -352,6 +352,29 @@ type KeywordRow = { type: string; id: string; session_id: string; timestamp: str
 
 const FTS_MIN_TERM_LEN = 3
 
+// Compact a raw event/session `content` field into a display snippet: pretty JSON if it parses as
+// an object, else the raw text, both capped at 200 chars. Shared by the FTS and LIKE recall paths.
+function buildSnippet(content: string): string {
+    const parsed = maybeParseJson(content)
+    return typeof parsed === 'object' && parsed !== null
+        ? JSON.stringify(parsed).slice(0, 200)
+        : String(content).slice(0, 200)
+}
+
+// Build the optional project/scope/after-date WHERE predicates shared across every recall query.
+// `cols` names the columns per query (raw column, table alias, or COALESCE expression); the
+// returned params line up positionally with the `?` placeholders in `sql`.
+function buildScopeClause(
+    cols: { project: string; scope: string; time?: string },
+    opts: { projectFilter?: string; scopeFilter?: string; afterDate?: Date }
+): { sql: string; params: string[] } {
+    const parts: string[] = []
+    const params: string[] = []
+    if (opts.projectFilter) { parts.push(`AND ${cols.project} = ?`); params.push(opts.projectFilter) }
+    if (opts.scopeFilter) { parts.push(`AND ${cols.scope} = ?`); params.push(opts.scopeFilter) }
+    if (opts.afterDate && cols.time) { parts.push(`AND ${cols.time} >= ?`); params.push(opts.afterDate.toISOString()) }
+    return { sql: parts.join('\n        '), params }
+}
 
 function buildFtsMatch(query: string): string {
     // Trigram FTS terms need >=3 chars. Quote each as an FTS5 string literal (escaping embedded
@@ -376,6 +399,10 @@ function queryRecallFts(
     topK = 5,
     afterDate?: Date
 ): KeywordRow[] {
+    const filter = buildScopeClause(
+        { project: 'COALESCE(s.project, ss.project)', scope: 'COALESCE(s.scope, ss.scope)', time: 'COALESCE(s.timestamp, se.timestamp)' },
+        { projectFilter, scopeFilter, afterDate }
+    )
     const rows = db.prepare(`
       SELECT recall_fts.kind AS kind,
              recall_fts.ref_id AS id,
@@ -390,29 +417,16 @@ function queryRecallFts(
       LEFT JOIN sessions ss ON recall_fts.kind IN ('decision', 'skill') AND ss.id = recall_fts.session_id
       WHERE recall_fts MATCH ?
         AND (recall_fts.kind = 'session' OR ss.id IS NOT NULL)
-        ${projectFilter ? 'AND COALESCE(s.project, ss.project) = ?' : ''}
-        ${scopeFilter ? 'AND COALESCE(s.scope, ss.scope) = ?' : ''}
-        ${afterDate ? 'AND COALESCE(s.timestamp, se.timestamp) >= ?' : ''}
+        ${filter.sql}
       ORDER BY rank
       LIMIT ?
-    `).all(...[
-        match,
-        ...(projectFilter ? [projectFilter] : []),
-        ...(scopeFilter ? [scopeFilter] : []),
-        ...(afterDate ? [afterDate.toISOString()] : []),
-        Math.max(1, topK) * 4
-    ]) as { kind: string; id: string; session_id: string; timestamp: string; project: string; content: string; rank: number }[]
+    `).all(match, ...filter.params, Math.max(1, topK) * 4) as { kind: string; id: string; session_id: string; timestamp: string; project: string; content: string; rank: number }[]
 
     return rows
         .map((r) => {
-            const parsed = maybeParseJson(r.content)
-            const snippet =
-                typeof parsed === 'object' && parsed !== null
-                    ? JSON.stringify(parsed).slice(0, 200)
-                    : String(r.content).slice(0, 200)
             const relevance = tokenCoverage(query, String(r.content))
             const score = bm25ToRelevance(r.rank) * computeDecayFactor(r.timestamp)
-            return { type: r.kind, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score, relevance }
+            return { type: r.kind, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet: buildSnippet(r.content), score, relevance }
         })
         .sort((a, b) => {
             if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score
@@ -454,70 +468,52 @@ function queryRecallLike(
     topK = 5,
     afterDate?: Date
 ): KeywordRow[] {
-    {
-        const q = `%${query.toLowerCase()}%`
-        const decisionRows = db.prepare(`
+    type Row = { id: string; session_id: string; timestamp: string; content: string; project: string }
+    const q = `%${query.toLowerCase()}%`
+
+    // Decision and skill rows share one query, parameterized by event_type.
+    const eventFilter = buildScopeClause({ project: 's.project', scope: 's.scope', time: 'e.timestamp' }, { projectFilter, scopeFilter, afterDate })
+    const eventStmt = db.prepare(`
       SELECT e.id, e.session_id, e.timestamp, e.content, s.project
       FROM events e JOIN sessions s ON s.id = e.session_id
-      WHERE e.event_type = 'DecisionMade'
+      WHERE e.event_type = ?
         AND LOWER(e.content) LIKE ?
-        ${projectFilter ? 'AND s.project = ?' : ''}
-        ${scopeFilter ? 'AND s.scope = ?' : ''}
-        ${afterDate ? 'AND e.timestamp >= ?' : ''}
+        ${eventFilter.sql}
       ORDER BY e.timestamp DESC
       LIMIT ?
-    `).all(...[q, ...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
-            { id: string; session_id: string; timestamp: string; content: string; project: string }[]
+    `)
+    const decisionRows = eventStmt.all('DecisionMade', q, ...eventFilter.params, topK) as Row[]
+    const skillRows = eventStmt.all('SkillLearned', q, ...eventFilter.params, topK) as Row[]
 
-        const skillRows = db.prepare(`
-      SELECT e.id, e.session_id, e.timestamp, e.content, s.project
-      FROM events e JOIN sessions s ON s.id = e.session_id
-      WHERE e.event_type = 'SkillLearned'
-        AND LOWER(e.content) LIKE ?
-        ${projectFilter ? 'AND s.project = ?' : ''}
-        ${scopeFilter ? 'AND s.scope = ?' : ''}
-        ${afterDate ? 'AND e.timestamp >= ?' : ''}
-      ORDER BY e.timestamp DESC
-      LIMIT ?
-    `).all(...[q, ...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
-            { id: string; session_id: string; timestamp: string; content: string; project: string }[]
-
-        const sessionRows = db.prepare(`
+    const sessionFilter = buildScopeClause({ project: 'project', scope: 'scope', time: 'timestamp' }, { projectFilter, scopeFilter, afterDate })
+    const sessionRows = db.prepare(`
       SELECT id, id AS session_id, timestamp, COALESCE(summary, '') AS content, project
       FROM sessions
       WHERE (LOWER(summary) LIKE ? OR LOWER(project) LIKE ?)
-        ${projectFilter ? 'AND project = ?' : ''}
-        ${scopeFilter ? 'AND scope = ?' : ''}
-        ${afterDate ? 'AND timestamp >= ?' : ''}
+        ${sessionFilter.sql}
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(...[q, q, ...(projectFilter ? [projectFilter] : []), ...(scopeFilter ? [scopeFilter] : []), ...(afterDate ? [afterDate.toISOString()] : []), topK]) as
-            { id: string; session_id: string; timestamp: string; content: string; project: string }[]
+    `).all(q, q, ...sessionFilter.params, topK) as Row[]
 
-        const all = [
-            ...decisionRows.map((r) => ({ type: 'decision' as const, ...r })),
-            ...skillRows.map((r) => ({ type: 'skill' as const, ...r })),
-            ...sessionRows.map((r) => ({ type: 'session' as const, ...r }))
-        ]
+    const all = [
+        ...decisionRows.map((r) => ({ type: 'decision' as const, ...r })),
+        ...skillRows.map((r) => ({ type: 'skill' as const, ...r })),
+        ...sessionRows.map((r) => ({ type: 'session' as const, ...r }))
+    ]
 
-        const tokens = tokenizeQuery(query)
+    const tokens = tokenizeQuery(query)
 
-        return all
-            .map((r) => {
-                const parsed = maybeParseJson(r.content)
-                const snippet =
-                    typeof parsed === 'object' && parsed !== null
-                        ? JSON.stringify(parsed).slice(0, 200)
-                        : String(r.content).slice(0, 200)
-                const scored = scoreNode('', snippet, tokens, r.timestamp)
-                const score = Math.max(scored, computeDecayFactor(r.timestamp) * 0.1)
-                const relevance = tokenCoverage(query, String(r.content))
-                return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score, relevance }
-            })
-            .sort((a, b) => {
-                if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score
-                return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-            })
-            .slice(0, topK)
-    }
+    return all
+        .map((r) => {
+            const snippet = buildSnippet(r.content)
+            const scored = scoreNode('', snippet, tokens, r.timestamp)
+            const score = Math.max(scored, computeDecayFactor(r.timestamp) * 0.1)
+            const relevance = tokenCoverage(query, String(r.content))
+            return { type: r.type, id: r.id, session_id: r.session_id, timestamp: r.timestamp, project: r.project, snippet, score, relevance }
+        })
+        .sort((a, b) => {
+            if (Math.abs(b.score - a.score) > 0.001) return b.score - a.score
+            return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        })
+        .slice(0, topK)
 }
