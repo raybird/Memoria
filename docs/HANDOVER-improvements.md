@@ -7,6 +7,23 @@
 
 ---
 
+## 執行進度（2026-07-06 更新）
+
+**P1–P5 已完成並各自 commit**（Phase A+B，全數通過完整 CI parity）：
+
+| 項 | commit | 摘要 |
+|----|--------|------|
+| P1 | `1041935` | server.ts 註解 + serve.ts 輸出補齊至完整 11 端點 |
+| P2a | `666f286` | HTTP body 上限 `MAX_BODY_BYTES`（預設 1 MiB）→ 413；OPERATIONS 補曝露說明 |
+| P2b | `d10e7db` | 版本號改由 package.json 經 esbuild define 注入；bump 失敗改 exit 1 |
+| P3 | `bec8f11` | 新增 `test-prune.sh` 覆蓋 consolidate/stale/dedupe 刪除路徑並掛進 CI |
+| P4 | `76e76e5` | 抽 `withResult` 統一 envelope；memoria.ts 795→500 行；重構前後輸出逐欄位比對一致 |
+| P5 | `f1e4400` | 抽 `utils.tokenizeQuery` 統一三處；CJK 範圍差異常數化+註記（行為不變） |
+
+**剩餘（未動）**：P6（UFL Phase 0，戰略主線，見 `docs/HANDOVER.md` §5）、P7（CI 平行化）、P8（DB 連線收斂）、P9（recall.ts 重構）、P10（install.sh checksum）。P5 的 CJK 範圍對齊方向仍為待決，依維護者決定。
+
+---
+
 ## 0. TL;DR（30 秒版）
 
 - Repo 體質好：TS strict 無 `any`、無 TODO 殘留、邊界都有 Zod、README 命令清單與實作一致。改進重點是**樣板債、破壞性路徑測試缺口、CI 效率**，不是大翻修。
