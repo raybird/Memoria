@@ -7,7 +7,8 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  static:
+    name: Static checks + build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,47 +40,121 @@ jobs:
       - name: Validate install script syntax
         run: bash -n install.sh
 
+      - name: Release doc sync check
+        run: pnpm run release:docs-check
+
+  test:
+    name: E2E (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    needs: static
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, adapters, wiki, http-mcp]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build dist artifact
+        run: pnpm run build
+
+      # Each group preserves the CI order of its scripts; groups run in parallel.
+      - name: Run ${{ matrix.group }} tests
+        run: |
+          case "${{ matrix.group }}" in
+            core)
+              bash scripts/test-smoke.sh
+              bash scripts/test-migrations.sh
+              bash scripts/test-prune.sh
+              bash scripts/test-bootstrap.sh
+              ;;
+            adapters)
+              bash scripts/test-adapter-runtime.sh
+              bash scripts/test-claude-code-adapter.sh
+              bash scripts/test-codex-adapter.sh
+              bash scripts/test-antigravity-adapter.sh
+              ;;
+            wiki)
+              bash scripts/test-wiki-ingest.sh
+              bash scripts/test-wiki-build.sh
+              bash scripts/test-wiki-query-fileback.sh
+              bash scripts/test-wiki-lint.sh
+              ;;
+            http-mcp)
+              bash scripts/test-http-api.sh
+              bash scripts/test-mcp-e2e.sh
+              ;;
+          esac
+
+  node18-smoke:
+    name: Node 18 smoke (min supported)
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 18
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build dist artifact
+        run: pnpm run build
+
+      - name: Verify dist CLI entrypoint
+        run: node dist/cli.mjs --help
+
       - name: Run smoke test
         run: bash scripts/test-smoke.sh
 
-      - name: Run schema migration regression test
-        run: bash scripts/test-migrations.sh
+  release:
+    name: Package + no-clone install
+    runs-on: ubuntu-latest
+    needs: static
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
-      - name: Run prune deletion path test
-        run: bash scripts/test-prune.sh
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
 
-      - name: Run bootstrap test
-        run: bash scripts/test-bootstrap.sh
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
 
-      - name: Run adapter runtime test
-        run: bash scripts/test-adapter-runtime.sh
+      - name: Install dependencies
+        run: pnpm install
 
-      - name: Run Claude Code adapter test
-        run: bash scripts/test-claude-code-adapter.sh
-
-      - name: Run Codex adapter test
-        run: bash scripts/test-codex-adapter.sh
-
-      - name: Run Antigravity adapter test
-        run: bash scripts/test-antigravity-adapter.sh
-
-      - name: Run MCP end-to-end test
-        run: bash scripts/test-mcp-e2e.sh
-
-      - name: Run wiki ingest test
-        run: bash scripts/test-wiki-ingest.sh
-
-      - name: Run wiki build test
-        run: bash scripts/test-wiki-build.sh
-
-      - name: Run wiki query file-back test
-        run: bash scripts/test-wiki-query-fileback.sh
-
-      - name: Run wiki lint test
-        run: bash scripts/test-wiki-lint.sh
-
-      - name: Run HTTP API contract test
-        run: bash scripts/test-http-api.sh
+      - name: Build dist artifact
+        run: pnpm run build
 
       - name: Capture release version
         id: release_meta
