@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
+import { withDb } from './connection.js'
 import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRange, normalizeSkillKey, parseCreatedAt } from '../utils.js'
 import { initDatabase } from './schema.js'
 import { truncateText } from './mappers.js'
@@ -49,8 +49,7 @@ async function pruneFilesByAge(
 function pruneSkillsDuplicates(dbPath: string, dryRun: boolean): { duplicateGroups: number; removed: number } {
     if (!existsSync(dbPath)) return { duplicateGroups: 0, removed: 0 }
 
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         const rows = db
             .prepare('SELECT id, name, created_date, use_count FROM skills')
             .all() as { id: string; name: string; created_date: string; use_count: number }[]
@@ -86,9 +85,7 @@ function pruneSkillsDuplicates(dbPath: string, dryRun: boolean): { duplicateGrou
         }
 
         return { duplicateGroups, removed: dryRun ? 0 : deleteIds.length }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 function pruneConsolidate(
@@ -98,8 +95,7 @@ function pruneConsolidate(
 ): { groupsFound: number; sessionsConsolidated: number; nodesRemoved: number } {
     if (!existsSync(dbPath)) return { groupsFound: 0, sessionsConsolidated: 0, nodesRemoved: 0 }
 
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1000).toISOString()
 
         const topicGroups = db.prepare(`
@@ -164,9 +160,7 @@ function pruneConsolidate(
         }
 
         return { groupsFound: topicGroups.length, sessionsConsolidated: totalConsolidated, nodesRemoved: totalRemoved }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 function pruneStaleMemory(
@@ -176,8 +170,7 @@ function pruneStaleMemory(
 ): { staleNodes: number; staleSessions: number; removedNodes: number; removedSessions: number } {
     if (!existsSync(dbPath)) return { staleNodes: 0, staleSessions: 0, removedNodes: 0, removedSessions: 0 }
 
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         const cutoff = new Date(Date.now() - cutoffDays * 24 * 60 * 60 * 1000).toISOString()
 
         const staleNodes = db.prepare(`
@@ -218,9 +211,7 @@ function pruneStaleMemory(
             removedNodes: dryRun ? 0 : staleNodes.length,
             removedSessions: dryRun ? 0 : staleSessions.length
         }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export async function runPrune(
@@ -287,8 +278,7 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
     const format = (options.format ?? 'json') as ExportFormat
     const outDir = options.out ? path.resolve(options.out) : path.join(paths.memoryDir, 'exports')
 
-    const db = new Database(paths.dbPath, { readonly: true })
-    try {
+    return withDb(paths.dbPath, { readonly: true }, async (db) => {
         const decisionsRows =
             type === 'all' || type === 'decisions'
                 ? (db.prepare(`
@@ -358,7 +348,5 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
         }
 
         return { filePath, decisions, skills }
-    } finally {
-        db.close()
-    }
+    })
 }

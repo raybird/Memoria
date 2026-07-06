@@ -1,7 +1,8 @@
 import path from 'node:path'
-import Database from 'better-sqlite3'
+import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { initDatabase } from './schema.js'
+import { withDb } from './connection.js'
 import type { MemoriaPaths, VerifyStatus, VerifyCheck } from '../types.js'
 
 async function canWrite(targetPath: string): Promise<boolean> {
@@ -50,42 +51,40 @@ export async function runVerify(paths: MemoriaPaths): Promise<{ ok: boolean; che
 
     initDatabase(paths.dbPath)
 
-    let db: Database.Database | null = null
     try {
-        db = new Database(paths.dbPath, { readonly: true, fileMustExist: true })
-        add('db_connect', 'pass', `connected: ${paths.dbPath}`)
+        withDb(paths.dbPath, { readonly: true, fileMustExist: true }, (db) => {
+            add('db_connect', 'pass', `connected: ${paths.dbPath}`)
 
-        const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[]
-        const tableSet = new Set(tableRows.map((r) => r.name))
+            const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[]
+            const tableSet = new Set(tableRows.map((r) => r.name))
 
-        const requiredTables = ['sessions', 'events', 'skills']
-        for (const table of requiredTables) {
-            add(`table_${table}`, tableSet.has(table) ? 'pass' : 'fail', `table ${table}`)
-        }
+            const requiredTables = ['sessions', 'events', 'skills']
+            for (const table of requiredTables) {
+                add(`table_${table}`, tableSet.has(table) ? 'pass' : 'fail', `table ${table}`)
+            }
 
-        const requiredColumns: Record<string, string[]> = {
-            sessions: ['id', 'timestamp', 'project', 'scope', 'event_count', 'summary'],
-            events: ['id', 'session_id', 'timestamp', 'event_type', 'content', 'metadata'],
-            skills: ['id', 'name', 'category', 'created_date', 'success_rate', 'use_count', 'filepath']
-        }
+            const requiredColumns: Record<string, string[]> = {
+                sessions: ['id', 'timestamp', 'project', 'scope', 'event_count', 'summary'],
+                events: ['id', 'session_id', 'timestamp', 'event_type', 'content', 'metadata'],
+                skills: ['id', 'name', 'category', 'created_date', 'success_rate', 'use_count', 'filepath']
+            }
 
-        for (const [table, columns] of Object.entries(requiredColumns)) {
-            if (!tableSet.has(table)) continue
-            const missing = collectMissingColumns(db, table, columns)
-            add(
-                `columns_${table}`,
-                missing.length === 0 ? 'pass' : 'fail',
-                missing.length === 0 ? `columns ${table} ok` : `columns ${table} missing: ${missing.join(', ')}`
-            )
-        }
+            for (const [table, columns] of Object.entries(requiredColumns)) {
+                if (!tableSet.has(table)) continue
+                const missing = collectMissingColumns(db, table, columns)
+                add(
+                    `columns_${table}`,
+                    missing.length === 0 ? 'pass' : 'fail',
+                    missing.length === 0 ? `columns ${table} ok` : `columns ${table} missing: ${missing.join(', ')}`
+                )
+            }
 
-        const quickCheck = db.prepare('PRAGMA quick_check').get() as { quick_check?: string }
-        const integrityOk = quickCheck?.quick_check === 'ok'
-        add('db_integrity', integrityOk ? 'pass' : 'fail', integrityOk ? 'PRAGMA quick_check=ok' : 'PRAGMA quick_check failed')
+            const quickCheck = db.prepare('PRAGMA quick_check').get() as { quick_check?: string }
+            const integrityOk = quickCheck?.quick_check === 'ok'
+            add('db_integrity', integrityOk ? 'pass' : 'fail', integrityOk ? 'PRAGMA quick_check=ok' : 'PRAGMA quick_check failed')
+        })
     } catch (error) {
         add('db_connect', 'fail', `connect error: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-        db?.close()
     }
 
     return { ok: checks.every((c) => c.status === 'pass'), checks }

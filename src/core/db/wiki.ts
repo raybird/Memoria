@@ -1,6 +1,6 @@
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { initDatabase } from './schema.js'
+import { withDb } from './connection.js'
 import { mapWikiPage, mapWikiQueryArtifact, stringifyJson } from './mappers.js'
 import type {
     WikiPage,
@@ -16,8 +16,7 @@ import type {
 
 export function upsertWikiPage(dbPath: string, input: UpsertWikiPageInput): WikiPage {
     initDatabase(dbPath)
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         db.prepare(`
           INSERT INTO wiki_pages
           (id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata)
@@ -68,16 +67,13 @@ export function upsertWikiPage(dbPath: string, input: UpsertWikiPageInput): Wiki
             metadata: string | null
         }
         return mapWikiPage(row)
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function getWikiPageBySlug(dbPath: string, slug: string): WikiPage | undefined {
     if (!existsSync(dbPath)) return undefined
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         const row = db.prepare(`
           SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
           FROM wiki_pages
@@ -97,9 +93,7 @@ export function getWikiPageBySlug(dbPath: string, slug: string): WikiPage | unde
             metadata: string | null
         } | undefined
         return row ? mapWikiPage(row) : undefined
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function listWikiPages(
@@ -108,8 +102,7 @@ export function listWikiPages(
 ): WikiPage[] {
     if (!existsSync(dbPath)) return []
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)))
         const rows = db.prepare(`
           SELECT id, slug, title, page_type, scope, summary, filepath, status, confidence, last_built_at, last_reviewed_at, metadata
@@ -140,9 +133,7 @@ export function listWikiPages(
             metadata: string | null
         }>
         return rows.map(mapWikiPage)
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function queryWikiBuildResult(dbPath: string): Pick<WikiBuildResult, 'sourceCount' | 'pageCount'> & { pageTypeCounts: Record<string, number> } {
@@ -150,8 +141,7 @@ export function queryWikiBuildResult(dbPath: string): Pick<WikiBuildResult, 'sou
         return { sourceCount: 0, pageCount: 0, pageTypeCounts: {} }
     }
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         const sourceCount = Number((db.prepare('SELECT COUNT(*) AS c FROM sources').get() as { c: number }).c)
         const pageCount = Number((db.prepare('SELECT COUNT(*) AS c FROM wiki_pages').get() as { c: number }).c)
         const rows = db.prepare(`
@@ -162,71 +152,56 @@ export function queryWikiBuildResult(dbPath: string): Pick<WikiBuildResult, 'sou
         `).all() as Array<{ page_type: string; c: number }>
         const pageTypeCounts = Object.fromEntries(rows.map((row) => [row.page_type, Number(row.c)]))
         return { sourceCount, pageCount, pageTypeCounts }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function upsertWikiPageSourceLink(dbPath: string, input: UpsertWikiPageSourceLinkInput): void {
     initDatabase(dbPath)
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         db.prepare(`
           INSERT OR REPLACE INTO wiki_page_sources (page_id, source_id, relation_type, created_at)
           VALUES (?, ?, ?, ?)
         `).run(input.page_id, input.source_id, input.relation_type ?? 'supports', input.created_at ?? new Date().toISOString())
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function listWikiPageSourceLinks(dbPath: string): WikiPageSourceLink[] {
     if (!existsSync(dbPath)) return []
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         return db.prepare(`
           SELECT page_id, source_id, relation_type, created_at
           FROM wiki_page_sources
           ORDER BY created_at DESC
         `).all() as WikiPageSourceLink[]
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function upsertWikiPageLink(dbPath: string, input: UpsertWikiPageLinkInput): void {
     initDatabase(dbPath)
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         db.prepare(`
           INSERT OR REPLACE INTO wiki_page_links (from_page_id, to_page_id, link_type, created_at)
           VALUES (?, ?, ?, ?)
         `).run(input.from_page_id, input.to_page_id, input.link_type ?? 'references', input.created_at ?? new Date().toISOString())
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function listWikiPageLinks(dbPath: string): WikiPageLink[] {
     if (!existsSync(dbPath)) return []
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         return db.prepare(`
           SELECT from_page_id, to_page_id, link_type, created_at
           FROM wiki_page_links
           ORDER BY created_at DESC
         `).all() as WikiPageLink[]
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function upsertWikiQueryArtifact(dbPath: string, input: UpsertWikiQueryArtifactInput): WikiQueryArtifact {
     initDatabase(dbPath)
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         db.prepare(`
           INSERT INTO wiki_query_artifacts (id, query, kind, page_id, created_at, metadata)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -258,7 +233,5 @@ export function upsertWikiQueryArtifact(dbPath: string, input: UpsertWikiQueryAr
             metadata: string | null
         }
         return mapWikiQueryArtifact(row)
-    } finally {
-        db.close()
-    }
+    })
 }

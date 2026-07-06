@@ -1,11 +1,10 @@
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { safeDate, deriveScope, resolveSessionId, resolveEventId, maybeParseJson, sanitizeSessionDataForImport } from '../utils.js'
 import { initDatabase } from './schema.js'
+import { withDb } from './connection.js'
 import type { Json, SessionData, RecentSessionRecord } from '../types.js'
 
 export function importSession(dbPath: string, sessionData: SessionData): string {
-    const db = new Database(dbPath)
     const nowIso = new Date().toISOString()
     const sanitized = sanitizeSessionDataForImport(sessionData)
     const sessionId = resolveSessionId(sanitized)
@@ -13,7 +12,7 @@ export function importSession(dbPath: string, sessionData: SessionData): string 
     const scope = deriveScope(sanitized)
     const events = sanitized.events ?? []
 
-    try {
+    withDb(dbPath, (db) => {
         const upsertSession = db.prepare(`
       INSERT OR REPLACE INTO sessions (id, timestamp, project, scope, event_count, summary)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -41,9 +40,7 @@ export function importSession(dbPath: string, sessionData: SessionData): string 
             const metadata = JSON.stringify(event.metadata ?? {})
             upsertEvent.run(eventId, sessionId, eventTime, eventType, content, metadata)
         }
-    } finally {
-        db.close()
-    }
+    })
 
     return sessionId
 }
@@ -51,8 +48,7 @@ export function importSession(dbPath: string, sessionData: SessionData): string 
 export function listRecentSessions(dbPath: string, limitRaw = 10): RecentSessionRecord[] {
     if (!existsSync(dbPath)) return []
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         const limit = Math.min(100, Math.max(1, Math.floor(limitRaw)))
         return db.prepare(`
           SELECT id, timestamp, project, scope, summary
@@ -60,9 +56,7 @@ export function listRecentSessions(dbPath: string, limitRaw = 10): RecentSession
           ORDER BY timestamp DESC
           LIMIT ?
         `).all(limit) as RecentSessionRecord[]
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function querySessionSummary(
@@ -73,8 +67,7 @@ export function querySessionSummary(
     decisions: Array<{ id: string; decision: string; impact_level: string }>
     skills: Array<{ id: string; skill_name: string; category: string }>
 } | null {
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         const session = db
             .prepare('SELECT id, timestamp, project, scope, event_count, summary FROM sessions WHERE id = ?')
             .get(sessionId) as { id: string; timestamp: string; project: string; scope: string; event_count: number; summary: string } | undefined
@@ -110,7 +103,5 @@ export function querySessionSummary(
         })
 
         return { session, decisions, skills }
-    } finally {
-        db.close()
-    }
+    })
 }

@@ -1,13 +1,12 @@
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { initDatabase } from './schema.js'
+import { withDb } from './connection.js'
 import { mapSourceRecord, stringifyJson } from './mappers.js'
 import type { SourceRecord, UpsertSourceInput } from '../types.js'
 
 export function upsertSourceRecord(dbPath: string, input: UpsertSourceInput): SourceRecord {
     initDatabase(dbPath)
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, (db) => {
         const importedAt = input.imported_at ?? new Date().toISOString()
         db.prepare(`
           INSERT INTO sources
@@ -56,9 +55,7 @@ export function upsertSourceRecord(dbPath: string, input: UpsertSourceInput): So
             metadata: string | null
         }
         return mapSourceRecord(row)
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export function listSourceRecords(
@@ -67,8 +64,7 @@ export function listSourceRecords(
 ): SourceRecord[] {
     if (!existsSync(dbPath)) return []
     initDatabase(dbPath)
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, (db) => {
         const limit = Math.min(500, Math.max(1, Math.floor(options?.limit ?? 100)))
         const rows = db.prepare(`
           SELECT id, type, scope, title, origin_path, origin_url, checksum, created_at, imported_at, status, metadata
@@ -98,7 +94,5 @@ export function listSourceRecords(
             metadata: string | null
         }>
         return rows.map(mapSourceRecord)
-    } finally {
-        db.close()
-    }
+    })
 }

@@ -1,13 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { safeDate, slugify } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
+import { withDb } from './connection.js'
 
 export async function syncDailyNote(memoriaHome: string, dbPath: string, sessionId: string): Promise<void> {
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, async (db) => {
         const row = db
             .prepare('SELECT timestamp, project, event_count, summary FROM sessions WHERE id = ?')
             .get(sessionId) as { timestamp: string; project: string; event_count: number; summary: string } | undefined
@@ -28,14 +27,11 @@ export async function syncDailyNote(memoriaHome: string, dbPath: string, session
         }
 
         await fs.writeFile(notePath, content, 'utf8')
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export async function extractDecisions(memoriaHome: string, dbPath: string, sessionId: string): Promise<void> {
-    const db = new Database(dbPath, { readonly: true })
-    try {
+    return withDb(dbPath, { readonly: true }, async (db) => {
         const rows = db
             .prepare(`
         SELECT id, timestamp, content
@@ -79,14 +75,11 @@ ${fields.impact_level}
 
             await fs.writeFile(filePath, decisionDoc, 'utf8')
         }
-    } finally {
-        db.close()
-    }
+    })
 }
 
 export async function extractSkills(memoriaHome: string, dbPath: string, sessionId: string): Promise<void> {
-    const db = new Database(dbPath)
-    try {
+    return withDb(dbPath, async (db) => {
         const rows = db
             .prepare(`
         SELECT id, timestamp, content
@@ -142,7 +135,5 @@ ${examples}
                 filePath
             )
         }
-    } finally {
-        db.close()
-    }
+    })
 }
