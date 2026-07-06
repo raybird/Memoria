@@ -102,6 +102,8 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 
 ## 7. Backlog（依價值排序,狀態如實）
 
+> 2026-07-06 補充:全 repo 工程體檢產出一份**按性價比排序的改進交辦清單**(P1–P10,含證據行號與驗收條件),見 `docs/HANDOVER-improvements.md`。其中 P6 = 下表 UFL(同一件事),C4/D2 亦已涵蓋。
+
 | 代號 | 項目 | 狀態 | 備註 |
 |------|------|------|------|
 | **UFL** | 召回效用回饋迴路 | `proposed`,**不 blocked** | 本 session 新 RFC,策略價值最高;是語意召回的驗收標尺。**建議先做**。 |
