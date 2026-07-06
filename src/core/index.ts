@@ -28,6 +28,7 @@ export {
     queryRecallTelemetry,
     queryGovernanceReview,
     logRecallTelemetry,
+    recordRecallOutcome,
     runVerify,
     runPrune,
     exportMemory,

@@ -21,6 +21,7 @@ export function registerServeCommand(program: Command): void {
                 console.log('   GET  /v1/telemetry/recall?window=P7D&limit=100')
                 console.log('   POST /v1/remember')
                 console.log('   POST /v1/recall')
+                console.log('   POST /v1/recall/:id/outcome')
                 console.log('   POST /v1/sources')
                 console.log('   GET  /v1/sources')
                 console.log('   POST /v1/wiki/build')

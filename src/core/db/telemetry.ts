@@ -12,10 +12,10 @@ function countQueryTokens(query: string): number {
 export function logRecallTelemetry(
     dbPath: string,
     input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number; query?: string; topConfidence?: number }
-): void {
-    if (!existsSync(dbPath)) return
+): string | null {
+    if (!existsSync(dbPath)) return null
 
-    withDb(dbPath, (db) => {
+    return withDb(dbPath, (db) => {
         db.exec(`
           CREATE TABLE IF NOT EXISTS recall_telemetry (
             id TEXT PRIMARY KEY,
@@ -26,7 +26,10 @@ export function logRecallTelemetry(
             created_at DATETIME,
             query_hash TEXT,
             token_count INTEGER,
-            top_confidence REAL
+            top_confidence REAL,
+            utility_score REAL,
+            outcome_kind TEXT,
+            observed_at DATETIME
           );
           CREATE INDEX IF NOT EXISTS idx_recall_telemetry_created ON recall_telemetry(created_at);
           CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route ON recall_telemetry(route_mode, created_at);
@@ -57,6 +60,34 @@ export function logRecallTelemetry(
             tokenCount,
             topConfidence
         )
+        return id
+    })
+}
+
+/**
+ * Write back the observed utility of a prior recall (UFL). In-place UPDATE of the
+ * recall_telemetry row. A recallId that does not exist (never logged, or pruned) is a no-op —
+ * fail-open, so a late/duplicate outcome never errors. Returns whether a row was updated.
+ */
+export function recordRecallOutcome(
+    dbPath: string,
+    recallId: string,
+    outcome: { signal: string; utilityScore?: number; used?: boolean }
+): boolean {
+    if (!existsSync(dbPath)) return false
+    initDatabase(dbPath)
+    return withDb(dbPath, (db) => {
+        const table = db
+            .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_telemetry' LIMIT 1`)
+            .get() as { ok: number } | undefined
+        if (!table) return false
+        const score = typeof outcome.utilityScore === 'number' && Number.isFinite(outcome.utilityScore)
+            ? Math.min(1, Math.max(0, outcome.utilityScore))
+            : (outcome.used === true ? 1 : outcome.used === false ? 0 : null)
+        const info = db
+            .prepare(`UPDATE recall_telemetry SET utility_score = ?, outcome_kind = ?, observed_at = ? WHERE id = ?`)
+            .run(score, outcome.signal, new Date().toISOString(), recallId)
+        return info.changes > 0
     })
 }
 
@@ -174,7 +205,8 @@ export function queryRecallTelemetry(
 
         const rows = db
             .prepare(`
-              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at, query_hash, token_count, top_confidence
+              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at, query_hash, token_count, top_confidence,
+                     utility_score, outcome_kind, observed_at
               FROM recall_telemetry
               WHERE created_at >= ?
               ORDER BY created_at DESC
@@ -190,6 +222,9 @@ export function queryRecallTelemetry(
             query_hash: string | null
             token_count: number | null
             top_confidence: number | null
+            utility_score: number | null
+            outcome_kind: string | null
+            observed_at: string | null
         }>
 
         return {
@@ -204,7 +239,10 @@ export function queryRecallTelemetry(
                 created_at: r.created_at,
                 query_hash: r.query_hash ?? undefined,
                 token_count: r.token_count == null ? undefined : Number(r.token_count),
-                top_confidence: r.top_confidence == null ? undefined : Number(r.top_confidence)
+                top_confidence: r.top_confidence == null ? undefined : Number(r.top_confidence),
+                utility_score: r.utility_score == null ? undefined : Number(r.utility_score),
+                outcome_kind: r.outcome_kind ?? undefined,
+                observed_at: r.observed_at ?? undefined
             }))
         }
     })

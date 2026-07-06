@@ -1,6 +1,6 @@
 # RFC: Recall Utility Feedback Loop（召回效用回饋迴路）
 
-- 狀態：`phase-0-passed` — Phase 0 spike 已完成，reuse 訊號證實可觀測且具鑑別力（見 §14），可進 Phase 1。
+- 狀態：`phase-1-shipped` — Phase 0 spike 通過（§14）；Phase 1 MVP 已實作（recall_id + Migration 6 + recordRecallOutcome + `POST /v1/recall/:id/outcome` + SDK + adapter 預設回報，全程 fail-open）。下一步 = Phase 2 校準呈現。
 - 建立：2026-07-03
 - 更新：2026-07-06
 - Roadmap anchor：`RFC.md` → Candidate Direction #8（*Memory-quality guardrails — score hygiene*），兼及 #5（*Additional observability*）。
@@ -145,11 +145,12 @@ reuseScore(pendingRecall, turnText) =
 - **驗證**:跑既有 adapter e2e + 一段真實短對話,眼看 reuseScore 是否**非退化**:有些接近 0、有些明顯高,且與 confidence 至少有微弱正相關。
 - **Gate**:若每筆都 ≈0(記憶從不被字面沿用)或都 ≈1(什麼都瑣碎重疊)→ **停,重設計訊號**(例如改用「下一輪 user prompt 是否延續主題」)。這一步就是「先驗證再建造」,對映語意 RFC 那次省下 1.5 天的 Phase 0。
 
-### Phase 1 — MVP：關聯 + 持久化 + 單一生產者（~1–1.5d，ship）
+### Phase 1 — MVP：關聯 + 持久化 + 單一生產者（~1–1.5d，ship）✅ 已完成 2026-07-06
 
 - **提示**:`logRecallTelemetry` 回傳 id → `recall()` meta 加 `recall_id` → Migration 6 三欄 → `recordRecallOutcome` + `POST /v1/recall/:id/outcome`(Zod)→ SDK 方法 → adapter 緩衝 pendingRecall 並在下一回合 POST reuse outcome。全程 fail-open。
 - **測試**:§9 的 1/2/3/4;擴 `test-migrations.sh` 與一支 adapter e2e。
 - **DoD**:見 §12。這一版**只記錄,不改任何排序/保留**。
+- **交付紀錄**:recall() 對成功分支純加 `recall_id`（前後 envelope 逐欄位比對確認：僅此一欄新增，skip/error 分支 byte-identical）。adapter 回報**預設開啟、fail-open**（`MEMORIA_UTILITY_SHADOW` 降級為可選 JSONL debug）；reuse 用 assistant-only（Phase 0 §14 決）。持久化採就地 UPDATE 三欄。測試：`test-http-api.sh`（outcome 契約+400+no-op）、`test-migrations.sh`（Migration 6 降級/重套）、`test-utility-shadow.sh`（write-back 鑑別力）。
 
 ### Phase 2 — Calibration：把效用呈現出來（~0.5–1d，ship）
 

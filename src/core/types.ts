@@ -194,6 +194,7 @@ export type MemoriaResult<T> = {
         reasoning_path?: string[] // Optional retrieval path for tree/hybrid recall
         route_mode?: string  // Optional routing mode used by recall
         fallback_used?: boolean // Whether hybrid route fell back to keyword recall
+        recall_id?: string   // Correlates a recall to a later utility outcome (UFL); success recall only
         timestamp: string    // ISO8601
         latency_ms: number   // end-to-end operation time
     }
@@ -297,6 +298,15 @@ export type RecallTelemetryPoint = {
     query_hash?: string       // privacy-preserving hash of the normalized query (not raw text)
     token_count?: number      // number of distinct query tokens
     top_confidence?: number   // calibrated top-hit confidence for this query
+    utility_score?: number    // observed lexical-reuse utility of this recall [0,1] (UFL), if reported
+    outcome_kind?: string     // signal source for utility_score, e.g. 'reuse' | 'explicit'
+    observed_at?: string      // ISO8601 when the outcome was written back
+}
+
+export type RecallOutcomeInput = {
+    signal: string            // outcome source, e.g. 'reuse'
+    utility_score?: number    // observed utility [0,1]
+    used?: boolean            // explicit host signal that the recall was used
 }
 
 export type RecallTelemetryData = {

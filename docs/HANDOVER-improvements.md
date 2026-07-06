@@ -25,7 +25,7 @@
 | P9 | `0ae0264` | recall.ts 抽 buildSnippet/buildScopeClause、統一 keyword 重複 SQL；未動 recall()，輸出 byte-identical |
 | P10 | (本次) | install.sh 加 SHA256 checksum 驗證 + `--version` 格式檢查；打包產 `.sha256`、release 上傳；backward-compat（無 sidecar 則警告續行） |
 
-**P1–P10 全數完成。** 剩下的是記憶智能主線：**UFL Phase 1 MVP**（見 `docs/RFC-utility-feedback.md` §10/§14）——會真正動 `recall()`（加 `recall_id`）+ Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome`。P5 的 CJK 範圍對齊方向仍為待決。
+**P1–P10 全數完成。** 記憶智能主線 **UFL Phase 0 + Phase 1 MVP 亦已完成並 ship**（見 `docs/RFC-utility-feedback.md`）：`recall()` 加 `recall_id`、Migration 6、`recordRecallOutcome` + `POST /v1/recall/:id/outcome`、SDK、adapter 預設回報。**下一步 = UFL Phase 2 校準呈現**（confidence×utility 分桶，不自動改 confidence）。P5 的 CJK 範圍對齊方向仍為待決。
 
 **P8 補充**：`withDb` 現以 `<mode>:<dbPath>` 為 pool key，readonly 與 read-write handle 分開池化（readonly caller 保留 SQLite 寫入保護）。唯一保留直接 `new Database` 的是 `schema.ts` 的 `initDatabase`（DDL/migration bootstrap，刻意不動）。踩到的坑：better-sqlite3 不接受 `fileMustExist: undefined`，需強制 boolean。
 

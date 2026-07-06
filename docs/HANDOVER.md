@@ -75,7 +75,7 @@
 
 ## 5. 下一步（接續就從這開始）
 
-> **2026-07-06 更新:Phase 0 spike 已完成,Gate 通過**(見 `docs/RFC-utility-feedback.md` §14)。reuse 訊號證實非退化、具鑑別力;assistant-only 為選定變體(full 被 query→recall 匹配污染)。已固化 `scripts/test-utility-shadow.sh`(CI adapters 組)。**下一步 = Phase 1 MVP**(`recall()` 加 `recall_id` + Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome` + adapter 生產 reuse outcome;RFC §10 Phase 1)。以下為 Phase 0 的原始說明,保留備查。
+> **2026-07-06 更新:Phase 0 + Phase 1 MVP 均已完成**(見 `docs/RFC-utility-feedback.md` §14 與 Phase 1 交付紀錄)。Phase 1 已 ship：`recall()` 加 `recall_id`(純加法)、Migration 6 三欄、`recordRecallOutcome` + `POST /v1/recall/:id/outcome`(Zod)、SDK 方法、adapter **預設回報** reuse outcome(fail-open)。**下一步 = Phase 2 校準呈現**(confidence×utility 分桶,呈現在 `memoria stats` 與 telemetry endpoint;RFC §10 Phase 2，不自動改 confidence)。以下為 Phase 0 的原始說明,保留備查。
 
 **已完成動作:效用回饋迴路 RFC 的 Phase 0 spike**(`docs/RFC-utility-feedback.md` §10)。
 

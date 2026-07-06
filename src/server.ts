@@ -2,12 +2,13 @@
 // Serves the MemoriaCore API over HTTP (node:http, zero extra deps)
 // Default port: 3917 (override with MEMORIA_PORT env var)
 //
-// Routes (11 endpoints):
+// Routes (12 endpoints):
 //   GET  /v1/health
 //   GET  /v1/stats
 //   GET  /v1/telemetry/recall?window=P7D&limit=100
 //   POST /v1/remember              body: SessionData JSON
 //   POST /v1/recall                body: RecallFilter JSON
+//   POST /v1/recall/:id/outcome    body: { signal, utility_score?, used? }  (UFL write-back)
 //   POST /v1/sources               body: { filePath, type?, title?, scope? }
 //   GET  /v1/sources?type=&scope=&limit=
 //   POST /v1/wiki/build
@@ -93,6 +94,14 @@ const wikiLintSchema = z
     .object({
         stale_days: z.number().optional(),
         limit: z.number().optional()
+    })
+    .passthrough()
+
+const recallOutcomeSchema = z
+    .object({
+        signal: z.string(),
+        utility_score: z.number().optional(),
+        used: z.boolean().optional()
     })
     .passthrough()
 
@@ -274,6 +283,17 @@ export function createServer(core: MemoriaCore): http.Server {
                 const body = await readValidatedBody(req, res, wikiLintSchema, { allowEmpty: true })
                 if (body === null) return
                 const result = await core.wikiLint(body as Parameters<typeof core.wikiLint>[0])
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            // POST /v1/recall/:id/outcome  (UFL utility feedback write-back)
+            const outcomeMatch = /^\/v1\/recall\/([^/]+)\/outcome$/.exec(pathname)
+            if (method === 'POST' && outcomeMatch) {
+                const body = await readValidatedBody(req, res, recallOutcomeSchema)
+                if (body === null) return
+                const recallId = decodeURIComponent(outcomeMatch[1])
+                const result = await core.recordRecallOutcome(recallId, body as Parameters<typeof core.recordRecallOutcome>[1])
                 send(res, result.ok ? 200 : 500, result)
                 return
             }

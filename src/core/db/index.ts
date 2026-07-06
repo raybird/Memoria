@@ -14,7 +14,7 @@ export {
 } from './wiki.js'
 export { upsertWikiLintRun, getWikiLintRun, upsertWikiLintFinding, listWikiLintFindings } from './lint.js'
 export { syncDailyNote, extractDecisions, extractSkills } from './sync.js'
-export { logRecallTelemetry, queryStats, queryRecallTelemetry, queryGovernanceReview } from './telemetry.js'
+export { logRecallTelemetry, recordRecallOutcome, queryStats, queryRecallTelemetry, queryGovernanceReview } from './telemetry.js'
 export { runVerify } from './verify.js'
 export { runPrune, exportMemory } from './prune-export.js'
 export { buildMemoryIndex, recallTree, recallKeyword } from './recall.js'

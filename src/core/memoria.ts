@@ -15,6 +15,7 @@ import {
     queryRecallTelemetry,
     queryGovernanceReview,
     logRecallTelemetry,
+    recordRecallOutcome,
     runVerify,
     buildMemoryIndex,
     recallTree,
@@ -42,6 +43,7 @@ import type {
     RecallTelemetryData,
     GovernanceReviewData,
     GovernanceReviewOptions,
+    RecallOutcomeInput,
     WikiBuildResult,
     WikiLintOptions,
     WikiLintResult
@@ -316,8 +318,9 @@ export class MemoriaCore {
                 reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
             }))
 
+            let recallId: string | null = null
             try {
-                logRecallTelemetry(this.paths.dbPath, {
+                recallId = logRecallTelemetry(this.paths.dbPath, {
                     routeMode,
                     fallbackUsed,
                     hitCount: hits.length,
@@ -338,7 +341,9 @@ export class MemoriaCore {
                 extra: {
                     reasoning_path: hits[0]?.reasoning_path,
                     route_mode: routeMode,
-                    fallback_used: fallbackUsed
+                    fallback_used: fallbackUsed,
+                    // UFL: correlates this recall to a later utility outcome. Success branch only.
+                    recall_id: recallId ?? undefined
                 }
             }
         })
@@ -431,6 +436,20 @@ export class MemoriaCore {
                 evidence: data.items.map((item) => item.id),
                 confidence: data.items.length > 0 ? 1.0 : 0.8
             }
+        })
+    }
+
+    // ─── recordRecallOutcome() — UFL utility feedback write-back ────────────────
+
+    async recordRecallOutcome(recallId: string, outcome: RecallOutcomeInput): Promise<MemoriaResult<{ updated: boolean }>> {
+        return withResult('sqlite', async () => {
+            const updated = recordRecallOutcome(this.paths.dbPath, recallId, {
+                signal: outcome.signal,
+                utilityScore: outcome.utility_score,
+                used: outcome.used
+            })
+            // Not-found is a valid no-op (pruned/unknown id): ok:true, updated:false, low confidence.
+            return { data: { updated }, evidence: updated ? [recallId] : [], confidence: updated ? 1 : 0 }
         })
     }
 }

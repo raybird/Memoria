@@ -128,6 +128,19 @@ const MIGRATIONS: Migration[] = [
             if (!cols.has('token_count')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN token_count INTEGER`)
             if (!cols.has('top_confidence')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN top_confidence REAL`)
         }
+    },
+    {
+        id: 6,
+        name: 'recall_telemetry_add_utility',
+        up: (db) => {
+            // Utility feedback loop (docs/RFC-utility-feedback.md): store the observed lexical-reuse
+            // utility of a recall, its signal source, and when it was written back. Enables confidence
+            // calibration without storing raw turn text.
+            const cols = new Set((db.prepare('PRAGMA table_info(recall_telemetry)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('utility_score')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN utility_score REAL`)
+            if (!cols.has('outcome_kind')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN outcome_kind TEXT`)
+            if (!cols.has('observed_at')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN observed_at DATETIME`)
+        }
     }
 ]
 
@@ -222,7 +235,10 @@ export function initDatabase(dbPath: string): void {
         created_at DATETIME,
         query_hash TEXT,
         token_count INTEGER,
-        top_confidence REAL
+        top_confidence REAL,
+        utility_score REAL,
+        outcome_kind TEXT,
+        observed_at DATETIME
       );
 
       CREATE TABLE IF NOT EXISTS sources (

@@ -78,7 +78,7 @@ curl http://localhost:3917/v1/stats
 
 | Area | Capabilities |
 |------|--------------|
-| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (11 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) ｜ Every command supports `--json` machine-readable output |
+| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (12 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) ｜ Every command supports `--json` machine-readable output |
 | **Storage** | SQLite + markdown dual persistence ｜ Time-decay scoring (90-day half-life) + consolidation + stale eviction ｜ Backward-compatible schema auto-upgrades |
 | **Retrieval** | `keyword / tree / hybrid` recall ｜ Adaptive gate skips trivial queries ｜ Lightweight scope isolation (`global / project / agent / user`) ｜ Recall routing telemetry (`stats` + API) |
 | **Wiki workflows** | Raw source import (markdown/text) ｜ Compiled wiki special pages (`index / log / overview`) ｜ Query file-back (`synthesis / comparison`) ｜ Wiki governance lint |
@@ -121,6 +121,7 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 | `GET`  | `/v1/telemetry/recall` | Recall routing telemetry (query: `window`, `limit`) |
 | `POST` | `/v1/remember` | Write memory (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | Recall memories (body: `{query, top_k?, project?, scope?, mode?}`) |
+| `POST` | `/v1/recall/:id/outcome` | Report recall utility (body: `{signal, utility_score?, used?}`; UFL write-back) |
 | `POST` | `/v1/sources` | Import a markdown/text source |
 | `GET`  | `/v1/sources` | List raw sources |
 | `POST` | `/v1/wiki/build` | Rebuild compiled wiki special pages |

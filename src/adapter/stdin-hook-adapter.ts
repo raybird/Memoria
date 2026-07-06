@@ -9,7 +9,7 @@
 
 import { BaseAdapter } from './adapter.js'
 import { hashTurn } from './hook-state.js'
-import { emitUtilityShadow } from './utility-shadow.js'
+import { reportRecallOutcome } from './utility-shadow.js'
 import type { RecallHit } from '../core/types.js'
 
 /** Superset of the fields the supported CLIs place on a hook's stdin JSON. */
@@ -86,8 +86,8 @@ export abstract class StdinHookAdapter extends BaseAdapter {
             const assistant = turn?.assistant.trim() ?? ''
             if (!turn || !assistant) return
             const user = turn.user
-            // Phase 0 utility spike: score reuse of the injected memory in this completed turn (no-op when off).
-            emitUtilityShadow(conversationId, { user, assistant })
+            // UFL: report reuse of the injected memory in this completed turn (fail-open).
+            await reportRecallOutcome(this.client, conversationId, { user, assistant })
             const contentHash = hashTurn(`${user}\n${assistant}`)
             if (!this.shouldWrite(conversationId, contentHash)) return
 

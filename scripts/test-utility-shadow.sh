@@ -68,6 +68,17 @@ if (!(reused - unrelated > 0.3)) fail('signal must discriminate (gap>0.3): reuse
 console.log('  reuse discriminates: reused='+reused.toFixed(3)+' vs unrelated='+unrelated.toFixed(3));
 "
 
+echo "[shadow] assert outcomes were also written back to recall_telemetry (Phase 1 default-on reporting)"
+curl -sf "$SERVER_URL/v1/telemetry/recall?window=P7D&limit=50" | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const scored=d.data.rows.filter((r)=>typeof r.utility_score==='number').map((r)=>r.utility_score);
+if(scored.length<2) throw new Error('expected >=2 rows with utility_score, got '+scored.length);
+const hi=Math.max(...scored), lo=Math.min(...scored);
+if(!(hi>0.6)) throw new Error('reused turn utility should be high, got '+hi);
+if(!(lo<0.4)) throw new Error('unrelated turn utility should be low, got '+lo);
+console.log('  recall_telemetry write-back discriminates: hi='+hi.toFixed(3)+' lo='+lo.toFixed(3));
+"
+
 echo "[shadow] assert the shadow is OFF by default (no env -> no file written)"
 SHADOW2="$TMP_DIR/shadow-off.jsonl"
 echo "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"off-sess\",\"prompt\":\"$QUERY\"}" \

@@ -16,7 +16,8 @@ import type {
     SessionSummary,
     HealthStatus,
     StatsData,
-    RecallTelemetryData
+    RecallTelemetryData,
+    RecallOutcomeInput
 } from './core/types.js'
 
 const DEFAULT_BASE_URL = 'http://localhost:3917'
@@ -50,6 +51,22 @@ export class MemoriaClient {
     /** Recall relevant memories matching the filter */
     async recall(filter: RecallFilter): Promise<MemoriaResult<RecallHit[]>> {
         return this.post('/v1/recall', filter)
+    }
+
+    /**
+     * Report the observed utility of a prior recall (UFL). Fail-open: a network/server error
+     * resolves to { ok:false } instead of throwing, so it never disrupts the agent loop.
+     */
+    async recordRecallOutcome(recallId: string, outcome: RecallOutcomeInput): Promise<MemoriaResult<{ updated: boolean }>> {
+        try {
+            return await this.post(`/v1/recall/${encodeURIComponent(recallId)}/outcome`, outcome)
+        } catch (error) {
+            return {
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+                meta: { source: 'mcp', evidence: [], confidence: 0, timestamp: new Date().toISOString(), latency_ms: 0 }
+            }
+        }
     }
 
     /** Get a structured summary of a specific session */

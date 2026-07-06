@@ -89,6 +89,25 @@ assert_status 400 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/
 assert_status 400 -X POST "$SERVER_URL/v1/remember" -H 'Content-Type: application/json' -d '{"events":"not-an-array"}'
 echo "  malformed bodies rejected (400)"
 
+echo "[http] POST /v1/recall/:id/outcome writes utility back (UFL)"
+RID=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"HTTP contract test session","mode":"keyword"}' | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).meta.recall_id||''))")
+[ -n "$RID" ] || { echo "  ✗ recall did not return a recall_id"; exit 1; }
+OUT=$(curl -sf -X POST "$SERVER_URL/v1/recall/$RID/outcome" -H 'Content-Type: application/json' -d '{"signal":"reuse","utility_score":0.75}')
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.data.updated!==true) throw new Error('outcome not applied: '+process.argv[1])" "$OUT"
+curl -sf "$SERVER_URL/v1/telemetry/recall?window=P7D&limit=50" | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const row=d.data.rows.find(r=>r.id==='$RID');
+if(!row) throw new Error('telemetry row missing for $RID');
+if(row.utility_score!==0.75||row.outcome_kind!=='reuse'||!row.observed_at) throw new Error('utility not persisted: '+JSON.stringify(row));
+"
+echo "  outcome persisted (utility_score=0.75)"
+echo "[http] unknown recall id -> ok:true, updated:false (no-op)"
+curl -sf -X POST "$SERVER_URL/v1/recall/rt_does_not_exist/outcome" -H 'Content-Type: application/json' -d '{"signal":"reuse","utility_score":0.5}' | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); if(!d.ok||d.data.updated!==false) throw new Error('expected no-op ok:true updated:false')"
+echo "  no-op ok"
+echo "[http] outcome missing required 'signal' -> 400"
+assert_status 400 -X POST "$SERVER_URL/v1/recall/$RID/outcome" -H 'Content-Type: application/json' -d '{"utility_score":0.5}'
+echo "  400 ok"
+
 echo "[http] oversized body rejected with 413 (MAX_BODY_BYTES=2048)"
 BIG=$(node -e "process.stdout.write('{\"query\":\"'+'x'.repeat(4096)+'\"}')")
 assert_status 413 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d "$BIG"
