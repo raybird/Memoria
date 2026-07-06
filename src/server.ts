@@ -2,12 +2,17 @@
 // Serves the MemoriaCore API over HTTP (node:http, zero extra deps)
 // Default port: 3917 (override with MEMORIA_PORT env var)
 //
-// Routes:
+// Routes (11 endpoints):
 //   GET  /v1/health
 //   GET  /v1/stats
 //   GET  /v1/telemetry/recall?window=P7D&limit=100
-//   POST /v1/remember          body: SessionData JSON
-//   POST /v1/recall            body: RecallFilter JSON
+//   POST /v1/remember              body: SessionData JSON
+//   POST /v1/recall                body: RecallFilter JSON
+//   POST /v1/sources               body: { filePath, type?, title?, scope? }
+//   GET  /v1/sources?type=&scope=&limit=
+//   POST /v1/wiki/build
+//   POST /v1/wiki/file-query       body: { query, title, kind?, scope?, top_k?, ... }
+//   POST /v1/wiki/lint             body: { stale_days?, limit? } (empty body allowed)
 //   GET  /v1/sessions/:id/summary
 
 import http from 'node:http'
