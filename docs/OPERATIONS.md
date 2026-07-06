@@ -163,3 +163,13 @@ tar -czf ai-memory-backup-$(date +%Y%m%d).tar.gz "$MEMORIA_HOME"
 chmod 700 "$MEMORIA_HOME/.memory"
 chmod 600 "$MEMORIA_HOME/.memory/sessions.db"
 ```
+
+### HTTP server exposure
+
+The `serve` HTTP API has **no authentication, CORS, or rate limiting** by design — it is meant
+for local/self-host use. Do not bind it to a public interface. Keep it on `localhost` (default)
+or place it behind a reverse proxy / firewall that enforces access control.
+
+Request bodies are capped at **1 MiB** by default to avoid unbounded memory growth; oversized
+requests get `413`. Override with `MEMORIA_MAX_BODY_BYTES` (in bytes) if you legitimately ingest
+larger payloads.

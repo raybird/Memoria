@@ -16,7 +16,8 @@ cleanup() { [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true; 
 trap cleanup EXIT
 
 echo "[http] start server"
-MEMORIA_HOME="$TMP_DIR/home" MEMORIA_PORT="$PORT" "$ROOT_DIR/cli" setup --serve --json >"$TMP_DIR/server.log" 2>&1 &
+# MEMORIA_MAX_BODY_BYTES kept small so the 413 oversized-body case below stays cheap.
+MEMORIA_HOME="$TMP_DIR/home" MEMORIA_PORT="$PORT" MEMORIA_MAX_BODY_BYTES=2048 "$ROOT_DIR/cli" setup --serve --json >"$TMP_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 30); do curl -sf "$SERVER_URL/v1/health" >/dev/null 2>&1 && break; sleep 0.2; done
 curl -sf "$SERVER_URL/v1/health" >/dev/null || { echo "[http] server failed to start"; cat "$TMP_DIR/server.log"; exit 1; }
@@ -87,5 +88,10 @@ assert_status 400 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/
 # wrong type on a nested field (events must be an array)
 assert_status 400 -X POST "$SERVER_URL/v1/remember" -H 'Content-Type: application/json' -d '{"events":"not-an-array"}'
 echo "  malformed bodies rejected (400)"
+
+echo "[http] oversized body rejected with 413 (MAX_BODY_BYTES=2048)"
+BIG=$(node -e "process.stdout.write('{\"query\":\"'+'x'.repeat(4096)+'\"}')")
+assert_status 413 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d "$BIG"
+echo "  413 ok"
 
 echo "[http] ok"

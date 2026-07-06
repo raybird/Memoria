@@ -23,6 +23,15 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const DEFAULT_PORT = 3917
 
+// Cap request body size to avoid unbounded memory growth from a malicious/oversized
+// payload. Override with MEMORIA_MAX_BODY_BYTES (bytes); falls back to 1 MiB.
+function resolveMaxBodyBytes(): number {
+    const raw = process.env.MEMORIA_MAX_BODY_BYTES
+    const parsed = raw ? Number(raw) : NaN
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1024 * 1024
+}
+const MAX_BODY_BYTES = resolveMaxBodyBytes()
+
 // ─── Request body schemas (validate at the HTTP boundary; unknown → parse) ──────
 // Known fields are type-checked; extra fields pass through for forward compatibility.
 
@@ -87,12 +96,29 @@ const wikiLintSchema = z
     })
     .passthrough()
 
-function readBody(req: IncomingMessage): Promise<string> {
+// Reads the request body, capped at MAX_BODY_BYTES. On overflow it sends a 413 itself
+// (the caller must NOT write another response) and rejects with { statusCode: 413,
+// responded: true }. Remaining inbound data is drained and discarded — memory stays
+// bounded — so the client reliably receives the 413 instead of a connection reset.
+function readBody(req: IncomingMessage, res: ServerResponse): Promise<string> {
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = []
-        req.on('data', (c: Buffer) => chunks.push(c))
-        req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
-        req.on('error', reject)
+        let size = 0
+        let overflowed = false
+        req.on('data', (c: Buffer) => {
+            if (overflowed) return
+            size += c.length
+            if (size > MAX_BODY_BYTES) {
+                overflowed = true
+                sendError(res, 413, `Request body exceeds ${MAX_BODY_BYTES} bytes`)
+                reject(Object.assign(new Error('Request body too large'), { statusCode: 413, responded: true }))
+                req.resume() // drain and discard the rest so the socket closes cleanly
+                return
+            }
+            chunks.push(c)
+        })
+        req.on('end', () => { if (!overflowed) resolve(Buffer.concat(chunks).toString('utf8')) })
+        req.on('error', (err) => { if (!overflowed) reject(err) })
     })
 }
 
@@ -121,7 +147,16 @@ async function readValidatedBody<S extends z.ZodTypeAny>(
     schema: S,
     opts: { allowEmpty?: boolean } = {}
 ): Promise<z.infer<S> | null> {
-    const raw = await readBody(req)
+    let raw: string
+    try {
+        raw = await readBody(req, res)
+    } catch (error) {
+        // readBody already sent the 413 response on overflow; just stop here.
+        if (error && typeof error === 'object' && (error as { responded?: boolean }).responded) {
+            return null
+        }
+        throw error
+    }
     let value: unknown
     if (!raw.trim()) {
         if (!opts.allowEmpty) {
