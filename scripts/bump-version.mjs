@@ -5,8 +5,7 @@ import { argv, exit } from 'node:process'
 const usage = `Usage: node scripts/bump-version.mjs <patch|minor|major|x.y.z>
 
 Updates version in:
-  - package.json
-  - src/cli.ts (.version('...'))
+  - package.json (source of truth; CLI reads it via esbuild define at build time)
   - install.sh (v... header + VERSION="...")
   - skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md (version: "...")
   - docs/INSTALL.md (v... in install commands)
@@ -31,7 +30,12 @@ console.log(`Bumping ${oldV} → ${next}`)
 async function patch(file, transform) {
   const src = await readFile(file, 'utf8')
   const out = transform(src)
-  if (out === src) { console.warn(`  ⚠ ${file}: no change`); return }
+  if (out === src) {
+    // A no-op means the expected version string drifted — fail loudly rather than
+    // leaving some files bumped and others stale.
+    console.error(`  ✗ ${file}: expected to change but did not (version string not found?)`)
+    exit(1)
+  }
   await writeFile(file, out)
   console.log(`  ✓ ${file}`)
 }
@@ -40,7 +44,6 @@ pkg.version = next
 await writeFile('package.json', JSON.stringify(pkg, null, 2) + '\n')
 console.log(`  ✓ package.json`)
 
-await patch('src/cli.ts', (s) => s.replace(`.version('${oldV}')`, `.version('${next}')`))
 await patch('install.sh', (s) => s.replace(`v${oldV}`, `v${next}`).replace(`VERSION="${oldV}"`, `VERSION="${next}"`))
 await patch('skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md', (s) => s.replace(`version: "${oldV}"`, `version: "${next}"`))
 await patch('docs/INSTALL.md', (s) => s

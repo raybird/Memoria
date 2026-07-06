@@ -26,11 +26,16 @@ function main() {
     failures.push(`package.json version is invalid: '${version}'`)
   }
 
-  const cliTs = readText('src/cli.ts')
-  const cliVersionMatch = /\.version\('([^']+)'\)/.exec(cliTs)
-  const cliVersion = cliVersionMatch?.[1] ?? ''
-  if (cliVersion !== version) {
-    failures.push(`src/cli.ts version '${cliVersion}' does not match package.json '${version}'`)
+  // The CLI version is single-sourced from package.json via an esbuild define
+  // (scripts/build.mjs bakes __MEMORIA_VERSION__). src/cli.ts no longer carries a
+  // literal, so nothing there can drift; if a production bundle exists, confirm the
+  // injection embedded the current version.
+  const distRel = 'dist/cli.mjs'
+  if (fs.existsSync(path.join(root, distRel))) {
+    const dist = readText(distRel)
+    if (!dist.includes(`"${version}"`)) {
+      failures.push(`${distRel} does not embed version ${version} (stale build? run pnpm run build)`)
+    }
   }
 
   const installSh = readText('install.sh')
