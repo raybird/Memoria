@@ -47,6 +47,52 @@ import type {
     WikiLintResult
 } from './types.js'
 
+// Payload a producer hands back to withResult; the wrapper stamps source/timestamp/latency
+// and folds `extra` (e.g. route_mode, fallback_used, reasoning_path) into the success meta.
+type ResultPayload<T> = {
+    data: T
+    evidence: string[]
+    confidence: number
+    extra?: Record<string, unknown>
+}
+
+// Wraps a producer in the MemoriaResult envelope: success meta on return, error meta on throw.
+// `elapsed()` exposes the same clock the final latency_ms uses, for producers that log latency
+// mid-flight (e.g. recall telemetry). Throwing produces the ok:false envelope with this source.
+async function withResult<T>(
+    source: string,
+    producer: (ctx: { elapsed: () => number }) => Promise<ResultPayload<T>>
+): Promise<MemoriaResult<T>> {
+    const start = Date.now()
+    try {
+        const payload = await producer({ elapsed: () => Date.now() - start })
+        return {
+            ok: true,
+            data: payload.data,
+            meta: {
+                source,
+                evidence: payload.evidence,
+                confidence: payload.confidence,
+                ...(payload.extra ?? {}),
+                timestamp: new Date().toISOString(),
+                latency_ms: Date.now() - start
+            }
+        }
+    } catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            meta: {
+                source,
+                evidence: [],
+                confidence: 0,
+                timestamp: new Date().toISOString(),
+                latency_ms: Date.now() - start
+            }
+        }
+    }
+}
+
 export class MemoriaCore {
     readonly paths: MemoriaPaths
 
@@ -75,115 +121,35 @@ export class MemoriaCore {
     }
 
     async addSource(input: ImportSourceInput): Promise<MemoriaResult<ImportedSourceData>> {
-        const start = Date.now()
-        try {
+        return withResult('markdown', async () => {
             await this.init()
             const data = await importSourceFile(this.paths, input)
             await buildCompiledWiki(this.paths)
-            return {
-                ok: true,
-                data,
-                meta: {
-                    source: 'markdown',
-                    evidence: [data.source.id, data.page.id],
-                    confidence: 1,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'markdown',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data, evidence: [data.source.id, data.page.id], confidence: 1 }
+        })
     }
 
     async buildWiki(): Promise<MemoriaResult<WikiBuildResult>> {
-        const start = Date.now()
-        try {
+        return withResult('markdown', async () => {
             await this.init()
             const data = await buildCompiledWiki(this.paths)
-            return {
-                ok: true,
-                data,
-                meta: {
-                    source: 'markdown',
-                    evidence: Object.values(data.specialPages),
-                    confidence: 1,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'markdown',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data, evidence: Object.values(data.specialPages), confidence: 1 }
+        })
     }
 
     async listSources(options?: { type?: string; scope?: string; limit?: number }): Promise<MemoriaResult<ReturnType<typeof listSourceRecords>>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             if (!existsSync(this.paths.dbPath)) {
-                return {
-                    ok: true,
-                    data: [],
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 1,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                return { data: [], evidence: [], confidence: 1 }
             }
             initDatabase(this.paths.dbPath)
             const data = listSourceRecords(this.paths.dbPath, options)
-            return {
-                ok: true,
-                data,
-                meta: {
-                    source: 'sqlite',
-                    evidence: data.map((item) => item.id),
-                    confidence: 1,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data, evidence: data.map((item) => item.id), confidence: 1 }
+        })
     }
 
     async fileQuery(input: FileQueryInput): Promise<MemoriaResult<FiledQueryData>> {
-        const start = Date.now()
-        try {
+        return withResult('markdown', async () => {
             await this.init()
             const recallResult = await this.recall({
                 query: input.query,
@@ -202,67 +168,25 @@ export class MemoriaCore {
             const data = await fileQueryResult(this.paths, input, hits)
             await buildCompiledWiki(this.paths)
             return {
-                ok: true,
                 data,
-                meta: {
-                    source: 'markdown',
-                    evidence: [data.artifact.id, data.page.id, ...hits.map((hit) => hit.id)],
-                    confidence: hits[0]?.score ?? 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
+                evidence: [data.artifact.id, data.page.id, ...hits.map((hit) => hit.id)],
+                confidence: hits[0]?.score ?? 0
             }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'markdown',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+        })
     }
 
     async wikiLint(options?: WikiLintOptions): Promise<MemoriaResult<WikiLintResult>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             await this.init()
             const data = runWikiLint(this.paths, options)
-            return {
-                ok: true,
-                data,
-                meta: {
-                    source: 'sqlite',
-                    evidence: data.findings.map((finding) => finding.id),
-                    confidence: 1,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data, evidence: data.findings.map((finding) => finding.id), confidence: 1 }
+        })
     }
 
     // ─── remember() ──────────────────────────────────────────────────────────
 
     async remember(data: SessionData): Promise<MemoriaResult<{ sessionId: string }>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             await this.init()
             const sessionId = importSession(this.paths.dbPath, data)
             await syncDailyNote(this.paths.memoriaHome, this.paths.dbPath, sessionId)
@@ -285,49 +209,16 @@ export class MemoriaCore {
                 // Keep remember() fail-open for wiki build errors.
             }
 
-            return {
-                ok: true,
-                data: { sessionId },
-                meta: {
-                    source: 'sqlite',
-                    evidence: [sessionId],
-                    confidence: 1.0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data: { sessionId }, evidence: [sessionId], confidence: 1.0 }
+        })
     }
 
     // ─── recall() ────────────────────────────────────────────────────────────
 
     async recall(filter: RecallFilter): Promise<MemoriaResult<RecallHit[]>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async ({ elapsed }) => {
             if (!existsSync(this.paths.dbPath)) {
-                return {
-                    ok: true,
-                    data: [],
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                return { data: [], evidence: [], confidence: 0 }
             }
             initDatabase(this.paths.dbPath)
 
@@ -337,7 +228,7 @@ export class MemoriaCore {
                         routeMode: 'skipped',
                         fallbackUsed: false,
                         hitCount: 0,
-                        latencyMs: Date.now() - start,
+                        latencyMs: elapsed(),
                         query: filter.query,
                         topConfidence: 0
                     })
@@ -346,17 +237,10 @@ export class MemoriaCore {
                 }
 
                 return {
-                    ok: true,
                     data: [],
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        route_mode: 'skipped',
-                        fallback_used: false,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
+                    evidence: [],
+                    confidence: 0,
+                    extra: { route_mode: 'skipped', fallback_used: false }
                 }
             }
 
@@ -437,7 +321,7 @@ export class MemoriaCore {
                     routeMode,
                     fallbackUsed,
                     hitCount: hits.length,
-                    latencyMs: Date.now() - start,
+                    latencyMs: elapsed(),
                     query: filter.query,
                     topConfidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0
                 })
@@ -446,69 +330,32 @@ export class MemoriaCore {
             }
 
             return {
-                ok: true,
                 data: hits,
-                meta: {
-                    source: 'sqlite',
-                    evidence: hits.map((h) => h.id),
-                    // Confidence reflects match quality (decay-free), not recency; fall back to score
-                    // for rows that predate the relevance field.
-                    confidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0,
+                evidence: hits.map((h) => h.id),
+                // Confidence reflects match quality (decay-free), not recency; fall back to score
+                // for rows that predate the relevance field.
+                confidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0,
+                extra: {
                     reasoning_path: hits[0]?.reasoning_path,
                     route_mode: routeMode,
-                    fallback_used: fallbackUsed,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
+                    fallback_used: fallbackUsed
                 }
             }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+        })
     }
 
     // ─── summarizeSession() ──────────────────────────────────────────────────
 
     async summarizeSession(sessionId: string): Promise<MemoriaResult<SessionSummary>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             if (!existsSync(this.paths.dbPath)) {
-                return {
-                    ok: false,
-                    error: 'Database not found. Run init first.',
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                throw new Error('Database not found. Run init first.')
             }
             initDatabase(this.paths.dbPath)
 
             const raw = querySessionSummary(this.paths.dbPath, sessionId)
             if (!raw) {
-                return {
-                    ok: false,
-                    error: `Session not found: ${sessionId}`,
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                throw new Error(`Session not found: ${sessionId}`)
             }
 
             const summary: SessionSummary = {
@@ -522,37 +369,14 @@ export class MemoriaCore {
                 skills: raw.skills
             }
 
-            return {
-                ok: true,
-                data: summary,
-                meta: {
-                    source: 'sqlite',
-                    evidence: [sessionId],
-                    confidence: 1.0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data: summary, evidence: [sessionId], confidence: 1.0 }
+        })
     }
 
     // ─── health() ────────────────────────────────────────────────────────────
 
     async health(): Promise<MemoriaResult<HealthStatus>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             const { ok, checks } = await runVerify(this.paths)
             const dbOk = checks.find((c) => c.id === 'db_connect')?.status === 'pass'
                 ? 'ok' as const
@@ -565,168 +389,49 @@ export class MemoriaCore {
 
             const status: HealthStatus = { ok, db: dbOk, dirs: dirsOk, checks }
 
-            return {
-                ok: true,
-                data: status,
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 1.0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data: status, evidence: [], confidence: 1.0 }
+        })
     }
 
     // ─── stats() ─────────────────────────────────────────────────────────────
 
     async stats(): Promise<MemoriaResult<StatsData>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             if (!existsSync(this.paths.dbPath)) {
-                return {
-                    ok: false,
-                    error: 'Database not found. Run init first.',
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                throw new Error('Database not found. Run init first.')
             }
             initDatabase(this.paths.dbPath)
             const data = queryStats(this.paths.dbPath)
-            return {
-                ok: true,
-                data,
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 1.0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data, evidence: [], confidence: 1.0 }
+        })
     }
 
     // ─── recallTelemetry() ────────────────────────────────────────────────────
 
     async recallTelemetry(options?: { window?: string; limit?: number }): Promise<MemoriaResult<RecallTelemetryData>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             if (!existsSync(this.paths.dbPath)) {
-                return {
-                    ok: false,
-                    error: 'Database not found. Run init first.',
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                throw new Error('Database not found. Run init first.')
             }
             initDatabase(this.paths.dbPath)
-
             const data = queryRecallTelemetry(this.paths.dbPath, options)
-            return {
-                ok: true,
-                data,
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 1.0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+            return { data, evidence: [], confidence: 1.0 }
+        })
     }
 
     async governanceReview(options?: GovernanceReviewOptions): Promise<MemoriaResult<GovernanceReviewData>> {
-        const start = Date.now()
-        try {
+        return withResult('sqlite', async () => {
             if (!existsSync(this.paths.dbPath)) {
-                return {
-                    ok: false,
-                    error: 'Database not found. Run init first.',
-                    meta: {
-                        source: 'sqlite',
-                        evidence: [],
-                        confidence: 0,
-                        timestamp: new Date().toISOString(),
-                        latency_ms: Date.now() - start
-                    }
-                }
+                throw new Error('Database not found. Run init first.')
             }
             initDatabase(this.paths.dbPath)
-
             const data = queryGovernanceReview(this.paths.dbPath, options)
             return {
-                ok: true,
                 data,
-                meta: {
-                    source: 'sqlite',
-                    evidence: data.items.map((item) => item.id),
-                    confidence: data.items.length > 0 ? 1.0 : 0.8,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
+                evidence: data.items.map((item) => item.id),
+                confidence: data.items.length > 0 ? 1.0 : 0.8
             }
-        } catch (error) {
-            return {
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-                meta: {
-                    source: 'sqlite',
-                    evidence: [],
-                    confidence: 0,
-                    timestamp: new Date().toISOString(),
-                    latency_ms: Date.now() - start
-                }
-            }
-        }
+        })
     }
 }
 
