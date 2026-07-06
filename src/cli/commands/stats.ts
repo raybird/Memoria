@@ -35,6 +35,14 @@ export function registerStatsCommand(program: Command, paths: MemoriaPaths, core
                     console.log(`  - route_counts: skipped=${rr.routeCounts.skipped}, keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`)
                     console.log(`  - latency_ms: avg=${rr.avgLatencyMs}, p95=${rr.p95LatencyMs}`)
                     console.log(`  - avg_hit_count=${rr.avgHitCount}`)
+                    if (rr.calibration && rr.calibration.scoredQueries > 0) {
+                        const cal = rr.calibration
+                        const monoLabel = cal.monotonic === null ? 'n/a' : cal.monotonic ? 'yes' : 'no'
+                        console.log(`  - calibration (confidence→utility): scored=${cal.scoredQueries}, monotonic=${monoLabel}`)
+                        for (const b of cal.buckets) {
+                            console.log(`    - conf ${b.range}: n=${b.count}, mean_conf=${b.meanConfidence}, mean_utility=${b.meanUtility}`)
+                        }
+                    }
                 }
             }
         })

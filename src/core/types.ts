@@ -255,6 +255,25 @@ export type HealthStatus = {
     checks: VerifyCheck[]
 }
 
+// ─── Confidence×utility calibration (UFL Phase 2) ────────────────────────────
+// Presentational only: buckets recall telemetry rows that carry an observed
+// utility_score by their top_confidence, so you can see whether confidence tracks
+// real utility. Never feeds back into the confidence calculation.
+export type CalibrationBucket = {
+    range: string          // e.g. "[0.50,0.75)"
+    lower: number          // bucket lower bound (inclusive)
+    upper: number          // bucket upper bound
+    count: number          // scored rows in this bucket
+    meanConfidence: number // mean top_confidence in this bucket
+    meanUtility: number    // mean utility_score in this bucket
+}
+
+export type CalibrationSummary = {
+    scoredQueries: number             // rows with both top_confidence and utility_score
+    buckets: CalibrationBucket[]      // non-empty buckets, ascending by confidence
+    monotonic: boolean | null         // does meanUtility rise with confidence? null if <2 buckets
+}
+
 export type StatsData = {
     sessions: number
     events: number
@@ -285,6 +304,7 @@ export type StatsData = {
         avgHitCount: number
         zeroHitRate: number      // fraction of non-skipped queries that returned no hits
         avgConfidence: number    // mean calibrated top confidence over non-skipped queries
+        calibration?: CalibrationSummary  // confidence×utility buckets (UFL Phase 2), present only if any row is scored
     }
 }
 
@@ -313,6 +333,7 @@ export type RecallTelemetryData = {
     window: string
     total: number
     rows: RecallTelemetryPoint[]
+    calibration?: CalibrationSummary  // confidence×utility buckets (UFL Phase 2) over the returned rows
 }
 
 export type GovernanceReviewOptions = {

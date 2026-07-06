@@ -118,7 +118,7 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 |--------|------|-------------|
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Statistics |
-| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry (query: `window`, `limit`) |
+| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (query: `window`, `limit`) |
 | `POST` | `/v1/remember` | Write memory (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | Recall memories (body: `{query, top_k?, project?, scope?, mode?}`) |
 | `POST` | `/v1/recall/:id/outcome` | Report recall utility (body: `{signal, utility_score?, used?}`; UFL write-back) |

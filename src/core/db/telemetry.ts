@@ -1,5 +1,5 @@
 import { existsSync } from '../paths.js'
-import { shortHash, normalizeSkillKey, parseCreatedAt, tokenizeQuery } from '../utils.js'
+import { shortHash, normalizeSkillKey, parseCreatedAt, tokenizeQuery, buildCalibration } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
@@ -113,11 +113,11 @@ export function queryStats(dbPath: string): StatsData {
         const telemetryRows = recallTelemetryTable
             ? db
                 .prepare(`
-                  SELECT route_mode, fallback_used, hit_count, latency_ms, top_confidence
+                  SELECT route_mode, fallback_used, hit_count, latency_ms, top_confidence, utility_score
                   FROM recall_telemetry
                   WHERE created_at >= ?
                 `)
-                .all(sinceIso) as Array<{ route_mode: string; fallback_used: number; hit_count: number; latency_ms: number; top_confidence: number | null }>
+                .all(sinceIso) as Array<{ route_mode: string; fallback_used: number; hit_count: number; latency_ms: number; top_confidence: number | null; utility_score: number | null }>
             : []
 
         const routeCounts = {
@@ -168,6 +168,12 @@ export function queryStats(dbPath: string): StatsData {
         const zeroHitRate = nonSkippedCount > 0 ? Number((zeroHitCount / nonSkippedCount).toFixed(4)) : 0
         const avgConfidence = confidenceCount > 0 ? Number((confidenceSum / confidenceCount).toFixed(4)) : 0
 
+        // UFL Phase 2: confidence×utility calibration over rows that carry an observed utility_score.
+        // Additive & presentational — omitted entirely when no row is scored, so existing output is unchanged.
+        const calibration = buildCalibration(
+            telemetryRows.map((row) => ({ confidence: row.top_confidence, utility: row.utility_score }))
+        )
+
         const recallRouting = {
             window,
             totalQueries,
@@ -177,7 +183,8 @@ export function queryStats(dbPath: string): StatsData {
             p95LatencyMs,
             avgHitCount,
             zeroHitRate,
-            avgConfidence
+            avgConfidence,
+            ...(calibration.scoredQueries > 0 ? { calibration } : {})
         }
 
         return { sessions, events, skills, lastSession, topSkills, recallRouting }
@@ -227,9 +234,15 @@ export function queryRecallTelemetry(
             observed_at: string | null
         }>
 
+        // UFL Phase 2: calibration over the returned window. Additive; omitted when nothing is scored.
+        const calibration = buildCalibration(
+            rows.map((r) => ({ confidence: r.top_confidence, utility: r.utility_score }))
+        )
+
         return {
             window,
             total: rows.length,
+            ...(calibration.scoredQueries > 0 ? { calibration } : {}),
             rows: rows.map((r) => ({
                 id: r.id,
                 route_mode: r.route_mode,

@@ -101,6 +101,23 @@ if(!row) throw new Error('telemetry row missing for $RID');
 if(row.utility_score!==0.75||row.outcome_kind!=='reuse'||!row.observed_at) throw new Error('utility not persisted: '+JSON.stringify(row));
 "
 echo "  outcome persisted (utility_score=0.75)"
+echo "[http] telemetry exposes confidence×utility calibration (UFL Phase 2)"
+curl -sf "$SERVER_URL/v1/telemetry/recall?window=P7D&limit=50" | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const cal=d.data.calibration;
+if(!cal) throw new Error('telemetry calibration missing after outcome write');
+if(cal.scoredQueries<1) throw new Error('expected scoredQueries>=1, got '+cal.scoredQueries);
+if(!Array.isArray(cal.buckets)||cal.buckets.length<1) throw new Error('expected at least one calibration bucket');
+const b=cal.buckets[0];
+if(typeof b.meanConfidence!=='number'||typeof b.meanUtility!=='number'||typeof b.count!=='number') throw new Error('bucket shape wrong: '+JSON.stringify(b));
+"
+echo "[http] stats exposes calibration under recallRouting"
+curl -sf "$SERVER_URL/v1/stats" | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+const cal=d.data.recallRouting && d.data.recallRouting.calibration;
+if(!cal||cal.scoredQueries<1) throw new Error('stats calibration missing/empty after outcome write');
+"
+echo "  calibration exposed (stats + telemetry)"
 echo "[http] unknown recall id -> ok:true, updated:false (no-op)"
 curl -sf -X POST "$SERVER_URL/v1/recall/rt_does_not_exist/outcome" -H 'Content-Type: application/json' -d '{"signal":"reuse","utility_score":0.5}' | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); if(!d.ok||d.data.updated!==false) throw new Error('expected no-op ok:true updated:false')"
 echo "  no-op ok"

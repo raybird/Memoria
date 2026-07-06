@@ -2,7 +2,7 @@
 // Extracted from cli.ts – pure functions with no side-effects
 
 import { createHash } from 'node:crypto'
-import type { Json, SessionData, SessionEvent } from './types.js'
+import type { Json, SessionData, SessionEvent, CalibrationSummary, CalibrationBucket } from './types.js'
 
 export function safeDate(raw?: string): Date {
     const d = raw ? new Date(raw) : new Date()
@@ -45,6 +45,60 @@ export function tokenCoverage(query: string, text: string): number {
     let found = 0
     for (const token of tokens) if (haystack.includes(token)) found += 1
     return found / tokens.length
+}
+
+// Confidence×utility calibration (UFL Phase 2). Pure aggregation over telemetry points that carry
+// BOTH a top_confidence and an observed utility_score: bucket by confidence in `bucketCount` equal
+// widths over [0,1], emit only non-empty buckets, and flag whether mean utility rises monotonically
+// with confidence. Presentational only — never feeds back into the confidence calculation. Lives
+// here (pure, no better-sqlite3) so any core caller can reuse it.
+export function buildCalibration(
+    points: Array<{ confidence: number | null | undefined; utility: number | null | undefined }>,
+    bucketCount = 4
+): CalibrationSummary {
+    const n = Math.max(1, Math.floor(bucketCount))
+    const acc = Array.from({ length: n }, () => ({ count: 0, confSum: 0, utilSum: 0 }))
+    let scoredQueries = 0
+
+    for (const p of points) {
+        if (typeof p.confidence !== 'number' || !Number.isFinite(p.confidence)) continue
+        if (typeof p.utility !== 'number' || !Number.isFinite(p.utility)) continue
+        const conf = Math.min(1, Math.max(0, p.confidence))
+        const util = Math.min(1, Math.max(0, p.utility))
+        const idx = Math.min(n - 1, Math.floor(conf * n))
+        acc[idx].count += 1
+        acc[idx].confSum += conf
+        acc[idx].utilSum += util
+        scoredQueries += 1
+    }
+
+    const buckets: CalibrationBucket[] = []
+    for (let i = 0; i < n; i++) {
+        if (acc[i].count === 0) continue
+        const lower = i / n
+        const upper = (i + 1) / n
+        buckets.push({
+            range: `[${lower.toFixed(2)},${upper.toFixed(2)}${i === n - 1 ? ']' : ')'}`,
+            lower: Number(lower.toFixed(4)),
+            upper: Number(upper.toFixed(4)),
+            count: acc[i].count,
+            meanConfidence: Number((acc[i].confSum / acc[i].count).toFixed(4)),
+            meanUtility: Number((acc[i].utilSum / acc[i].count).toFixed(4))
+        })
+    }
+
+    let monotonic: boolean | null = null
+    if (buckets.length >= 2) {
+        monotonic = true
+        for (let i = 1; i < buckets.length; i++) {
+            if (buckets[i].meanUtility < buckets[i - 1].meanUtility) {
+                monotonic = false
+                break
+            }
+        }
+    }
+
+    return { scoredQueries, buckets, monotonic }
 }
 
 export function slugify(input: string): string {

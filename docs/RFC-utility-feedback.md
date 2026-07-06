@@ -1,6 +1,6 @@
 # RFC: Recall Utility Feedback Loop（召回效用回饋迴路）
 
-- 狀態：`phase-1-shipped` — Phase 0 spike 通過（§14）；Phase 1 MVP 已實作（recall_id + Migration 6 + recordRecallOutcome + `POST /v1/recall/:id/outcome` + SDK + adapter 預設回報，全程 fail-open）。下一步 = Phase 2 校準呈現。
+- 狀態：`phase-2-shipped` — Phase 0 spike 通過（§14）；Phase 1 MVP 已實作（recall_id + Migration 6 + recordRecallOutcome + `POST /v1/recall/:id/outcome` + SDK + adapter 預設回報，全程 fail-open）；Phase 2 校準呈現已實作（confidence×utility 分桶，呈現在 `memoria stats` 與 `GET /v1/telemetry/recall`，純加法、不改 confidence）。下一步 = Phase 3（需先累積真實資料）。
 - 建立：2026-07-03
 - 更新：2026-07-06
 - Roadmap anchor：`RFC.md` → Candidate Direction #8（*Memory-quality guardrails — score hygiene*），兼及 #5（*Additional observability*）。
@@ -152,10 +152,11 @@ reuseScore(pendingRecall, turnText) =
 - **DoD**:見 §12。這一版**只記錄,不改任何排序/保留**。
 - **交付紀錄**:recall() 對成功分支純加 `recall_id`（前後 envelope 逐欄位比對確認：僅此一欄新增，skip/error 分支 byte-identical）。adapter 回報**預設開啟、fail-open**（`MEMORIA_UTILITY_SHADOW` 降級為可選 JSONL debug）；reuse 用 assistant-only（Phase 0 §14 決）。持久化採就地 UPDATE 三欄。測試：`test-http-api.sh`（outcome 契約+400+no-op）、`test-migrations.sh`（Migration 6 降級/重套）、`test-utility-shadow.sh`（write-back 鑑別力）。
 
-### Phase 2 — Calibration：把效用呈現出來（~0.5–1d，ship）
+### Phase 2 — Calibration：把效用呈現出來（~0.5–1d，ship）✅ 已完成 2026-07-06
 
 - **提示**:`queryStats` / `queryRecallTelemetry` 加 §5b 的 confidence×utility 分桶校準;呈現在 `memoria stats` 與 `GET /v1/telemetry/recall`(或新 `/v1/telemetry/recall/calibration`)。
 - **價值**:直接兌現評估文件缺點 #3——**你第一次能「看見」confidence 誠不誠實**。仍不自動改 confidence。
+- **交付紀錄**:純函式 `buildCalibration`（`src/core/utils.ts`,無 better-sqlite3 依賴）依 `top_confidence` 分 4 桶（[0,1] 等寬）,對每桶算 `count`/`meanConfidence`/`meanUtility`,並判 `meanUtility` 是否隨 confidence 單調上升（`monotonic`）。只納入同時具 `top_confidence` 與 `utility_score` 的列;**無 scored 列時 `calibration` 欄位完全不出現**（純加法,既有輸出 byte-identical,已驗證）。呈現於 `StatsData.recallRouting.calibration` 與 `RecallTelemetryData.calibration`,`memoria stats` 文字輸出與 `GET /v1/stats`、`GET /v1/telemetry/recall` 皆帶出。測試:`test-http-api.sh` 斷言 outcome 寫回後兩端點皆出現 calibration 且桶形狀正確。實測捕捉到「高 confidence 桶效用反而較低 → monotonic=false」,證實訊號可揭露 confidence 未反映真實效用。
 
 ### Phase 3 — Act on utility：讓效用開始作用（later，需先有資料）
 
