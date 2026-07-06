@@ -51,6 +51,7 @@ This repo currently has explicit runtime and wiki test scripts:
 
 - `scripts/test-smoke.sh`
 - `scripts/test-migrations.sh`
+- `scripts/test-prune.sh`
 - `scripts/test-bootstrap.sh`
 - `scripts/test-adapter-runtime.sh`
 - `scripts/test-no-clone-install.sh`
@@ -63,6 +64,7 @@ This repo currently has explicit runtime and wiki test scripts:
 
 - Run smoke test: `bash scripts/test-smoke.sh`
 - Run schema migration regression test: `bash scripts/test-migrations.sh`
+- Run prune deletion path test: `bash scripts/test-prune.sh`
 - Run bootstrap/self-install test: `bash scripts/test-bootstrap.sh`
 - Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
 - Run no-clone install test: `bash scripts/test-no-clone-install.sh`
@@ -89,15 +91,16 @@ Before opening PRs, mirror CI locally in this order:
 5. `bash -n install.sh`
 6. `bash scripts/test-smoke.sh`
 7. `bash scripts/test-migrations.sh`
-8. `bash scripts/test-bootstrap.sh`
-9. `bash scripts/test-adapter-runtime.sh`
-10. `bash scripts/test-no-clone-install.sh`
-11. `bash scripts/test-mcp-e2e.sh`
-12. `bash scripts/test-http-api.sh`
-13. `bash scripts/test-wiki-ingest.sh`
-14. `bash scripts/test-wiki-build.sh`
-15. `bash scripts/test-wiki-query-fileback.sh`
-16. `bash scripts/test-wiki-lint.sh`
+8. `bash scripts/test-prune.sh`
+9. `bash scripts/test-bootstrap.sh`
+10. `bash scripts/test-adapter-runtime.sh`
+11. `bash scripts/test-no-clone-install.sh`
+12. `bash scripts/test-mcp-e2e.sh`
+13. `bash scripts/test-http-api.sh`
+14. `bash scripts/test-wiki-ingest.sh`
+15. `bash scripts/test-wiki-build.sh`
+16. `bash scripts/test-wiki-query-fileback.sh`
+17. `bash scripts/test-wiki-lint.sh`
 
 ## Repository Layout
 
@@ -114,6 +117,7 @@ Before opening PRs, mirror CI locally in this order:
 - `src/core/wiki-lint.ts`: wiki governance finding generation.
 - `scripts/test-smoke.sh`: smoke test (CLI full flow).
 - `scripts/test-migrations.sh`: schema migration upgrade regression on a populated pre-migration DB.
+- `scripts/test-prune.sh`: destructive prune path regression — consolidate/stale/dedupe delete exactly the right rows (dry-run deletes nothing).
 - `scripts/test-http-api.sh`: HTTP endpoint contract test (sources / wiki / session summary + error paths).
 - `scripts/test-mcp-e2e.sh`: MCP/libSQL hybrid + incremental sync test.
 - `scripts/test-bootstrap.sh`: bootstrap test (AI Agent self-install flow).

@@ -45,6 +45,9 @@ jobs:
       - name: Run schema migration regression test
         run: bash scripts/test-migrations.sh
 
+      - name: Run prune deletion path test
+        run: bash scripts/test-prune.sh
+
       - name: Run bootstrap test
         run: bash scripts/test-bootstrap.sh
 
