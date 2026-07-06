@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
-import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery } from '../utils.js'
+import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery, tokenCoverage } from '../utils.js'
 import { safeDate } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
@@ -352,17 +352,6 @@ type KeywordRow = { type: string; id: string; session_id: string; timestamp: str
 
 const FTS_MIN_TERM_LEN = 3
 
-function tokenCoverage(query: string, text: string): number {
-    // Decay-free match quality: fraction of distinct query tokens present in the text. Basis for
-    // meta.confidence so it reflects how well the query matched, independent of the hit's age and
-    // independent of bm25 IDF (which collapses to ~0 for terms present in every indexed document).
-    const tokens = tokenizeQuery(query)
-    if (tokens.length === 0) return 0
-    const haystack = text.toLowerCase()
-    let found = 0
-    for (const token of tokens) if (haystack.includes(token)) found += 1
-    return found / tokens.length
-}
 
 function buildFtsMatch(query: string): string {
     // Trigram FTS terms need >=3 chars. Quote each as an FTS5 string literal (escaping embedded

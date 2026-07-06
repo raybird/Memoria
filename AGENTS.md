@@ -54,6 +54,7 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-prune.sh`
 - `scripts/test-bootstrap.sh`
 - `scripts/test-adapter-runtime.sh`
+- `scripts/test-utility-shadow.sh`
 - `scripts/test-no-clone-install.sh`
 - `scripts/test-mcp-e2e.sh`
 - `scripts/test-http-api.sh`
@@ -67,6 +68,7 @@ This repo currently has explicit runtime and wiki test scripts:
 - Run prune deletion path test: `bash scripts/test-prune.sh`
 - Run bootstrap/self-install test: `bash scripts/test-bootstrap.sh`
 - Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
+- Run utility-shadow spike plumbing test: `bash scripts/test-utility-shadow.sh`
 - Run no-clone install test: `bash scripts/test-no-clone-install.sh`
 - Run MCP/libSQL e2e test: `bash scripts/test-mcp-e2e.sh`
 - Run HTTP API contract test: `bash scripts/test-http-api.sh`
@@ -94,13 +96,14 @@ Before opening PRs, mirror CI locally in this order:
 8. `bash scripts/test-prune.sh`
 9. `bash scripts/test-bootstrap.sh`
 10. `bash scripts/test-adapter-runtime.sh`
-11. `bash scripts/test-no-clone-install.sh`
-12. `bash scripts/test-mcp-e2e.sh`
-13. `bash scripts/test-http-api.sh`
-14. `bash scripts/test-wiki-ingest.sh`
-15. `bash scripts/test-wiki-build.sh`
-16. `bash scripts/test-wiki-query-fileback.sh`
-17. `bash scripts/test-wiki-lint.sh`
+11. `bash scripts/test-utility-shadow.sh`
+12. `bash scripts/test-no-clone-install.sh`
+13. `bash scripts/test-mcp-e2e.sh`
+14. `bash scripts/test-http-api.sh`
+15. `bash scripts/test-wiki-ingest.sh`
+16. `bash scripts/test-wiki-build.sh`
+17. `bash scripts/test-wiki-query-fileback.sh`
+18. `bash scripts/test-wiki-lint.sh`
 
 ## Repository Layout
 

@@ -87,6 +87,7 @@ jobs:
               bash scripts/test-claude-code-adapter.sh
               bash scripts/test-codex-adapter.sh
               bash scripts/test-antigravity-adapter.sh
+              bash scripts/test-utility-shadow.sh
               ;;
             wiki)
               bash scripts/test-wiki-ingest.sh

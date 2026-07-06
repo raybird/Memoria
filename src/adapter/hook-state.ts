@@ -19,6 +19,17 @@ export interface ConversationState {
     lastWriteHash?: string
     /** The user prompt buffered by UserPromptSubmit, read back on Stop. */
     lastUserPrompt?: string
+    /**
+     * Recall injected this turn, buffered for the utility-feedback Phase 0 shadow spike
+     * (gated by MEMORIA_UTILITY_SHADOW; see adapter/utility-shadow.ts). Read back on the next
+     * turn to score lexical reuse. Absent in normal operation.
+     */
+    pendingRecall?: {
+        recallId: string
+        at: number
+        topConfidence: number
+        hits: { id: string; snippet: string; confidence: number }[]
+    }
 }
 
 function stateDir(): string {

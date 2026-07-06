@@ -11,6 +11,7 @@
 import { MemoriaClient } from '../sdk.js'
 import type { RecallHit } from '../core/types.js'
 import { readConversationState, updateConversationState, hashTurn } from './hook-state.js'
+import { bufferPendingRecall, emitUtilityShadow } from './utility-shadow.js'
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,8 @@ export abstract class BaseAdapter {
      */
     async afterResponse(response: AdapterResponse): Promise<void> {
         try {
+            // Phase 0 utility spike: score reuse of last turn's injected memory (no-op when off).
+            emitUtilityShadow(response.conversationId, { user: response.userMessage ?? '', assistant: response.response })
             const contentHash = hashTurn(`${response.userMessage ?? ''}\n${response.response}`)
             if (!this.shouldWrite(response.conversationId, contentHash)) return
             const sessionData = this.buildSessionData(response)
@@ -131,6 +134,8 @@ export abstract class BaseAdapter {
         }
         const result = await this.client.recall(filter)
         const hits = result.ok && result.data ? result.data : []
+        // Phase 0 utility spike: buffer injected hits so the next turn can score their reuse (no-op when off).
+        bufferPendingRecall(context.conversationId, hits)
         const injectedText = hits.length > 0 ? this.formatRecallText(hits) : ''
         return { hits, injectedText }
     }

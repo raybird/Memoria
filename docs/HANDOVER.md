@@ -75,7 +75,9 @@
 
 ## 5. 下一步（接續就從這開始）
 
-**建議動作:效用回饋迴路 RFC 的 Phase 0 spike**(`docs/RFC-utility-feedback.md` §10)。
+> **2026-07-06 更新:Phase 0 spike 已完成,Gate 通過**(見 `docs/RFC-utility-feedback.md` §14)。reuse 訊號證實非退化、具鑑別力;assistant-only 為選定變體(full 被 query→recall 匹配污染)。已固化 `scripts/test-utility-shadow.sh`(CI adapters 組)。**下一步 = Phase 1 MVP**(`recall()` 加 `recall_id` + Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome` + adapter 生產 reuse outcome;RFC §10 Phase 1)。以下為 Phase 0 的原始說明,保留備查。
+
+**已完成動作:效用回饋迴路 RFC 的 Phase 0 spike**(`docs/RFC-utility-feedback.md` §10)。
 
 - 目標:證明「lexical reuse」訊號**可觀測且有鑑別力**,再決定要不要進 Phase 1。
 - 做法(不動 schema、不動 `recall()`、不 ship):adapter 加 `MEMORIA_UTILITY_SHADOW` 開關,inject 時緩衝注入命中,下一回合用 `tokenCoverage` 算 reuseScore,把 `{recallId, top_confidence, reuseScore}` append 成 JSONL,眼看分佈。

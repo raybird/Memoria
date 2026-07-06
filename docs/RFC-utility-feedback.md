@@ -1,8 +1,8 @@
 # RFC: Recall Utility Feedback Loop（召回效用回饋迴路）
 
-- 狀態：`proposed` — 設計完成、待 Phase 0 spike 驗證訊號可觀測且具鑑別力後才進 Phase 1。
+- 狀態：`phase-0-passed` — Phase 0 spike 已完成，reuse 訊號證實可觀測且具鑑別力（見 §14），可進 Phase 1。
 - 建立：2026-07-03
-- 更新：2026-07-03
+- 更新：2026-07-06
 - Roadmap anchor：`RFC.md` → Candidate Direction #8（*Memory-quality guardrails — score hygiene*），兼及 #5（*Additional observability*）。
 - 上游動機：[記憶機制評估](memory-mechanism-assessment.md) 缺點 #2（no utility signal）與 #3（confidence 過度信任）。
 - 範圍：讓「第 N 回合注入的記憶」與「第 N+1 回合的實際結果」建立關聯,把召回從**只會發生**變成**會被評分**。不引入任何新 runtime 依賴、不碰 embedding。
@@ -165,9 +165,10 @@ reuseScore(pendingRecall, turnText) =
 ## 11. Open Decisions（待決事項）
 
 1. **持久化形狀**:MVP 採「就地 `UPDATE recall_telemetry` 三欄」(推薦,最省、stats 直接 join);若日後單次召回需承載多種/多次回饋,再升級為 append-only `recall_feedback(recall_id, ...)` 表。此為可延後決定,不擋 Phase 1。
-2. **reuse `turnText` 範圍**:只算 assistant 回覆,或含下一輪 user prompt(延續訊號)?建議 Phase 0 兩者都量,選鑑別力高者。
-3. **outcome 觸發點**:在 `handleStop` 算(assistant 剛產生),或延到下一個 `handleInject`(能一併看下一輪 user)?取決於決策 2。
+2. ~~**reuse `turnText` 範圍**~~ **[Phase 0 已決]**:用 **assistant-only**。Phase 0 實測顯示含 user prompt 的 `reuseScoreFull` 會被「query→recall 匹配」污染而退化(§14),assistant-only 才有鑑別力。
+3. ~~**outcome 觸發點**~~ **[Phase 0 已決]**:在 `handleStop`(對 SDK 路徑即 `afterResponse`)算,turnText 用當回合 assistant 回覆。既然決策 2 選 assistant-only,就不需延到下一個 `handleInject`。
 4. **confidence 是否最終重定義**:Phase 2 只呈現;是否用 utility 重新定義 `confidence` 留給資料說話,不在本 RFC 承諾。
+5. **[Phase 0 新增] 停用詞底噪**:Phase 0 觀察到無關回覆仍有 ~0.14 的底噪(單一停用詞如 "the" 重疊)。Phase 1 可考慮對 `tokenCoverage` 的 reuse 用途過濾停用詞以壓低 floor;非阻擋項,聚合統計時也可用相對門檻吸收。
 
 ## 12. Definition of Done（完成定義,適用每個 ship 的 Phase）
 
@@ -186,3 +187,33 @@ reuseScore(pendingRecall, turnText) =
 - 本 RFC 解「**知道召回準不準**」(效用),**不被 blocked**、現在就能做,且是前者的**驗收標尺**。
 
 理性順序:**先做本 RFC(建立標尺),再解語意 RFC(有標尺可證明其價值)**。沒有效用迴路,語意召回上線那天將無法客觀證明它比現有字面召回更好——這正是本 RFC 存在的戰略理由。
+
+## 14. Phase 0 Spike 結果（2026-07-06）
+
+**結論:Gate 通過。reuse 訊號非退化、具鑑別力,可進 Phase 1。**
+
+### 做法
+
+- 新增 `src/adapter/utility-shadow.ts`(僅 `MEMORIA_UTILITY_SHADOW=<jsonl 路徑>` 開啟,預設完全休眠、fail-open)。
+- `recallForContext` inject 時把命中緩衝到 `hook-state` 的 `pendingRecall`;`handleStop` / `afterResponse` 用既有 `tokenCoverage` 算 reuseScore,append 一筆 JSONL。
+- **未動 `recall()`、schema、或任何 shipped 行為**;`tokenCoverage` 由 `recall.ts` 提升到 `utils.ts`(純函式,讓 adapter 不必拉入 better-sqlite3,演算法不動)。
+
+### 觀測(同一筆記憶注入,四種 assistant 回覆)
+
+| 回覆型態 | reuseScore(assistant-only) | reuseScoreFull(user+assistant) |
+|----------|---------------------------|-------------------------------|
+| 高度重用 | **0.929** | 0.929 |
+| 完全無關 | **0.143** | 0.667 |
+| 部分重用 | **0.333** | 0.667 |
+| 改寫重用 | **0.500** | 0.667 |
+
+### 判讀
+
+1. **assistant-only reuseScore 非退化**:0.14 / 0.33 / 0.50 / 0.93,spread 0.79,hi/mid/lo 三桶皆有 → **有鑑別力,Gate 通過**。
+2. **`reuseScoreFull` 退化**:除高度重用外三筆全 0.667——因 user prompt 本就是召回的匹配依據,算進去等於自我實現。**故 Phase 1 用 assistant-only**(解 §11 決策 2/3)。
+3. **停用詞底噪**:無關回覆 0.143 來自單一 "the" 重疊 → §11 新增決策 5。
+4. confidence×utility 相關性樣本太小無法評(top_confidence 多為 0.333);那是 Phase 2 用真實資料量的事,不在 Phase 0 範圍。
+
+### 固化
+
+- `scripts/test-utility-shadow.sh`(掛 CI adapters 組):斷言重用回覆 reuseScore>0.6、無關 <0.4、gap>0.3,且 env 未設時完全不寫檔。防止 instrumentation 在 Phase 1 用到前 bitrot。

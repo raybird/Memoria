@@ -21,8 +21,9 @@
 | P5 | `f1e4400` | 抽 `utils.tokenizeQuery` 統一三處；CJK 範圍差異常數化+註記（行為不變） |
 | P7 | `894ca65` | CI 拆平行 job（static/test 矩陣/node18/release）+ Node 18 smoke + docs-check 進 CI |
 | P8 | `676274a` | 連線收斂到 `withDb`（支援 RW/RO options），消除 20+ 處直接 `new Database` |
+| P6 | (本次) | UFL Phase 0 shadow spike：reuse 訊號 Gate 通過（非退化、有鑑別力）；固化 `test-utility-shadow.sh`；未動 recall()/schema |
 
-**剩餘（未動）**：P6（UFL Phase 0，戰略主線，見 `docs/HANDOVER.md` §5）、P9（recall.ts 重構，CRITICAL，建議 P6 之後）、P10（install.sh checksum）。P5 的 CJK 範圍對齊方向仍為待決，依維護者決定。
+**剩餘（未動）**：P9（recall.ts 重構，CRITICAL）、P10（install.sh checksum）。**UFL 主線下一步 = Phase 1 MVP**（見 `docs/RFC-utility-feedback.md` §10/§14）。P5 的 CJK 範圍對齊方向仍為待決。
 
 **P8 補充**：`withDb` 現以 `<mode>:<dbPath>` 為 pool key，readonly 與 read-write handle 分開池化（readonly caller 保留 SQLite 寫入保護）。唯一保留直接 `new Database` 的是 `schema.ts` 的 `initDatabase`（DDL/migration bootstrap，刻意不動）。踩到的坑：better-sqlite3 不接受 `fileMustExist: undefined`，需強制 boolean。
 

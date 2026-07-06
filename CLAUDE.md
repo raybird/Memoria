@@ -36,6 +36,7 @@ bash scripts/test-migrations.sh             # schema migration upgrade on a popu
 bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe) delete exactly the right rows
 bash scripts/test-bootstrap.sh              # ./cli setup self-install
 bash scripts/test-adapter-runtime.sh        # adapter ESM runtime
+bash scripts/test-utility-shadow.sh         # UFL Phase 0 shadow spike plumbing (reuse signal discriminates)
 bash scripts/test-no-clone-install.sh       # install.sh from release tarball
 bash scripts/test-mcp-e2e.sh                # MCP/libSQL hybrid + incremental
 bash scripts/test-http-api.sh               # HTTP endpoint contracts (sources/wiki/summary)

@@ -33,6 +33,20 @@ export function tokenizeQuery(query: string, minLength = 2): string[] {
     )
 }
 
+// Decay-free match quality: fraction of distinct query tokens present in the text. Basis for
+// recall's meta.confidence (how well the query matched, independent of the hit's age and of bm25
+// IDF, which collapses to ~0 for terms present in every indexed document). A pure text helper here
+// so callers outside the DB layer (e.g. the adapter utility-shadow spike) can reuse it without
+// pulling in better-sqlite3.
+export function tokenCoverage(query: string, text: string): number {
+    const tokens = tokenizeQuery(query)
+    if (tokens.length === 0) return 0
+    const haystack = text.toLowerCase()
+    let found = 0
+    for (const token of tokens) if (haystack.includes(token)) found += 1
+    return found / tokens.length
+}
+
 export function slugify(input: string): string {
     const cleaned = input
         .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
