@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Semantic recall (`mode:'vector'`)** — opt-in semantic retrieval on top of the MCP/libSQL optional mode (`docs/RFC-semantic-recall.md`, status `phase-1-shipped`). Memories are embedded locally (`multilingual-e5-small`, chosen by a Traditional-Chinese/English/cross-lingual spike: 5/6 vs 2/6 for English-only MiniLM) and stored as libSQL **native vectors** (`F32_BLOB` + `vector_top_k`), bypassing `mcp-memory-libsql` (text-search only). Recall = lexical floor + RRF fusion, fully fail-open: no `LIBSQL_URL`/helper/timeout ⇒ lexical-only with `route_mode: vector_unavailable|vector_timeout`. Heavy deps live in `skills/memoria-vector/` (spawned via `node:child_process`; core gains **zero** runtime dependencies; Memoria-only mode untouched). New env: `MEMORIA_EMBED_PROVIDER`, `MEMORIA_EMBED_MODEL`, `MEMORIA_VECTOR_ENABLE`, `MEMORIA_VECTOR_TIMEOUT_MS`, `MEMORIA_VECTOR_RECALL_CMD`. Covered by `scripts/test-vector-recall.sh`.
+- **Recall utility feedback loop (UFL), Phases 0–3** (`docs/RFC-utility-feedback.md`, status `phase-3-shipped`):
+  - Phase 1: every successful `recall()` returns `meta.recall_id`; `POST /v1/recall/:id/outcome` + SDK `recordRecallOutcome` write observed utility back (Migration 6: `utility_score`/`outcome_kind`/`observed_at` on `recall_telemetry`); adapters report lexical-reuse utility automatically (fail-open).
+  - Phase 2: confidence×utility calibration (bucketed `meanConfidence`/`meanUtility` + monotonicity flag) in `memoria stats` and `GET /v1/telemetry/recall` — presentational only, hidden until outcomes exist.
+  - Phase 3: per-memory utility attribution via outcome `hits[]` (Migration 7: `memory_utility`); utility-weighted recall ranking (down-weight only, ≥2 observations required, byte-identical at zero data) and prune retention (stale/consolidate spare high-utility memories); explicit host feedback (`signal:'explicit'`, Migration 8) accumulates separately and overrides the reuse proxy; SDK `markRecallUseful`. Covered by `scripts/test-utility-ranking.sh` + extended prune/http/migrations tests.
+- HTTP request bodies are capped (`MEMORIA_MAX_BODY_BYTES`, default 1 MiB) — oversized requests get a clean `413` instead of unbounded buffering.
+- `install.sh` verifies the release tarball's SHA256 (`.sha256` artifact published by the release workflow) and validates `--version` format; release packaging emits the checksum file.
+
+### Changed
+- CI now runs as four parallel jobs (static checks / e2e matrix core–adapters–wiki–http-mcp / Node 18 smoke / release-artifact check).
+- `--version` is injected at build time (esbuild define) with a package.json fallback in dev.
+- `withDb` supports read-only pooled connections (`ro:`/`rw:` pool keys); read paths open the DB read-only.
+- Keyword recall internals dedup'd (`buildSnippet`/`buildScopeClause`); `tokenCoverage`/`tokenizeQuery` moved to pure `core/utils.ts` so adapters don't pull in `better-sqlite3`.
+
 ## [1.17.0] - 2026-07-03
 
 ### Fixed

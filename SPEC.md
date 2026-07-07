@@ -14,7 +14,7 @@ This document is the source of truth for what Memoria currently implements.
   - `govern review`
   - `prune`
   - `export`
-- SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`)
+- SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`, `memory_utility`)
 - Lightweight scope isolation:
   - `SessionData.scope` optional at write time
   - if omitted, scope defaults to `project:<project>` or `global`
@@ -32,8 +32,21 @@ This document is the source of truth for what Memoria currently implements.
   - exact duplicate events within the same session are suppressed before persistence
   - trivial session summaries are replaced with the first higher-signal event text when available
 - Tree memory index build and recall modes:
-  - `recall` supports `mode: keyword | tree | hybrid`
-  - recall metadata includes `reasoning_path`, `route_mode`, `fallback_used`
+  - `recall` supports `mode: keyword | tree | hybrid | vector`
+  - recall metadata includes `reasoning_path`, `route_mode`, `fallback_used`, `recall_id`
+- Recall utility feedback loop (UFL):
+  - every successful `recall()` carries `meta.recall_id`
+  - `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back to `recall_telemetry`; `hits[]` attributes it per memory into `memory_utility`
+  - `signal:'explicit'` (SDK `markRecallUseful`) accumulates separately from the lexical-reuse proxy and overrides it (`effectiveUtility`: explicit needs 1 observation, reuse needs 2)
+  - utility-weighted ranking: accrued per-memory utility down-weights recall `score` (factor ∈ [0.5, 1], never boosts); byte-identical with no observations
+  - utility-weighted retention: `prune --stale-days` spares memories with effective utility ≥ 0.5; `--consolidate-days` keeps the highest-utility child (falls back to newest)
+  - confidence×utility calibration (buckets + monotonicity flag) exposed in `stats.recallRouting.calibration` and `GET /v1/telemetry/recall`, hidden until outcomes exist; adapters report reuse outcomes automatically (fail-open)
+- Semantic recall (`mode:'vector'`, opt-in):
+  - gated by `LIBSQL_URL` + the out-of-core `skills/memoria-vector` helper (spawned via `node:child_process`; core gains no runtime dependency)
+  - local embeddings (`multilingual-e5-small` q8 by default; `MEMORIA_EMBED_PROVIDER=local|stub`), vectors stored as libSQL native `F32_BLOB` + `vector_top_k`
+  - lexical floor always runs; results fuse via Reciprocal Rank Fusion; authoritative fields re-read from local SQLite
+  - fail-open degradation: `route_mode = vector_unavailable | vector_timeout | keyword | hybrid_vector | vector`; `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the helper
+  - sync-flow ingest step behind `MEMORIA_VECTOR_ENABLE=1` (default off)
 - Adaptive retrieval gate:
   - skips trivial/greeting recall requests when no explicit recall mode or memory intent is present
   - telemetry records skipped requests with `route_mode=skipped`
@@ -82,7 +95,7 @@ bash scripts/test-mcp-e2e.sh
 ## Out of Scope (Current)
 
 - Built-in context condensation engine
-- Built-in semantic/vector retrieval engine inside Memoria core
+- Semantic/vector retrieval engine **inside Memoria core** (shipped instead as the opt-in out-of-core `skills/memoria-vector` helper — core stays dependency-free; see `mode:'vector'` above)
 - First-party OpenCode plugin implementation
 
 ## Architectural Non-Goals

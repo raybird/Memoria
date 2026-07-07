@@ -33,13 +33,15 @@ There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts
 ```bash
 bash scripts/test-smoke.sh                  # CLI full flow (most common)
 bash scripts/test-migrations.sh             # schema migration upgrade on a populated old DB
-bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe) delete exactly the right rows
+bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe/utility-retention) delete exactly the right rows
+bash scripts/test-utility-ranking.sh        # UFL Phase 3 utility-weighted recall ranking (threshold/flip/explicit-override)
 bash scripts/test-bootstrap.sh              # ./cli setup self-install
 bash scripts/test-adapter-runtime.sh        # adapter ESM runtime
 bash scripts/test-utility-shadow.sh         # UFL Phase 0 shadow spike plumbing (reuse signal discriminates)
 bash scripts/test-no-clone-install.sh       # install.sh from release tarball
 bash scripts/test-mcp-e2e.sh                # MCP/libSQL hybrid + incremental
-bash scripts/test-http-api.sh               # HTTP endpoint contracts (sources/wiki/summary)
+bash scripts/test-http-api.sh               # HTTP endpoint contracts (sources/wiki/summary/outcome/calibration)
+bash scripts/test-vector-recall.sh          # semantic recall (mode:'vector') contract + degradation matrix (stub provider)
 bash scripts/test-wiki-ingest.sh            # raw source ingest
 bash scripts/test-wiki-build.sh             # compiled wiki special pages
 bash scripts/test-wiki-query-fileback.sh    # query file-back
@@ -67,16 +69,17 @@ The CLI (`src/cli.ts`, ~50 lines) is a thin Commander registration shell — it 
   - `wiki.ts` — wiki pages, links, artifacts (9 functions)
   - `lint.ts` — wiki lint runs & findings (4 functions)
   - `sync.ts` — `syncDailyNote`, `extractDecisions`, `extractSkills`
-  - `telemetry.ts` — `logRecallTelemetry`, `queryStats`, `queryRecallTelemetry`, `queryGovernanceReview`
+  - `telemetry.ts` — `logRecallTelemetry`, `recordRecallOutcome` (UFL write-back + per-memory attribution), `queryStats` (incl. confidence×utility calibration), `queryRecallTelemetry`, `queryGovernanceReview`
   - `verify.ts` — `runVerify`
-  - `prune-export.ts` — `runPrune`, `exportMemory`
-  - `recall.ts` — `buildMemoryIndex`, `recallTree`, `recallKeyword`
+  - `prune-export.ts` — `runPrune` (utility-weighted retention), `exportMemory`
+  - `recall.ts` — `buildMemoryIndex`, `recallTree`, `recallKeyword`, `applyUtilityWeighting` (UFL re-rank)
   - `connection.ts` — cached SQLite connection pool (`withDb`, `closeAllConnections`); HTTP hot path reuses connections instead of open/close per call
   - `mappers.ts` — shared row-to-type mappers + `truncateText`
-  - `index.ts` — barrel re-export (all 33 public functions)
+  - `index.ts` — barrel re-export
 - `core/types.ts` — `MemoriaResult<T>` envelope, `RecallFilter`, etc.
 - `core/paths.ts` — `resolveMemoriaPaths()`, `getMemoriaHome()`
-- `core/utils.ts` — pure helpers (`safeDate`, `slugify`, `stableStringify`, etc.)
+- `core/utils.ts` — pure helpers (`safeDate`, `slugify`, `stableStringify`, `tokenCoverage`, `effectiveUtility`, `buildCalibration`, etc.)
+- `core/recall-vector.ts` — opt-in semantic recall: spawns the `skills/memoria-vector` helper, maps prefixed ids back to authoritative local rows, RRF fusion (`LIBSQL_URL`-gated, fail-open)
 - `core/source-import.ts` — raw markdown/text ingestion
 - `core/wiki.ts` / `wiki-build.ts` / `wiki-query.ts` / `wiki-lint.ts` — compiled wiki pipeline (`index`/`log`/`overview` special pages, `synthesis`/`comparison` file-back, durable lint findings)
 - `core/index.ts` — unified re-export (import from here, not deep paths, when adding callers)
@@ -103,7 +106,9 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 
 ### Recall
 
-`recall()` supports `keyword | tree | hybrid` modes with an adaptive gate that skips trivial queries. Hits are ranked by relevance × time-decay (halfLife = 90 days). Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
+`recall()` supports `keyword | tree | hybrid | vector` modes with an adaptive gate that skips trivial queries. Hits are ranked by relevance × time-decay (halfLife = 90 days), then down-weighted by accrued per-memory utility (UFL; no-op until a memory has enough observations). `vector` is opt-in semantic recall: `LIBSQL_URL` + the `skills/memoria-vector` helper (local embeddings, libSQL native vectors, RRF-fused with the lexical floor, fail-open — degrades to `vector_unavailable`/`vector_timeout` route modes).
+
+**Utility feedback loop (UFL)**: every successful recall carries `meta.recall_id`; `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back — `hits[]` attributes it per memory (`memory_utility` table), `signal:'explicit'` is the high-fidelity host signal that overrides the lexical-reuse proxy (`effectiveUtility`). Adapters report reuse automatically. Confidence×utility calibration appears in `stats`/telemetry once outcomes exist. Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
 
 ## Conventions That Are Easy to Get Wrong
 

@@ -37,6 +37,8 @@ Prune strategies for long-running instances:
 
 Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `sessions` and `events` rows are preserved for audit trail and keyword recall. `--stale-days` removes both stale nodes and orphan sessions.
 
+**Utility-weighted retention (UFL Phase 3)**: once a memory has accrued utility observations (via recall outcome write-backs), pruning respects them — `--stale-days` spares memories whose effective utility is ≥ 0.5 (explicit host feedback needs 1 observation, the lexical-reuse proxy needs 2), and `--consolidate-days` keeps the highest-utility child instead of merely the newest. With no utility data, behavior is exactly as described above.
+
 ## Tree Index Notes
 
 - Memoria now auto-builds a lightweight tree index after each successful `sync`.
@@ -104,13 +106,27 @@ You can also inspect aggregated telemetry in stats:
 ./cli stats --json
 ```
 
-Check `recallRouting` for 7-day route counts, fallback rate, and latency percentiles.
+Check `recallRouting` for 7-day route counts, fallback rate, and latency percentiles. Once recall outcomes have been reported (adapters do this automatically), a `calibration` block appears — confidence buckets vs mean observed utility, with a monotonicity flag that tells you whether `confidence` actually tracks usefulness. Vector-route counters (`vector` / `hybrid_vector` / `vector_unavailable` / `vector_timeout`) show up once `mode:'vector'` has been used.
 
-For raw recall telemetry rows (HTTP):
+For raw recall telemetry rows (HTTP; rows carry `utility_score` / `outcome_kind` / `observed_at` when an outcome was written back):
 
 ```bash
 curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 ```
+
+## Semantic Recall Operations (optional)
+
+`mode:'vector'` is gated by `LIBSQL_URL` and the `skills/memoria-vector` helper:
+
+```bash
+cd skills/memoria-vector && npm install     # one-time (embedding runtime + libSQL client)
+export LIBSQL_URL="file:/path/to/vectors.db"
+export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge payload into vectors
+```
+
+- First `local` embedding downloads the model (~120MB, cached in `~/.cache/huggingface`); a query that hits the download window fails open to lexical (`vector_timeout`) and recovers afterwards.
+- `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the recall-side helper; warm-cache spawn measures ~1s.
+- Compare utility uplift across `route_mode` groups (telemetry + UFL outcomes) to judge whether semantic recall beats lexical for your corpus.
 
 ## Test Commands
 

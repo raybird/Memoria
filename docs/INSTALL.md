@@ -38,6 +38,7 @@ Installer behavior:
 
 - 只部署 release runtime，不建立 repo
 - 支援本地 tarball 路徑或 HTTPS URL
+- **自動驗證 tarball SHA256**：release 同時發布 `.tar.gz.sha256`，installer 會下載/讀取並比對，不符即中止；找不到 checksum 檔時警告後繼續（`--version` 也會先驗證格式）
 - 安裝後入口固定在 `<install-dir>/bin/memoria`
 - 後續初始化交給 `memoria setup` / `memoria init`
 

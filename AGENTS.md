@@ -52,12 +52,14 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-smoke.sh`
 - `scripts/test-migrations.sh`
 - `scripts/test-prune.sh`
+- `scripts/test-utility-ranking.sh`
 - `scripts/test-bootstrap.sh`
 - `scripts/test-adapter-runtime.sh`
 - `scripts/test-utility-shadow.sh`
 - `scripts/test-no-clone-install.sh`
 - `scripts/test-mcp-e2e.sh`
 - `scripts/test-http-api.sh`
+- `scripts/test-vector-recall.sh`
 - `scripts/test-wiki-ingest.sh`
 - `scripts/test-wiki-build.sh`
 - `scripts/test-wiki-query-fileback.sh`
@@ -66,12 +68,14 @@ This repo currently has explicit runtime and wiki test scripts:
 - Run smoke test: `bash scripts/test-smoke.sh`
 - Run schema migration regression test: `bash scripts/test-migrations.sh`
 - Run prune deletion path test: `bash scripts/test-prune.sh`
+- Run utility-weighted ranking test (UFL Phase 3): `bash scripts/test-utility-ranking.sh`
 - Run bootstrap/self-install test: `bash scripts/test-bootstrap.sh`
 - Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
 - Run utility-shadow spike plumbing test: `bash scripts/test-utility-shadow.sh`
 - Run no-clone install test: `bash scripts/test-no-clone-install.sh`
 - Run MCP/libSQL e2e test: `bash scripts/test-mcp-e2e.sh`
 - Run HTTP API contract test: `bash scripts/test-http-api.sh`
+- Run semantic vector recall contract test: `bash scripts/test-vector-recall.sh`
 - Run wiki source ingest test: `bash scripts/test-wiki-ingest.sh`
 - Run wiki build test: `bash scripts/test-wiki-build.sh`
 - Run wiki query file-back test: `bash scripts/test-wiki-query-fileback.sh`
@@ -94,16 +98,18 @@ Before opening PRs, mirror CI locally in this order:
 6. `bash scripts/test-smoke.sh`
 7. `bash scripts/test-migrations.sh`
 8. `bash scripts/test-prune.sh`
-9. `bash scripts/test-bootstrap.sh`
-10. `bash scripts/test-adapter-runtime.sh`
-11. `bash scripts/test-utility-shadow.sh`
-12. `bash scripts/test-no-clone-install.sh`
-13. `bash scripts/test-mcp-e2e.sh`
-14. `bash scripts/test-http-api.sh`
-15. `bash scripts/test-wiki-ingest.sh`
-16. `bash scripts/test-wiki-build.sh`
-17. `bash scripts/test-wiki-query-fileback.sh`
-18. `bash scripts/test-wiki-lint.sh`
+9. `bash scripts/test-utility-ranking.sh`
+10. `bash scripts/test-bootstrap.sh`
+11. `bash scripts/test-adapter-runtime.sh`
+12. `bash scripts/test-utility-shadow.sh`
+13. `bash scripts/test-no-clone-install.sh`
+14. `bash scripts/test-mcp-e2e.sh`
+15. `bash scripts/test-http-api.sh`
+16. `bash scripts/test-vector-recall.sh`
+17. `bash scripts/test-wiki-ingest.sh`
+18. `bash scripts/test-wiki-build.sh`
+19. `bash scripts/test-wiki-query-fileback.sh`
+20. `bash scripts/test-wiki-lint.sh`
 
 ## Repository Layout
 
@@ -120,15 +126,18 @@ Before opening PRs, mirror CI locally in this order:
 - `src/core/wiki-lint.ts`: wiki governance finding generation.
 - `scripts/test-smoke.sh`: smoke test (CLI full flow).
 - `scripts/test-migrations.sh`: schema migration upgrade regression on a populated pre-migration DB.
-- `scripts/test-prune.sh`: destructive prune path regression — consolidate/stale/dedupe delete exactly the right rows (dry-run deletes nothing).
-- `scripts/test-http-api.sh`: HTTP endpoint contract test (sources / wiki / session summary + error paths).
+- `scripts/test-prune.sh`: destructive prune path regression — consolidate/stale/dedupe delete exactly the right rows (dry-run deletes nothing); utility-weighted retention spares high-utility memories.
+- `scripts/test-utility-ranking.sh`: UFL Phase 3 — utility-weighted recall ranking (zero-data stable / below-threshold unchanged / threshold flips ordering / explicit overrides reuse).
+- `scripts/test-http-api.sh`: HTTP endpoint contract test (sources / wiki / session summary / recall outcome write-back + calibration + error paths).
 - `scripts/test-mcp-e2e.sh`: MCP/libSQL hybrid + incremental sync test.
+- `scripts/test-vector-recall.sh`: semantic recall (`mode:'vector'`) contract — embed→store→top_k→map→fuse plumbing, degradation matrix, stats counters (stub provider; `MEMORIA_VECTOR_E2E_REAL=1` adds a live-model assertion).
 - `scripts/test-bootstrap.sh`: bootstrap test (AI Agent self-install flow).
 - `scripts/test-wiki-ingest.sh`: raw source ingest + source-summary page test.
 - `scripts/test-wiki-build.sh`: compiled wiki special pages test.
 - `scripts/test-wiki-query-fileback.sh`: query filing test.
 - `scripts/test-wiki-lint.sh`: wiki governance/lint test.
 - `skills/memoria-memory-sync/SKILL.md`: Agent Skill entrypoint.
+- `skills/memoria-vector/`: optional semantic-recall helper (embedding + libSQL native vectors; own npm deps, spawned by core — never imported).
 - `examples/session.sample.json`: sample input for sync flow.
 - `.github/workflows/ci.yml`: canonical validation pipeline.
 
@@ -148,13 +157,14 @@ src/core/
     wiki.ts        – wiki pages / links / artifacts (9 functions)
     lint.ts        – wiki lint runs & findings (4 functions)
     sync.ts        – syncDailyNote, extractDecisions, extractSkills
-    telemetry.ts   – logRecallTelemetry, queryStats, queryRecallTelemetry, queryGovernanceReview
+    telemetry.ts   – logRecallTelemetry, recordRecallOutcome (UFL write-back + per-memory attribution), queryStats (incl. confidence×utility calibration), queryRecallTelemetry, queryGovernanceReview
     verify.ts      – runVerify
-    prune-export.ts – runPrune, exportMemory
-    recall.ts      – buildMemoryIndex, recallTree, recallKeyword
+    prune-export.ts – runPrune (utility-weighted retention), exportMemory
+    recall.ts      – buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting (UFL re-rank)
     connection.ts  – cached SQLite connection pool (withDb, closeAllConnections); HTTP hot path reuses connections
     mappers.ts     – shared row-to-type mappers + truncateText
-    index.ts       – barrel re-export (all 33 public functions)
+    index.ts       – barrel re-export
+  recall-vector.ts – opt-in semantic recall: spawns skills/memoria-vector helper, maps prefixed ids to authoritative local rows, RRF fusion (fail-open, LIBSQL_URL-gated)
   source-import.ts – raw markdown/text source import
   wiki.ts      – wiki constants + markdown render helpers
   wiki-build.ts – compiled wiki special pages (`index/log/overview`)
@@ -176,7 +186,8 @@ src/cli/
 - `remember(sessionData)` – import + sync daily/decisions/skills
 - `addSource(input)` – import markdown/text source and generate `source-summary`
 - `listSources(filter)` – inspect imported raw sources
-- `recall(filter)` – supports `keyword | tree | hybrid` retrieval plus adaptive skip for trivial queries; results are ranked by relevance × time-decay (halfLife=90 days)
+- `recall(filter)` – supports `keyword | tree | hybrid | vector` retrieval plus adaptive skip for trivial queries; results are ranked by relevance × time-decay (halfLife=90 days), then down-weighted by accrued per-memory utility (UFL); success meta carries a `recall_id` for utility write-back. `vector` is opt-in semantic recall (LIBSQL_URL + `skills/memoria-vector`; degrades to lexical, fail-open)
+- `recordRecallOutcome(recallId, outcome)` – UFL write-back: `{signal, utility_score?, used?, hits?}`; `hits[]` attributes utility per memory; `signal:'explicit'` is the high-fidelity host signal that overrides the reuse proxy
 - `buildWiki()` – refresh compiled wiki special pages (`index/log/overview`)
 - `fileQuery(input)` – file a high-value recall result into `synthesis` or `comparison` page
 - `wikiLint(options)` – generate durable wiki governance findings
@@ -194,9 +205,10 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 |--------|------|-------------|
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Stats |
-| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry |
+| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration |
 | `POST` | `/v1/remember` | Write session memory |
-| `POST` | `/v1/recall` | Recall memories |
+| `POST` | `/v1/recall` | Recall memories (`mode`: `keyword\|tree\|hybrid\|vector`) |
+| `POST` | `/v1/recall/:id/outcome` | UFL utility write-back (`{signal, utility_score?, used?, hits?}`) |
 | `POST` | `/v1/sources` | Import raw source |
 | `GET`  | `/v1/sources` | List raw sources |
 | `POST` | `/v1/wiki/build` | Rebuild compiled wiki pages |
@@ -264,7 +276,7 @@ curl -sS -X POST http://localhost:3917/v1/remember \
 
 Optional: add `scope` to session JSON (for example `agent:main`, `user:alice`, `project:Memoria`).
 
-4. Recall memory (`mode` supports `keyword|tree|hybrid`):
+4. Recall memory (`mode` supports `keyword|tree|hybrid|vector`; `vector` needs `LIBSQL_URL` + the `skills/memoria-vector` helper and degrades to lexical otherwise):
 
 ```bash
 curl -sS -X POST http://localhost:3917/v1/recall \
@@ -272,7 +284,15 @@ curl -sS -X POST http://localhost:3917/v1/recall \
   -d '{"query":"TS migration","top_k":5,"mode":"hybrid","scope":"project:Memoria"}'
 ```
 
-5. Observe routing quality:
+4b. Report recall utility back (UFL — closes the loop; adapters do this automatically):
+
+```bash
+curl -sS -X POST http://localhost:3917/v1/recall/<recall_id>/outcome \
+  -H 'Content-Type: application/json' \
+  -d '{"signal":"explicit","used":true}'
+```
+
+5. Observe routing quality (includes confidence×utility calibration once outcomes exist):
 
 ```bash
 curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"

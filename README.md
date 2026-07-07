@@ -7,7 +7,7 @@ Cross-session, traceable, self-hostable persistent memory for AI agents.
 ## 30-second Tour
 
 - **Problem**: LLM agents start from scratch every conversation — last session's decisions, pitfalls, and learned skills are all lost.
-- **Solution**: Persist sessions into a local SQLite store; pull relevant fragments back through keyword / tree / hybrid recall. An optional markdown view (compiled wiki) keeps everything human-readable.
+- **Solution**: Persist sessions into a local SQLite store; pull relevant fragments back through keyword / tree / hybrid recall (plus opt-in semantic `vector` recall). An optional markdown view (compiled wiki) keeps everything human-readable.
 - **Shape**: Node.js CLI (`./cli`) + HTTP API (`:3917`) + Node SDK (`MemoriaClient`) sharing one core; agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) included.
 - **Footprint**: Three runtime npm deps (`better-sqlite3` / `commander` / `zod`); HTTP runs on `node:http`. Fully offline.
 - **Extension**: An MCP/libSQL cross-node semantic graph is opt-in via the `LIBSQL_URL` env var.
@@ -79,12 +79,13 @@ curl http://localhost:3917/v1/stats
 | Area | Capabilities |
 |------|--------------|
 | **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (12 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) ｜ Every command supports `--json` machine-readable output |
-| **Storage** | SQLite + markdown dual persistence ｜ Time-decay scoring (90-day half-life) + consolidation + stale eviction ｜ Backward-compatible schema auto-upgrades |
-| **Retrieval** | `keyword / tree / hybrid` recall ｜ Adaptive gate skips trivial queries ｜ Lightweight scope isolation (`global / project / agent / user`) ｜ Recall routing telemetry (`stats` + API) |
+| **Storage** | SQLite + markdown dual persistence ｜ Time-decay scoring (90-day half-life) + consolidation + stale eviction ｜ Utility-weighted retention (high-utility memories survive pruning) ｜ Backward-compatible schema auto-upgrades |
+| **Retrieval** | `keyword / tree / hybrid` recall + opt-in semantic `vector` recall (local embeddings + libSQL native vectors, RRF-fused, fail-open) ｜ Adaptive gate skips trivial queries ｜ Lightweight scope isolation (`global / project / agent / user`) ｜ Recall routing telemetry (`stats` + API) |
+| **Utility feedback (UFL)** | Every recall gets a `recall_id`; adapters report observed lexical-reuse utility back (`POST /v1/recall/:id/outcome`) ｜ Explicit host feedback (`signal:'explicit'`, SDK `markRecallUseful`) overrides the reuse proxy ｜ Confidence×utility calibration in `stats`/telemetry ｜ Aggregated utility down-weights persistently-ignored memories in ranking and spares useful ones from pruning |
 | **Wiki workflows** | Raw source import (markdown/text) ｜ Compiled wiki special pages (`index / log / overview`) ｜ Query file-back (`synthesis / comparison`) ｜ Wiki governance lint |
 | **Governance** | Governance review (duplicate decisions/skills candidates) ｜ Import guardrails (low-value summary correction + duplicate event suppression) |
 | **Bootstrap** | One-shot `./cli setup --serve --json` ｜ No-clone release-artifact install path ｜ Deployed skill auto-installed to `<memoria-home>/.agents/` |
-| **Optional** | MCP/libSQL cross-system semantic graph (gated by `LIBSQL_URL`) |
+| **Optional** | MCP/libSQL cross-system semantic graph (gated by `LIBSQL_URL`) ｜ Semantic recall (`mode:'vector'`): local `multilingual-e5-small` embeddings + libSQL `F32_BLOB`/`vector_top_k`, helper in `skills/memoria-vector/` — memory content never leaves the machine |
 | **Planned** | Policy engine (PII filtering / read-write policy / multi-tenant rules) |
 
 ## Memoria vs MCP/libSQL
@@ -95,7 +96,9 @@ curl http://localhost:3917/v1/stats
 |------------|--------------------|------------------------|
 | Local persistent memory (SQLite + markdown) | ✅ | ✅ |
 | `recall` (keyword/tree/hybrid) | ✅ | ✅ |
+| Utility feedback loop (recall_id / outcome / calibration / utility-weighted ranking & retention) | ✅ | ✅ |
 | Recall telemetry (`stats` + API) | ✅ | ✅ |
+| Semantic recall (`mode:'vector'`, local embeddings + libSQL native vectors) | ➖ (degrades to lexical) | ✅ |
 | Cross-system graph projection / incremental sync | ➖ | ✅ |
 | Multi-agent shared external semantic graph | ➖ | ✅ |
 
@@ -169,6 +172,11 @@ const r = await client.remember(sessionData)
 const hits = await client.recall({ query: 'migration', top_k: 3, scope: 'project:Memoria' })
 const telemetry = await client.recallTelemetry({ window: 'P7D', limit: 50 })
 const summary = await client.summarizeSession('session_abc')
+
+// Utility feedback (UFL): report how useful a recall actually was
+const recallId = hits.meta.recall_id!
+await client.recordRecallOutcome(recallId, { signal: 'reuse', utility_score: 0.8 })   // proxy signal
+await client.markRecallUseful(recallId, true, hits.data!.map(h => h.id))              // explicit, high-fidelity
 ```
 
 ## Agent Adapter

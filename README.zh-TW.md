@@ -7,7 +7,7 @@
 ## 30 秒導讀
 
 - **問題**：LLM Agent 每次對話都從零開始 — 上次的決定、踩過的雷、學到的技能，全都丟掉。
-- **解法**：把 session 寫進本機 SQLite，需要時用 keyword / tree / hybrid recall 撈回相關片段；可選 markdown 衍生視圖（compiled wiki）供人類審閱。
+- **解法**：把 session 寫進本機 SQLite，需要時用 keyword / tree / hybrid recall（另有選用的語意 `vector` recall）撈回相關片段；可選 markdown 衍生視圖（compiled wiki）供人類審閱。
 - **形狀**：Node.js CLI（`./cli`）+ HTTP API（`:3917`）+ Node SDK（`MemoriaClient`）共用同一個 core；agent adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）開箱即用。
 - **依賴**：runtime 只用三個 npm 套件（`better-sqlite3` / `commander` / `zod`），HTTP 走 `node:http`，全離線可跑。
 - **擴充**：MCP/libSQL 跨節點語意圖譜為 optional，由 `LIBSQL_URL` env 啟用。
@@ -78,13 +78,14 @@ curl http://localhost:3917/v1/stats
 
 | 領域 | 能力 |
 |------|------|
-| **入口** | CLI（init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（11 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）｜所有指令支援 `--json` 機器可讀輸出 |
-| **儲存** | SQLite + markdown 雙軌持久化｜時間衰減評分（halfLife 90 天）+ 合併 + 過期清理｜backward-compatible schema 自動升級 |
-| **檢索** | `keyword / tree / hybrid` 三種 recall｜adaptive gate 跳過 trivial query｜Lightweight scope isolation（`global / project / agent / user`）｜Recall 路由 telemetry（`stats` + API） |
+| **入口** | CLI（init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（12 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）｜所有指令支援 `--json` 機器可讀輸出 |
+| **儲存** | SQLite + markdown 雙軌持久化｜時間衰減評分（halfLife 90 天）+ 合併 + 過期清理｜utility-weighted retention（高效用記憶不被清掉）｜backward-compatible schema 自動升級 |
+| **檢索** | `keyword / tree / hybrid` recall + 選用語意 `vector` recall（本地 embedding + libSQL 原生向量，RRF 融合，fail-open）｜adaptive gate 跳過 trivial query｜Lightweight scope isolation（`global / project / agent / user`）｜Recall 路由 telemetry（`stats` + API） |
+| **效用回饋（UFL）** | 每次 recall 發 `recall_id`；adapter 把觀測到的字面重用效用寫回（`POST /v1/recall/:id/outcome`）｜明確回饋（`signal:'explicit'`、SDK `markRecallUseful`）凌駕 reuse proxy｜confidence×utility 校準呈現在 `stats`/telemetry｜聚合效用讓長期被忽略的記憶降權排序、有用的記憶免於清理 |
 | **Wiki 工作流** | Raw source 匯入（markdown/text）｜Compiled wiki special pages（`index / log / overview`）｜Query file-back（`synthesis / comparison`）｜Wiki governance lint |
 | **治理** | Governance review（重複 decisions/skills 候選檢查）｜Import guardrails（低價值 summary 修正 + duplicate event suppression） |
 | **Bootstrap** | `./cli setup --serve --json` 一鍵安裝｜no-clone release artifact 安裝路徑｜deployed skill 自動部署到 `<memoria-home>/.agents/` |
-| **Optional** | MCP/libSQL 跨系統語意圖譜（由 `LIBSQL_URL` 啟用） |
+| **Optional** | MCP/libSQL 跨系統語意圖譜（由 `LIBSQL_URL` 啟用）｜語意召回（`mode:'vector'`）：本地 `multilingual-e5-small` embedding + libSQL `F32_BLOB`/`vector_top_k`，helper 在 `skills/memoria-vector/`——記憶內容不出機器 |
 | **Planned** | Policy 引擎（PII 過濾 / 讀寫策略 / 多租戶規則） |
 
 ## Memoria vs MCP/libSQL
@@ -95,7 +96,9 @@ curl http://localhost:3917/v1/stats
 |------|------------------|------------------------|
 | 本地持久記憶（SQLite + markdown） | ✅ | ✅ |
 | `recall`（keyword/tree/hybrid） | ✅ | ✅ |
+| 效用回饋迴路（recall_id / outcome / 校準 / utility-weighted 排序與保留） | ✅ | ✅ |
 | Recall telemetry（`stats` + API） | ✅ | ✅ |
+| 語意召回（`mode:'vector'`，本地 embedding + libSQL 原生向量） | ➖（降級為字面召回） | ✅ |
 | 跨系統圖譜投射/增量同步 | ➖ | ✅ |
 | 多 Agent 共用外部語意圖譜 | ➖ | ✅ |
 
@@ -118,9 +121,10 @@ curl http://localhost:3917/v1/stats
 |--------|------|------|
 | `GET`  | `/v1/health` | 健康檢查 |
 | `GET`  | `/v1/stats` | 統計 |
-| `GET`  | `/v1/telemetry/recall` | Recall 路由遙測（query: `window`, `limit`） |
+| `GET`  | `/v1/telemetry/recall` | Recall 路由遙測 + confidence×utility 校準（query: `window`, `limit`） |
 | `POST` | `/v1/remember` | 寫入記憶 (body: SessionData; optional `scope`) |
-| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, scope?, mode?}`) |
+| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, scope?, mode?}`；`mode:'vector'` = 選用語意召回，需 `LIBSQL_URL` + `skills/memoria-vector`，不可用時降級字面召回) |
+| `POST` | `/v1/recall/:id/outcome` | 回報召回效用 (body: `{signal, utility_score?, used?, hits?}`；UFL 寫回 + per-memory 歸因) |
 | `POST` | `/v1/sources` | 匯入 markdown/text source |
 | `GET`  | `/v1/sources` | 列出 raw sources |
 | `POST` | `/v1/wiki/build` | 重建 compiled wiki special pages |
@@ -168,6 +172,11 @@ const r = await client.remember(sessionData)
 const hits = await client.recall({ query: 'migration', top_k: 3, scope: 'project:Memoria' })
 const telemetry = await client.recallTelemetry({ window: 'P7D', limit: 50 })
 const summary = await client.summarizeSession('session_abc')
+
+// 效用回饋（UFL）：回報這次召回實際有沒有幫上忙
+const recallId = hits.meta.recall_id!
+await client.recordRecallOutcome(recallId, { signal: 'reuse', utility_score: 0.8 })   // proxy 訊號
+await client.markRecallUseful(recallId, true, hits.data!.map(h => h.id))              // 明確回饋（高保真）
 ```
 
 ## Agent Adapter

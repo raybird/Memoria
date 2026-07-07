@@ -2,8 +2,16 @@
 
 - 狀態：`assessment`（觀點紀錄，非承諾）
 - 建立：2026-07-03
+- 更新：2026-07-07（缺點狀態註記）
 - 範圍：以「寫入 → 儲存 → 召回 → 治理」四階段,盤點目前記憶機制的強項與結構性弱點。
 - 延伸設計：由本文的核心弱點(缺乏效用回饋)展開為 [RFC: Recall Utility Feedback Loop](RFC-utility-feedback.md)。
+
+> **2026-07-07 狀態更新**:本文寫成後,缺點 1–4 已依「先標尺、後能力」的順序逐一補上——
+> **#2 效用回饋**已 ship(UFL Phase 1–3:`recall_id` + outcome 寫回 + per-memory 歸因,見 [RFC-utility-feedback.md](RFC-utility-feedback.md));
+> **#3 confidence 校準**可見(confidence×utility 分桶呈現在 stats/telemetry,誠不誠實第一次可觀測);
+> **#4 importance-based retention**落地(utility-weighted ranking + prune retention:高效用記憶排序豁免降權、清理豁免刪除);
+> **#1 語意召回**已 ship MVP(`mode:'vector'`:本地 multilingual-e5-small + libSQL 原生向量,選用、fail-open,見 [RFC-semantic-recall.md](RFC-semantic-recall.md))——且因 #2 先行,現在**有標尺可證明語意是否勝過字面**(route_mode 分組 utility uplift)。
+> 缺點 5–8(矛盾偵測、抽取依賴、衍生視圖漂移、規模)仍為開放項。
 
 ## 一句總評
 

@@ -8,11 +8,13 @@
 
 ## 0. TL;DR（30 秒版）
 
-- **版本**:`v1.17.0` 已發布(npm + GitHub Release 皆綠),main 乾淨。
-- **本 session 出貨**:從 v1.13.0 連發 **8 版**(見 §2),主題是召回品質 + adapter 契約 + 測試網 + 輸入驗證。
-- **當前未提交**:2 份新設計文件 + `RFC.md` 索引更新(見 §3)。**尚未 commit**,等你決定。
-- **進行中的主線**:記憶機制評估 → 展開成「效用回饋迴路」RFC。**下一個動作 = 該 RFC 的 Phase 0 spike**(見 §5)。
-- **一個待你收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
+> 2026-07-07 更新
+
+- **版本**:npm 上仍為 `v1.17.0`;main 已累積大量未發版變更(見 CHANGELOG `[Unreleased]`),下次告一段落可考慮發 minor。
+- **已出貨(main,未發版)**:P1–P10 工程體檢清單全數完成(`docs/HANDOVER-improvements.md`);**UFL 效用回饋迴路 Phase 0–3 全數 ship**(`docs/RFC-utility-feedback.md`,`phase-3-shipped`);**語意召回 MVP ship**(`docs/RFC-semantic-recall.md`,`phase-1-shipped`:`mode:'vector'`,本地 e5 embedding + libSQL 原生向量,選用、fail-open)。
+- **戰略閉環**:UFL 標尺就位 + 語意召回上線 → 比較 `route_mode` 分組的 utility uplift 即可客觀量測「語意是否勝過字面」。
+- **下一步**:讓真實資料累積(啟用 adapter + vector 模式),回看校準曲線與 uplift;殘餘項(hybrid 向量融合、語意去重、矛盾偵測)待資料說話。
+- **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
 
@@ -49,16 +51,7 @@
 
 ## 3. 當前未提交的工作(git status)
 
-```
- M .serena/project.yml          ← 一貫排除,不提交(Serena 本機設定)
- M RFC.md                       ← 掛上兩份新設計文件的索引
-?? docs/RFC-utility-feedback.md         ← 新:效用回饋迴路 RFC(本 session 主要交付)
-?? docs/memory-mechanism-assessment.md  ← 新:記憶機制優缺點評估
-```
-
-- 這批是 **docs-only**,無程式碼、無需 build。
-- **尚未 commit** — 依既有節奏,等你說「commit」再動。若要提交,建議訊息:
-  `docs: 新增記憶機制評估與召回效用回饋迴路 RFC`(記得無署名尾行)。
+> 2026-07-07:無。main 乾淨(除一貫排除的 `.serena/project.yml`),所有交付均已 commit + push。
 
 ---
 
@@ -110,12 +103,14 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 
 | 代號 | 項目 | 狀態 | 備註 |
 |------|------|------|------|
-| **UFL** | 召回效用回饋迴路 | `proposed`,**不 blocked** | 本 session 新 RFC,策略價值最高;是語意召回的驗收標尺。**建議先做**。 |
+| **UFL** | 召回效用回饋迴路 | **`done`**(2026-07-07) | Phase 0–3 全數 ship:recall_id / outcome 寫回 / per-memory 歸因 / 校準 / utility-weighted 排序與保留 / explicit 回饋。見 `docs/RFC-utility-feedback.md` |
+| E2/E3/F | 語意召回(vector mode + embedding) | **`done` MVP**(2026-07-07) | 解鎖:本地 e5 + libSQL 原生向量,選用、fail-open。殘餘(hybrid 融合、語意去重)待 uplift 資料。見 `docs/RFC-semantic-recall.md` §14 |
+| — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift |
+| D5 | 矛盾偵測(B supersedes A) | `idea` | 評估文件缺點 #5,記憶智能最後一塊大缺口 |
 | D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
-| D4 | `time_window` parser 只支援 `P<n>D` | `idea` | `src/core/memoria.ts:366` 只解析天;可擴 ISO duration |
+| D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |
 | C4 | opencode adapter e2e 測試 | `idea` | 測試覆蓋缺口(其餘三個 adapter 已有 e2e) |
-| E2/E3/F | 語意召回(vector mode + embedding) | `blocked` | 卡 embedding backend 決策;見 `docs/RFC-semantic-recall.md` §13.3 |
 
 ---
 

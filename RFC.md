@@ -24,8 +24,8 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 ## Current Snapshot
 
 - Context compression in core: `idea`
-- Native semantic search in core: `blocked` — needs embedding-backend decision; Phase 0 found `mcp-memory-libsql` is text-search only. See [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md)
-- Recall utility feedback loop: `proposed` — no embeddings, not blocked; awaits Phase 0 spike on reuse-signal discriminative power. See [RFC: Recall Utility Feedback Loop](docs/RFC-utility-feedback.md)
+- Native semantic search in core: `done` (MVP, 2026-07-07) — `mode:'vector'` = local `multilingual-e5-small` embeddings + libSQL native `F32_BLOB`/`vector_top_k` + RRF fusion, opt-in via `LIBSQL_URL`, fail-open to lexical. See [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md)
+- Recall utility feedback loop: `done` (Phases 0–3, 2026-07-07) — `recall_id` + outcome write-back + per-memory attribution + confidence×utility calibration + utility-weighted ranking/retention + explicit host feedback. See [RFC: Recall Utility Feedback Loop](docs/RFC-utility-feedback.md)
 - OpenCode plugin in-repo: `idea`
 - Expanded verify checks and schema migration helpers: `planned`
 - Adaptive retrieval gate: `done`
@@ -187,15 +187,20 @@ This keeps the first governance release small, inspectable, and easy to test.
 
 Standalone design docs that expand a candidate direction into an implementable plan:
 
-- [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md) — Candidate Direction #2. Adds a
-  `vector` recall mode fused with lexical recall via RRF. `blocked`: Phase 0 found
-  `mcp-memory-libsql` is text-search only (no embeddings in any version), so the design now
-  needs a native embedding backend decision (local model vs API; `sqlite-vec` vs libSQL).
+- [RFC: Semantic Recall Loop](docs/RFC-semantic-recall.md) — Candidate Direction #2.
+  `phase-1-shipped` (2026-07-07): `mode:'vector'` = lexical floor + libSQL native vectors
+  (`F32_BLOB`/`vector_top_k`) + RRF fusion. Embedding backend decided by spike: local
+  `multilingual-e5-small` in the out-of-core `skills/memoria-vector` helper (memory content
+  never leaves the machine). Phase 0 had found `mcp-memory-libsql` is text-search only, so the
+  helper bypasses it and talks to libSQL directly. Remaining phases (hybrid fusion, semantic
+  dedup) wait for real utility-uplift data.
 - [RFC: Recall Utility Feedback Loop](docs/RFC-utility-feedback.md) — Candidate Direction #8
-  (score hygiene) + #5 (observability). Closes the open recall loop: `recall()` surfaces a
-  `recall_id`, and downstream reports back whether the injected memory was actually reused
-  next turn, so `confidence` can be calibrated. No embeddings, not blocked; also the eval
-  yardstick for the semantic RFC above.
+  (score hygiene) + #5 (observability). `phase-3-shipped` (2026-07-07): `recall()` surfaces a
+  `recall_id`; adapters write observed reuse utility back (per-memory attribution via
+  `hits[]`); confidence×utility calibration in stats/telemetry; aggregated utility
+  down-weights ranking and spares high-utility memories from pruning; explicit host feedback
+  (`signal:'explicit'`) overrides the reuse proxy. Also the eval yardstick for the semantic
+  RFC above: compare utility uplift across `route_mode` groups.
 - [Assessment: Memory Mechanism](docs/memory-mechanism-assessment.md) — pros/cons review of the
   current memory stack; the utility-feedback RFC expands its top actionable weakness.
 
