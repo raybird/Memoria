@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-07-07
+
 ### Added
 - **Semantic recall (`mode:'vector'`)** — opt-in semantic retrieval on top of the MCP/libSQL optional mode (`docs/RFC-semantic-recall.md`, status `phase-1-shipped`). Memories are embedded locally (`multilingual-e5-small`, chosen by a Traditional-Chinese/English/cross-lingual spike: 5/6 vs 2/6 for English-only MiniLM) and stored as libSQL **native vectors** (`F32_BLOB` + `vector_top_k`), bypassing `mcp-memory-libsql` (text-search only). Recall = lexical floor + RRF fusion, fully fail-open: no `LIBSQL_URL`/helper/timeout ⇒ lexical-only with `route_mode: vector_unavailable|vector_timeout`. Heavy deps live in `skills/memoria-vector/` (spawned via `node:child_process`; core gains **zero** runtime dependencies; Memoria-only mode untouched). New env: `MEMORIA_EMBED_PROVIDER`, `MEMORIA_EMBED_MODEL`, `MEMORIA_VECTOR_ENABLE`, `MEMORIA_VECTOR_TIMEOUT_MS`, `MEMORIA_VECTOR_RECALL_CMD`. Covered by `scripts/test-vector-recall.sh`.
 - **Recall utility feedback loop (UFL), Phases 0–3** (`docs/RFC-utility-feedback.md`, status `phase-3-shipped`):
