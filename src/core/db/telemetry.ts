@@ -72,7 +72,7 @@ export function logRecallTelemetry(
 export function recordRecallOutcome(
     dbPath: string,
     recallId: string,
-    outcome: { signal: string; utilityScore?: number; used?: boolean }
+    outcome: { signal: string; utilityScore?: number; used?: boolean; hits?: Array<{ id: string; utilityScore: number }> }
 ): boolean {
     if (!existsSync(dbPath)) return false
     initDatabase(dbPath)
@@ -81,12 +81,34 @@ export function recordRecallOutcome(
             .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_telemetry' LIMIT 1`)
             .get() as { ok: number } | undefined
         if (!table) return false
+        const nowIso = new Date().toISOString()
         const score = typeof outcome.utilityScore === 'number' && Number.isFinite(outcome.utilityScore)
             ? Math.min(1, Math.max(0, outcome.utilityScore))
             : (outcome.used === true ? 1 : outcome.used === false ? 0 : null)
         const info = db
             .prepare(`UPDATE recall_telemetry SET utility_score = ?, outcome_kind = ?, observed_at = ? WHERE id = ?`)
-            .run(score, outcome.signal, new Date().toISOString(), recallId)
+            .run(score, outcome.signal, nowIso, recallId)
+
+        // UFL Phase 3: attribute per-hit utility to individual memories so recall ranking / prune
+        // retention can act on it. Additive & fail-open — accrues only when hits are supplied.
+        if (Array.isArray(outcome.hits) && outcome.hits.length > 0) {
+            const upsert = db.prepare(`
+              INSERT INTO memory_utility (ref_id, observations, utility_sum, last_outcome_at)
+              VALUES (?, 1, ?, ?)
+              ON CONFLICT(ref_id) DO UPDATE SET
+                observations = observations + 1,
+                utility_sum = utility_sum + excluded.utility_sum,
+                last_outcome_at = excluded.last_outcome_at
+            `)
+            db.transaction((rows: Array<{ id: string; utilityScore: number }>) => {
+                for (const hit of rows) {
+                    if (!hit || typeof hit.id !== 'string' || !hit.id) continue
+                    if (typeof hit.utilityScore !== 'number' || !Number.isFinite(hit.utilityScore)) continue
+                    upsert.run(hit.id, Math.min(1, Math.max(0, hit.utilityScore)), nowIso)
+                }
+            })(outcome.hits)
+        }
+
         return info.changes > 0
     })
 }

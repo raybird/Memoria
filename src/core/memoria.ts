@@ -20,6 +20,7 @@ import {
     buildMemoryIndex,
     recallTree,
     recallKeyword,
+    applyUtilityWeighting,
     querySessionSummary,
     listSourceRecords
 } from './db/index.js'
@@ -304,7 +305,7 @@ export class MemoriaCore {
                 return merged.slice(0, topK)
             })()
 
-            const hits: RecallHit[] = raw.map((r, i) => ({
+            const rawHits: RecallHit[] = raw.map((r, i) => ({
                 type: r.type as RecallHit['type'],
                 id: r.id,
                 session_id: r.session_id,
@@ -317,6 +318,10 @@ export class MemoriaCore {
                 node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
                 reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
             }))
+
+            // UFL Phase 3: re-rank by accrued per-memory utility (byte-identical when no observations
+            // exist). Runs before telemetry so recall_id's top_confidence reflects the surfaced order.
+            const hits: RecallHit[] = applyUtilityWeighting(this.paths.dbPath, rawHits)
 
             let recallId: string | null = null
             try {
@@ -446,7 +451,10 @@ export class MemoriaCore {
             const updated = recordRecallOutcome(this.paths.dbPath, recallId, {
                 signal: outcome.signal,
                 utilityScore: outcome.utility_score,
-                used: outcome.used
+                used: outcome.used,
+                hits: Array.isArray(outcome.hits)
+                    ? outcome.hits.map((h) => ({ id: h.id, utilityScore: h.utility_score }))
+                    : undefined
             })
             // Not-found is a valid no-op (pruned/unknown id): ok:true, updated:false, low confidence.
             return { data: { updated }, evidence: updated ? [recallId] : [], confidence: updated ? 1 : 0 }

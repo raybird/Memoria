@@ -59,7 +59,10 @@ export async function reportRecallOutcome(
     }
     if (!pending || pending.hits.length === 0) return
 
-    const reuseScore = Math.max(...pending.hits.map((h) => tokenCoverage(h.snippet, turn.assistant)))
+    // Per-hit reuse feeds per-memory utility attribution (Phase 3); the aggregate max is the recall's
+    // own utility_score (Phase 1/2). Assistant-only per Phase 0 (§14).
+    const perHit = pending.hits.map((h) => ({ id: h.id, utility_score: tokenCoverage(h.snippet, turn.assistant) }))
+    const reuseScore = perHit.length > 0 ? Math.max(...perHit.map((p) => p.utility_score)) : 0
 
     // Optional Phase 0 debug log (assistant-only + full-turn variants).
     const logPath = shadowLogPath()
@@ -81,7 +84,7 @@ export async function reportRecallOutcome(
     }
 
     try {
-        await client.recordRecallOutcome(pending.recallId, { signal: 'reuse', utility_score: reuseScore })
+        await client.recordRecallOutcome(pending.recallId, { signal: 'reuse', utility_score: reuseScore, hits: perHit })
     } catch {
         // Fail-open: outcome reporting must never disturb the agent.
     } finally {

@@ -80,6 +80,7 @@ jobs:
               bash scripts/test-smoke.sh
               bash scripts/test-migrations.sh
               bash scripts/test-prune.sh
+              bash scripts/test-utility-ranking.sh
               bash scripts/test-bootstrap.sh
               ;;
             adapters)

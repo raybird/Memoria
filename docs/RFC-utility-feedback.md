@@ -1,6 +1,6 @@
 # RFC: Recall Utility Feedback Loop（召回效用回饋迴路）
 
-- 狀態：`phase-2-shipped` — Phase 0 spike 通過（§14）；Phase 1 MVP 已實作（recall_id + Migration 6 + recordRecallOutcome + `POST /v1/recall/:id/outcome` + SDK + adapter 預設回報，全程 fail-open）；Phase 2 校準呈現已實作（confidence×utility 分桶，呈現在 `memoria stats` 與 `GET /v1/telemetry/recall`，純加法、不改 confidence）。下一步 = Phase 3（需先累積真實資料）。
+- 狀態：`phase-3b-ranking-shipped` — Phase 0/1/2 已交付；Phase 3(b)-ranking 已實作（Migration 7 `memory_utility` + per-hit 歸因 + `applyUtilityWeighting` utility-weighted 召回排序，零觀測即 byte-identical、只降權、可回退）。下一步 = Phase 3(b)-prune（utility-weighted retention）。
 - 建立：2026-07-03
 - 更新：2026-07-06
 - Roadmap anchor：`RFC.md` → Candidate Direction #8（*Memory-quality guardrails — score hygiene*），兼及 #5（*Additional observability*）。
@@ -158,11 +158,21 @@ reuseScore(pendingRecall, turnText) =
 - **價值**:直接兌現評估文件缺點 #3——**你第一次能「看見」confidence 誠不誠實**。仍不自動改 confidence。
 - **交付紀錄**:純函式 `buildCalibration`（`src/core/utils.ts`,無 better-sqlite3 依賴）依 `top_confidence` 分 4 桶（[0,1] 等寬）,對每桶算 `count`/`meanConfidence`/`meanUtility`,並判 `meanUtility` 是否隨 confidence 單調上升（`monotonic`）。只納入同時具 `top_confidence` 與 `utility_score` 的列;**無 scored 列時 `calibration` 欄位完全不出現**（純加法,既有輸出 byte-identical,已驗證）。呈現於 `StatsData.recallRouting.calibration` 與 `RecallTelemetryData.calibration`,`memoria stats` 文字輸出與 `GET /v1/stats`、`GET /v1/telemetry/recall` 皆帶出。測試:`test-http-api.sh` 斷言 outcome 寫回後兩端點皆出現 calibration 且桶形狀正確。實測捕捉到「高 confidence 桶效用反而較低 → monotonic=false」,證實訊號可揭露 confidence 未反映真實效用。
 
-### Phase 3 — Act on utility：讓效用開始作用（later，需先有資料）
+### Phase 3 — Act on utility：讓效用開始作用（維護者決定提前實作 (b)）
 
 - **提示(擇一漸進)**:(a) 明確回饋 API(`outcome_kind='explicit'`,host 直接標註)作為高保真訊號;(b) 把聚合 utility 餵進 ranking(持續被忽略的記憶降權)與 prune(**utility-weighted retention**,對映評估文件缺點 #4 的 importance-based forgetting)。
-- **前置**:必須累積足夠 Phase 2 資料、校準曲線可信才動;每項都在聚合上、可回退。
+- **前置(原訂)**:必須累積足夠 Phase 2 資料、校準曲線可信才動;每項都在聚合上、可回退。
 - **戰略收益**:此時本迴路正式成為 [RFC-semantic-recall.md](RFC-semantic-recall.md) 的**評測靶場**——用 utility uplift 客觀量測「語意召回是否勝過字面」,解掉語意 RFC「上線卻無法證明更好」的死結。
+
+#### Phase 3(b)-ranking — utility-weighted 召回排序 ✅ 已完成 2026-07-07
+
+> 維護者選擇提前落地 (b)。原訂 gate（先累積可信資料）以**「零觀測即 byte-identical」的構造保證**取代:效用只在累積足夠觀測後才逐步生效,且只會降權、不會加權、可回退。
+
+- **地基:per-memory 效用歸因**。新增 Migration 7 `memory_utility(ref_id, observations, utility_sum, last_outcome_at)`。outcome POST 可帶 `hits:[{id, utility_score}]`,`recordRecallOutcome` 就地累加到對應 `ref_id`(RecallHit.id)。recall() **熱路徑零新增寫入**——歸因發生在離線的 outcome 路徑(符合 §7)。adapter 把既有 per-hit `tokenCoverage` 一併回報。
+- **排序加權**:`applyUtilityWeighting`(`src/core/db/recall.ts`)在 recall() 組完 hits 後、記 telemetry 前,依 `memory_utility` 把每個 hit 的 `score` 乘上 `utilityFactor = UTILITY_FLOOR + (1-UTILITY_FLOOR)*mean`(FLOOR=0.5)。**只降權不加權**(factor ∈ [0.5,1]);需 `observations ≥ UTILITY_MIN_OBSERVATIONS`(=2)才生效。`confidence` 不受影響(衍生自 `relevance` 非 `score`)。
+- **安全性質(全數驗證)**:無 `memory_utility` 列 / 無達門檻列 → **早退回原陣列,不重排,byte-identical**;fail-open(任何錯誤回原 hits);hybrid 排序以原索引為 tie-break,零資料完全不動。
+- **測試**:`test-utility-ranking.sh`(掛 CI core)證 (A) 零資料穩定、(C) 單筆觀測不改序、(B) 兩筆低效用觀測使 top hit 精確 ×0.5 沉底、排序翻轉;`test-http-api.sh` 驗 `hits[]` 歸因寫入 `memory_utility`;`test-migrations.sh` 驗 Migration 7 降級/重套。
+- **接續**:Phase 3(b)-prune(utility-weighted retention:stale/consolidate 保留高效用記憶)為獨立下一單元;(a) 明確回饋 API 仍為可選的高保真訊號來源。
 
 ## 11. Open Decisions（待決事項）
 

@@ -101,7 +101,10 @@ const recallOutcomeSchema = z
     .object({
         signal: z.string(),
         utility_score: z.number().optional(),
-        used: z.boolean().optional()
+        used: z.boolean().optional(),
+        hits: z
+            .array(z.object({ id: z.string(), utility_score: z.number() }).passthrough())
+            .optional()
     })
     .passthrough()
 

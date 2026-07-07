@@ -39,9 +39,11 @@ db.exec('CREATE TABLE recall_telemetry (id TEXT PRIMARY KEY, route_mode TEXT, fa
 db.prepare('INSERT INTO recall_telemetry VALUES (?,?,?,?,?,?)').run('rt_legacy','keyword',0,3,12,new Date().toISOString());
 // migration 6 artifacts: the recreated recall_telemetry above already lacks the utility columns,
 // so removing migration 6 lets initDatabase re-add utility_score/outcome_kind/observed_at.
-db.prepare('DELETE FROM schema_migrations WHERE id IN (4,5,6)').run();
+// migration 7 artifact: drop memory_utility so initDatabase re-creates it.
+db.exec('DROP TABLE IF EXISTS memory_utility');
+db.prepare('DELETE FROM schema_migrations WHERE id IN (4,5,6,7)').run();
 db.close();
-console.log('  downgraded: dropped recall_fts + telemetry columns, removed migrations 4,5,6 (data kept)');
+console.log('  downgraded: dropped recall_fts + telemetry columns + memory_utility, removed migrations 4,5,6,7 (data kept)');
 "
 
 echo "[migrations] run verify (triggers initDatabase -> re-applies migrations with backfill)"
@@ -53,18 +55,20 @@ const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
 const base = JSON.parse(require('fs').readFileSync('$TMP_DIR/base.json', 'utf8'));
 const fail = (m) => { console.error('  ✗ ' + m); process.exit(1); };
 const migs = db.prepare('SELECT id FROM schema_migrations').all().map((r) => r.id);
-if (!migs.includes(4) || !migs.includes(5) || !migs.includes(6)) fail('migrations 4/5/6 not re-applied: ' + migs);
+if (!migs.includes(4) || !migs.includes(5) || !migs.includes(6) || !migs.includes(7)) fail('migrations 4/5/6/7 not re-applied: ' + migs);
 const fts = db.prepare('SELECT count(*) c FROM recall_fts').get().c;
 if (fts !== base.fts) fail('recall_fts not backfilled (' + fts + ' vs ' + base.fts + ')');
 const cols = new Set(db.prepare('PRAGMA table_info(recall_telemetry)').all().map((c) => c.name));
 for (const c of ['query_hash','token_count','top_confidence','utility_score','outcome_kind','observed_at']) if (!cols.has(c)) fail('telemetry missing column ' + c);
+const muCols = new Set(db.prepare('PRAGMA table_info(memory_utility)').all().map((c) => c.name));
+for (const c of ['ref_id','observations','utility_sum','last_outcome_at']) if (!muCols.has(c)) fail('memory_utility missing column ' + c);
 const legacy = db.prepare(\"SELECT hit_count FROM recall_telemetry WHERE id='rt_legacy'\").get();
 if (!legacy || legacy.hit_count !== 3) fail('legacy telemetry row lost');
 const s = db.prepare('SELECT count(*) c FROM sessions').get().c;
 const e = db.prepare('SELECT count(*) c FROM events').get().c;
 if (s !== base.sessions || e !== base.events) fail('session/event data changed (' + s + '/' + e + ')');
 db.close();
-console.log('  migrations 4,5 re-applied; recall_fts backfilled (' + fts + '); telemetry columns added; data intact');
+console.log('  migrations 4,5,6,7 re-applied; recall_fts backfilled (' + fts + '); telemetry + memory_utility restored; data intact');
 "
 
 echo "[migrations] idempotency: initDatabase again is a no-op"
@@ -73,7 +77,7 @@ node -e "
 const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
 const n = db.prepare('SELECT count(*) c FROM schema_migrations').get().c;
 db.close();
-if (n < 6) { console.error('  ✗ schema_migrations regressed: ' + n); process.exit(1); }
+if (n < 7) { console.error('  ✗ schema_migrations regressed: ' + n); process.exit(1); }
 console.log('  idempotent (schema_migrations=' + n + ')');
 "
 

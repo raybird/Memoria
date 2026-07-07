@@ -121,7 +121,7 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 | `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (query: `window`, `limit`) |
 | `POST` | `/v1/remember` | Write memory (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | Recall memories (body: `{query, top_k?, project?, scope?, mode?}`) |
-| `POST` | `/v1/recall/:id/outcome` | Report recall utility (body: `{signal, utility_score?, used?}`; UFL write-back) |
+| `POST` | `/v1/recall/:id/outcome` | Report recall utility (body: `{signal, utility_score?, used?, hits?}`; UFL write-back + per-memory attribution) |
 | `POST` | `/v1/sources` | Import a markdown/text source |
 | `GET`  | `/v1/sources` | List raw sources |
 | `POST` | `/v1/wiki/build` | Rebuild compiled wiki special pages |

@@ -118,6 +118,18 @@ const cal=d.data.recallRouting && d.data.recallRouting.calibration;
 if(!cal||cal.scoredQueries<1) throw new Error('stats calibration missing/empty after outcome write');
 "
 echo "  calibration exposed (stats + telemetry)"
+echo "[http] outcome hits[] accrue per-memory utility (UFL Phase 3)"
+RID2=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"HTTP contract test session","mode":"keyword"}' | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).meta.recall_id||''))")
+[ -n "$RID2" ] || { echo "  ✗ no recall_id for phase-3 attribution"; exit 1; }
+curl -sf -X POST "$SERVER_URL/v1/recall/$RID2/outcome" -H 'Content-Type: application/json' -d "{\"signal\":\"reuse\",\"utility_score\":0.4,\"hits\":[{\"id\":\"$SID\",\"utility_score\":0.4}]}" >/dev/null
+node -e "
+const D=require('$ROOT_DIR/node_modules/better-sqlite3'); const db=new D('$TMP_DIR/home/.memory/sessions.db',{readonly:true});
+const row=db.prepare('SELECT observations, utility_sum FROM memory_utility WHERE ref_id = ?').get('$SID');
+db.close();
+if(!row||row.observations<1) throw new Error('memory_utility not accrued for $SID: '+JSON.stringify(row));
+if(Math.abs(row.utility_sum-0.4)>1e-9) throw new Error('utility_sum wrong: '+JSON.stringify(row));
+"
+echo "  per-memory utility accrued (memory_utility ref=$SID)"
 echo "[http] unknown recall id -> ok:true, updated:false (no-op)"
 curl -sf -X POST "$SERVER_URL/v1/recall/rt_does_not_exist/outcome" -H 'Content-Type: application/json' -d '{"signal":"reuse","utility_score":0.5}' | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); if(!d.ok||d.data.updated!==false) throw new Error('expected no-op ok:true updated:false')"
 echo "  no-op ok"

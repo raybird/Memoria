@@ -141,6 +141,26 @@ const MIGRATIONS: Migration[] = [
             if (!cols.has('outcome_kind')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN outcome_kind TEXT`)
             if (!cols.has('observed_at')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN observed_at DATETIME`)
         }
+    },
+    {
+        id: 7,
+        name: 'memory_utility_per_ref',
+        up: (db) => {
+            // UFL Phase 3 (docs/RFC-utility-feedback.md §10): per-memory utility accumulation. Each
+            // recall outcome attributes an observed utility to the individual hits it surfaced; this
+            // table aggregates them per ref_id (the RecallHit.id: a session or event id). recall
+            // ranking down-weights persistently-low-utility memories; prune retention spares
+            // high-utility ones. Empty until outcomes with per-hit attribution arrive, so ranking and
+            // prune stay byte-identical to pre-Phase-3 behaviour on any DB with no observations.
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS memory_utility (
+                ref_id TEXT PRIMARY KEY,
+                observations INTEGER NOT NULL DEFAULT 0,
+                utility_sum REAL NOT NULL DEFAULT 0,
+                last_outcome_at DATETIME
+              );
+            `)
+        }
     }
 ]
 
@@ -239,6 +259,13 @@ export function initDatabase(dbPath: string): void {
         utility_score REAL,
         outcome_kind TEXT,
         observed_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS memory_utility (
+        ref_id TEXT PRIMARY KEY,
+        observations INTEGER NOT NULL DEFAULT 0,
+        utility_sum REAL NOT NULL DEFAULT 0,
+        last_outcome_at DATETIME
       );
 
       CREATE TABLE IF NOT EXISTS sources (
