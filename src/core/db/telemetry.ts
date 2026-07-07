@@ -91,15 +91,27 @@ export function recordRecallOutcome(
 
         // UFL Phase 3: attribute per-hit utility to individual memories so recall ranking / prune
         // retention can act on it. Additive & fail-open — accrues only when hits are supplied.
+        // Phase 3(a): an EXPLICIT host signal is accumulated in its OWN columns, never mixed with the
+        // weak reuse proxy (RFC §2.4). `signal === 'explicit'` routes to explicit_*; anything else
+        // (reuse, …) routes to the proxy columns.
         if (Array.isArray(outcome.hits) && outcome.hits.length > 0) {
-            const upsert = db.prepare(`
-              INSERT INTO memory_utility (ref_id, observations, utility_sum, last_outcome_at)
-              VALUES (?, 1, ?, ?)
-              ON CONFLICT(ref_id) DO UPDATE SET
-                observations = observations + 1,
-                utility_sum = utility_sum + excluded.utility_sum,
-                last_outcome_at = excluded.last_outcome_at
-            `)
+            const upsert = outcome.signal === 'explicit'
+                ? db.prepare(`
+                    INSERT INTO memory_utility (ref_id, explicit_observations, explicit_sum, last_outcome_at)
+                    VALUES (?, 1, ?, ?)
+                    ON CONFLICT(ref_id) DO UPDATE SET
+                      explicit_observations = explicit_observations + 1,
+                      explicit_sum = explicit_sum + excluded.explicit_sum,
+                      last_outcome_at = excluded.last_outcome_at
+                  `)
+                : db.prepare(`
+                    INSERT INTO memory_utility (ref_id, observations, utility_sum, last_outcome_at)
+                    VALUES (?, 1, ?, ?)
+                    ON CONFLICT(ref_id) DO UPDATE SET
+                      observations = observations + 1,
+                      utility_sum = utility_sum + excluded.utility_sum,
+                      last_outcome_at = excluded.last_outcome_at
+                  `)
             db.transaction((rows: Array<{ id: string; utilityScore: number }>) => {
                 for (const hit of rows) {
                     if (!hit || typeof hit.id !== 'string' || !hit.id) continue

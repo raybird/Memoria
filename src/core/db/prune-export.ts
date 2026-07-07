@@ -3,18 +3,17 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { existsSync } from '../paths.js'
 import { withDb } from './connection.js'
-import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRange, normalizeSkillKey, parseCreatedAt } from '../utils.js'
+import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRange, normalizeSkillKey, parseCreatedAt, effectiveUtility } from '../utils.js'
 import { initDatabase } from './schema.js'
 import { truncateText } from './mappers.js'
 import type { Json, MemoriaPaths, PruneOptions, ExportDecision, ExportSkill, ExportOptions, ExportType, ExportFormat } from '../types.js'
 
-// UFL Phase 3(b)-prune — utility-weighted retention. A memory is only spared / prioritized on its
-// accrued utility once it has at least this many observations (a weak signal must not decide on one),
-// and stale pruning spares any memory whose mean utility reaches the retain threshold.
-const UTILITY_RETAIN_MIN_OBS = 2
+// UFL Phase 3(b)-prune — utility-weighted retention. Stale pruning spares any memory whose effective
+// utility (explicit host signal, else the trusted reuse proxy — see effectiveUtility) reaches this
+// threshold; consolidate prioritizes retaining the highest-utility child.
 const UTILITY_RETAIN_THRESHOLD = 0.5
 
-// ref_id -> mean utility, for refs past the observation floor. Empty when memory_utility is absent
+// ref_id -> effective utility, for refs with a trusted signal. Empty when memory_utility is absent
 // (pre-Phase-3 DB) or nothing qualifies — so every caller degrades to its pre-Phase-3 behaviour and
 // prune stays byte-identical on any DB with no utility observations.
 function loadUtilityMeans(db: Database.Database, refIds: string[]): Map<string, number> {
@@ -27,11 +26,11 @@ function loadUtilityMeans(db: Database.Database, refIds: string[]): Map<string, 
     if (!exists) return out
     const placeholders = ids.map(() => '?').join(',')
     const rows = db
-        .prepare(`SELECT ref_id, observations, utility_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
-        .all(...ids) as { ref_id: string; observations: number; utility_sum: number }[]
+        .prepare(`SELECT ref_id, observations, utility_sum, explicit_observations, explicit_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
+        .all(...ids) as { ref_id: string; observations: number; utility_sum: number; explicit_observations: number; explicit_sum: number }[]
     for (const r of rows) {
-        if (r.observations < UTILITY_RETAIN_MIN_OBS) continue
-        out.set(r.ref_id, r.observations > 0 ? r.utility_sum / r.observations : 0)
+        const mean = effectiveUtility(r)
+        if (mean !== null) out.set(r.ref_id, mean)
     }
     return out
 }

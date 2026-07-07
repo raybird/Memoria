@@ -161,6 +161,20 @@ const MIGRATIONS: Migration[] = [
               );
             `)
         }
+    },
+    {
+        id: 8,
+        name: 'memory_utility_explicit_signal',
+        up: (db) => {
+            // UFL Phase 3(a): a separate accumulator for high-fidelity EXPLICIT host feedback, kept
+            // apart from the weak lexical-reuse proxy (observations/utility_sum). "Never mix signal
+            // kinds" (RFC §2.4): when a memory has explicit signal it fully overrides reuse. Guarded
+            // ALTER with DEFAULT 0 backfills existing rows, so pre-Phase-3(a) DBs stay readable and
+            // effectively behave as "explicit-less" until a host reports one.
+            const cols = new Set((db.prepare('PRAGMA table_info(memory_utility)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('explicit_observations')) db.exec(`ALTER TABLE memory_utility ADD COLUMN explicit_observations INTEGER NOT NULL DEFAULT 0`)
+            if (!cols.has('explicit_sum')) db.exec(`ALTER TABLE memory_utility ADD COLUMN explicit_sum REAL NOT NULL DEFAULT 0`)
+        }
     }
 ]
 
@@ -265,6 +279,8 @@ export function initDatabase(dbPath: string): void {
         ref_id TEXT PRIMARY KEY,
         observations INTEGER NOT NULL DEFAULT 0,
         utility_sum REAL NOT NULL DEFAULT 0,
+        explicit_observations INTEGER NOT NULL DEFAULT 0,
+        explicit_sum REAL NOT NULL DEFAULT 0,
         last_outcome_at DATETIME
       );
 

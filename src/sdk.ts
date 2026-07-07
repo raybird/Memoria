@@ -69,6 +69,23 @@ export class MemoriaClient {
         }
     }
 
+    /**
+     * Report EXPLICIT host feedback that a prior recall was (not) useful — the high-fidelity UFL
+     * signal (Phase 3(a)). Recorded under `outcome_kind='explicit'` and, when hit ids are supplied,
+     * attributed per-memory so it fully overrides the weak reuse proxy in ranking / retention.
+     * Fail-open (delegates to recordRecallOutcome).
+     */
+    async markRecallUseful(recallId: string, useful: boolean, hitIds?: string[]): Promise<MemoriaResult<{ updated: boolean }>> {
+        const outcome: RecallOutcomeInput = {
+            signal: 'explicit',
+            used: useful,
+            ...(hitIds && hitIds.length > 0
+                ? { hits: hitIds.map((id) => ({ id, utility_score: useful ? 1 : 0 })) }
+                : {})
+        }
+        return this.recordRecallOutcome(recallId, outcome)
+    }
+
     /** Get a structured summary of a specific session */
     async summarizeSession(sessionId: string): Promise<MemoriaResult<SessionSummary>> {
         return this.get(`/v1/sessions/${encodeURIComponent(sessionId)}/summary`)

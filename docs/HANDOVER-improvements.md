@@ -25,7 +25,7 @@
 | P9 | `0ae0264` | recall.ts 抽 buildSnippet/buildScopeClause、統一 keyword 重複 SQL；未動 recall()，輸出 byte-identical |
 | P10 | (本次) | install.sh 加 SHA256 checksum 驗證 + `--version` 格式檢查；打包產 `.sha256`、release 上傳；backward-compat（無 sidecar 則警告續行） |
 
-**P1–P10 全數完成。** 記憶智能主線 **UFL Phase 0 + 1 + 2 + 3(b) 亦已完成並 ship**（見 `docs/RFC-utility-feedback.md`）：Phase 1 = `recall_id` + Migration 6 + `recordRecallOutcome` + endpoint + SDK + adapter 回報；Phase 2 = `buildCalibration` confidence×utility 分桶校準；**Phase 3(b) = Migration 7 `memory_utility` per-memory 歸因 + `applyUtilityWeighting` utility-weighted 召回排序 + prune retention（stale/consolidate 保留高效用記憶），全數零觀測即 byte-identical、可回退**。**下一步 = UFL Phase 3(a) 明確回饋 API（可選高保真訊號），或轉入語意召回評測靶場。** P5 的 CJK 範圍對齊方向仍為待決。
+**P1–P10 全數完成。** 記憶智能主線 **UFL Phase 0 + 1 + 2 + 3 全數 ship**（見 `docs/RFC-utility-feedback.md`）：Phase 1 = `recall_id` + Migration 6 + `recordRecallOutcome` + endpoint + SDK + adapter 回報；Phase 2 = `buildCalibration` confidence×utility 分桶校準；Phase 3(b) = Migration 7 `memory_utility` per-memory 歸因 + `applyUtilityWeighting` utility-weighted 召回排序 + prune retention；**Phase 3(a) = Migration 8 explicit 累加器 + `effectiveUtility`（explicit 高保真、與 reuse 分開累計永不相加、存在即凌駕）+ SDK `markRecallUseful`**。全數零觀測即 byte-identical、可回退。**下一步 = 轉入語意召回評測靶場（語意 vs 字面 utility uplift），或讓資料累積後回看效果。** P5 的 CJK 範圍對齊方向仍為待決。
 
 **P8 補充**：`withDb` 現以 `<mode>:<dbPath>` 為 pool key，readonly 與 read-write handle 分開池化（readonly caller 保留 SQLite 寫入保護）。唯一保留直接 `new Database` 的是 `schema.ts` 的 `initDatabase`（DDL/migration bootstrap，刻意不動）。踩到的坑：better-sqlite3 不接受 `fileMustExist: undefined`，需強制 boolean。
 

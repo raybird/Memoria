@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
-import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery, tokenCoverage } from '../utils.js'
+import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery, tokenCoverage, effectiveUtility } from '../utils.js'
 import { safeDate } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
@@ -10,13 +10,12 @@ import type { MemoryIndexBuildOptions, MemoryIndexBuildResult, RecallHit } from 
 
 const DEFAULT_DECAY_HALF_LIFE_DAYS = 90
 
-// UFL Phase 3 — utility-weighted ranking. A memory needs at least this many recorded outcomes
-// before its observed utility is allowed to nudge ranking (a weak lexical-reuse signal must not act
-// on a single observation). Weighting only ever DOWN-weights: factor ∈ [UTILITY_FLOOR, 1], so a
+// UFL Phase 3 — utility-weighted ranking. A memory's effective utility (explicit host signal, else
+// the reuse proxy past its observation floor — see effectiveUtility) nudges ranking only once a
+// trusted signal exists. Weighting only ever DOWN-weights: factor ∈ [UTILITY_FLOOR, 1], so a
 // persistently-ignored memory sinks toward half score while a well-reused one stays at its baseline
-// — utility never boosts a hit above its relevance×decay score. Below the observation threshold the
-// factor is exactly 1, so behaviour is byte-identical to pre-Phase-3 on any DB with no observations.
-const UTILITY_MIN_OBSERVATIONS = 2
+// — utility never boosts a hit above its relevance×decay score. With no trusted signal the factor is
+// exactly 1, so behaviour is byte-identical to pre-Phase-3 on any DB with no qualifying observations.
 const UTILITY_FLOOR = 0.5
 
 function utilityFactor(meanUtility: number): number {
@@ -27,8 +26,8 @@ function utilityFactor(meanUtility: number): number {
 // Re-rank final hits by their accrued per-memory utility. Reads memory_utility (populated by recall
 // outcomes) and multiplies each hit's ranking score by its utilityFactor. Confidence is untouched
 // (it derives from `relevance`, not `score`), so this changes only ORDERING, never the reported
-// match quality. Guarantees: no table / no matching rows / none past the observation threshold ⇒ the
-// input array is returned unchanged (no re-sort), preserving byte-identical output. Fail-open.
+// match quality. Guarantees: no table / no matching rows / none with a trusted signal ⇒ the input
+// array is returned unchanged (no re-sort), preserving byte-identical output. Fail-open.
 export function applyUtilityWeighting(dbPath: string, hits: RecallHit[]): RecallHit[] {
     if (hits.length === 0 || !existsSync(dbPath)) return hits
     try {
@@ -41,13 +40,13 @@ export function applyUtilityWeighting(dbPath: string, hits: RecallHit[]): Recall
             const ids = [...new Set(hits.map((h) => h.id))]
             const placeholders = ids.map(() => '?').join(',')
             const rows = db
-                .prepare(`SELECT ref_id, observations, utility_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
-                .all(...ids) as { ref_id: string; observations: number; utility_sum: number }[]
+                .prepare(`SELECT ref_id, observations, utility_sum, explicit_observations, explicit_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
+                .all(...ids) as { ref_id: string; observations: number; utility_sum: number; explicit_observations: number; explicit_sum: number }[]
 
             const factorById = new Map<string, number>()
             for (const r of rows) {
-                if (r.observations < UTILITY_MIN_OBSERVATIONS) continue
-                const mean = r.observations > 0 ? r.utility_sum / r.observations : 0
+                const mean = effectiveUtility(r)
+                if (mean === null) continue
                 factorById.set(r.ref_id, utilityFactor(mean))
             }
             if (factorById.size === 0) return hits

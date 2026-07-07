@@ -47,6 +47,29 @@ export function tokenCoverage(query: string, text: string): number {
     return found / tokens.length
 }
 
+// UFL utility observation floors. The weak lexical-reuse PROXY needs several observations before it
+// is trusted to act on ranking / retention; an EXPLICIT host-asserted signal is high-fidelity, so a
+// single one suffices.
+export const REUSE_UTILITY_MIN_OBS = 2
+export const EXPLICIT_UTILITY_MIN_OBS = 1
+
+// Effective per-memory utility for ranking / retention (UFL Phase 3). Honours "never mix signal
+// kinds" (RFC §2.4): an explicit host signal, once present, FULLY overrides the weak reuse proxy for
+// that memory — reuse is not averaged in. Returns null when no trusted signal exists yet (so callers
+// leave the memory untouched, keeping behaviour byte-identical on any DB with no qualifying signal).
+export function effectiveUtility(row: {
+    observations?: number
+    utility_sum?: number
+    explicit_observations?: number
+    explicit_sum?: number
+}): number | null {
+    const eo = row.explicit_observations ?? 0
+    if (eo >= EXPLICIT_UTILITY_MIN_OBS) return Math.min(1, Math.max(0, (row.explicit_sum ?? 0) / eo))
+    const o = row.observations ?? 0
+    if (o >= REUSE_UTILITY_MIN_OBS) return Math.min(1, Math.max(0, (row.utility_sum ?? 0) / o))
+    return null
+}
+
 // Confidence×utility calibration (UFL Phase 2). Pure aggregation over telemetry points that carry
 // BOTH a top_confidence and an observed utility_score: bucket by confidence in `bucketCount` equal
 // widths over [0,1], emit only non-empty buckets, and flag whether mean utility rises monotonically

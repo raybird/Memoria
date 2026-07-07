@@ -130,6 +130,20 @@ if(!row||row.observations<1) throw new Error('memory_utility not accrued for $SI
 if(Math.abs(row.utility_sum-0.4)>1e-9) throw new Error('utility_sum wrong: '+JSON.stringify(row));
 "
 echo "  per-memory utility accrued (memory_utility ref=$SID)"
+echo "[http] explicit signal is high-fidelity + kept separate from reuse (UFL Phase 3(a))"
+RID3=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"HTTP contract test session","mode":"keyword"}' | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).meta.recall_id||''))")
+OUT3=$(curl -sf -X POST "$SERVER_URL/v1/recall/$RID3/outcome" -H 'Content-Type: application/json' -d "{\"signal\":\"explicit\",\"used\":true,\"hits\":[{\"id\":\"$SID\",\"utility_score\":1}]}")
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.data.updated!==true) throw new Error('explicit outcome not applied: '+process.argv[1])" "$OUT3"
+node -e "
+const D=require('$ROOT_DIR/node_modules/better-sqlite3'); const db=new D('$TMP_DIR/home/.memory/sessions.db',{readonly:true});
+const mu=db.prepare('SELECT observations, utility_sum, explicit_observations, explicit_sum FROM memory_utility WHERE ref_id = ?').get('$SID');
+const tel=db.prepare('SELECT outcome_kind FROM recall_telemetry WHERE id = ?').get('$RID3');
+db.close();
+if(!mu||mu.explicit_observations!==1||Math.abs(mu.explicit_sum-1)>1e-9) throw new Error('explicit not accrued to its own columns: '+JSON.stringify(mu));
+if(mu.observations!==1) throw new Error('explicit must NOT be mixed into reuse columns (observations should stay 1): '+JSON.stringify(mu));
+if(!tel||tel.outcome_kind!=='explicit') throw new Error('telemetry outcome_kind should be explicit: '+JSON.stringify(tel));
+"
+echo "  explicit accrued separately (explicit_observations=1, reuse observations still 1)"
 echo "[http] unknown recall id -> ok:true, updated:false (no-op)"
 curl -sf -X POST "$SERVER_URL/v1/recall/rt_does_not_exist/outcome" -H 'Content-Type: application/json' -d '{"signal":"reuse","utility_score":0.5}' | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8')); if(!d.ok||d.data.updated!==false) throw new Error('expected no-op ok:true updated:false')"
 echo "  no-op ok"

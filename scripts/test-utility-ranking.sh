@@ -73,4 +73,16 @@ NEWTOP=${AFTER2%% *}
 [ "$NEWTOP" = "$SECOND" ] || { echo "  ✗ expected '$SECOND' to rise to top, got '$NEWTOP' ($AFTER2)"; exit 1; }
 echo "  flipped after 2 low obs: $AFTER2 (down-weighted '$TOP' sank)"
 
+echo "[ranking] (D) a single EXPLICIT 'useful' overrides accumulated low reuse (Phase 3(a) high-fidelity)"
+# $TOP now carries 2 low reuse obs (mean 0) -> down-weighted. One explicit useful should fully
+# override the proxy (effective utility -> 1.0, factor -> 1.0) and restore it to the top.
+R=$(rid)
+curl -sf -X POST "$URL/v1/recall/$R/outcome" -H 'Content-Type: application/json' \
+    -d "{\"signal\":\"explicit\",\"used\":true,\"hits\":[{\"id\":\"$TOP\",\"utility_score\":1}]}" >/dev/null
+AFTER3=$(order)
+[ "$AFTER3" = "$BASE" ] || { echo "  ✗ explicit useful did not override reuse: '$AFTER3' vs baseline '$BASE'"; exit 1; }
+# Confirm explicit accrued in its own column, reuse untouched.
+node -e "const D=require('$BSQ');const db=new D('$DB',{readonly:true});const r=db.prepare('SELECT observations, explicit_observations FROM memory_utility WHERE ref_id=?').get('$TOP');db.close();if(!r||r.explicit_observations!==1||r.observations!==2)throw new Error('explicit/reuse columns wrong: '+JSON.stringify(r))"
+echo "  explicit overrode reuse; order restored: $AFTER3"
+
 echo "[ranking] ok"

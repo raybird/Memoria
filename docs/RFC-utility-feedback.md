@@ -1,6 +1,6 @@
 # RFC: Recall Utility Feedback Loop（召回效用回饋迴路）
 
-- 狀態：`phase-3b-shipped` — Phase 0/1/2 已交付；Phase 3(b) 完整實作：ranking（Migration 7 `memory_utility` + per-hit 歸因 + `applyUtilityWeighting` utility-weighted 召回排序）與 prune retention（stale 保留高效用孤兒、consolidate 保留高效用子節點），全數零觀測即 byte-identical、可回退。下一步 = Phase 3(a) 明確回饋 API（可選高保真訊號），或轉入語意召回評測靶場。
+- 狀態：`phase-3-shipped` — Phase 0/1/2/3 全數交付。Phase 3(b)：per-memory 歸因 + utility-weighted 召回排序與 prune retention。Phase 3(a)：明確回饋（`outcome_kind='explicit'`）作為高保真訊號，per-memory **分開累計、永不與 reuse proxy 混用**（RFC §2.4），explicit 存在時完全凌駕 reuse；SDK `markRecallUseful`。全數零 explicit 觀測即 byte-identical、可回退。下一步 = 轉入語意召回評測靶場（用 utility uplift 客觀量測語意 vs 字面）。
 - 建立：2026-07-03
 - 更新：2026-07-06
 - Roadmap anchor：`RFC.md` → Candidate Direction #8（*Memory-quality guardrails — score hygiene*），兼及 #5（*Additional observability*）。
@@ -169,8 +169,8 @@ reuseScore(pendingRecall, turnText) =
 > 維護者選擇提前落地 (b)。原訂 gate（先累積可信資料）以**「零觀測即 byte-identical」的構造保證**取代:效用只在累積足夠觀測後才逐步生效,且只會降權、不會加權、可回退。
 
 - **地基:per-memory 效用歸因**。新增 Migration 7 `memory_utility(ref_id, observations, utility_sum, last_outcome_at)`。outcome POST 可帶 `hits:[{id, utility_score}]`,`recordRecallOutcome` 就地累加到對應 `ref_id`(RecallHit.id)。recall() **熱路徑零新增寫入**——歸因發生在離線的 outcome 路徑(符合 §7)。adapter 把既有 per-hit `tokenCoverage` 一併回報。
-- **排序加權**:`applyUtilityWeighting`(`src/core/db/recall.ts`)在 recall() 組完 hits 後、記 telemetry 前,依 `memory_utility` 把每個 hit 的 `score` 乘上 `utilityFactor = UTILITY_FLOOR + (1-UTILITY_FLOOR)*mean`(FLOOR=0.5)。**只降權不加權**(factor ∈ [0.5,1]);需 `observations ≥ UTILITY_MIN_OBSERVATIONS`(=2)才生效。`confidence` 不受影響(衍生自 `relevance` 非 `score`)。
-- **安全性質(全數驗證)**:無 `memory_utility` 列 / 無達門檻列 → **早退回原陣列,不重排,byte-identical**;fail-open(任何錯誤回原 hits);hybrid 排序以原索引為 tie-break,零資料完全不動。
+- **排序加權**:`applyUtilityWeighting`(`src/core/db/recall.ts`)在 recall() 組完 hits 後、記 telemetry 前,依 `memory_utility` 的**有效效用**(見 Phase 3(a) `effectiveUtility`;Phase 3(b) 當時為 `observations ≥ 2` 的 reuse 均值)把每個 hit 的 `score` 乘上 `utilityFactor = UTILITY_FLOOR + (1-UTILITY_FLOOR)*mean`(FLOOR=0.5)。**只降權不加權**(factor ∈ [0.5,1])。`confidence` 不受影響(衍生自 `relevance` 非 `score`)。
+- **安全性質(全數驗證)**:無 `memory_utility` 列 / 無可信訊號列 → **早退回原陣列,不重排,byte-identical**;fail-open(任何錯誤回原 hits);hybrid 排序以原索引為 tie-break,零資料完全不動。
 - **測試**:`test-utility-ranking.sh`(掛 CI core)證 (A) 零資料穩定、(C) 單筆觀測不改序、(B) 兩筆低效用觀測使 top hit 精確 ×0.5 沉底、排序翻轉;`test-http-api.sh` 驗 `hits[]` 歸因寫入 `memory_utility`;`test-migrations.sh` 驗 Migration 7 降級/重套。
 
 #### Phase 3(b)-prune — utility-weighted retention ✅ 已完成 2026-07-07
@@ -179,7 +179,17 @@ reuseScore(pendingRecall, turnText) =
 - **consolidate**:`orderChildrenForRetention` 讓保留的子節點是**最高效用者**而非單純最新者;效用僅在 `mean ≥ 門檻` 時才凌駕新近度,否則沿用原「保留最新」。合併計數不變(永遠保留 1 個)。
 - **安全性質**:`loadUtilityMeans` 在 `memory_utility` 不存在或無達門檻列時回空 map → 無豁免、無改序 → **零觀測即 byte-identical**(既有 `test-prune.sh` 四情境全綠即證)。
 - **測試**:`test-prune.sh` Scenario E:stale 豁免高效用孤兒、刪除低效用與**觀測數不足**(1<2,floor 生效)者;consolidate 保留高效用的最舊子節點 `CU_old`。
-- **接續**:(a) 明確回饋 API(`outcome_kind='explicit'`)仍為可選的高保真訊號來源;本迴路現已可作為 [RFC-semantic-recall.md](RFC-semantic-recall.md) 的評測靶場。
+
+#### Phase 3(a) — 明確回饋（explicit feedback）高保真訊號 ✅ 已完成 2026-07-07
+
+> 兌現 §2.4:「資料表用 `outcome_kind` 區分訊號種類,永不混為一談」。explicit 是 host 直接標註的高保真訊號,與弱的 lexical-reuse proxy **分開累計**,且在存在時完全凌駕 proxy。
+
+- **分開累計**:Migration 8 `memory_utility` 加 `explicit_observations` / `explicit_sum`(guarded ALTER, DEFAULT 0 回填舊列)。`recordRecallOutcome` 依 `signal === 'explicit'` 把 per-hit 歸因路由到 explicit 累加器,否則進 proxy 累加器——**兩組永不相加**。
+- **高保真凌駕**:純函式 `effectiveUtility`(`src/core/utils.ts`)決定單一記憶的有效效用——有 explicit(`≥ EXPLICIT_UTILITY_MIN_OBS`=1)就**只用 explicit**、忽略 reuse;否則用 reuse(`≥ REUSE_UTILITY_MIN_OBS`=2);皆無則回 `null`(呼叫者不動該記憶)。ranking(`applyUtilityWeighting`)與 prune(`loadUtilityMeans`)統一改用它,故 explicit 一次標註即可覆寫多筆 reuse。
+- **入口**:沿用既有 `POST /v1/recall/:id/outcome`(`signal:'explicit'`);新增 SDK `markRecallUseful(recallId, useful, hitIds?)` 便捷方法(fail-open)。無需新 endpoint/CLI 命令。
+- **安全性質**:`effectiveUtility` 在無 explicit 觀測時退化為 Phase 3(b) 的 reuse 行為 → **零 explicit 資料即 byte-identical**(既有 ranking/prune 測試全綠即證)。
+- **測試**:`test-http-api.sh`(explicit 進自有欄位、`observations` 不受污染、telemetry `outcome_kind='explicit'`)、`test-utility-ranking.sh` (D)(單筆 explicit useful 覆寫 2 筆低 reuse、還原排序)、`test-migrations.sh`(Migration 8 降級/重套 + legacy 列保留 + explicit 回填 0)。
+- **接續**:本迴路完備,可作為 [RFC-semantic-recall.md](RFC-semantic-recall.md) 的評測靶場——用 utility uplift 客觀量測語意召回是否勝過字面。
 
 ## 11. Open Decisions（待決事項）
 

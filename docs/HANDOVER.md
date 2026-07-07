@@ -75,7 +75,7 @@
 
 ## 5. 下一步（接續就從這開始）
 
-> **2026-07-07 更新:Phase 0/1/2 + Phase 3(b) 均已完成**(見 `docs/RFC-utility-feedback.md`)。Phase 1：`recall()` 加 `recall_id`、Migration 6、`recordRecallOutcome` + `POST /v1/recall/:id/outcome`、SDK、adapter 預設回報 reuse outcome。Phase 2：`buildCalibration` confidence×utility 分桶校準,呈現於 `memoria stats` 與 `GET /v1/telemetry/recall`(純加法、不改 confidence)。**Phase 3(b) 已 ship**:Migration 7 `memory_utility` per-memory 效用歸因(outcome POST 帶 `hits[]`)+ `applyUtilityWeighting` utility-weighted **召回排序**(只降權、需≥2觀測)+ **prune retention**(stale 保留高效用孤兒、consolidate 保留高效用子節點);全數**零觀測即 byte-identical、可回退**。**下一步 = Phase 3(a) 明確回饋 API(可選高保真訊號),或轉入語意召回評測靶場**;此外可讓 Phase 1/2/3 在實際使用中累積資料,再回看校準曲線與排序/保留效果。以下為 Phase 0 的原始說明,保留備查。
+> **2026-07-07 更新:UFL Phase 0/1/2/3 全數完成**(見 `docs/RFC-utility-feedback.md`)。Phase 1：`recall_id` + Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome` + SDK + adapter 回報。Phase 2：`buildCalibration` confidence×utility 校準(`memoria stats`/telemetry,不改 confidence)。**Phase 3(b)**:Migration 7 `memory_utility` per-memory 歸因 + `applyUtilityWeighting` utility-weighted **召回排序**(只降權)+ **prune retention**(stale/consolidate 保留高效用)。**Phase 3(a)**:Migration 8 explicit 累加器 + `effectiveUtility`(explicit 高保真、與 reuse **分開累計永不相加**、存在即凌駕)+ SDK `markRecallUseful`。全數**零觀測即 byte-identical、可回退**。**下一步 = 轉入語意召回評測靶場**(語意 RFC 解 embedding backend 後,用 utility uplift 客觀證明語意勝過字面);或讓資料在實際使用中累積,回看校準曲線與排序/保留效果。以下為 Phase 0 的原始說明,保留備查。
 
 **已完成動作:效用回饋迴路 RFC 的 Phase 0 spike**(`docs/RFC-utility-feedback.md` §10)。
 
