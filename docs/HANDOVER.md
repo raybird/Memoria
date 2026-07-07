@@ -77,6 +77,8 @@
 
 > **2026-07-07 更新:UFL Phase 0/1/2/3 全數完成**(見 `docs/RFC-utility-feedback.md`)。Phase 1：`recall_id` + Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome` + SDK + adapter 回報。Phase 2：`buildCalibration` confidence×utility 校準(`memoria stats`/telemetry,不改 confidence)。**Phase 3(b)**:Migration 7 `memory_utility` per-memory 歸因 + `applyUtilityWeighting` utility-weighted **召回排序**(只降權)+ **prune retention**(stale/consolidate 保留高效用)。**Phase 3(a)**:Migration 8 explicit 累加器 + `effectiveUtility`(explicit 高保真、與 reuse **分開累計永不相加**、存在即凌駕)+ SDK `markRecallUseful`。全數**零觀測即 byte-identical、可回退**。**下一步 = 轉入語意召回評測靶場**(語意 RFC 解 embedding backend 後,用 utility uplift 客觀證明語意勝過字面);或讓資料在實際使用中累積,回看校準曲線與排序/保留效果。以下為 Phase 0 的原始說明,保留備查。
 
+> **2026-07-07 再更新:語意召回 MVP 已 ship**(`docs/RFC-semantic-recall.md` §14,狀態 `phase-1-shipped`)。維護者拍板 embedding backend:本地 `multilingual-e5-small`(spike 5/6,英文 MiniLM 僅 2/6 跨語言全滅)+ libSQL 原生 `F32_BLOB`/`vector_top_k`,沿用 `LIBSQL_URL` 選用 gating。`recall({mode:'vector'})` = lexical floor + RRF 融合,全程 fail-open;重依賴隔離在 `skills/memoria-vector/`(spawn,core 零新增依賴);既有模式 envelope 逐位元一致。**UFL×語意匯合:比較 route_mode 分組的 utility uplift 即可客觀量測語意是否勝過字面**——兩條 RFC 主線正式閉環。下一步:讓真實資料累積,用 uplift 說話;殘餘項(hybrid 融合、語意去重)待資料再議。
+
 **已完成動作:效用回饋迴路 RFC 的 Phase 0 spike**(`docs/RFC-utility-feedback.md` §10)。
 
 - 目標:證明「lexical reuse」訊號**可觀測且有鑑別力**,再決定要不要進 Phase 1。

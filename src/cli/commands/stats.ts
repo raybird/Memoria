@@ -33,6 +33,12 @@ export function registerStatsCommand(program: Command, paths: MemoriaPaths, core
                     console.log(`- recall routing (${rr.window}):`)
                     console.log(`  - queries=${rr.totalQueries}, fallback_rate=${(rr.fallbackRate * 100).toFixed(1)}%`)
                     console.log(`  - route_counts: skipped=${rr.routeCounts.skipped}, keyword=${rr.routeCounts.keyword}, tree=${rr.routeCounts.tree}, hybrid_tree=${rr.routeCounts.hybrid_tree}, hybrid_fallback=${rr.routeCounts.hybrid_fallback}`)
+                    // Semantic route counters appear only once vector mode has been used — the
+                    // default stats output stays identical for Memoria-only deployments.
+                    const vecTotal = rr.routeCounts.vector + rr.routeCounts.hybrid_vector + rr.routeCounts.vector_unavailable + rr.routeCounts.vector_timeout
+                    if (vecTotal > 0) {
+                        console.log(`  - vector_routes: vector=${rr.routeCounts.vector}, hybrid_vector=${rr.routeCounts.hybrid_vector}, unavailable=${rr.routeCounts.vector_unavailable}, timeout=${rr.routeCounts.vector_timeout}`)
+                    }
                     console.log(`  - latency_ms: avg=${rr.avgLatencyMs}, p95=${rr.p95LatencyMs}`)
                     console.log(`  - avg_hit_count=${rr.avgHitCount}`)
                     if (rr.calibration && rr.calibration.scoredQueries > 0) {

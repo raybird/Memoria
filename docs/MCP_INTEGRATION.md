@@ -47,6 +47,21 @@ Hybrid flow (`run-sync-with-enhancement.sh`) performs:
 4. Auto-ingest to `mcp-memory-libsql`
 5. Commit incremental sync cursor to Memoria SQLite
 
+## Semantic Recall (optional, on top of libSQL)
+
+With `LIBSQL_URL` set you can additionally enable a real semantic index (libSQL **native
+vectors** — this bypasses `mcp-memory-libsql`, which is text-search only):
+
+```bash
+cd skills/memoria-vector && npm install     # one-time: embedding runtime + libSQL client
+export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each payload into vectors
+# then query with mode:"vector" via POST /v1/recall — fuses semantic + lexical (RRF),
+# and degrades to lexical-only when the index is unavailable (fail-open).
+```
+
+Embeddings run **locally** (`multilingual-e5-small`; memory content never leaves the machine).
+Details and design: `docs/RFC-semantic-recall.md`, `skills/memoria-vector/README.md`.
+
 ## Incremental Tree Sync
 
 - Memoria tracks MCP sync cursor in `memory_sync_state` (target: `mcp-memory-libsql`).

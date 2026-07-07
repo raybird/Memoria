@@ -99,6 +99,7 @@ jobs:
             http-mcp)
               bash scripts/test-http-api.sh
               bash scripts/test-mcp-e2e.sh
+              bash scripts/test-vector-recall.sh
               ;;
           esac
 

@@ -1,8 +1,8 @@
 # RFC: Semantic Recall Loop
 
-- Status: `blocked` — Phase 0 invalidated the "read semantics back from libSQL" premise; needs an embedding-backend decision. See [§13 Phase 0 Findings](#13-phase-0-findings-2026-07-02).
+- Status: `phase-1-shipped` — unblocked 2026-07-07 by the embedding-backend decision (§14): local `multilingual-e5-small` via an out-of-core helper, vectors in libSQL native `F32_BLOB`. MVP shipped: `mode: 'vector'` = lexical floor + `vector_top_k` + RRF fusion, fully fail-open, Memoria-only untouched. See [§14](#14-phase-0-spike--mvp-delivery-2026-07-07).
 - Created: 2026-07-02
-- Updated: 2026-07-02 (Phase 0 spike results)
+- Updated: 2026-07-07 (Phase 0' spike + MVP delivery)
 - Roadmap anchor: `RFC.md` → Candidate Direction #2 (*Native semantic retrieval workflows beyond MCP bridge*)
 - Scope: turn the one-way Memoria → libSQL bridge into a two-way loop by adding a `vector` recall mode.
 
@@ -249,3 +249,26 @@ future direction; the FTS5/BM25 upgrade was implemented instead:
   original `LIKE` scan for sub-trigram (1–2 char) / CJK-short queries and any FTS miss — so
   behaviour is a strict superset with no regression. Verified against a populated pre-migration
   DB (backfill) and via `scripts/test-smoke.sh` (multi-word bm25 hit + CJK fallback assertions).
+
+## 14. Phase 0' Spike + MVP Delivery (2026-07-07)
+
+### 14.1 Embedding-backend decision（解鎖 §13.3 的 blocked）
+
+維護者拍板：**本地模型、libSQL 原生向量、選用模式**。兩軸 spike 實測（詳見 `skills/memoria-vector/README.md`）：
+
+- **Embedding 來源 = local `Xenova/multilingual-e5-small`（q8）**。以 Memoria 真實語料形態（繁中技術摘要、中英混合、跨語言、字面完全不相交的語意配對）測 6 題困難集：e5-small **5/6**、paraphrase-multilingual 4/6、英文 all-MiniLM-L6-v2 **2/6（跨語言全滅）**。單筆推理 ~3ms、已快取冷啟動 ~950ms → **spawn-per-query 即可行，原 Phase 2 的長駐 pooling 機制整個免掉**。已知怪癖：e5 cosine 區間壓縮（0.79–0.86），**只能按名次排序（RRF），不可用絕對分數當門檻**——與 §5b 的 RRF 設計天然互補。hosted API（無 key 可測，桌面對照）成本非差異點（~$0.01/月），**隱私才是**：記憶內容不出機器，與 local-first 立場一致。provider 抽象（`MEMORIA_EMBED_PROVIDER=local|stub`）保留未來 hosted 的插槽。
+- **向量存放 = libSQL 原生 `F32_BLOB(384)` + `vector_top_k`**（實測 `file:` 模式 ANN 索引 + rowid join 全數可用）。沿用 `LIBSQL_URL` 選用 gating——語意召回定位為 **MCP/libSQL 選用模式的增強層**；`mcp-memory-libsql`（純文字搜尋，§13.2）被繞過，helper 直接對 libSQL 讀寫。
+- **重依賴不進 core**：`skills/memoria-vector/` 自帶 package.json（`@libsql/client` 為 deps；`@huggingface/transformers` ~700MB 在 devDeps，使用者 `npm install` 一步到位，CI `--omit=dev` 只拿 24MB），core 以 `node:child_process` spawn，零新增 runtime 依賴。
+
+### 14.2 MVP 交付
+
+- **Helper**（`skills/memoria-vector/`）：`embed.mjs`（provider 抽象）、`vector-ingest.mjs`（bridge payload → 向量 upsert，離線路徑；`project:`/`skill_profile` 實體不嵌入）、`vector-recall.mjs`（query → `vector_top_k` → 前綴 id 名單）。
+- **Core**（`src/core/recall-vector.ts`）：`recallVector`（spawn + `MEMORIA_VECTOR_TIMEOUT_MS` 預設 4000ms + 降級狀態機）與 `rrfFuse`（k=60，穩定排序、tie 偏向 lexical）。§5a 前綴映射照設計實作：所有欄位從本地 SQLite **權威回讀**，`skill:<slug>` 經 SkillLearned 事件 slug 對照，未知/過期 id 靜默丟棄，project/scope/time_window 過濾在本地回讀時強制。
+- **`recall()`**：`mode:'vector'` 分支 = keyword floor + 向量融合；`vector` 不走 tree。降級矩陣（§6）完整：`vector_unavailable` / `vector_timeout` / ok+0hits→`keyword` / `hybrid_vector` / `vector`。**既有 keyword/tree/hybrid/skip 分支經 envelope 前後比對逐位元一致**（僅 time-decay 時間噪音）。
+- **邊界**：`recallModeSchema` 加 `'vector'`；`RecallFilter.mode`/`FileQueryInput.mode`；routeCounts 加 4 個 vector 計數；`memoria stats` 僅在有 vector 使用時多顯示一行。
+- **Ingest 接線**：`run-sync-with-enhancement.sh` 加 `MEMORIA_VECTOR_ENABLE=1` 選用步驟（預設關，fail-open）。
+- **測試**（`scripts/test-vector-recall.sh`，掛 CI http-mcp 組，stub provider 免下載模型）：語意面（向量召回字面召不到的記憶）、權威回讀（snippet 來自本地 summary 而非 libSQL 副本）、過期 id 丟棄、project 過濾、`vector_unavailable`/`vector_timeout` 降級、stats 計數。`MEMORIA_VECTOR_E2E_REAL=1` 加跑真模型「字面不相交語意召回」斷言（已於交付時通過：`money planning and financial projections` → `Q3 budget and revenue forecast`）。
+
+### 14.3 與 UFL 的匯合（戰略閉環）
+
+recall_id 對 vector 模式照常發放 → UFL 的 reuse/explicit 回饋照常寫回 → **`route_mode` 分組比較 utility uplift 即可客觀量測「語意是否勝過字面」**（§1 的死結正式解掉）。接續（原 Phase 2/3 殘餘）：hybrid 模式的向量融合、telemetry 校準分組呈現、語意去重——皆待真實 uplift 資料說話後再動。

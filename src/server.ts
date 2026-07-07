@@ -36,7 +36,7 @@ const MAX_BODY_BYTES = resolveMaxBodyBytes()
 // ─── Request body schemas (validate at the HTTP boundary; unknown → parse) ──────
 // Known fields are type-checked; extra fields pass through for forward compatibility.
 
-const recallModeSchema = z.enum(['keyword', 'tree', 'hybrid'])
+const recallModeSchema = z.enum(['keyword', 'tree', 'hybrid', 'vector'])
 
 const rememberSchema = z
     .object({

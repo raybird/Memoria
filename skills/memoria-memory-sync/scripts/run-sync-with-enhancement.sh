@@ -80,6 +80,19 @@ if [ -n "${LIBSQL_URL:-}" ]; then
       echo "[enhance] ingest failed but continuing (MEMORIA_MCP_STRICT=0)"
     fi
   fi
+
+  # Optional semantic vector ingest (docs/RFC-semantic-recall.md): embeds the same bridge payload
+  # into libSQL native vectors so `recall mode:'vector'` can serve semantic hits. Default OFF —
+  # existing MCP/libSQL users see zero change unless they opt in. Always fail-open (the vector
+  # index is additive, never required for correctness).
+  if [ "${MEMORIA_VECTOR_ENABLE:-0}" = "1" ]; then
+    echo "[vector] embedding payload into libSQL native vectors"
+    if node "$SKILL_ROOT/../memoria-vector/vector-ingest.mjs" "$MEMORIA_MCP_PAYLOAD"; then
+      echo "[vector] completed"
+    else
+      echo "[vector] failed but continuing (semantic index is optional)"
+    fi
+  fi
 else
   echo "[enhance] skipped (set LIBSQL_URL to enable enhancement mode)"
 fi

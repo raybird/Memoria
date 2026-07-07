@@ -25,6 +25,7 @@ import {
     listSourceRecords
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
+import { recallVector, rrfFuse } from './recall-vector.js'
 import { buildCompiledWiki } from './wiki-build.js'
 import { fileQueryResult } from './wiki-query.js'
 import { runWikiLint } from './wiki-lint.js'
@@ -259,12 +260,19 @@ export class MemoriaCore {
                 }
             }
 
-            const treeRaw = mode !== 'keyword'
+            // Vector mode never touches the tree route: it is lexical floor + semantic index
+            // (RFC-semantic-recall §3). All other modes keep their exact pre-vector code paths.
+            const treeRaw = mode !== 'keyword' && mode !== 'vector'
                 ? recallTree(this.paths.dbPath, filter.query, filter.project, filter.scope, topK)
                 : []
             const keywordRaw = mode === 'tree'
                 ? []
                 : recallKeyword(this.paths.dbPath, filter.query, filter.project, filter.scope, topK, afterDate)
+            // Opt-in semantic route (LIBSQL_URL-gated, fail-open). Awaited before ranking; the
+            // keyword floor above is authoritative whenever this degrades.
+            const vectorOutcome = mode === 'vector'
+                ? await recallVector(this.paths.dbPath, filter.query, filter.project, filter.scope, topK, afterDate)
+                : null
 
             let routeMode: string = mode
             let fallbackUsed = false
@@ -290,6 +298,23 @@ export class MemoriaCore {
                 if (mode === 'keyword') {
                     routeMode = 'keyword'
                     return keywordRaw as RawRecallRow[]
+                }
+
+                if (mode === 'vector') {
+                    // Degradation matrix (RFC-semantic-recall §6): every non-ok status serves the
+                    // lexical floor; ok+hits fuses by rank (RRF) so scales never mix.
+                    const v = vectorOutcome!
+                    if (v.status !== 'ok') {
+                        routeMode = v.status === 'timeout' ? 'vector_timeout' : 'vector_unavailable'
+                        fallbackUsed = true
+                        return keywordRaw as RawRecallRow[]
+                    }
+                    if (v.rows.length === 0) {
+                        routeMode = 'keyword'
+                        return keywordRaw as RawRecallRow[]
+                    }
+                    routeMode = keywordRaw.length > 0 ? 'hybrid_vector' : 'vector'
+                    return rrfFuse<RawRecallRow>([keywordRaw as RawRecallRow[], v.rows as RawRecallRow[]], topK)
                 }
 
                 // hybrid mode: prefer tree route, then merge keyword fallback if needed

@@ -159,7 +159,11 @@ export function queryStats(dbPath: string): StatsData {
             keyword: 0,
             tree: 0,
             hybrid_tree: 0,
-            hybrid_fallback: 0
+            hybrid_fallback: 0,
+            vector: 0,
+            hybrid_vector: 0,
+            vector_unavailable: 0,
+            vector_timeout: 0
         }
         let fallbackCount = 0
         let hitCountSum = 0

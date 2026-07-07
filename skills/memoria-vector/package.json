@@ -1,0 +1,13 @@
+{
+  "name": "memoria-vector-helper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Optional semantic-recall helper for Memoria: embeds memories and serves vector_top_k queries against libSQL. Deliberately OUTSIDE Memoria's core dependencies — installed on demand, spawned via node:child_process, never imported by src/.",
+  "type": "module",
+  "dependencies": {
+    "@libsql/client": "^0.17.2"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "^4.2.0"
+  }
+}

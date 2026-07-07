@@ -206,7 +206,7 @@ export type RecallFilter = {
     scope?: string
     top_k?: number         // default 5
     time_window?: string   // ISO duration, e.g. 'P7D'
-    mode?: 'keyword' | 'tree' | 'hybrid'
+    mode?: 'keyword' | 'tree' | 'hybrid' | 'vector'  // vector: opt-in semantic route (LIBSQL_URL-gated)
 }
 
 export type RecallHit = {
@@ -297,6 +297,10 @@ export type StatsData = {
             tree: number
             hybrid_tree: number
             hybrid_fallback: number
+            vector: number             // semantic-only hits served
+            hybrid_vector: number      // semantic + lexical fused
+            vector_unavailable: number // LIBSQL_URL unset / helper missing / helper error → lexical floor
+            vector_timeout: number     // helper exceeded MEMORIA_VECTOR_TIMEOUT_MS → lexical floor
         }
         fallbackRate: number
         avgLatencyMs: number
@@ -468,7 +472,7 @@ export type FileQueryInput = {
     scope?: string
     top_k?: number
     time_window?: string
-    mode?: 'keyword' | 'tree' | 'hybrid'
+    mode?: 'keyword' | 'tree' | 'hybrid' | 'vector'
 }
 
 export type FiledQueryData = {
