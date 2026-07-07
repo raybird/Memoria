@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { existsSync } from '../paths.js'
@@ -6,6 +7,34 @@ import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRang
 import { initDatabase } from './schema.js'
 import { truncateText } from './mappers.js'
 import type { Json, MemoriaPaths, PruneOptions, ExportDecision, ExportSkill, ExportOptions, ExportType, ExportFormat } from '../types.js'
+
+// UFL Phase 3(b)-prune — utility-weighted retention. A memory is only spared / prioritized on its
+// accrued utility once it has at least this many observations (a weak signal must not decide on one),
+// and stale pruning spares any memory whose mean utility reaches the retain threshold.
+const UTILITY_RETAIN_MIN_OBS = 2
+const UTILITY_RETAIN_THRESHOLD = 0.5
+
+// ref_id -> mean utility, for refs past the observation floor. Empty when memory_utility is absent
+// (pre-Phase-3 DB) or nothing qualifies — so every caller degrades to its pre-Phase-3 behaviour and
+// prune stays byte-identical on any DB with no utility observations.
+function loadUtilityMeans(db: Database.Database, refIds: string[]): Map<string, number> {
+    const out = new Map<string, number>()
+    const ids = [...new Set(refIds.filter((r) => typeof r === 'string' && r))]
+    if (ids.length === 0) return out
+    const exists = db
+        .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'memory_utility' LIMIT 1`)
+        .get() as { ok: number } | undefined
+    if (!exists) return out
+    const placeholders = ids.map(() => '?').join(',')
+    const rows = db
+        .prepare(`SELECT ref_id, observations, utility_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
+        .all(...ids) as { ref_id: string; observations: number; utility_sum: number }[]
+    for (const r of rows) {
+        if (r.observations < UTILITY_RETAIN_MIN_OBS) continue
+        out.set(r.ref_id, r.observations > 0 ? r.utility_sum / r.observations : 0)
+    }
+    return out
+}
 
 async function collectFilesRecursively(dirPath: string): Promise<string[]> {
     if (!existsSync(dirPath)) return []
@@ -88,6 +117,32 @@ function pruneSkillsDuplicates(dbPath: string, dryRun: boolean): { duplicateGrou
     })
 }
 
+// Order a topic's consolidation children so the RETAINED one (index 0) is the highest-utility child
+// rather than merely the newest. Utility only promotes a child above recency when its mean reaches
+// the retain threshold; otherwise recency decides, exactly as before. At zero utility data this
+// reproduces the prior `ORDER BY updated_at DESC` keep-newest behaviour.
+function orderChildrenForRetention<T extends { id: string; updated_at: string }>(db: Database.Database, children: T[]): T[] {
+    const nodeIds = children.map((c) => c.id)
+    const placeholders = nodeIds.map(() => '?').join(',')
+    const srcRows = db
+        .prepare(`SELECT node_id, session_id FROM memory_node_sources WHERE node_id IN (${placeholders})`)
+        .all(...nodeIds) as { node_id: string; session_id: string }[]
+    const sessionByNode = new Map<string, string>()
+    for (const r of srcRows) if (!sessionByNode.has(r.node_id)) sessionByNode.set(r.node_id, r.session_id)
+    const means = loadUtilityMeans(db, [...sessionByNode.values()])
+    const promote = (c: T): number => {
+        const sid = sessionByNode.get(c.id)
+        const m = sid ? means.get(sid) : undefined
+        return typeof m === 'number' && m >= UTILITY_RETAIN_THRESHOLD ? m : 0
+    }
+    return [...children].sort((a, b) => {
+        const pa = promote(a)
+        const pb = promote(b)
+        if (pa !== pb) return pb - pa
+        return parseCreatedAt(b.updated_at) - parseCreatedAt(a.updated_at)
+    })
+}
+
 function pruneConsolidate(
     dbPath: string,
     cutoffDays: number,
@@ -126,7 +181,9 @@ function pruneConsolidate(
 
                     if (children.length < 3) continue
 
-                    const toRemove = children.slice(1)
+                    // Retain the highest-utility child (falls back to newest); consolidate the rest.
+                    const ordered = orderChildrenForRetention(db, children)
+                    const toRemove = ordered.slice(1)
                     const summaries = toRemove.map((c) => c.summary || c.title).filter(Boolean)
 
                     if (summaries.length > 0) {
@@ -187,18 +244,33 @@ function pruneStaleMemory(
             AND s.timestamp < ?
         `).all(cutoff) as { id: string }[]
 
+        // UFL Phase 3(b)-prune: spare memories with high accrued utility from stale deletion. A stale
+        // node maps to its session via memory_node_sources; an orphan session is its own ref. At zero
+        // utility data nothing is spared, so removal is byte-identical to pre-Phase-3 behaviour.
+        const nodeSessRows = staleNodes.length > 0
+            ? db.prepare(`SELECT node_id, session_id FROM memory_node_sources WHERE node_id IN (${staleNodes.map(() => '?').join(',')})`)
+                .all(...staleNodes.map((n) => n.id)) as { node_id: string; session_id: string }[]
+            : []
+        const sessionByNode = new Map<string, string>()
+        for (const r of nodeSessRows) if (!sessionByNode.has(r.node_id)) sessionByNode.set(r.node_id, r.session_id)
+        const means = loadUtilityMeans(db, [...sessionByNode.values(), ...staleSessions.map((s) => s.id)])
+        const isRetained = (ref: string | undefined): boolean =>
+            typeof ref === 'string' && (means.get(ref) ?? -1) >= UTILITY_RETAIN_THRESHOLD
+        const nodesToRemove = staleNodes.filter((n) => !isRetained(sessionByNode.get(n.id)))
+        const sessionsToRemove = staleSessions.filter((s) => !isRetained(s.id))
+
         if (!dryRun) {
             db.transaction(() => {
                 const delSources = db.prepare('DELETE FROM memory_node_sources WHERE node_id = ?')
                 const delNode = db.prepare('DELETE FROM memory_nodes WHERE id = ?')
-                for (const node of staleNodes) {
+                for (const node of nodesToRemove) {
                     delSources.run(node.id)
                     delNode.run(node.id)
                 }
 
                 const delEvents = db.prepare('DELETE FROM events WHERE session_id = ?')
                 const delSession = db.prepare('DELETE FROM sessions WHERE id = ?')
-                for (const session of staleSessions) {
+                for (const session of sessionsToRemove) {
                     delEvents.run(session.id)
                     delSession.run(session.id)
                 }
@@ -208,8 +280,8 @@ function pruneStaleMemory(
         return {
             staleNodes: staleNodes.length,
             staleSessions: staleSessions.length,
-            removedNodes: dryRun ? 0 : staleNodes.length,
-            removedSessions: dryRun ? 0 : staleSessions.length
+            removedNodes: dryRun ? 0 : nodesToRemove.length,
+            removedSessions: dryRun ? 0 : sessionsToRemove.length
         }
     })
 }

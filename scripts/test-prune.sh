@@ -157,4 +157,46 @@ db.close();
 console.log('  --all: dry-run deleted nothing; real removed 1 dup skill + 1 stale node + 1 orphan session');
 "
 
+# ── Scenario E: utility-weighted retention (UFL Phase 3(b)-prune) ───────────────
+echo "[prune] utility retention: high-utility memories are spared / kept; low & under-observed are not"
+DB="$(fresh_home retain)"
+node -e "
+const D = require('$BSQ'); const db = new D('$DB');
+const OLD = new Date(Date.now() - 200*864e5).toISOString();
+const mkSess = (id, ts) => db.prepare('INSERT INTO sessions (id,timestamp,project,scope,event_count,summary) VALUES (?,?,?,?,?,?)').run(id, ts, 'proj', null, 0, id);
+const mkNode = (id, parent, level, ts) => db.prepare(
+  'INSERT INTO memory_nodes (id,parent_id,project,scope,title,summary,level,path_key,created_at,updated_at,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+).run(id, parent, 'proj', null, id, id+' s', level, id, ts, ts, null);
+const mu = (ref, obs, sum) => db.prepare('INSERT INTO memory_utility (ref_id,observations,utility_sum,last_outcome_at) VALUES (?,?,?,?)').run(ref, obs, sum, OLD);
+// STALE orphans (old, unreferenced): keep=high mean; drop=low mean; lowobs=high mean but only 1 obs (< floor).
+for (const s of ['OU_keep','OU_drop','OU_lowobs']) mkSess(s, OLD);
+mu('OU_keep', 2, 1.6);    // mean .80 >= .50 -> spared
+mu('OU_drop', 2, 0.2);    // mean .10        -> removed
+mu('OU_lowobs', 1, 1.0);  // mean 1.0 but obs 1 < 2 -> NOT trusted -> removed
+// CONSOLIDATE: topic + 3 old children; the OLDEST child has high utility and must be the keeper.
+mkNode('P_u', null, 1, OLD);
+const kids = [['CU_new','2021-03-01T00:00:00Z'],['CU_mid','2021-02-01T00:00:00Z'],['CU_old','2021-01-01T00:00:00Z']];
+for (const [id, ts] of kids) { mkSess(id, ts); mkNode('node:'+id, 'P_u', 2, OLD); db.prepare('INSERT INTO memory_node_sources (node_id,session_id,created_at) VALUES (?,?,?)').run('node:'+id, id, ts); }
+mu('CU_old', 2, 1.6);     // mean .80 -> keeper despite being the OLDEST child
+db.close();
+"
+MEMORIA_HOME="$TMP_DIR/retain" "$ROOT_DIR/cli" prune --stale-days 180 --json > "$TMP_DIR/e-stale.json"
+MEMORIA_HOME="$TMP_DIR/retain" "$ROOT_DIR/cli" prune --consolidate-days 90 --json > "$TMP_DIR/e-cons.json"
+node -e "
+const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
+const fail = (m) => { console.error('  ✗ ' + m); process.exit(1); };
+const st = JSON.parse(require('fs').readFileSync('$TMP_DIR/e-stale.json','utf8')).stale;
+const has = (t, id) => db.prepare('SELECT count(*) c FROM ' + t + ' WHERE id=?').get(id).c === 1;
+// 3 orphans matched by age; only 2 removed (OU_keep spared by utility).
+if (st.staleSessions !== 3 || st.removedSessions !== 2) fail('stale retention counts wrong: ' + JSON.stringify(st));
+if (!has('sessions','OU_keep')) fail('OU_keep (mean .80) must be spared');
+if (has('sessions','OU_drop')) fail('OU_drop (mean .10) must be removed');
+if (has('sessions','OU_lowobs')) fail('OU_lowobs (1 obs, below floor) must be removed');
+// consolidate kept exactly the high-utility oldest child.
+const kids = db.prepare(\"SELECT id FROM memory_nodes WHERE parent_id='P_u' AND level=2\").all().map(r => r.id);
+if (JSON.stringify(kids) !== JSON.stringify(['node:CU_old'])) fail('consolidate keeper should be node:CU_old; got ' + JSON.stringify(kids));
+db.close();
+console.log('  stale spared OU_keep (3 matched, 2 removed); consolidate kept high-utility oldest child CU_old');
+"
+
 echo "[prune] ok"
