@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 1（本地文件編號；GitHub repo 目前無既有 issue） |
 | 複雜度級別 | Large（跨多模組、新增資料庫表、大型功能） |
-| 狀態 | 決策已確認（2026-07-13，D1–D4 依建議方案定案）— 待 decompose |
+| 狀態 | Decompose 完成（2026-07-13）— 待 execute-task（自 Phase 0 開始） |
 | 需求來源 | 使用者提供之《Memoria Git-Aware Memory v1 規格書》v1.0（2026-07-13） |
 | 建立日期 | 2026-07-13 |
 
@@ -14,7 +14,8 @@
 
 - [requirement-analysis.md](requirement-analysis.md) — 需求分析：使用者流程、功能邊界、模糊與衝突點
 - [technical-analysis.md](technical-analysis.md) — 技術分析：現況架構對應、變更邊界、風險
-- [implementation-plan.md](implementation-plan.md) — 實作計畫：Phase 0–6（草稿，待決策確認後方可 decompose）
+- [implementation-plan.md](implementation-plan.md) — 實作計畫：Phase 0–6（已確認）
+- [decomposition.md](decomposition.md) — Implementation Plan Decomposition：7 Phase / 36 Task 細化
 
 ## 摘要
 
@@ -45,8 +46,10 @@
 | 2026-07-13 | 收到 v1.0 規格書，完成現況架構探查與需求分析 |
 | 2026-07-13 | 建立 issue 文件四件套（本目錄） |
 | 2026-07-13 | 使用者核可 D1–D4 與範圍事項（全數採建議方案），implementation plan 轉為已確認 |
+| 2026-07-13 | 完成 decompose：7 Phase / 36 Task（decomposition.md） |
 
 ## Changelog
 
 - 2026-07-13: 初版建立（README、requirement-analysis、technical-analysis、implementation-plan）。
 - 2026-07-13: D1–D4 與範圍事項定案，四份文件同步更新為已確認狀態。
+- 2026-07-13: 新增 decomposition.md（7 Phase / 36 Task），狀態轉為待 execute-task。
