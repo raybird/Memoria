@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-07-13
+
 ### Added
 - **Git-Aware Memory v1**（issue-1，docs/issues/issue-1/）— 非侵入式 Git 專案工程記憶：
   - `repo add/list/status/sync/summarize/relocate/remove` CLI 命令與 HTTP `/v1/repos/*` endpoints；SDK 對應方法。
