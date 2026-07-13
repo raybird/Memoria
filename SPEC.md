@@ -14,7 +14,8 @@ This document is the source of truth for what Memoria currently implements.
   - `govern review`
   - `prune`
   - `export`
-- SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`, `memory_utility`)
+  - `repo add/list/status/sync/summarize/relocate/remove` (Git-Aware Memory, see below)
+- SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`, `memory_utility`, plus Git-Aware Memory tables: `repositories`, `repository_instances`, `git_worktrees`, `git_commits`, `git_refs`, `git_scan_runs`, `git_events`, `git_summary_ranges`, `git_summaries`, `memory_checkpoints`, `memory_sources`)
 - Lightweight scope isolation:
   - `SessionData.scope` optional at write time
   - if omitted, scope defaults to `project:<project>` or `global`
@@ -60,7 +61,23 @@ This document is the source of truth for what Memoria currently implements.
 - Prune memory management:
   - `--consolidate-days <N>`: merges old session nodes under same topic
   - `--stale-days <N>`: removes never-recalled nodes and orphan sessions
-  - `--all` includes consolidate (90d) and stale (180d) by default
+  - `--git-observations-days <N>`: removes superseded git ref observations, consumed git events, and finished scan runs (never `git_commits`/`git_summaries`/promotion artifacts)
+  - `--all` includes consolidate (90d), stale (180d), and git-observations (90d) by default
+- Git-Aware Memory (issue-1, spec + design in `docs/issues/issue-1/`):
+  - read-only observation of existing git repositories: the §5 subcommand allowlist is enforced at runtime (`src/core/git/git-exec.ts`, `GIT_OPTIONAL_LOCKS=0`); `scripts/test-repo-noninvasive.sh` asserts byte-identical git state after the full flow
+  - repository identity: root-commit-based fingerprint (remote URL is metadata); shallow clones register as `limited_history` with a remote+boundary fallback fingerprint and upgrade in place after unshallow (no duplicate logical repository); linked worktrees share the repository identity with per-instance state
+  - incremental scan (`repo sync`): new commits/refs/tags only (`--not <previous tips>`); first scan capped at 200 commits (`repo add --scan-history` / `--history-limit <n>` override); idempotent re-sync inserts nothing
+  - inferred events: snapshot diffs produce `repository_added`, `commit_discovered`, `merge_commit_discovered`, `branch_discovered/head_moved/disappeared`, `tag_discovered`, `head_changed`, `history_rewritten` (non-fast-forward moves; lazy `patch-id` pairs equivalent commits, abandoned commits marked unreachable, never deleted), `working_tree_dirty/clean` (edge-triggered), `repository_relocated`
+  - `repo sync --dry-run` reports would-be commits/events/summaries and writes nothing (DB byte-identical)
+  - summary pipeline: deterministic commit-range grouping (time window + top-level-dir domains) → trivial filter (lockfile/generated/snapshot noise skipped; migration/schema/auth/security/deploy-class files always summarized) → context assembly per §17 priority (messages → file list → diffstat → capped diff), sensitive paths excluded and secret-like values masked; merge summaries (merge-base..merge), release summaries (`v1.2.0`-style tags, previous-release..tag or root..tag), branch summaries (`repo summarize --branch`, merge-base(default,branch)..head)
+  - summaries are structured (title/summary/key_changes/decisions/known_limitations/risks/affected_domains/importance/confidence) and start as deterministic skeletons (`generator:'deterministic'`, `status:'pending'`); the host agent enriches them in place via `repo summarize --pending` → `--submit <id>` (Zod-validated payload; same row, `generator:'agent'`, `status:'enriched'`)
+  - idempotency keys: `(repository_id, commit_sha)` for commits, `range_fingerprint` for ranges, `(repository_id, summary_range_id, prompt_version)` for summaries, deterministic ids + `INSERT OR IGNORE` for promotion
+  - memory promotion: merge/release summaries, importance ≥ `promoteImportanceThreshold` (default 0.7), or substantive decisions/limitations/risks promote into the existing recall corpus (synthetic session + `DecisionMade` events → FTS); `memory_sources` keeps SHA-level provenance, `memory_checkpoints` records milestones; the same summary never promotes twice
+  - recall provenance: hits from promoted summaries carry `hit.source` = `{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`
+  - HTTP: `POST/GET /v1/repos`, `GET /v1/repos/:ref/status`, `POST /v1/repos/:ref/sync|summarize`, `GET /v1/repos/:ref/summaries/pending`, `POST /v1/repos/:ref/summaries/:summaryId`; SDK: `repoAdd/repoList/repoStatus/repoSync/repoSummarize/repoPendingSummaries/repoSubmitSummary`
+  - configuration: `<configPath>/config.json` (`git.*` block, Zod-validated, optional; the repo's only config file) — `summarization.{enabled,minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes}`, `filters.{excludePaths,sensitivePaths}`
+  - in-process syncs are serialized per repository; cross-process concurrency is a documented v1 limitation
+  - deferred to v1.1 by decision: fast-forward merge inference, agent-session integration (spec §22), MCP `repo_*` tools (HTTP endpoints ship instead)
 - Recall routing observability:
   - aggregated in `stats.recallRouting`
   - raw endpoint: `GET /v1/telemetry/recall?window=P7D&limit=100`
@@ -79,6 +96,7 @@ pnpm run build
 node dist/cli.mjs --help
 bash scripts/test-smoke.sh
 bash scripts/test-mcp-e2e.sh
+bash scripts/test-repo-noninvasive.sh   # Git-Aware Memory end-to-end + non-invasive contract
 ```
 
 ## Added in Phase 1 & 1.5 (2026-02-23)

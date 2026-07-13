@@ -64,6 +64,14 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-wiki-build.sh`
 - `scripts/test-wiki-query-fileback.sh`
 - `scripts/test-wiki-lint.sh`
+- `scripts/test-repo-git-exec.sh`
+- `scripts/test-repo-registry.sh`
+- `scripts/test-repo-sync.sh`
+- `scripts/test-repo-events.sh`
+- `scripts/test-repo-summary.sh`
+- `scripts/test-repo-promotion.sh`
+- `scripts/test-repo-edge.sh`
+- `scripts/test-repo-noninvasive.sh`
 
 - Run smoke test: `bash scripts/test-smoke.sh`
 - Run schema migration regression test: `bash scripts/test-migrations.sh`
@@ -80,6 +88,14 @@ This repo currently has explicit runtime and wiki test scripts:
 - Run wiki build test: `bash scripts/test-wiki-build.sh`
 - Run wiki query file-back test: `bash scripts/test-wiki-query-fileback.sh`
 - Run wiki lint test: `bash scripts/test-wiki-lint.sh`
+- Run git read-only exec layer test: `bash scripts/test-repo-git-exec.sh`
+- Run repository registry test: `bash scripts/test-repo-registry.sh`
+- Run incremental git scan test: `bash scripts/test-repo-sync.sh`
+- Run git events / dry-run / rewrite test: `bash scripts/test-repo-events.sh`
+- Run summary pipeline test: `bash scripts/test-repo-summary.sh`
+- Run promotion + recall provenance + HTTP repos test: `bash scripts/test-repo-promotion.sh`
+- Run shallow/worktree/prune edge test: `bash scripts/test-repo-edge.sh`
+- Run non-invasive acceptance test: `bash scripts/test-repo-noninvasive.sh`
 - There is no unit-test framework (no Jest/Vitest/Pytest config present).
 - For focused verification, run one CLI flow manually:
   - `TMP=$(mktemp -d)`
@@ -110,6 +126,14 @@ Before opening PRs, mirror CI locally in this order:
 18. `bash scripts/test-wiki-build.sh`
 19. `bash scripts/test-wiki-query-fileback.sh`
 20. `bash scripts/test-wiki-lint.sh`
+21. `bash scripts/test-repo-git-exec.sh`
+22. `bash scripts/test-repo-registry.sh`
+23. `bash scripts/test-repo-sync.sh`
+24. `bash scripts/test-repo-events.sh`
+25. `bash scripts/test-repo-summary.sh`
+26. `bash scripts/test-repo-promotion.sh`
+27. `bash scripts/test-repo-edge.sh`
+28. `bash scripts/test-repo-noninvasive.sh`
 
 ## Repository Layout
 
@@ -124,6 +148,9 @@ Before opening PRs, mirror CI locally in this order:
 - `src/core/wiki-build.ts`: compiled wiki special-page builder.
 - `src/core/wiki-query.ts`: query file-back into synthesis/comparison pages.
 - `src/core/wiki-lint.ts`: wiki governance finding generation.
+- `src/core/config.ts`: `<configPath>/config.json` loader (`git.*` block, Zod-validated, optional).
+- `src/core/git/`: Git-Aware Memory read layer — `git-exec.ts` (runtime allowlist), `identity.ts` (fingerprint), `scanner.ts`, `change-detector.ts`, `range-planner.ts`, `summary-context.ts`, `summary-generator.ts`, `summary-pipeline.ts`, `summary-schema.ts`, `secret-filter.ts`, `host.ts`.
+- `src/core/db/git-repo.ts` / `git-scan.ts` / `git-summary.ts` / `git-promote.ts`: registry, scan persistence, summaries, memory promotion + `lookupGitSources`.
 - `scripts/test-smoke.sh`: smoke test (CLI full flow).
 - `scripts/test-migrations.sh`: schema migration upgrade regression on a populated pre-migration DB.
 - `scripts/test-prune.sh`: destructive prune path regression — consolidate/stale/dedupe delete exactly the right rows (dry-run deletes nothing); utility-weighted retention spares high-utility memories.
@@ -161,9 +188,17 @@ src/core/
     verify.ts      – runVerify
     prune-export.ts – runPrune (utility-weighted retention), exportMemory
     recall.ts      – buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting (UFL re-rank)
+    git-repo.ts    – repository registry (registerRepository, findRepository, relocate/remove)
+    git-scan.ts    – incremental scan persistence (commits/refs/scan runs/events)
+    git-summary.ts – summary ranges + summaries (idempotent upserts, agent write-back)
+    git-promote.ts – memory promotion + checkpoints + lookupGitSources (recall provenance)
     connection.ts  – cached SQLite connection pool (withDb, closeAllConnections); HTTP hot path reuses connections
     mappers.ts     – shared row-to-type mappers + truncateText
     index.ts       – barrel re-export
+  git/           – Git-Aware Memory read layer (allowlisted git exec, identity, scanner,
+                   change detector, deterministic range planner, summary context/generator/
+                   pipeline, secret filter, host id)
+  config.ts      – config.json loader (git.* block, Zod, optional)
   recall-vector.ts – opt-in semantic recall: spawns skills/memoria-vector helper, maps prefixed ids to authoritative local rows, RRF fusion (fail-open, LIBSQL_URL-gated)
   source-import.ts – raw markdown/text source import
   wiki.ts      – wiki constants + markdown render helpers
@@ -196,6 +231,10 @@ src/cli/
 - `stats()` – session/event/skill counts
 - `recallTelemetry({ window, limit })` – raw recall routing telemetry rows
 - `governanceReview({ project, scope, limit })` – deterministic governance candidate review
+- `repoAdd(input)` / `repoList()` / `repoStatus(ref)` / `repoRelocate(ref, path)` / `repoRemove(ref, opts)` – git repository registry (read-only observation; fingerprint identity)
+- `repoSync(ref, opts)` – incremental scan → events → deterministic summaries → promotion (`dryRun` writes nothing; serialized per repository in-process)
+- `repoSummarize(ref, opts)` – branch/range/merge/tag summaries; `promote` forces promotion
+- `repoPendingSummaries(ref)` / `repoSubmitSummary(ref, summaryId, payload)` – agent enrichment loop (deterministic skeleton → validated write-back → auto-promotion); recall hits from promoted summaries carry `hit.source`
 
 ## HTTP API (Phase 1)
 

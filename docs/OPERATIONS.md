@@ -128,6 +128,40 @@ export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge paylo
 - `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the recall-side helper; warm-cache spawn measures ~1s.
 - Compare utility uplift across `route_mode` groups (telemetry + UFL outcomes) to judge whether semantic recall beats lexical for your corpus.
 
+## Git-Aware Memory Operations
+
+Read-only observation of existing git repositories (`docs/issues/issue-1/`). Memoria never
+mutates a managed repo: only an allowlisted set of read subcommands runs against it
+(`GIT_OPTIONAL_LOCKS=0`), and `scripts/test-repo-noninvasive.sh` asserts byte-identical state.
+
+```bash
+./cli repo add /path/to/project          # register (initial scan: recent 200 commits; --scan-history lifts)
+./cli repo sync <repo> [--dry-run]       # incremental scan → events → summaries → promotion
+./cli repo status <repo>                 # registry + live head/dirty/shallow state
+./cli repo summarize <repo> --pending --json     # summary requests awaiting agent enrichment
+./cli repo summarize <repo> --submit <id> --file payload.json   # agent write-back (auto-promotes if eligible)
+./cli repo relocate <repo> <new-path>    # re-bind a moved clone (same history required)
+./cli repo remove <repo>                 # stop scanning; memories/summaries kept unless --delete-* flags
+```
+
+- **Sync cadence**: run `repo sync` at session start/end or on demand; unchanged repos complete
+  fast (incremental `--not <previous tips>` walk) and insert nothing.
+- **Config**: `<configPath>/config.json`, `git.*` block (optional; Zod-validated). Tunables:
+  `summarization.{minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes}`,
+  `filters.{excludePaths,sensitivePaths}`.
+- **Retention**: `prune --git-observations-days <N>` (in `--all` at 90d) removes superseded ref
+  observations, consumed events, and finished scan runs — never `git_commits`, summaries, or
+  promoted memories, so SHA traceability survives pruning.
+- **Secrets**: sensitive paths are excluded from summary context and secret-like values in diffs
+  are masked (best-effort, pattern-based); masking leaves a `sensitive_content_detected` warning
+  in the summary metadata. Raw diffs are never persisted.
+- **Troubleshooting**:
+  - `repository_not_found` on sync after moving a clone → `repo relocate`.
+  - `repository_identity_mismatch` → the path now holds a different history; re-check the path or `repo add` it as a new repository.
+  - Shallow clones register as `limited_history`; after `git fetch --unshallow`, re-run `repo add` — the identity upgrades in place (no duplicate).
+  - Failed scans keep their reason in `git_scan_runs` (`status='failed'`); the next sync resumes from the last good state.
+  - Concurrent syncs of one repository are serialized in-process; avoid concurrent CLI+server syncs from separate processes (documented v1 limitation).
+
 ## Test Commands
 
 ```bash
@@ -140,6 +174,14 @@ bash scripts/test-wiki-ingest.sh
 bash scripts/test-wiki-build.sh
 bash scripts/test-wiki-query-fileback.sh
 bash scripts/test-wiki-lint.sh
+bash scripts/test-repo-git-exec.sh
+bash scripts/test-repo-registry.sh
+bash scripts/test-repo-sync.sh
+bash scripts/test-repo-events.sh
+bash scripts/test-repo-summary.sh
+bash scripts/test-repo-promotion.sh
+bash scripts/test-repo-edge.sh
+bash scripts/test-repo-noninvasive.sh
 ```
 
 ## CI Parity (Local)
@@ -159,6 +201,14 @@ bash scripts/test-wiki-ingest.sh
 bash scripts/test-wiki-build.sh
 bash scripts/test-wiki-query-fileback.sh
 bash scripts/test-wiki-lint.sh
+bash scripts/test-repo-git-exec.sh
+bash scripts/test-repo-registry.sh
+bash scripts/test-repo-sync.sh
+bash scripts/test-repo-events.sh
+bash scripts/test-repo-summary.sh
+bash scripts/test-repo-promotion.sh
+bash scripts/test-repo-edge.sh
+bash scripts/test-repo-noninvasive.sh
 ```
 
 ## Release SOP

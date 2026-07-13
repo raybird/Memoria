@@ -13,6 +13,7 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 7. Lightweight multi-scope isolation beyond `project` (for example `agent`, `user`, `global`)
 8. Memory-quality guardrails (noise filtering, low-value write suppression, score hygiene)
 9. Optional governance layer for extracting durable skills / rules from repeated sessions
+10. Git-Aware Memory v1.1 follow-ups (v1 shipped 2026-07-13, `docs/issues/issue-1/`): fast-forward merge inference (spec §12.2, best-effort), agent-session ↔ repository linkage (spec §22), MCP `repo_*` tools mirroring the shipped HTTP `/v1/repos/*` surface, cross-process sync locking
 
 ## Status Labels
 
@@ -32,6 +33,7 @@ This document tracks planned or exploratory capabilities that are not guaranteed
 - Lightweight multi-scope isolation: `done`
 - Memory-quality guardrails: `done`
 - Governance / skill-extraction layer: `idea`
+- Git-Aware Memory v1: `done` (2026-07-13) — read-only repo observation → incremental scan → events → deterministic summaries + agent enrichment → promotion with SHA provenance (`hit.source`). Spec/design/decomposition in `docs/issues/issue-1/`; v1.1 follow-ups tracked as Candidate Direction #10
 
 ## Design Inputs Worth Absorbing
 

@@ -8,12 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-07-07 更新
+> 2026-07-13 更新
 
-- **版本**:npm 上仍為 `v1.17.0`;main 已累積大量未發版變更(見 CHANGELOG `[Unreleased]`),下次告一段落可考慮發 minor。
-- **已出貨(main,未發版)**:P1–P10 工程體檢清單全數完成(`docs/HANDOVER-improvements.md`);**UFL 效用回饋迴路 Phase 0–3 全數 ship**(`docs/RFC-utility-feedback.md`,`phase-3-shipped`);**語意召回 MVP ship**(`docs/RFC-semantic-recall.md`,`phase-1-shipped`:`mode:'vector'`,本地 e5 embedding + libSQL 原生向量,選用、fail-open)。
-- **戰略閉環**:UFL 標尺就位 + 語意召回上線 → 比較 `route_mode` 分組的 utility uplift 即可客觀量測「語意是否勝過字面」。
-- **下一步**:讓真實資料累積(啟用 adapter + vector 模式),回看校準曲線與 uplift;殘餘項(hybrid 向量融合、語意去重、矛盾偵測)待資料說話。
+- **版本**:npm 上為 `v1.18.0`;main 已累積 **Git-Aware Memory v1** 全量未發版變更(見 CHANGELOG `[Unreleased]`),下次告一段落建議發 minor(1.19.0)。
+- **最新出貨(main,未發版,2026-07-13)**:**Git-Aware Memory v1 全數 ship**(issue-1,`docs/issues/issue-1/` 四件套 + decomposition,Phase 0–6 共 7 個 commits):唯讀觀察 git repo → 增量掃描(migrations 9–13,11 張新表)→ 事件推斷(含 history rewrite)→ deterministic 摘要 + agent 回寫(`repo summarize --pending/--submit`)→ promotion 進既有 recall 語料,hit 附 `source`(SHA 溯源)。CLI `repo` 七個子命令、HTTP `/v1/repos/*` 七端點、SDK 方法、8 支 `test-repo-*.sh`(CI `repo` 群組)。非侵入性總驗收通過(git 狀態 byte-identical)。
+- **既有基礎(v1.18.0 已發)**:UFL Phase 0–3(`phase-3-shipped`)+ 語意召回 MVP(`phase-1-shipped`)。
+- **下一步**:(a) 發版 1.19.0;(b) 真實 repo 試用 Git-Aware Memory(add 自己的專案 → sync → agent 回寫閉環);(c) v1.1 候選(RFC.md #10:FF-merge 推斷、session 整合、MCP repo_* tools、跨 process 鎖);(d) UFL/vector 真實資料累積照舊。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
