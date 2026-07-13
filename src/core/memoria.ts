@@ -27,11 +27,19 @@ import {
     listRepositories,
     findRepository,
     relocateRepositoryInstance,
-    removeRepository
+    removeRepository,
+    getCurrentRefObservations,
+    insertCommits,
+    applyRefSnapshot,
+    beginScanRun,
+    completeScanRun,
+    failScanRun,
+    updateWorktreeScanState
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
 import { resolveRepositoryIdentity } from './git/identity.js'
 import { getHostId } from './git/host.js'
+import { scanSnapshot, listNewCommits } from './git/scanner.js'
 import { recallVector, rrfFuse } from './recall-vector.js'
 import { buildCompiledWiki } from './wiki-build.js'
 import { fileQueryResult } from './wiki-query.js'
@@ -61,7 +69,9 @@ import type {
     RepoListItem,
     RepoStatusData,
     RepoRemoveOptions,
-    RepoRemoveData
+    RepoRemoveData,
+    RepoSyncOptions,
+    RepoSyncData
 } from './types.js'
 
 // Payload a producer hands back to withResult; the wrapper stamps source/timestamp/latency
@@ -72,6 +82,10 @@ type ResultPayload<T> = {
     confidence: number
     extra?: Record<string, unknown>
 }
+
+// First `repo sync` after registration only ingests recent history unless told otherwise —
+// registering a huge repo must not trigger a full-history walk (spec §28).
+const DEFAULT_FIRST_SCAN_COMMITS = 200
 
 // Wraps a producer in the MemoriaResult envelope: success meta on return, error meta on throw.
 // `elapsed()` exposes the same clock the final latency_ms uses, for producers that log latency
@@ -506,7 +520,7 @@ export class MemoriaCore {
             await this.init()
             const identity = await resolveRepositoryIdentity(path.resolve(input.path))
             const hostId = await getHostId(this.paths.memoryDir)
-            const data = registerRepository(this.paths.dbPath, {
+            const registration = registerRepository(this.paths.dbPath, {
                 name: input.name ?? path.basename(identity.repositoryRoot),
                 nameExplicit: Boolean(input.name),
                 fingerprint: identity.fingerprint,
@@ -522,8 +536,85 @@ export class MemoriaCore {
                 currentHeadSha: identity.headSha,
                 isMainWorktree: identity.isMainWorktree
             })
+            // Initial metadata scan (spec §19.1): recent commits only by default; --scan-history
+            // lifts the cap, --history-limit tunes it. Never summarizes (that is Phase 4, on sync).
+            const initialScan = await this.performRepoSync(registration.repository.id, {
+                historyLimit: input.historyLimit ?? (input.scanHistory ? 0 : undefined)
+            })
+            const data: RepoRegistrationData = { ...registration, initial_scan: initialScan }
             return { data, evidence: [data.repository.id, data.instance.id], confidence: 1 }
         })
+    }
+
+    async repoSync(ref: string, options: RepoSyncOptions = {}): Promise<MemoriaResult<RepoSyncData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const data = await this.performRepoSync(ref, options)
+            return { data, evidence: [data.repository_id, data.scan_run_id], confidence: 1 }
+        })
+    }
+
+    // Shared by repoAdd (initial scan) and repoSync. Metadata scan only in Phase 2 —
+    // events (Phase 3) and summaries (Phase 4) hang off the returned counts later.
+    private async performRepoSync(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {
+        const hostId = await getHostId(this.paths.memoryDir)
+        const found = findRepository(this.paths.dbPath, ref, hostId)
+        if (!found || !found.instance) throw new Error(`repository_not_found: ${ref}`)
+        if (found.repository.status === 'disabled') {
+            throw new Error('repository_disabled: run `repo add` again to resume scanning')
+        }
+        const root = found.instance.local_path
+        const identity = await resolveRepositoryIdentity(root)
+        if (identity.fingerprint !== found.repository.fingerprint) {
+            throw new Error('repository_identity_mismatch: the registered path now contains a different repository')
+        }
+
+        const snapshot = await scanSnapshot(root)
+        const worktreeId = found.worktree?.id ?? null
+        const previousHead = found.worktree?.current_head_sha ?? null
+        const scanRunId = beginScanRun(this.paths.dbPath, found.repository.id, worktreeId, previousHead, snapshot.headSha)
+        const warnings: string[] = []
+        try {
+            const prevRefs = getCurrentRefObservations(this.paths.dbPath, found.repository.id)
+            const firstScan = prevRefs.length === 0 && !found.worktree?.last_scanned_at
+            const cap = firstScan
+                ? (options.historyLimit === undefined ? DEFAULT_FIRST_SCAN_COMMITS : options.historyLimit)
+                : undefined
+            const excludeShas = [...new Set(prevRefs.map((r) => r.commit_sha))]
+            const newCommits = await listNewCommits(root, excludeShas, cap && cap > 0 ? cap : undefined)
+            if (firstScan && cap && cap > 0 && newCommits.length === cap) {
+                warnings.push(`initial scan capped at ${cap} commits; use \`repo add --scan-history\` for full history`)
+            }
+
+            const inserted = insertCommits(this.paths.dbPath, found.repository.id, newCommits)
+            const delta = applyRefSnapshot(this.paths.dbPath, found.repository.id, worktreeId, snapshot.refs, prevRefs)
+            if (worktreeId) {
+                updateWorktreeScanState(this.paths.dbPath, worktreeId, snapshot.currentBranch, snapshot.headSha)
+            }
+            completeScanRun(this.paths.dbPath, scanRunId, {
+                newCommitCount: inserted,
+                newRefCount: delta.newBranchCount,
+                newTagCount: delta.newTagCount,
+                eventCount: 0
+            })
+            return {
+                repository_id: found.repository.id,
+                scan_run_id: scanRunId,
+                previous_head: previousHead ?? undefined,
+                current_head: snapshot.headSha ?? undefined,
+                new_commits: inserted,
+                new_refs: delta.newBranchCount,
+                new_tags: delta.newTagCount,
+                events_created: 0,
+                summaries_created: 0,
+                memories_promoted: 0,
+                warnings
+            }
+        } catch (error) {
+            // Observations already written stay (spec §24); only the run is marked failed.
+            failScanRun(this.paths.dbPath, scanRunId, error instanceof Error ? error.message : String(error))
+            throw error
+        }
     }
 
     async repoList(): Promise<MemoriaResult<RepoListItem[]>> {

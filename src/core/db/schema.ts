@@ -233,6 +233,76 @@ const MIGRATIONS: Migration[] = [
               ON git_worktrees(repository_instance_id);
             `)
         }
+    },
+    {
+        id: 10,
+        name: 'git_incremental_scan',
+        up: (db) => {
+            // Git-Aware Memory Phase 2 (docs/issues/issue-1): observed commits, ref observations,
+            // and scan runs. git_commits is append-only fact storage (PK dedupes re-scans);
+            // git_refs keeps one is_current row per ref plus superseded observations so the Phase 3
+            // change detector can diff snapshots; git_scan_runs records every sync for recovery.
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS git_commits (
+                repository_id TEXT NOT NULL,
+                commit_sha TEXT NOT NULL,
+                tree_sha TEXT,
+                parent_shas_json TEXT,
+                author_name TEXT,
+                author_email TEXT,
+                author_at DATETIME,
+                committer_name TEXT,
+                committer_email TEXT,
+                committed_at DATETIME,
+                message TEXT,
+                is_merge INTEGER NOT NULL DEFAULT 0,
+                patch_id TEXT,
+                unreachable INTEGER NOT NULL DEFAULT 0,
+                first_seen_at DATETIME,
+                last_seen_at DATETIME,
+                PRIMARY KEY (repository_id, commit_sha)
+              );
+
+              CREATE TABLE IF NOT EXISTS git_refs (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                worktree_id TEXT,
+                ref_name TEXT NOT NULL,
+                ref_type TEXT NOT NULL,
+                commit_sha TEXT NOT NULL,
+                observed_at DATETIME NOT NULL,
+                is_current INTEGER NOT NULL DEFAULT 1
+              );
+
+              CREATE TABLE IF NOT EXISTS git_scan_runs (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                worktree_id TEXT,
+                started_at DATETIME NOT NULL,
+                completed_at DATETIME,
+                previous_head_sha TEXT,
+                current_head_sha TEXT,
+                new_commit_count INTEGER NOT NULL DEFAULT 0,
+                new_ref_count INTEGER NOT NULL DEFAULT 0,
+                new_tag_count INTEGER NOT NULL DEFAULT 0,
+                event_count INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'running',
+                error_message TEXT
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_git_commits_repo_committed
+              ON git_commits(repository_id, committed_at);
+
+              CREATE INDEX IF NOT EXISTS idx_git_refs_current
+              ON git_refs(repository_id, is_current, ref_type);
+
+              CREATE INDEX IF NOT EXISTS idx_git_refs_name
+              ON git_refs(repository_id, ref_name, observed_at);
+
+              CREATE INDEX IF NOT EXISTS idx_git_scan_runs_repo
+              ON git_scan_runs(repository_id, started_at);
+            `)
+        }
     }
 ]
 
@@ -382,6 +452,53 @@ export function initDatabase(dbPath: string): void {
         UNIQUE(repository_instance_id, worktree_path),
         FOREIGN KEY (repository_id) REFERENCES repositories(id),
         FOREIGN KEY (repository_instance_id) REFERENCES repository_instances(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS git_commits (
+        repository_id TEXT NOT NULL,
+        commit_sha TEXT NOT NULL,
+        tree_sha TEXT,
+        parent_shas_json TEXT,
+        author_name TEXT,
+        author_email TEXT,
+        author_at DATETIME,
+        committer_name TEXT,
+        committer_email TEXT,
+        committed_at DATETIME,
+        message TEXT,
+        is_merge INTEGER NOT NULL DEFAULT 0,
+        patch_id TEXT,
+        unreachable INTEGER NOT NULL DEFAULT 0,
+        first_seen_at DATETIME,
+        last_seen_at DATETIME,
+        PRIMARY KEY (repository_id, commit_sha)
+      );
+
+      CREATE TABLE IF NOT EXISTS git_refs (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        worktree_id TEXT,
+        ref_name TEXT NOT NULL,
+        ref_type TEXT NOT NULL,
+        commit_sha TEXT NOT NULL,
+        observed_at DATETIME NOT NULL,
+        is_current INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE TABLE IF NOT EXISTS git_scan_runs (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        worktree_id TEXT,
+        started_at DATETIME NOT NULL,
+        completed_at DATETIME,
+        previous_head_sha TEXT,
+        current_head_sha TEXT,
+        new_commit_count INTEGER NOT NULL DEFAULT 0,
+        new_ref_count INTEGER NOT NULL DEFAULT 0,
+        new_tag_count INTEGER NOT NULL DEFAULT 0,
+        event_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'running',
+        error_message TEXT
       );
 
       CREATE TABLE IF NOT EXISTS sources (
@@ -534,6 +651,18 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_git_worktrees_instance
       ON git_worktrees(repository_instance_id);
+
+      CREATE INDEX IF NOT EXISTS idx_git_commits_repo_committed
+      ON git_commits(repository_id, committed_at);
+
+      CREATE INDEX IF NOT EXISTS idx_git_refs_current
+      ON git_refs(repository_id, is_current, ref_type);
+
+      CREATE INDEX IF NOT EXISTS idx_git_refs_name
+      ON git_refs(repository_id, ref_name, observed_at);
+
+      CREATE INDEX IF NOT EXISTS idx_git_scan_runs_repo
+      ON git_scan_runs(repository_id, started_at);
     `)
 
         runMigrations(db)

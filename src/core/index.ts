@@ -92,5 +92,5 @@ export type {
     FileQueryInput, FiledQueryData,
     RepositoryStatus, RepositoryRecord, RepositoryInstanceRecord, GitWorktreeRecord,
     RepoAddInput, RepoRegistrationData, RepoListItem, RepoLiveStatus, RepoStatusData,
-    RepoRemoveOptions, RepoRemoveData
+    RepoRemoveOptions, RepoRemoveData, RepoSyncOptions, RepoSyncData
 } from './types.js'

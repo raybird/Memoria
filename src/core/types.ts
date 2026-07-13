@@ -559,6 +559,31 @@ export type RepoRegistrationData = {
     instance: RepositoryInstanceRecord
     worktree: GitWorktreeRecord
     created: boolean
+    initial_scan?: RepoSyncData
+}
+
+export type RepoSyncOptions = {
+    noSummary?: boolean     // Phase 4: skip summary planning
+    forceSummary?: boolean  // Phase 4: summarize even trivial ranges
+    from?: string           // Phase 4: explicit range base
+    to?: string             // Phase 4: explicit range head
+    dryRun?: boolean        // Phase 3: report without writing
+    /** First-scan commit cap: undefined → default cap, <=0 → unlimited (--scan-history). */
+    historyLimit?: number
+}
+
+export type RepoSyncData = {
+    repository_id: string
+    scan_run_id: string
+    previous_head?: string
+    current_head?: string
+    new_commits: number
+    new_refs: number
+    new_tags: number
+    events_created: number
+    summaries_created: number
+    memories_promoted: number
+    warnings: string[]
 }
 
 export type RepoListItem = {

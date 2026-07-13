@@ -44,6 +44,29 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
                 console.log(`- path: ${d.instance.local_path}`)
                 console.log(`- branch: ${d.worktree.current_branch ?? '(detached)'} @ ${shortSha(d.worktree.current_head_sha)}`)
                 console.log(`- status: ${d.repository.status}`)
+                if (d.initial_scan) {
+                    console.log(`- initial scan: commits=${d.initial_scan.new_commits} refs=${d.initial_scan.new_refs} tags=${d.initial_scan.new_tags}`)
+                    for (const warning of d.initial_scan.warnings) console.log(`  ⚠ ${warning}`)
+                }
+            }
+        })
+
+    repoCommand
+        .command('sync')
+        .description('Incrementally scan a repository for new commits, refs, and tags')
+        .argument('<repository>', 'Repository id, name, or local path')
+        .option('--json', 'Machine-readable JSON output')
+        .action(async (ref: string, options: { json?: boolean }) => {
+            const result = await core.repoSync(ref, {})
+            if (!result.ok) throw new Error(result.error)
+            if (options.json) {
+                console.log(JSON.stringify(result))
+            } else {
+                const d = result.data!
+                console.log(`✓ sync 完成: ${d.repository_id} (${d.scan_run_id})`)
+                console.log(`- head: ${shortSha(d.previous_head)} → ${shortSha(d.current_head)}`)
+                console.log(`- new: commits=${d.new_commits} refs=${d.new_refs} tags=${d.new_tags}`)
+                for (const warning of d.warnings) console.log(`  ⚠ ${warning}`)
             }
         })
 

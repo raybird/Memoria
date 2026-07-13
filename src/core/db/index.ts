@@ -25,4 +25,13 @@ export {
     relocateRepositoryInstance,
     removeRepository
 } from './git-repo.js'
+export {
+    getCurrentRefObservations,
+    insertCommits,
+    applyRefSnapshot,
+    beginScanRun,
+    completeScanRun,
+    failScanRun,
+    updateWorktreeScanState
+} from './git-scan.js'
 export { closeAllConnections } from './connection.js'
