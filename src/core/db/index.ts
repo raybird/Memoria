@@ -46,4 +46,10 @@ export {
     getSummaryById,
     submitAgentSummary
 } from './git-summary.js'
+export {
+    isPromotable,
+    promotionExists,
+    promoteSummary,
+    lookupGitSources
+} from './git-promote.js'
 export { closeAllConnections } from './connection.js'

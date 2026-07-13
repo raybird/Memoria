@@ -15,6 +15,13 @@
 //   POST /v1/wiki/file-query       body: { query, title, kind?, scope?, top_k?, ... }
 //   POST /v1/wiki/lint             body: { stale_days?, limit? } (empty body allowed)
 //   GET  /v1/sessions/:id/summary
+//   POST /v1/repos                 body: { path, name?, default_branch?, scan_history?, history_limit? }
+//   GET  /v1/repos
+//   GET  /v1/repos/:ref/status
+//   POST /v1/repos/:ref/sync       body: { generate_summaries?, dry_run?, force_summary?, from?, to? } (empty ok)
+//   POST /v1/repos/:ref/summarize  body: { branch?, range?, merge?, tag?, type?, force?, promote? } (empty ok)
+//   GET  /v1/repos/:ref/summaries/pending
+//   POST /v1/repos/:ref/summaries/:summaryId   body: §7.5 summary payload (agent write-back)
 
 import http from 'node:http'
 import { z } from 'zod'
@@ -108,6 +115,38 @@ const recallOutcomeSchema = z
     })
     .passthrough()
 
+const repoAddSchema = z
+    .object({
+        path: z.string(),
+        name: z.string().optional(),
+        default_branch: z.string().optional(),
+        scan_history: z.boolean().optional(),
+        history_limit: z.number().int().positive().optional()
+    })
+    .passthrough()
+
+const repoSyncSchema = z
+    .object({
+        generate_summaries: z.boolean().optional(), // §20: false → skip summary planning
+        dry_run: z.boolean().optional(),
+        force_summary: z.boolean().optional(),
+        from: z.string().optional(),
+        to: z.string().optional()
+    })
+    .passthrough()
+
+const repoSummarizeSchema = z
+    .object({
+        branch: z.string().optional(),
+        range: z.string().optional(),
+        merge: z.string().optional(),
+        tag: z.string().optional(),
+        type: z.enum(['commit_range', 'branch', 'merge', 'release']).optional(),
+        force: z.boolean().optional(),
+        promote: z.boolean().optional()
+    })
+    .passthrough()
+
 // Reads the request body, capped at MAX_BODY_BYTES. On overflow it sends a 413 itself
 // (the caller must NOT write another response) and rejects with { statusCode: 413,
 // responded: true }. Remaining inbound data is drained and discarded — memory stays
@@ -146,6 +185,16 @@ function sendError(res: ServerResponse, status: number, message: string): void {
 
 function formatZodError(error: z.ZodError): string {
     return error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
+}
+
+// Map git-integration error codes (spec §24) onto HTTP statuses.
+function gitErrorStatus(error?: string): number {
+    if (!error) return 500
+    if (error.includes('not_found')) return 404
+    if (error.startsWith('invalid summary payload') || error.startsWith('invalid --range')) return 400
+    if (error.includes('not_a_git_repository') || error.includes('identity_mismatch') ||
+        error.includes('repository_disabled') || error.includes('unborn_branch')) return 422
+    return 500
 }
 
 /**
@@ -307,6 +356,91 @@ export function createServer(core: MemoriaCore): http.Server {
                 const sessionId = decodeURIComponent(sessionMatch[1])
                 const result = await core.summarizeSession(sessionId)
                 send(res, result.ok ? 200 : (result.error?.includes('not found') ? 404 : 500), result)
+                return
+            }
+
+            // ─── Git-Aware Memory (docs/issues/issue-1) ─────────────────────
+
+            if (method === 'POST' && pathname === '/v1/repos') {
+                const body = await readValidatedBody(req, res, repoAddSchema)
+                if (body === null) return
+                const result = await core.repoAdd({
+                    path: body.path,
+                    name: body.name,
+                    defaultBranch: body.default_branch,
+                    scanHistory: body.scan_history,
+                    historyLimit: body.history_limit
+                })
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            if (method === 'GET' && pathname === '/v1/repos') {
+                const result = await core.repoList()
+                send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            const repoStatusMatch = /^\/v1\/repos\/([^/]+)\/status$/.exec(pathname)
+            if (method === 'GET' && repoStatusMatch) {
+                const result = await core.repoStatus(decodeURIComponent(repoStatusMatch[1]))
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            const repoSyncMatch = /^\/v1\/repos\/([^/]+)\/sync$/.exec(pathname)
+            if (method === 'POST' && repoSyncMatch) {
+                const body = await readValidatedBody(req, res, repoSyncSchema, { allowEmpty: true })
+                if (body === null) return
+                const result = await core.repoSync(decodeURIComponent(repoSyncMatch[1]), {
+                    noSummary: body.generate_summaries === false,
+                    dryRun: body.dry_run,
+                    forceSummary: body.force_summary,
+                    from: body.from,
+                    to: body.to
+                })
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            const repoSummarizeMatch = /^\/v1\/repos\/([^/]+)\/summarize$/.exec(pathname)
+            if (method === 'POST' && repoSummarizeMatch) {
+                const body = await readValidatedBody(req, res, repoSummarizeSchema, { allowEmpty: true })
+                if (body === null) return
+                const result = await core.repoSummarize(decodeURIComponent(repoSummarizeMatch[1]), body)
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            const repoPendingMatch = /^\/v1\/repos\/([^/]+)\/summaries\/pending$/.exec(pathname)
+            if (method === 'GET' && repoPendingMatch) {
+                const result = await core.repoPendingSummaries(decodeURIComponent(repoPendingMatch[1]))
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            // Agent write-back: keep AFTER the /summaries/pending route so 'pending' never
+            // matches as a summary id.
+            const repoSubmitMatch = /^\/v1\/repos\/([^/]+)\/summaries\/([^/]+)$/.exec(pathname)
+            if (method === 'POST' && repoSubmitMatch) {
+                const raw = await readBody(req, res).catch((error) => {
+                    if (error && typeof error === 'object' && (error as { responded?: boolean }).responded) return null
+                    throw error
+                })
+                if (raw === null) return
+                let payload: unknown
+                try {
+                    payload = JSON.parse(raw)
+                } catch {
+                    sendError(res, 400, 'Invalid JSON body')
+                    return
+                }
+                const result = await core.repoSubmitSummary(
+                    decodeURIComponent(repoSubmitMatch[1]),
+                    decodeURIComponent(repoSubmitMatch[2]),
+                    payload
+                )
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
                 return
             }
 

@@ -394,6 +394,52 @@ const MIGRATIONS: Migration[] = [
               ON git_summaries(repository_id, status, created_at);
             `)
         }
+    },
+    {
+        id: 13,
+        name: 'git_memory_promotion',
+        up: (db) => {
+            // Git-Aware Memory Phase 5 (docs/issues/issue-1): promotion provenance + checkpoints.
+            // Promoted memories are ordinary sessions/events rows (they ride the existing FTS and
+            // recall paths); memory_sources links them back to the git summary they came from, and
+            // memory_checkpoints marks development milestones. Deterministic ids + INSERT OR IGNORE
+            // make promotion idempotent (§18: same summary never promotes twice).
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS memory_checkpoints (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                checkpoint_type TEXT NOT NULL,
+                summary_id TEXT,
+                base_sha TEXT,
+                head_sha TEXT,
+                source_ref TEXT,
+                target_ref TEXT,
+                tag_name TEXT,
+                created_at DATETIME
+              );
+
+              CREATE TABLE IF NOT EXISTS memory_sources (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                repository_id TEXT,
+                base_sha TEXT,
+                head_sha TEXT,
+                created_at DATETIME,
+                UNIQUE(memory_id, source_type, source_id)
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_memory_checkpoints_repo
+              ON memory_checkpoints(repository_id, checkpoint_type, created_at);
+
+              CREATE INDEX IF NOT EXISTS idx_memory_sources_memory
+              ON memory_sources(memory_id);
+
+              CREATE INDEX IF NOT EXISTS idx_memory_sources_repo
+              ON memory_sources(repository_id, source_type);
+            `)
+        }
     }
 ]
 
@@ -647,6 +693,31 @@ export function initDatabase(dbPath: string): void {
         FOREIGN KEY (summary_range_id) REFERENCES git_summary_ranges(id)
       );
 
+      CREATE TABLE IF NOT EXISTS memory_checkpoints (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        checkpoint_type TEXT NOT NULL,
+        summary_id TEXT,
+        base_sha TEXT,
+        head_sha TEXT,
+        source_ref TEXT,
+        target_ref TEXT,
+        tag_name TEXT,
+        created_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS memory_sources (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        repository_id TEXT,
+        base_sha TEXT,
+        head_sha TEXT,
+        created_at DATETIME,
+        UNIQUE(memory_id, source_type, source_id)
+      );
+
       CREATE TABLE IF NOT EXISTS sources (
         id TEXT PRIMARY KEY,
         type TEXT,
@@ -818,6 +889,15 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_git_summaries_repo_status
       ON git_summaries(repository_id, status, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_checkpoints_repo
+      ON memory_checkpoints(repository_id, checkpoint_type, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_sources_memory
+      ON memory_sources(memory_id);
+
+      CREATE INDEX IF NOT EXISTS idx_memory_sources_repo
+      ON memory_sources(repository_id, source_type);
     `)
 
         runMigrations(db)

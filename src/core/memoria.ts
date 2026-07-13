@@ -38,7 +38,11 @@ import {
     insertGitEvents,
     listSummaries,
     getSummaryById,
-    submitAgentSummary
+    submitAgentSummary,
+    isPromotable,
+    promotionExists,
+    promoteSummary,
+    lookupGitSources
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
 import { loadMemoriaConfig } from './config.js'
@@ -396,7 +400,20 @@ export class MemoriaCore {
 
             // UFL Phase 3: re-rank by accrued per-memory utility (byte-identical when no observations
             // exist). Runs before telemetry so recall_id's top_confidence reflects the surfaced order.
-            const hits: RecallHit[] = applyUtilityWeighting(this.paths.dbPath, rawHits)
+            const weighted: RecallHit[] = applyUtilityWeighting(this.paths.dbPath, rawHits)
+
+            // Git provenance (issue-1 §21): hits promoted from git summaries carry their source
+            // (repository/branch/tag + base/head SHA). Fail-open — enrichment never blocks recall.
+            let hits: RecallHit[] = weighted
+            try {
+                const gitSources = lookupGitSources(this.paths.dbPath, weighted.map((h) => h.id))
+                if (gitSources.size > 0) {
+                    hits = weighted.map((h) => {
+                        const source = gitSources.get(h.id)
+                        return source ? { ...h, source } : h
+                    })
+                }
+            } catch { /* provenance is optional metadata */ }
 
             let recallId: string | null = null
             try {
@@ -682,6 +699,7 @@ export class MemoriaCore {
             // Summary phase runs AFTER the metadata scan is committed (§26) and never rolls it
             // back — a summary failure degrades to a warning (§24).
             let summariesCreated = 0
+            let memoriesPromoted = 0
             if (!options.noSummary) {
                 try {
                     const gitConfig = (await loadMemoriaConfig(this.paths)).git
@@ -697,9 +715,22 @@ export class MemoriaCore {
                         const pipeline = await runSummaryPipeline(pipelineInput)
                         summariesCreated += pipeline.summariesCreated
                         warnings.push(...pipeline.warnings)
+                        const candidates = [...pipeline.summaries]
                         if (options.from && options.to) {
                             const explicit = await summarizeExplicitRange(pipelineInput, options.from, options.to)
                             if (explicit.created) summariesCreated += 1
+                            candidates.push(explicit.summary)
+                        }
+                        // Promotion (§7.6): new eligible summaries + enriched ones not yet promoted
+                        // (a write-back may have landed while summarization was disabled). Promotion
+                        // failure never deletes the summary (§24) — it degrades to a warning.
+                        try {
+                            memoriesPromoted += this.promoteEligible(
+                                candidates, found.repository.id, found.repository.name,
+                                gitConfig.summarization.promoteImportanceThreshold
+                            )
+                        } catch (error) {
+                            warnings.push(`memory_promotion_failed: ${error instanceof Error ? error.message : String(error)}`)
                         }
                     }
                 } catch (error) {
@@ -717,7 +748,7 @@ export class MemoriaCore {
                 new_tags: delta.newTagCount,
                 events_created: delta.eventsCreated,
                 summaries_created: summariesCreated,
-                memories_promoted: 0,
+                memories_promoted: memoriesPromoted,
                 warnings
             }
         } catch (error) {
@@ -728,15 +759,41 @@ export class MemoriaCore {
     }
 
     // Resolve a managed repository into pipeline coordinates (shared by summarize/pending/submit).
-    private async resolveManagedRepo(ref: string): Promise<{ repositoryId: string; root: string; defaultBranch: string | null }> {
+    private async resolveManagedRepo(ref: string): Promise<{ repositoryId: string; repositoryName: string; root: string; defaultBranch: string | null }> {
         const hostId = await getHostId(this.paths.memoryDir)
         const found = findRepository(this.paths.dbPath, ref, hostId)
         if (!found || !found.instance) throw new Error(`repository_not_found: ${ref}`)
         return {
             repositoryId: found.repository.id,
+            repositoryName: found.repository.name,
             root: found.instance.local_path,
             defaultBranch: found.repository.default_branch ?? null
         }
+    }
+
+    // Promote the given candidates (if eligible) plus any enriched-but-unpromoted summaries.
+    private promoteEligible(
+        candidates: GitSummaryRecord[],
+        repositoryId: string,
+        repositoryName: string,
+        threshold: number,
+        force = false
+    ): number {
+        const pool = new Map<string, GitSummaryRecord>()
+        for (const summary of candidates) pool.set(summary.id, summary)
+        if (!force) {
+            for (const summary of listSummaries(this.paths.dbPath, repositoryId, { status: 'enriched', limit: 50 })) {
+                if (!pool.has(summary.id)) pool.set(summary.id, summary)
+            }
+        }
+        let promoted = 0
+        for (const summary of pool.values()) {
+            if (!summary.range) continue
+            if (!force && !isPromotable(summary, threshold)) continue
+            if (promotionExists(this.paths.dbPath, summary.id)) continue
+            if (promoteSummary(this.paths.dbPath, summary, repositoryName).promoted) promoted += 1
+        }
+        return promoted
     }
 
     private async buildPipelineInput(ref: string, force?: boolean): Promise<SummaryPipelineInput> {
@@ -771,10 +828,18 @@ export class MemoriaCore {
                 collected.push(...pipeline.summaries)
                 warnings.push(...pipeline.warnings)
             }
-            if (options.promote) warnings.push('`--promote` lands in Phase 5; summaries were created without promotion')
+            // --promote = 使用者手動指定保留 (§7.6): force-promote regardless of eligibility gates.
+            let memoriesPromoted = 0
+            if (options.promote && collected.length > 0) {
+                const { repositoryName } = await this.resolveManagedRepo(ref)
+                memoriesPromoted = this.promoteEligible(
+                    collected, input.repositoryId, repositoryName,
+                    input.gitConfig.summarization.promoteImportanceThreshold, true
+                )
+            }
 
             return {
-                data: { created, summaries: collected, warnings },
+                data: { created, summaries: collected, memories_promoted: memoriesPromoted, warnings },
                 evidence: collected.map((s) => s.id),
                 confidence: 1
             }
@@ -817,11 +882,11 @@ export class MemoriaCore {
         })
     }
 
-    /** Agent write-back (D1): validate the §7.5 payload and enrich the summary row in place. */
-    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord }>> {
+    /** Agent write-back (D1): validate the §7.5 payload, enrich in place, auto-promote if eligible. */
+    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean }>> {
         return withResult('sqlite', async () => {
             await this.init()
-            const { repositoryId } = await this.resolveManagedRepo(ref)
+            const { repositoryId, repositoryName } = await this.resolveManagedRepo(ref)
             const parsed = parseGitSummaryPayload(payload)
             const existing = getSummaryById(this.paths.dbPath, summaryId)
             if (!existing || existing.repository_id !== repositoryId) {
@@ -841,7 +906,17 @@ export class MemoriaCore {
                 },
                 generatorVersion: parsed.generator_version
             })
-            return { data: { summary }, evidence: [summary.id], confidence: 1 }
+            // Promotion failure never rolls back the enrichment (§24) — report promoted:false.
+            let promoted = false
+            try {
+                const gitConfig = (await loadMemoriaConfig(this.paths)).git
+                if (summary.range &&
+                    isPromotable(summary, gitConfig.summarization.promoteImportanceThreshold) &&
+                    !promotionExists(this.paths.dbPath, summary.id)) {
+                    promoted = promoteSummary(this.paths.dbPath, summary, repositoryName).promoted
+                }
+            } catch { /* summary stays enriched; next sync retries promotion */ }
+            return { data: { summary, promoted }, evidence: [summary.id], confidence: 1 }
         })
     }
 

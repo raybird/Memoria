@@ -107,6 +107,7 @@ jobs:
               bash scripts/test-repo-sync.sh
               bash scripts/test-repo-events.sh
               bash scripts/test-repo-summary.sh
+              bash scripts/test-repo-promotion.sh
               ;;
           esac
 

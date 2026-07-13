@@ -90,7 +90,7 @@ export type {
     WikiLintResult, WikiLintOptions,
     VerifyStatus, VerifyCheck,
     ExportType, ExportFormat, ExportDecision, ExportSkill, ExportOptions,
-    PruneOptions, MemoriaResult, RecallFilter, RecallHit,
+    PruneOptions, MemoriaResult, RecallFilter, RecallHit, RecallHitSource,
     SessionSummary, HealthStatus, StatsData,
     RecallTelemetryPoint, RecallTelemetryData,
     GovernanceReviewOptions, GovernanceReviewItem, GovernanceReviewData,

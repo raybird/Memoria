@@ -209,6 +209,17 @@ export type RecallFilter = {
     mode?: 'keyword' | 'tree' | 'hybrid' | 'vector'  // vector: opt-in semantic route (LIBSQL_URL-gated)
 }
 
+/** Git provenance attached to hits that came from a promoted git summary (issue-1 §21). */
+export type RecallHitSource = {
+    type: string           // git_commit_range | git_branch_summary | git_merge_summary | git_release_summary
+    repository: string
+    branch?: string
+    tag?: string
+    base_sha?: string
+    head_sha?: string
+    summary_id: string
+}
+
 export type RecallHit = {
     type: 'session' | 'decision' | 'skill'
     id: string
@@ -220,6 +231,7 @@ export type RecallHit = {
     relevance?: number     // decay-free match quality (0–1); basis for meta.confidence
     node_id?: string
     reasoning_path?: string[]
+    source?: RecallHitSource
 }
 
 export type MemoryIndexBuildOptions = {
@@ -671,6 +683,7 @@ export type RepoSummarizeOptions = {
 export type RepoSummarizeData = {
     created: number
     summaries: GitSummaryRecord[]
+    memories_promoted: number
     warnings: string[]
 }
 
