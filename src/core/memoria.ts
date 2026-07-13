@@ -34,12 +34,14 @@ import {
     beginScanRun,
     completeScanRun,
     failScanRun,
-    updateWorktreeScanState
+    updateWorktreeScanState,
+    insertGitEvents
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
 import { resolveRepositoryIdentity } from './git/identity.js'
 import { getHostId } from './git/host.js'
 import { scanSnapshot, listNewCommits } from './git/scanner.js'
+import { detectChanges } from './git/change-detector.js'
 import { recallVector, rrfFuse } from './recall-vector.js'
 import { buildCompiledWiki } from './wiki-build.js'
 import { fileQueryResult } from './wiki-query.js'
@@ -572,30 +574,70 @@ export class MemoriaCore {
         const snapshot = await scanSnapshot(root)
         const worktreeId = found.worktree?.id ?? null
         const previousHead = found.worktree?.current_head_sha ?? null
-        const scanRunId = beginScanRun(this.paths.dbPath, found.repository.id, worktreeId, previousHead, snapshot.headSha)
         const warnings: string[] = []
-        try {
-            const prevRefs = getCurrentRefObservations(this.paths.dbPath, found.repository.id)
-            const firstScan = prevRefs.length === 0 && !found.worktree?.last_scanned_at
-            const cap = firstScan
-                ? (options.historyLimit === undefined ? DEFAULT_FIRST_SCAN_COMMITS : options.historyLimit)
-                : undefined
-            const excludeShas = [...new Set(prevRefs.map((r) => r.commit_sha))]
-            const newCommits = await listNewCommits(root, excludeShas, cap && cap > 0 ? cap : undefined)
-            if (firstScan && cap && cap > 0 && newCommits.length === cap) {
-                warnings.push(`initial scan capped at ${cap} commits; use \`repo add --scan-history\` for full history`)
-            }
 
+        // Gather phase — pure reads, shared by dry-run and real sync.
+        const prevRefs = getCurrentRefObservations(this.paths.dbPath, found.repository.id)
+        const firstScan = prevRefs.length === 0 && !found.worktree?.last_scanned_at
+        const cap = firstScan
+            ? (options.historyLimit === undefined ? DEFAULT_FIRST_SCAN_COMMITS : options.historyLimit)
+            : undefined
+        const excludeShas = [...new Set(prevRefs.map((r) => r.commit_sha))]
+        const newCommits = await listNewCommits(root, excludeShas, cap && cap > 0 ? cap : undefined)
+        if (firstScan && cap && cap > 0 && newCommits.length === cap) {
+            warnings.push(`initial scan capped at ${cap} commits; use \`repo add --scan-history\` for full history`)
+        }
+        const detected = await detectChanges({
+            repositoryRoot: root,
+            prevRefs,
+            snapshot,
+            previousHeadSha: previousHead,
+            previousDirty: found.worktree?.working_tree_dirty ?? null,
+            firstScan,
+            newCommits
+        })
+
+        if (options.dryRun) {
+            // Report-only: NOTHING is written — no scan run, no commits, no refs, no events (§19.4).
+            return {
+                repository_id: found.repository.id,
+                scan_run_id: '(dry-run)',
+                previous_head: previousHead ?? undefined,
+                current_head: snapshot.headSha ?? undefined,
+                new_commits: newCommits.length,
+                new_refs: snapshot.refs.filter((r) => r.refType !== 'head' && r.refType !== 'tag' &&
+                    !prevRefs.some((p) => p.ref_type === r.refType && p.ref_name === r.refName)).length,
+                new_tags: snapshot.refs.filter((r) => r.refType === 'tag' &&
+                    !prevRefs.some((p) => p.ref_type === 'tag' && p.ref_name === r.refName)).length,
+                events_created: detected.events.length,
+                summaries_created: 0,
+                memories_promoted: 0,
+                warnings: [...warnings, 'dry-run: no changes were written'],
+                dry_run: {
+                    commits: newCommits.map((c) => c.sha),
+                    events: detected.events.map((e) => ({
+                        type: e.eventType,
+                        ref: e.targetRef ?? e.sourceRef ?? undefined
+                    }))
+                }
+            }
+        }
+
+        const scanRunId = beginScanRun(this.paths.dbPath, found.repository.id, worktreeId, previousHead, snapshot.headSha)
+        try {
             const inserted = insertCommits(this.paths.dbPath, found.repository.id, newCommits)
-            const delta = applyRefSnapshot(this.paths.dbPath, found.repository.id, worktreeId, snapshot.refs, prevRefs)
+            const delta = applyRefSnapshot(
+                this.paths.dbPath, found.repository.id, worktreeId, snapshot.refs, prevRefs,
+                detected.events, detected.rewritePatches
+            )
             if (worktreeId) {
-                updateWorktreeScanState(this.paths.dbPath, worktreeId, snapshot.currentBranch, snapshot.headSha)
+                updateWorktreeScanState(this.paths.dbPath, worktreeId, snapshot.currentBranch, snapshot.headSha, snapshot.workingTreeDirty)
             }
             completeScanRun(this.paths.dbPath, scanRunId, {
                 newCommitCount: inserted,
                 newRefCount: delta.newBranchCount,
                 newTagCount: delta.newTagCount,
-                eventCount: 0
+                eventCount: delta.eventsCreated
             })
             return {
                 repository_id: found.repository.id,
@@ -605,7 +647,7 @@ export class MemoriaCore {
                 new_commits: inserted,
                 new_refs: delta.newBranchCount,
                 new_tags: delta.newTagCount,
-                events_created: 0,
+                events_created: delta.eventsCreated,
                 summaries_created: 0,
                 memories_promoted: 0,
                 warnings
@@ -669,6 +711,7 @@ export class MemoriaCore {
             if (identity.fingerprint !== found.repository.fingerprint) {
                 throw new Error('repository_identity_mismatch: the new path contains a different repository history')
             }
+            const previousPath = found.instance?.local_path
             const { instance, worktree } = relocateRepositoryInstance(
                 this.paths.dbPath,
                 found.repository.id,
@@ -676,6 +719,10 @@ export class MemoriaCore {
                 identity.repositoryRoot,
                 identity.gitCommonDir
             )
+            insertGitEvents(this.paths.dbPath, found.repository.id, worktree?.id ?? null, [{
+                eventType: 'repository_relocated',
+                metadata: { from: previousPath, to: identity.repositoryRoot }
+            }])
             const data: RepoStatusData = { repository: found.repository, instance, worktree }
             return { data, evidence: [found.repository.id, instance.id], confidence: 1 }
         })

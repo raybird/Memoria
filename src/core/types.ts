@@ -542,6 +542,7 @@ export type GitWorktreeRecord = {
     current_head_sha?: string
     is_main_worktree: boolean
     last_scanned_at?: string
+    working_tree_dirty?: boolean
     created_at: string
     updated_at: string
 }
@@ -584,6 +585,11 @@ export type RepoSyncData = {
     summaries_created: number
     memories_promoted: number
     warnings: string[]
+    /** Present only for --dry-run: what WOULD be written (nothing was). */
+    dry_run?: {
+        commits: string[]
+        events: Array<{ type: string; ref?: string }>
+    }
 }
 
 export type RepoListItem = {

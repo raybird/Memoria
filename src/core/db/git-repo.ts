@@ -59,6 +59,7 @@ type WorktreeRow = {
     current_head_sha: string | null
     is_main_worktree: number
     last_scanned_at: string | null
+    working_tree_dirty: number | null
     created_at: string
     updated_at: string
 }
@@ -101,6 +102,7 @@ function mapWorktree(row: WorktreeRow): GitWorktreeRecord {
         current_head_sha: row.current_head_sha ?? undefined,
         is_main_worktree: row.is_main_worktree === 1,
         last_scanned_at: row.last_scanned_at ?? undefined,
+        working_tree_dirty: row.working_tree_dirty === null ? undefined : row.working_tree_dirty === 1,
         created_at: row.created_at,
         updated_at: row.updated_at
     }

@@ -10,6 +10,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { withDb } from './connection.js'
 import type { CommitInfo, GitRefSnapshot } from '../git/scanner.js'
+import type { NewGitEvent, RewritePatch } from '../git/change-detector.js'
 
 function nowIso(): string {
     return new Date().toISOString()
@@ -29,6 +30,48 @@ export type RefSnapshotDelta = {
     movedRefCount: number
     disappearedRefs: GitRefObservation[]
     previous: GitRefObservation[]
+    eventsCreated: number
+}
+
+function insertEventsTx(
+    db: Database.Database,
+    repositoryId: string,
+    worktreeId: string | null,
+    events: NewGitEvent[],
+    now: string
+): number {
+    const insert = db.prepare(`
+      INSERT INTO git_events
+        (id, repository_id, worktree_id, event_type, source_ref, target_ref, before_sha, after_sha,
+         metadata_json, detected_at, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    `)
+    for (const event of events) {
+        insert.run(
+            `ev_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+            repositoryId,
+            worktreeId,
+            event.eventType,
+            event.sourceRef ?? null,
+            event.targetRef ?? null,
+            event.beforeSha ?? null,
+            event.afterSha ?? null,
+            event.metadata ? JSON.stringify(event.metadata) : null,
+            now
+        )
+    }
+    return events.length
+}
+
+/** Standalone event insert for out-of-scan events (e.g. repository_relocated). */
+export function insertGitEvents(
+    dbPath: string,
+    repositoryId: string,
+    worktreeId: string | null,
+    events: NewGitEvent[]
+): number {
+    if (events.length === 0) return 0
+    return withDb(dbPath, (db) => db.transaction(() => insertEventsTx(db, repositoryId, worktreeId, events, nowIso()))())
 }
 
 export function getCurrentRefObservations(dbPath: string, repositoryId: string): GitRefObservation[] {
@@ -70,13 +113,19 @@ export function insertCommits(dbPath: string, repositoryId: string, commits: Com
     })())
 }
 
-/** Reconcile the stored is_current ref rows with a fresh snapshot; returns what changed. */
+/**
+ * Reconcile the stored is_current ref rows with a fresh snapshot; returns what changed.
+ * Detected events and rewrite patch-ids are written in the SAME transaction, so a re-run of
+ * sync on unchanged state can never duplicate events (idempotency, spec §18).
+ */
 export function applyRefSnapshot(
     dbPath: string,
     repositoryId: string,
     worktreeId: string | null,
     refs: GitRefSnapshot[],
-    previous?: GitRefObservation[]
+    previous?: GitRefObservation[],
+    events: NewGitEvent[] = [],
+    rewritePatches: RewritePatch[] = []
 ): RefSnapshotDelta {
     return withDb(dbPath, (db) => db.transaction(() => {
         const now = nowIso()
@@ -121,7 +170,19 @@ export function applyRefSnapshot(
         const disappearedRefs = prev.filter((r) => !seen.has(`${r.ref_type}:${r.ref_name}`))
         for (const gone of disappearedRefs) demote.run(gone.id)
 
-        return { newBranchCount, newTagCount, movedRefCount, disappearedRefs, previous: prev }
+        const eventsCreated = insertEventsTx(db, repositoryId, worktreeId, events, now)
+
+        // Rewrite bookkeeping (§11.2): abandoned commits are marked unreachable, never deleted;
+        // patch-ids land on both sides so equivalent patches can be matched later.
+        const markPatch = db.prepare(`
+          UPDATE git_commits SET patch_id = COALESCE(NULLIF(?, ''), patch_id), unreachable = ?
+          WHERE repository_id = ? AND commit_sha = ?
+        `)
+        for (const patch of rewritePatches) {
+            markPatch.run(patch.patchId, patch.unreachable ? 1 : 0, repositoryId, patch.commitSha)
+        }
+
+        return { newBranchCount, newTagCount, movedRefCount, disappearedRefs, previous: prev, eventsCreated }
     })())
 }
 
@@ -171,15 +232,16 @@ export function updateWorktreeScanState(
     dbPath: string,
     worktreeId: string,
     currentBranch: string | null,
-    currentHeadSha: string | null
+    currentHeadSha: string | null,
+    workingTreeDirty?: boolean
 ): void {
     withDb(dbPath, (db) => {
         const now = nowIso()
         db.prepare(`
           UPDATE git_worktrees
-          SET current_branch = ?, current_head_sha = ?, last_scanned_at = ?, updated_at = ?
+          SET current_branch = ?, current_head_sha = ?, working_tree_dirty = ?, last_scanned_at = ?, updated_at = ?
           WHERE id = ?
-        `).run(currentBranch, currentHeadSha, now, now, worktreeId)
+        `).run(currentBranch, currentHeadSha, workingTreeDirty === undefined ? null : (workingTreeDirty ? 1 : 0), now, now, worktreeId)
     })
 }
 

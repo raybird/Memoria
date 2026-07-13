@@ -303,6 +303,41 @@ const MIGRATIONS: Migration[] = [
               ON git_scan_runs(repository_id, started_at);
             `)
         }
+    },
+    {
+        id: 11,
+        name: 'git_events',
+        up: (db) => {
+            // Git-Aware Memory Phase 3 (docs/issues/issue-1): inferred state-change events. Events
+            // are snapshot diffs, not proofs a git operation happened locally (spec §7.3). They are
+            // written in the SAME transaction as the ref-snapshot update, so re-running sync on an
+            // unchanged repo can never produce duplicates. git_worktrees gains a dirty flag so
+            // working_tree_dirty/clean become edge-triggered transitions instead of per-scan noise.
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS git_events (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                worktree_id TEXT,
+                event_type TEXT NOT NULL,
+                source_ref TEXT,
+                target_ref TEXT,
+                before_sha TEXT,
+                after_sha TEXT,
+                metadata_json TEXT,
+                detected_at DATETIME NOT NULL,
+                processed_at DATETIME,
+                status TEXT NOT NULL DEFAULT 'pending',
+                error_message TEXT
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_git_events_repo_status
+              ON git_events(repository_id, status, detected_at);
+            `)
+            const cols = new Set((db.prepare('PRAGMA table_info(git_worktrees)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('working_tree_dirty')) {
+                db.exec(`ALTER TABLE git_worktrees ADD COLUMN working_tree_dirty INTEGER`)
+            }
+        }
     }
 ]
 
@@ -447,6 +482,7 @@ export function initDatabase(dbPath: string): void {
         current_head_sha TEXT,
         is_main_worktree INTEGER NOT NULL DEFAULT 1,
         last_scanned_at DATETIME,
+        working_tree_dirty INTEGER,
         created_at DATETIME,
         updated_at DATETIME,
         UNIQUE(repository_instance_id, worktree_path),
@@ -498,6 +534,22 @@ export function initDatabase(dbPath: string): void {
         new_tag_count INTEGER NOT NULL DEFAULT 0,
         event_count INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'running',
+        error_message TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS git_events (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        worktree_id TEXT,
+        event_type TEXT NOT NULL,
+        source_ref TEXT,
+        target_ref TEXT,
+        before_sha TEXT,
+        after_sha TEXT,
+        metadata_json TEXT,
+        detected_at DATETIME NOT NULL,
+        processed_at DATETIME,
+        status TEXT NOT NULL DEFAULT 'pending',
         error_message TEXT
       );
 
@@ -663,6 +715,9 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_git_scan_runs_repo
       ON git_scan_runs(repository_id, started_at);
+
+      CREATE INDEX IF NOT EXISTS idx_git_events_repo_status
+      ON git_events(repository_id, status, detected_at);
     `)
 
         runMigrations(db)

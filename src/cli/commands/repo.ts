@@ -55,17 +55,21 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
         .command('sync')
         .description('Incrementally scan a repository for new commits, refs, and tags')
         .argument('<repository>', 'Repository id, name, or local path')
+        .option('--dry-run', 'Report what would be recorded without writing anything')
         .option('--json', 'Machine-readable JSON output')
-        .action(async (ref: string, options: { json?: boolean }) => {
-            const result = await core.repoSync(ref, {})
+        .action(async (ref: string, options: { dryRun?: boolean; json?: boolean }) => {
+            const result = await core.repoSync(ref, { dryRun: options.dryRun })
             if (!result.ok) throw new Error(result.error)
             if (options.json) {
                 console.log(JSON.stringify(result))
             } else {
                 const d = result.data!
-                console.log(`✓ sync 完成: ${d.repository_id} (${d.scan_run_id})`)
+                console.log(`✓ sync ${d.dry_run ? '(dry-run) ' : ''}完成: ${d.repository_id} (${d.scan_run_id})`)
                 console.log(`- head: ${shortSha(d.previous_head)} → ${shortSha(d.current_head)}`)
-                console.log(`- new: commits=${d.new_commits} refs=${d.new_refs} tags=${d.new_tags}`)
+                console.log(`- new: commits=${d.new_commits} refs=${d.new_refs} tags=${d.new_tags} events=${d.events_created}`)
+                if (d.dry_run) {
+                    for (const event of d.dry_run.events) console.log(`  · would create event: ${event.type}${event.ref ? ` (${event.ref})` : ''}`)
+                }
                 for (const warning of d.warnings) console.log(`  ⚠ ${warning}`)
             }
         })

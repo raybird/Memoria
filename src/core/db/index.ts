@@ -32,6 +32,7 @@ export {
     beginScanRun,
     completeScanRun,
     failScanRun,
-    updateWorktreeScanState
+    updateWorktreeScanState,
+    insertGitEvents
 } from './git-scan.js'
 export { closeAllConnections } from './connection.js'
