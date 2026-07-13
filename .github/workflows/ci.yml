@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [core, adapters, wiki, http-mcp]
+        group: [core, adapters, wiki, http-mcp, repo]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -100,6 +100,9 @@ jobs:
               bash scripts/test-http-api.sh
               bash scripts/test-mcp-e2e.sh
               bash scripts/test-vector-recall.sh
+              ;;
+            repo)
+              bash scripts/test-repo-git-exec.sh
               ;;
           esac
 
