@@ -35,4 +35,15 @@ export {
     updateWorktreeScanState,
     insertGitEvents
 } from './git-scan.js'
+export {
+    listPendingEvents,
+    markEvents,
+    loadCommitFacts,
+    listCurrentTags,
+    upsertSummaryRange,
+    insertSummaryIfMissing,
+    listSummaries,
+    getSummaryById,
+    submitAgentSummary
+} from './git-summary.js'
 export { closeAllConnections } from './connection.js'

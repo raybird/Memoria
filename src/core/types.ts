@@ -613,6 +613,86 @@ export type RepoStatusData = {
     live?: RepoLiveStatus
 }
 
+export type GitSummaryType = 'commit_range' | 'branch' | 'merge' | 'release'
+
+export type GitSummaryStatus = 'pending' | 'enriched'
+
+/** Structured summary payload (spec §7.5) — what generators produce and agents write back. */
+export type GitSummaryContent = {
+    title: string
+    summary: string
+    key_changes: string[]
+    decisions: Array<{ decision: string; reason?: string }>
+    known_limitations: string[]
+    risks: string[]
+    affected_domains: string[]
+    importance: number
+    confidence: number
+}
+
+export type GitSummaryRangeRecord = {
+    id: string
+    repository_id: string
+    summary_type: GitSummaryType
+    base_sha?: string
+    head_sha: string
+    source_ref?: string
+    target_ref?: string
+    tag_name?: string
+    range_fingerprint: string
+    created_at: string
+}
+
+export type GitSummaryRecord = GitSummaryContent & {
+    id: string
+    repository_id: string
+    summary_range_id: string
+    summary_type: GitSummaryType
+    generator: string
+    generator_version?: string
+    prompt_version: string
+    status: GitSummaryStatus
+    metadata?: Json
+    created_at: string
+    updated_at: string
+    range?: GitSummaryRangeRecord
+}
+
+export type RepoSummarizeOptions = {
+    branch?: string
+    range?: string        // "<base>..<head>"
+    merge?: string        // merge commit sha
+    tag?: string
+    type?: GitSummaryType // label override for explicit --range
+    force?: boolean       // bypass the trivial filter
+    promote?: boolean     // Phase 5: promote resulting summaries
+}
+
+export type RepoSummarizeData = {
+    created: number
+    summaries: GitSummaryRecord[]
+    warnings: string[]
+}
+
+export type PendingSummaryRequest = {
+    summary_id: string
+    summary_type: GitSummaryType
+    prompt_version: string
+    range: GitSummaryRangeRecord
+    current: GitSummaryContent
+    context: {
+        commits: Array<{ sha: string; subject: string }>
+        changed_files: Array<{ path: string; additions: number; deletions: number }>
+        diffstat: { files: number; additions: number; deletions: number }
+        diff?: string
+        warnings: string[]
+    }
+}
+
+export type PendingSummariesData = {
+    requests: PendingSummaryRequest[]
+}
+
 export type RepoRemoveOptions = {
     deleteObservations?: boolean
     deleteSummaries?: boolean

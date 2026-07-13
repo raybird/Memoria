@@ -81,6 +81,41 @@ export async function scanSnapshot(repositoryRoot: string): Promise<RepoSnapshot
     return { headSha, currentBranch, workingTreeDirty, refs }
 }
 
+export type FileChange = {
+    path: string
+    additions: number
+    deletions: number
+}
+
+/** Per-commit changed files (numstat) for a set of shas in ONE git call. Binary files count 0/0. */
+export async function getCommitStats(
+    repositoryRoot: string,
+    shas: string[]
+): Promise<Map<string, FileChange[]>> {
+    const stats = new Map<string, FileChange[]>()
+    if (shas.length === 0) return stats
+    const out = await runGit(repositoryRoot, [
+        'log', '--no-walk=unsorted', '--numstat', `--format=${RECORD_SEP}%H`, ...shas
+    ])
+    for (const record of out.stdout.split(RECORD_SEP)) {
+        const lines = record.split('\n').map((l) => l.trim()).filter(Boolean)
+        if (lines.length === 0) continue
+        const sha = lines[0]
+        const files: FileChange[] = []
+        for (const line of lines.slice(1)) {
+            const [adds, dels, ...pathParts] = line.split('\t')
+            if (pathParts.length === 0) continue
+            files.push({
+                path: pathParts.join('\t'),
+                additions: adds === '-' ? 0 : Number(adds) || 0,
+                deletions: dels === '-' ? 0 : Number(dels) || 0
+            })
+        }
+        stats.set(sha, files)
+    }
+    return stats
+}
+
 /**
  * List commits reachable from any branch/tag/HEAD but NOT from `excludeShas` (the previous scan's
  * tips). `--ignore-missing` tolerates tips deleted by history rewrites. `limit` caps the very

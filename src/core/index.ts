@@ -64,6 +64,15 @@ export {
 export { resolveRepositoryIdentity, normalizeRemoteUrl } from './git/identity.js'
 export { getHostId } from './git/host.js'
 export { runGit, GitExecError } from './git/git-exec.js'
+export { parseGitSummaryPayload, gitSummaryPayloadSchema } from './git/summary-schema.js'
+export {
+    runSummaryPipeline,
+    summarizeBranch,
+    summarizeExplicitRange,
+    summarizeMergeCommit,
+    summarizeTag,
+    RELEASE_TAG_PATTERN
+} from './git/summary-pipeline.js'
 export {
     safeDate, slugify, stableStringify, shortHash, deriveScope,
     resolveSessionId, resolveEventId,
@@ -92,5 +101,7 @@ export type {
     FileQueryInput, FiledQueryData,
     RepositoryStatus, RepositoryRecord, RepositoryInstanceRecord, GitWorktreeRecord,
     RepoAddInput, RepoRegistrationData, RepoListItem, RepoLiveStatus, RepoStatusData,
-    RepoRemoveOptions, RepoRemoveData, RepoSyncOptions, RepoSyncData
+    RepoRemoveOptions, RepoRemoveData, RepoSyncOptions, RepoSyncData,
+    GitSummaryType, GitSummaryStatus, GitSummaryContent, GitSummaryRangeRecord, GitSummaryRecord,
+    RepoSummarizeOptions, RepoSummarizeData, PendingSummaryRequest, PendingSummariesData
 } from './types.js'

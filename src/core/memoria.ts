@@ -35,13 +35,29 @@ import {
     completeScanRun,
     failScanRun,
     updateWorktreeScanState,
-    insertGitEvents
+    insertGitEvents,
+    listSummaries,
+    getSummaryById,
+    submitAgentSummary
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
+import { loadMemoriaConfig } from './config.js'
 import { resolveRepositoryIdentity } from './git/identity.js'
 import { getHostId } from './git/host.js'
-import { scanSnapshot, listNewCommits } from './git/scanner.js'
+import { scanSnapshot, listNewCommits, getCommitStats } from './git/scanner.js'
 import { detectChanges } from './git/change-detector.js'
+import { planCommitRanges, classifyTriviality } from './git/range-planner.js'
+import { buildRangeContext } from './git/summary-context.js'
+import { parseGitSummaryPayload } from './git/summary-schema.js'
+import {
+    runSummaryPipeline,
+    summarizeBranch,
+    summarizeExplicitRange,
+    summarizeMergeCommit,
+    summarizeTag,
+    RELEASE_TAG_PATTERN,
+    type SummaryPipelineInput
+} from './git/summary-pipeline.js'
 import { recallVector, rrfFuse } from './recall-vector.js'
 import { buildCompiledWiki } from './wiki-build.js'
 import { fileQueryResult } from './wiki-query.js'
@@ -73,7 +89,12 @@ import type {
     RepoRemoveOptions,
     RepoRemoveData,
     RepoSyncOptions,
-    RepoSyncData
+    RepoSyncData,
+    RepoSummarizeOptions,
+    RepoSummarizeData,
+    PendingSummariesData,
+    PendingSummaryRequest,
+    GitSummaryRecord
 } from './types.js'
 
 // Payload a producer hands back to withResult; the wrapper stamps source/timestamp/latency
@@ -541,7 +562,8 @@ export class MemoriaCore {
             // Initial metadata scan (spec §19.1): recent commits only by default; --scan-history
             // lifts the cap, --history-limit tunes it. Never summarizes (that is Phase 4, on sync).
             const initialScan = await this.performRepoSync(registration.repository.id, {
-                historyLimit: input.historyLimit ?? (input.scanHistory ? 0 : undefined)
+                historyLimit: input.historyLimit ?? (input.scanHistory ? 0 : undefined),
+                noSummary: true // §19.1: registering never summarizes history
             })
             const data: RepoRegistrationData = { ...registration, initial_scan: initialScan }
             return { data, evidence: [data.repository.id, data.instance.id], confidence: 1 }
@@ -599,6 +621,23 @@ export class MemoriaCore {
 
         if (options.dryRun) {
             // Report-only: NOTHING is written — no scan run, no commits, no refs, no events (§19.4).
+            let predictedSummaries = 0
+            try {
+                const gitConfig = (await loadMemoriaConfig(this.paths)).git
+                if (gitConfig.enabled && gitConfig.summarization.enabled && !options.noSummary) {
+                    const nonMerge = newCommits.filter((c) => !c.isMerge)
+                    const stats = await getCommitStats(root, nonMerge.map((c) => c.sha))
+                    const groups = planCommitRanges(nonMerge.map((c) => ({
+                        sha: c.sha, parents: c.parents, committedAt: c.committedAt,
+                        message: c.message, files: stats.get(c.sha) ?? []
+                    })), gitConfig)
+                    predictedSummaries += groups
+                        .filter((g) => options.forceSummary || classifyTriviality(g, gitConfig).keep).length
+                    predictedSummaries += detected.events.filter((e) => e.eventType === 'merge_commit_discovered').length
+                    predictedSummaries += detected.events.filter((e) => e.eventType === 'tag_discovered' &&
+                        RELEASE_TAG_PATTERN.test((e.targetRef ?? '').replace(/^refs\/tags\//, ''))).length
+                }
+            } catch { /* prediction is best-effort */ }
             return {
                 repository_id: found.repository.id,
                 scan_run_id: '(dry-run)',
@@ -610,7 +649,7 @@ export class MemoriaCore {
                 new_tags: snapshot.refs.filter((r) => r.refType === 'tag' &&
                     !prevRefs.some((p) => p.ref_type === 'tag' && p.ref_name === r.refName)).length,
                 events_created: detected.events.length,
-                summaries_created: 0,
+                summaries_created: predictedSummaries,
                 memories_promoted: 0,
                 warnings: [...warnings, 'dry-run: no changes were written'],
                 dry_run: {
@@ -639,6 +678,35 @@ export class MemoriaCore {
                 newTagCount: delta.newTagCount,
                 eventCount: delta.eventsCreated
             })
+
+            // Summary phase runs AFTER the metadata scan is committed (§26) and never rolls it
+            // back — a summary failure degrades to a warning (§24).
+            let summariesCreated = 0
+            if (!options.noSummary) {
+                try {
+                    const gitConfig = (await loadMemoriaConfig(this.paths)).git
+                    if (gitConfig.enabled && gitConfig.summarization.enabled) {
+                        const pipelineInput: SummaryPipelineInput = {
+                            dbPath: this.paths.dbPath,
+                            repositoryRoot: root,
+                            repositoryId: found.repository.id,
+                            defaultBranch: found.repository.default_branch ?? null,
+                            gitConfig,
+                            force: options.forceSummary
+                        }
+                        const pipeline = await runSummaryPipeline(pipelineInput)
+                        summariesCreated += pipeline.summariesCreated
+                        warnings.push(...pipeline.warnings)
+                        if (options.from && options.to) {
+                            const explicit = await summarizeExplicitRange(pipelineInput, options.from, options.to)
+                            if (explicit.created) summariesCreated += 1
+                        }
+                    }
+                } catch (error) {
+                    warnings.push(`summary_generation_failed: ${error instanceof Error ? error.message : String(error)}`)
+                }
+            }
+
             return {
                 repository_id: found.repository.id,
                 scan_run_id: scanRunId,
@@ -648,7 +716,7 @@ export class MemoriaCore {
                 new_refs: delta.newBranchCount,
                 new_tags: delta.newTagCount,
                 events_created: delta.eventsCreated,
-                summaries_created: 0,
+                summaries_created: summariesCreated,
                 memories_promoted: 0,
                 warnings
             }
@@ -657,6 +725,124 @@ export class MemoriaCore {
             failScanRun(this.paths.dbPath, scanRunId, error instanceof Error ? error.message : String(error))
             throw error
         }
+    }
+
+    // Resolve a managed repository into pipeline coordinates (shared by summarize/pending/submit).
+    private async resolveManagedRepo(ref: string): Promise<{ repositoryId: string; root: string; defaultBranch: string | null }> {
+        const hostId = await getHostId(this.paths.memoryDir)
+        const found = findRepository(this.paths.dbPath, ref, hostId)
+        if (!found || !found.instance) throw new Error(`repository_not_found: ${ref}`)
+        return {
+            repositoryId: found.repository.id,
+            root: found.instance.local_path,
+            defaultBranch: found.repository.default_branch ?? null
+        }
+    }
+
+    private async buildPipelineInput(ref: string, force?: boolean): Promise<SummaryPipelineInput> {
+        const { repositoryId, root, defaultBranch } = await this.resolveManagedRepo(ref)
+        const gitConfig = (await loadMemoriaConfig(this.paths)).git
+        return { dbPath: this.paths.dbPath, repositoryRoot: root, repositoryId, defaultBranch, gitConfig, force }
+    }
+
+    async repoSummarize(ref: string, options: RepoSummarizeOptions = {}): Promise<MemoriaResult<RepoSummarizeData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const input = await this.buildPipelineInput(ref, options.force)
+            const warnings: string[] = []
+            const collected: GitSummaryRecord[] = []
+            let created = 0
+            const track = (result: { summary: GitSummaryRecord; created: boolean }) => {
+                collected.push(result.summary)
+                if (result.created) created += 1
+            }
+
+            if (options.branch) track(await summarizeBranch(input, options.branch))
+            if (options.range) {
+                const match = /^(.+?)\.\.\.?(.+)$/.exec(options.range)
+                if (!match) throw new Error(`invalid --range '${options.range}', expected <base>..<head>`)
+                track(await summarizeExplicitRange(input, match[1], match[2], options.type ?? 'commit_range'))
+            }
+            if (options.merge) track(await summarizeMergeCommit(input, options.merge))
+            if (options.tag) track(await summarizeTag(input, options.tag))
+            if (!options.branch && !options.range && !options.merge && !options.tag) {
+                const pipeline = await runSummaryPipeline(input)
+                created += pipeline.summariesCreated
+                collected.push(...pipeline.summaries)
+                warnings.push(...pipeline.warnings)
+            }
+            if (options.promote) warnings.push('`--promote` lands in Phase 5; summaries were created without promotion')
+
+            return {
+                data: { created, summaries: collected, warnings },
+                evidence: collected.map((s) => s.id),
+                confidence: 1
+            }
+        })
+    }
+
+    /** Pending summary requests for agent enrichment (D1): skeleton + freshly rebuilt context. */
+    async repoPendingSummaries(ref: string): Promise<MemoriaResult<PendingSummariesData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const input = await this.buildPipelineInput(ref)
+            const pending = listSummaries(this.paths.dbPath, input.repositoryId, { status: 'pending', limit: 20 })
+            const requests: PendingSummaryRequest[] = []
+            for (const summary of pending) {
+                if (!summary.range) continue
+                const context = await buildRangeContext(
+                    input.repositoryRoot, summary.range.base_sha ?? null, summary.range.head_sha, input.gitConfig
+                ).catch(() => null)
+                if (!context) continue // range objects gone (rewritten history) — skip, stays pending
+                requests.push({
+                    summary_id: summary.id,
+                    summary_type: summary.summary_type,
+                    prompt_version: summary.prompt_version,
+                    range: summary.range,
+                    current: {
+                        title: summary.title,
+                        summary: summary.summary,
+                        key_changes: summary.key_changes,
+                        decisions: summary.decisions,
+                        known_limitations: summary.known_limitations,
+                        risks: summary.risks,
+                        affected_domains: summary.affected_domains,
+                        importance: summary.importance,
+                        confidence: summary.confidence
+                    },
+                    context
+                })
+            }
+            return { data: { requests }, evidence: requests.map((r) => r.summary_id), confidence: 1 }
+        })
+    }
+
+    /** Agent write-back (D1): validate the §7.5 payload and enrich the summary row in place. */
+    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord }>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const { repositoryId } = await this.resolveManagedRepo(ref)
+            const parsed = parseGitSummaryPayload(payload)
+            const existing = getSummaryById(this.paths.dbPath, summaryId)
+            if (!existing || existing.repository_id !== repositoryId) {
+                throw new Error(`summary_not_found: ${summaryId}`)
+            }
+            const summary = submitAgentSummary(this.paths.dbPath, summaryId, {
+                content: {
+                    title: parsed.title,
+                    summary: parsed.summary,
+                    key_changes: parsed.key_changes,
+                    decisions: parsed.decisions,
+                    known_limitations: parsed.known_limitations,
+                    risks: parsed.risks,
+                    affected_domains: parsed.affected_domains,
+                    importance: parsed.importance,
+                    confidence: parsed.confidence
+                },
+                generatorVersion: parsed.generator_version
+            })
+            return { data: { summary }, evidence: [summary.id], confidence: 1 }
+        })
     }
 
     async repoList(): Promise<MemoriaResult<RepoListItem[]>> {

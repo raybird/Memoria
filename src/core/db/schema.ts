@@ -338,6 +338,62 @@ const MIGRATIONS: Migration[] = [
                 db.exec(`ALTER TABLE git_worktrees ADD COLUMN working_tree_dirty INTEGER`)
             }
         }
+    },
+    {
+        id: 12,
+        name: 'git_summaries',
+        up: (db) => {
+            // Git-Aware Memory Phase 4 (docs/issues/issue-1): summary ranges + structured summaries.
+            // range_fingerprint (UNIQUE) is the §18 idempotency key — the same git range never gets
+            // two range rows; (repository_id, summary_range_id, prompt_version) dedupes summaries.
+            // Summaries start as deterministic skeletons (status='pending') and are enriched in
+            // place by the host agent write-back (D1) — same row, generator flips to 'agent'.
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS git_summary_ranges (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                summary_type TEXT NOT NULL,
+                base_sha TEXT,
+                head_sha TEXT NOT NULL,
+                source_ref TEXT,
+                target_ref TEXT,
+                tag_name TEXT,
+                range_fingerprint TEXT NOT NULL UNIQUE,
+                created_at DATETIME
+              );
+
+              CREATE TABLE IF NOT EXISTS git_summaries (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                summary_range_id TEXT NOT NULL,
+                summary_type TEXT NOT NULL,
+                title TEXT,
+                summary TEXT,
+                key_changes_json TEXT,
+                decisions_json TEXT,
+                known_limitations_json TEXT,
+                risks_json TEXT,
+                affected_domains_json TEXT,
+                importance REAL,
+                confidence REAL,
+                generator TEXT,
+                generator_version TEXT,
+                prompt_version TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                metadata_json TEXT,
+                created_at DATETIME,
+                updated_at DATETIME,
+                UNIQUE(repository_id, summary_range_id, prompt_version),
+                FOREIGN KEY (summary_range_id) REFERENCES git_summary_ranges(id)
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_git_summary_ranges_repo
+              ON git_summary_ranges(repository_id, summary_type);
+
+              CREATE INDEX IF NOT EXISTS idx_git_summaries_repo_status
+              ON git_summaries(repository_id, status, created_at);
+            `)
+        }
     }
 ]
 
@@ -553,6 +609,44 @@ export function initDatabase(dbPath: string): void {
         error_message TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS git_summary_ranges (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        summary_type TEXT NOT NULL,
+        base_sha TEXT,
+        head_sha TEXT NOT NULL,
+        source_ref TEXT,
+        target_ref TEXT,
+        tag_name TEXT,
+        range_fingerprint TEXT NOT NULL UNIQUE,
+        created_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS git_summaries (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        summary_range_id TEXT NOT NULL,
+        summary_type TEXT NOT NULL,
+        title TEXT,
+        summary TEXT,
+        key_changes_json TEXT,
+        decisions_json TEXT,
+        known_limitations_json TEXT,
+        risks_json TEXT,
+        affected_domains_json TEXT,
+        importance REAL,
+        confidence REAL,
+        generator TEXT,
+        generator_version TEXT,
+        prompt_version TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        metadata_json TEXT,
+        created_at DATETIME,
+        updated_at DATETIME,
+        UNIQUE(repository_id, summary_range_id, prompt_version),
+        FOREIGN KEY (summary_range_id) REFERENCES git_summary_ranges(id)
+      );
+
       CREATE TABLE IF NOT EXISTS sources (
         id TEXT PRIMARY KEY,
         type TEXT,
@@ -718,6 +812,12 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_git_events_repo_status
       ON git_events(repository_id, status, detected_at);
+
+      CREATE INDEX IF NOT EXISTS idx_git_summary_ranges_repo
+      ON git_summary_ranges(repository_id, summary_type);
+
+      CREATE INDEX IF NOT EXISTS idx_git_summaries_repo_status
+      ON git_summaries(repository_id, status, created_at);
     `)
 
         runMigrations(db)
