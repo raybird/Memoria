@@ -7,6 +7,7 @@ import { getRuntimeLayout } from './cli/runtime.js'
 import { registerInitCommand } from './cli/commands/init.js'
 import { registerSyncCommand } from './cli/commands/sync.js'
 import { registerSourceCommand } from './cli/commands/source.js'
+import { registerRepoCommand } from './cli/commands/repo.js'
 import { registerWikiCommand } from './cli/commands/wiki.js'
 import { registerStatsCommand } from './cli/commands/stats.js'
 import { registerIndexCommand } from './cli/commands/index-cmd.js'
@@ -47,6 +48,7 @@ async function run(): Promise<void> {
   registerInitCommand(program, paths, core)
   registerSyncCommand(program, paths, core)
   registerSourceCommand(program, core)
+  registerRepoCommand(program, core)
   registerWikiCommand(program, core)
   registerStatsCommand(program, paths, core)
   registerIndexCommand(program, paths)

@@ -103,6 +103,7 @@ jobs:
               ;;
             repo)
               bash scripts/test-repo-git-exec.sh
+              bash scripts/test-repo-registry.sh
               ;;
           esac
 

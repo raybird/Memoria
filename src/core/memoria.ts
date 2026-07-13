@@ -22,9 +22,16 @@ import {
     recallKeyword,
     applyUtilityWeighting,
     querySessionSummary,
-    listSourceRecords
+    listSourceRecords,
+    registerRepository,
+    listRepositories,
+    findRepository,
+    relocateRepositoryInstance,
+    removeRepository
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
+import { resolveRepositoryIdentity } from './git/identity.js'
+import { getHostId } from './git/host.js'
 import { recallVector, rrfFuse } from './recall-vector.js'
 import { buildCompiledWiki } from './wiki-build.js'
 import { fileQueryResult } from './wiki-query.js'
@@ -48,7 +55,13 @@ import type {
     RecallOutcomeInput,
     WikiBuildResult,
     WikiLintOptions,
-    WikiLintResult
+    WikiLintResult,
+    RepoAddInput,
+    RepoRegistrationData,
+    RepoListItem,
+    RepoStatusData,
+    RepoRemoveOptions,
+    RepoRemoveData
 } from './types.js'
 
 // Payload a producer hands back to withResult; the wrapper stamps source/timestamp/latency
@@ -483,6 +496,108 @@ export class MemoriaCore {
             })
             // Not-found is a valid no-op (pruned/unknown id): ok:true, updated:false, low confidence.
             return { data: { updated }, evidence: updated ? [recallId] : [], confidence: updated ? 1 : 0 }
+        })
+    }
+
+    // ─── Git-Aware Memory (docs/issues/issue-1) ──────────────────────────────
+
+    async repoAdd(input: RepoAddInput): Promise<MemoriaResult<RepoRegistrationData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const identity = await resolveRepositoryIdentity(path.resolve(input.path))
+            const hostId = await getHostId(this.paths.memoryDir)
+            const data = registerRepository(this.paths.dbPath, {
+                name: input.name ?? path.basename(identity.repositoryRoot),
+                nameExplicit: Boolean(input.name),
+                fingerprint: identity.fingerprint,
+                normalizedRemoteUrl: identity.normalizedRemoteUrl,
+                rootCommitSha: identity.rootCommitSha,
+                defaultBranch: input.defaultBranch ?? identity.defaultBranch,
+                status: identity.isShallow ? 'limited_history' : 'active',
+                hostId,
+                localPath: identity.repositoryRoot,
+                gitCommonDir: identity.gitCommonDir,
+                worktreePath: identity.repositoryRoot,
+                currentBranch: identity.currentBranch,
+                currentHeadSha: identity.headSha,
+                isMainWorktree: identity.isMainWorktree
+            })
+            return { data, evidence: [data.repository.id, data.instance.id], confidence: 1 }
+        })
+    }
+
+    async repoList(): Promise<MemoriaResult<RepoListItem[]>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const hostId = await getHostId(this.paths.memoryDir)
+            const data = listRepositories(this.paths.dbPath, hostId)
+            return { data, evidence: data.map((item) => item.repository.id), confidence: 1 }
+        })
+    }
+
+    async repoStatus(ref: string): Promise<MemoriaResult<RepoStatusData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const hostId = await getHostId(this.paths.memoryDir)
+            const found = findRepository(this.paths.dbPath, ref, hostId)
+            if (!found) throw new Error(`repository_not_found: ${ref}`)
+
+            let live: RepoStatusData['live']
+            if (found.instance) {
+                try {
+                    const identity = await resolveRepositoryIdentity(found.instance.local_path)
+                    live = {
+                        current_branch: identity.currentBranch ?? undefined,
+                        head_sha: identity.headSha ?? undefined,
+                        working_tree_dirty: identity.workingTreeDirty,
+                        is_shallow: identity.isShallow,
+                        head_moved_since_last_seen: Boolean(
+                            found.worktree?.current_head_sha &&
+                            identity.headSha &&
+                            identity.headSha !== found.worktree.current_head_sha
+                        )
+                    }
+                } catch {
+                    // Path gone or not a repo anymore: report registry state only (relocate fixes it).
+                    live = undefined
+                }
+            }
+            const data: RepoStatusData = { ...found, live }
+            return { data, evidence: [found.repository.id], confidence: 1 }
+        })
+    }
+
+    async repoRelocate(ref: string, newPath: string): Promise<MemoriaResult<RepoStatusData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const hostId = await getHostId(this.paths.memoryDir)
+            const found = findRepository(this.paths.dbPath, ref, hostId)
+            if (!found) throw new Error(`repository_not_found: ${ref}`)
+
+            const identity = await resolveRepositoryIdentity(path.resolve(newPath))
+            if (identity.fingerprint !== found.repository.fingerprint) {
+                throw new Error('repository_identity_mismatch: the new path contains a different repository history')
+            }
+            const { instance, worktree } = relocateRepositoryInstance(
+                this.paths.dbPath,
+                found.repository.id,
+                hostId,
+                identity.repositoryRoot,
+                identity.gitCommonDir
+            )
+            const data: RepoStatusData = { repository: found.repository, instance, worktree }
+            return { data, evidence: [found.repository.id, instance.id], confidence: 1 }
+        })
+    }
+
+    async repoRemove(ref: string, options: RepoRemoveOptions = {}): Promise<MemoriaResult<RepoRemoveData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const hostId = await getHostId(this.paths.memoryDir)
+            const found = findRepository(this.paths.dbPath, ref, hostId)
+            if (!found) throw new Error(`repository_not_found: ${ref}`)
+            const data = removeRepository(this.paths.dbPath, found.repository.id, options)
+            return { data, evidence: [data.repository_id], confidence: 1 }
         })
     }
 }

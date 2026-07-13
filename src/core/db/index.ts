@@ -18,4 +18,11 @@ export { logRecallTelemetry, recordRecallOutcome, queryStats, queryRecallTelemet
 export { runVerify } from './verify.js'
 export { runPrune, exportMemory } from './prune-export.js'
 export { buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting } from './recall.js'
+export {
+    registerRepository,
+    listRepositories,
+    findRepository,
+    relocateRepositoryInstance,
+    removeRepository
+} from './git-repo.js'
 export { closeAllConnections } from './connection.js'

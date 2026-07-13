@@ -54,8 +54,16 @@ export {
     recallTree,
     recallKeyword,
     querySessionSummary,
+    registerRepository,
+    listRepositories,
+    findRepository,
+    relocateRepositoryInstance,
+    removeRepository,
     closeAllConnections
 } from './db/index.js'
+export { resolveRepositoryIdentity, normalizeRemoteUrl } from './git/identity.js'
+export { getHostId } from './git/host.js'
+export { runGit, GitExecError } from './git/git-exec.js'
 export {
     safeDate, slugify, stableStringify, shortHash, deriveScope,
     resolveSessionId, resolveEventId,
@@ -81,5 +89,8 @@ export type {
     UpsertSourceInput, UpsertWikiPageInput, UpsertWikiPageSourceLinkInput,
     UpsertWikiPageLinkInput, UpsertWikiLintRunInput, UpsertWikiLintFindingInput,
     UpsertWikiQueryArtifactInput, ImportSourceInput, ImportedSourceData,
-    FileQueryInput, FiledQueryData
+    FileQueryInput, FiledQueryData,
+    RepositoryStatus, RepositoryRecord, RepositoryInstanceRecord, GitWorktreeRecord,
+    RepoAddInput, RepoRegistrationData, RepoListItem, RepoLiveStatus, RepoStatusData,
+    RepoRemoveOptions, RepoRemoveData
 } from './types.js'

@@ -504,3 +504,96 @@ export type WikiBuildResult = {
         overview: string
     }
 }
+
+// ─── Git-Aware Memory (docs/issues/issue-1) ──────────────────────────────────
+
+export type RepositoryStatus = 'active' | 'disabled' | 'limited_history'
+
+export type RepositoryRecord = {
+    id: string
+    name: string
+    fingerprint: string
+    normalized_remote_url?: string
+    root_commit_sha?: string
+    default_branch?: string
+    status: RepositoryStatus
+    created_at: string
+    updated_at: string
+}
+
+export type RepositoryInstanceRecord = {
+    id: string
+    repository_id: string
+    local_path: string
+    git_common_dir?: string
+    host_id: string
+    is_available: boolean
+    last_seen_at?: string
+    created_at: string
+    updated_at: string
+}
+
+export type GitWorktreeRecord = {
+    id: string
+    repository_id: string
+    repository_instance_id: string
+    worktree_path: string
+    current_branch?: string
+    current_head_sha?: string
+    is_main_worktree: boolean
+    last_scanned_at?: string
+    created_at: string
+    updated_at: string
+}
+
+export type RepoAddInput = {
+    path: string
+    name?: string
+    defaultBranch?: string
+    scanHistory?: boolean   // Phase 2: scan full history on add
+    historyLimit?: number   // Phase 2: cap initial history scan
+}
+
+export type RepoRegistrationData = {
+    repository: RepositoryRecord
+    instance: RepositoryInstanceRecord
+    worktree: GitWorktreeRecord
+    created: boolean
+}
+
+export type RepoListItem = {
+    repository: RepositoryRecord
+    instance?: RepositoryInstanceRecord
+    worktree?: GitWorktreeRecord
+}
+
+export type RepoLiveStatus = {
+    current_branch?: string
+    head_sha?: string
+    working_tree_dirty: boolean
+    is_shallow: boolean
+    head_moved_since_last_seen: boolean
+}
+
+export type RepoStatusData = {
+    repository: RepositoryRecord
+    instance?: RepositoryInstanceRecord
+    worktree?: GitWorktreeRecord
+    live?: RepoLiveStatus
+}
+
+export type RepoRemoveOptions = {
+    deleteObservations?: boolean
+    deleteSummaries?: boolean
+    deleteMemories?: boolean
+}
+
+export type RepoRemoveData = {
+    repository_id: string
+    status: RepositoryStatus
+    deleted: {
+        observations: number
+        summaries: number
+        memories: number
+    }
+}

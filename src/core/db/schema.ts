@@ -175,6 +175,64 @@ const MIGRATIONS: Migration[] = [
             if (!cols.has('explicit_observations')) db.exec(`ALTER TABLE memory_utility ADD COLUMN explicit_observations INTEGER NOT NULL DEFAULT 0`)
             if (!cols.has('explicit_sum')) db.exec(`ALTER TABLE memory_utility ADD COLUMN explicit_sum REAL NOT NULL DEFAULT 0`)
         }
+    },
+    {
+        id: 9,
+        name: 'git_repository_registry',
+        up: (db) => {
+            // Git-Aware Memory Phase 1 (docs/issues/issue-1): logical repositories, per-host clone
+            // instances, and worktrees. Identity is fingerprint-based (root-commit primary, D4), so
+            // UNIQUE(fingerprint) dedupes clones of the same history regardless of path or remote.
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS repositories (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                fingerprint TEXT NOT NULL UNIQUE,
+                normalized_remote_url TEXT,
+                root_commit_sha TEXT,
+                default_branch TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at DATETIME,
+                updated_at DATETIME
+              );
+
+              CREATE TABLE IF NOT EXISTS repository_instances (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                local_path TEXT NOT NULL,
+                git_common_dir TEXT,
+                host_id TEXT NOT NULL,
+                is_available INTEGER NOT NULL DEFAULT 1,
+                last_seen_at DATETIME,
+                created_at DATETIME,
+                updated_at DATETIME,
+                UNIQUE(host_id, local_path),
+                FOREIGN KEY (repository_id) REFERENCES repositories(id)
+              );
+
+              CREATE TABLE IF NOT EXISTS git_worktrees (
+                id TEXT PRIMARY KEY,
+                repository_id TEXT NOT NULL,
+                repository_instance_id TEXT NOT NULL,
+                worktree_path TEXT NOT NULL,
+                current_branch TEXT,
+                current_head_sha TEXT,
+                is_main_worktree INTEGER NOT NULL DEFAULT 1,
+                last_scanned_at DATETIME,
+                created_at DATETIME,
+                updated_at DATETIME,
+                UNIQUE(repository_instance_id, worktree_path),
+                FOREIGN KEY (repository_id) REFERENCES repositories(id),
+                FOREIGN KEY (repository_instance_id) REFERENCES repository_instances(id)
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_repository_instances_repo
+              ON repository_instances(repository_id, host_id);
+
+              CREATE INDEX IF NOT EXISTS idx_git_worktrees_instance
+              ON git_worktrees(repository_instance_id);
+            `)
+        }
     }
 ]
 
@@ -282,6 +340,48 @@ export function initDatabase(dbPath: string): void {
         explicit_observations INTEGER NOT NULL DEFAULT 0,
         explicit_sum REAL NOT NULL DEFAULT 0,
         last_outcome_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS repositories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        fingerprint TEXT NOT NULL UNIQUE,
+        normalized_remote_url TEXT,
+        root_commit_sha TEXT,
+        default_branch TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at DATETIME,
+        updated_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS repository_instances (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        local_path TEXT NOT NULL,
+        git_common_dir TEXT,
+        host_id TEXT NOT NULL,
+        is_available INTEGER NOT NULL DEFAULT 1,
+        last_seen_at DATETIME,
+        created_at DATETIME,
+        updated_at DATETIME,
+        UNIQUE(host_id, local_path),
+        FOREIGN KEY (repository_id) REFERENCES repositories(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS git_worktrees (
+        id TEXT PRIMARY KEY,
+        repository_id TEXT NOT NULL,
+        repository_instance_id TEXT NOT NULL,
+        worktree_path TEXT NOT NULL,
+        current_branch TEXT,
+        current_head_sha TEXT,
+        is_main_worktree INTEGER NOT NULL DEFAULT 1,
+        last_scanned_at DATETIME,
+        created_at DATETIME,
+        updated_at DATETIME,
+        UNIQUE(repository_instance_id, worktree_path),
+        FOREIGN KEY (repository_id) REFERENCES repositories(id),
+        FOREIGN KEY (repository_instance_id) REFERENCES repository_instances(id)
       );
 
       CREATE TABLE IF NOT EXISTS sources (
@@ -428,6 +528,12 @@ export function initDatabase(dbPath: string): void {
 
       CREATE INDEX IF NOT EXISTS idx_wiki_query_artifacts_kind_created
       ON wiki_query_artifacts(kind, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_repository_instances_repo
+      ON repository_instances(repository_id, host_id);
+
+      CREATE INDEX IF NOT EXISTS idx_git_worktrees_instance
+      ON git_worktrees(repository_instance_id);
     `)
 
         runMigrations(db)
