@@ -215,8 +215,16 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `POST` | `/v1/wiki/file-query` | File query result into wiki page |
 | `POST` | `/v1/wiki/lint` | Run wiki governance lint |
 | `GET`  | `/v1/sessions/:id/summary` | Session summary |
+| `POST` | `/v1/repos` | Register a git repository for read-only observation (`{path, name?, ...}`) |
+| `GET`  | `/v1/repos` | List observed repositories |
+| `GET`  | `/v1/repos/:ref/status` | Registry + live git state (`:ref` = id, name, or path) |
+| `POST` | `/v1/repos/:ref/sync` | Incremental scan (`{generate_summaries?, dry_run?, force_summary?, from?, to?}`) |
+| `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag or pending events |
+| `GET`  | `/v1/repos/:ref/summaries/pending` | Summary requests awaiting agent enrichment |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent write-back of a structured summary payload |
 
 All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
+Recall hits promoted from git summaries additionally carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`).
 
 ## Bootstrap Flow for AI Agents (Phase 1.5)
 

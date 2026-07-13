@@ -285,6 +285,53 @@ function pruneStaleMemory(
     })
 }
 
+// Git observation retention (issue-1 Phase 6): superseded ref observations, consumed events, and
+// finished scan runs are operational history, not memory. git_commits, git_summaries, and every
+// promotion artifact are NEVER touched here — summary traceability to SHAs must survive pruning.
+function pruneGitObservations(dbPath: string, days: number, dryRun: boolean): {
+    staleRefs: number
+    consumedEvents: number
+    finishedScanRuns: number
+    removed: number
+} {
+    return withDb(dbPath, (db) => {
+        const tables = new Set((db.prepare(
+            `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('git_refs', 'git_events', 'git_scan_runs')`
+        ).all() as { name: string }[]).map((r) => r.name))
+        if (tables.size === 0) return { staleRefs: 0, consumedEvents: 0, finishedScanRuns: 0, removed: 0 }
+
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+        const count = (sql: string): number =>
+            (db.prepare(sql).get(cutoff) as { n: number }).n
+
+        const staleRefs = tables.has('git_refs')
+            ? count(`SELECT COUNT(*) AS n FROM git_refs WHERE is_current = 0 AND observed_at < ?`)
+            : 0
+        const consumedEvents = tables.has('git_events')
+            ? count(`SELECT COUNT(*) AS n FROM git_events WHERE status IN ('processed', 'ignored') AND detected_at < ?`)
+            : 0
+        const finishedScanRuns = tables.has('git_scan_runs')
+            ? count(`SELECT COUNT(*) AS n FROM git_scan_runs WHERE status IN ('completed', 'failed') AND started_at < ?`)
+            : 0
+
+        let removed = 0
+        if (!dryRun) {
+            db.transaction(() => {
+                if (tables.has('git_refs')) {
+                    removed += db.prepare(`DELETE FROM git_refs WHERE is_current = 0 AND observed_at < ?`).run(cutoff).changes
+                }
+                if (tables.has('git_events')) {
+                    removed += db.prepare(`DELETE FROM git_events WHERE status IN ('processed', 'ignored') AND detected_at < ?`).run(cutoff).changes
+                }
+                if (tables.has('git_scan_runs')) {
+                    removed += db.prepare(`DELETE FROM git_scan_runs WHERE status IN ('completed', 'failed') AND started_at < ?`).run(cutoff).changes
+                }
+            })()
+        }
+        return { staleRefs, consumedEvents, finishedScanRuns, removed }
+    })
+}
+
 export async function runPrune(
     paths: MemoriaPaths,
     options: PruneOptions
@@ -294,6 +341,7 @@ export async function runPrune(
     dedupe?: { duplicateGroups: number; removed: number }
     consolidate?: { groupsFound: number; sessionsConsolidated: number; nodesRemoved: number }
     stale?: { staleNodes: number; staleSessions: number; removedNodes: number; removedSessions: number }
+    gitObservations?: { staleRefs: number; consumedEvents: number; finishedScanRuns: number; removed: number }
 }> {
     const dryRun = Boolean(options.dryRun)
     const all = Boolean(options.all)
@@ -303,9 +351,11 @@ export async function runPrune(
     const dedupeSkills = Boolean(options.dedupeSkills) || all
     const consolidateDays = parseDaysOption(options.consolidateDays, '--consolidate-days') ?? (all ? 90 : undefined)
     const staleDays = parseDaysOption(options.staleDays, '--stale-days') ?? (all ? 180 : undefined)
+    const gitObservationsDays = parseDaysOption(options.gitObservationsDays, '--git-observations-days') ?? (all ? 90 : undefined)
 
-    if (exportsDays === undefined && checkpointsDays === undefined && !dedupeSkills && consolidateDays === undefined && staleDays === undefined) {
-        throw new Error('No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills, --consolidate-days, --stale-days')
+    if (exportsDays === undefined && checkpointsDays === undefined && !dedupeSkills &&
+        consolidateDays === undefined && staleDays === undefined && gitObservationsDays === undefined) {
+        throw new Error('No prune target specified. Use --all or one of: --exports-days, --checkpoints-days, --dedupe-skills, --consolidate-days, --stale-days, --git-observations-days')
     }
 
     const result: ReturnType<typeof runPrune> extends Promise<infer R> ? R : never = {}
@@ -326,6 +376,9 @@ export async function runPrune(
     }
     if (staleDays !== undefined) {
         result.stale = pruneStaleMemory(paths.dbPath, staleDays, dryRun)
+    }
+    if (gitObservationsDays !== undefined && existsSync(paths.dbPath)) {
+        result.gitObservations = pruneGitObservations(paths.dbPath, gitObservationsDays, dryRun)
     }
 
     return result

@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 1（本地文件編號；GitHub repo 目前無既有 issue） |
 | 複雜度級別 | Large（跨多模組、新增資料庫表、大型功能） |
-| 狀態 | Decompose 完成（2026-07-13）— 待 execute-task（自 Phase 0 開始） |
+| 狀態 | **實作完成**（2026-07-13，Phase 0–6 全數交付；FF-merge 推斷與 session 整合依決議延至 v1.1） |
 | 需求來源 | 使用者提供之《Memoria Git-Aware Memory v1 規格書》v1.0（2026-07-13） |
 | 建立日期 | 2026-07-13 |
 
@@ -47,9 +47,11 @@
 | 2026-07-13 | 建立 issue 文件四件套（本目錄） |
 | 2026-07-13 | 使用者核可 D1–D4 與範圍事項（全數採建議方案），implementation plan 轉為已確認 |
 | 2026-07-13 | 完成 decompose：7 Phase / 36 Task（decomposition.md） |
+| 2026-07-13 | Phase 0–6 實作完成：13 張 migration（id 9–13 新增）、7 個 CLI 子命令、7 個 HTTP endpoints、8 支 e2e 測試腳本（CI `repo` 群組），非侵入性總驗收通過 |
 
 ## Changelog
 
 - 2026-07-13: 初版建立（README、requirement-analysis、technical-analysis、implementation-plan）。
 - 2026-07-13: D1–D4 與範圍事項定案，四份文件同步更新為已確認狀態。
 - 2026-07-13: 新增 decomposition.md（7 Phase / 36 Task），狀態轉為待 execute-task。
+- 2026-07-13: Phase 0–6 逐一實作、測試、提交完成（commits f851d4a / 2ac31e7 / ecee447 / 37f5af7 / d3ab226 / acbded6 + Phase 6）；文件（CLAUDE.md/AGENTS.md/README/CHANGELOG）對齊。

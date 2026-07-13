@@ -46,6 +46,14 @@ bash scripts/test-wiki-ingest.sh            # raw source ingest
 bash scripts/test-wiki-build.sh             # compiled wiki special pages
 bash scripts/test-wiki-query-fileback.sh    # query file-back
 bash scripts/test-wiki-lint.sh              # wiki governance lint
+bash scripts/test-repo-git-exec.sh          # git 唯讀執行層白名單 + config loader + host id（issue-1 Phase 0）
+bash scripts/test-repo-registry.sh          # repository registry：add/list/status/relocate/remove + fingerprint 去重
+bash scripts/test-repo-sync.sh              # 增量掃描：commits/refs/tags 冪等入庫、history-limit、detached HEAD
+bash scripts/test-repo-events.sh            # git events：change detector、history rewrite、--dry-run 零寫入、失敗恢復
+bash scripts/test-repo-summary.sh           # summary pipeline：range 分組、trivial/secret filter、agent 回寫
+bash scripts/test-repo-promotion.sh         # memory promotion + recall 附 Git 來源 + HTTP /v1/repos/* 契約
+bash scripts/test-repo-edge.sh              # shallow/unshallow 升級、linked worktree、maxDiffBytes、git-observations prune
+bash scripts/test-repo-noninvasive.sh       # 非侵入性總驗收：完整流程後 git 狀態 byte-identical
 ```
 
 CI runs these in the order listed in `.github/workflows/ci.yml`. Mirror that order locally before opening a PR.
@@ -110,10 +118,14 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 
 **Utility feedback loop (UFL)**: every successful recall carries `meta.recall_id`; `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back — `hits[]` attributes it per memory (`memory_utility` table), `signal:'explicit'` is the high-fidelity host signal that overrides the lexical-reuse proxy (`effectiveUtility`). Adapters report reuse automatically. Confidence×utility calibration appears in `stats`/telemetry once outcomes exist. Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
 
+### Git-Aware Memory (issue-1)
+
+`repo` commands observe existing git repositories **read-only** (spec + design in `docs/issues/issue-1/`): `repo add` registers identity (fingerprint is root-commit-based; shallow clones become `limited_history` and upgrade in place after unshallow), `repo sync` incrementally ingests commits/refs/tags (`git_commits`/`git_refs`/`git_scan_runs`), diffs snapshots into `git_events` (history-rewrite detection, lazy patch-id), plans deterministic commit ranges (trivial filter + important-file exception, secret masking), and writes structured summaries (`git_summary_ranges`/`git_summaries`). Summaries start as deterministic skeletons (`status='pending'`); the host agent enriches them via `repo summarize --pending` → `--submit <id>` (Zod-validated payload; HTTP `POST /v1/repos/:ref/summaries/:id`). Eligible summaries promote into the existing recall corpus (synthetic session + `DecisionMade` events → FTS) with provenance in `memory_sources` and milestones in `memory_checkpoints`; recall hits then carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`). Key modules: `core/git/` (git-exec allowlist, identity, scanner, change-detector, range-planner, summary-*) and `core/db/git-*.ts`. `<configPath>/config.json` (`git.*` block, Zod-validated, optional) is the repo's only config file. Non-invasive contract: only allowlisted read commands run against managed repos (`GIT_OPTIONAL_LOCKS=0`); `scripts/test-repo-noninvasive.sh` asserts byte-identical git state after the full flow. Cross-process sync concurrency is a documented v1 limitation (in-process it is serialized per repository).
+
 ## Conventions That Are Easy to Get Wrong
 
-- **Don't rename CLI commands** without an explicit request — they are part of the agent contract. This covers both top-level commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `source`, `wiki`, `govern`, `prune`, `export`, `serve`, `preflight`, `setup`) and their subcommands (`source add/list`, `wiki build/file-query/lint`, `index build`, `govern review`).
-- **`prune --all`** includes consolidate (90d) + stale (180d) by default. Use `--consolidate-days` / `--stale-days` for custom thresholds; don't change defaults silently.
+- **Don't rename CLI commands** without an explicit request — they are part of the agent contract. This covers both top-level commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `source`, `repo`, `wiki`, `govern`, `prune`, `export`, `serve`, `preflight`, `setup`) and their subcommands (`source add/list`, `repo add/list/status/sync/summarize/relocate/remove`, `wiki build/file-query/lint`, `index build`, `govern review`). Note `sync` (session import) and `repo sync` (git scan) are different commands.
+- **`prune --all`** includes consolidate (90d) + stale (180d) + git-observations (90d) by default. Use `--consolidate-days` / `--stale-days` / `--git-observations-days` for custom thresholds; don't change defaults silently.
 - **Schema changes** must keep older DBs readable (see existing patch pattern in `initDatabase()`); add migrations rather than breaking columns.
 - **Validate at boundaries** with Zod (`unknown` → parse), not deep inside core logic.
 - **DB lifecycle**: every code path that opens the DB must close it in `try/finally`.

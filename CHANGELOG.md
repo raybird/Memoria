@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Git-Aware Memory v1**（issue-1，docs/issues/issue-1/）— 非侵入式 Git 專案工程記憶：
+  - `repo add/list/status/sync/summarize/relocate/remove` CLI 命令與 HTTP `/v1/repos/*` endpoints；SDK 對應方法。
+  - 唯讀 git 執行層（規格 §5 白名單於 runtime 強制，`GIT_OPTIONAL_LOCKS=0`）；fingerprint 身份以 root commit 為主，shallow clone 降級為 `limited_history` 並於補齊歷史後就地升級。
+  - 增量掃描（`git_commits`/`git_refs`/`git_scan_runs`，Migration 9–10）、快照差異事件（`git_events`，Migration 11，含 history rewrite 偵測 + lazy patch-id、`repo sync --dry-run` 零寫入）。
+  - Summary pipeline（Migration 12）：deterministic range 分組 + trivial filter（重要檔案例外）+ 敏感路徑排除/secret 遮罩；merge/release/branch 摘要；摘要為結構化輸出，`repo summarize --pending`/`--submit` 供 host agent 回寫增強（Zod 驗證）。
+  - Memory promotion（Migration 13）：高價值摘要升級為既有 recall 語料（session + DecisionMade events → FTS），`memory_sources` 保存 SHA 溯源、`memory_checkpoints` 記錄里程碑；recall hits 附 `source`（repository/branch/tag/base_sha/head_sha/summary_id）。
+  - `prune --git-observations-days`（`--all` 預設 90d）清理過期 ref 觀察/已消化事件/完成的 scan runs，不動 commits 與摘要。
+  - `<configPath>/config.json`（`git.*` 區塊，Zod 驗證，選用）為本 repo 首個設定檔。
+  - 測試：`scripts/test-repo-*.sh` 八支 e2e（CI 新增 `repo` 測試群組），含非侵入性總驗收（完整流程後 git 狀態 byte-identical）。
+
 ## [1.18.0] - 2026-07-07
 
 ### Added

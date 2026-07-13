@@ -176,6 +176,7 @@ export type PruneOptions = {
     dedupeSkills?: boolean
     consolidateDays?: string
     staleDays?: string
+    gitObservationsDays?: string  // issue-1: superseded git_refs/consumed events/finished scan runs
     all?: boolean
     dryRun?: boolean
 }

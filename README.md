@@ -78,10 +78,11 @@ curl http://localhost:3917/v1/stats
 
 | Area | Capabilities |
 |------|--------------|
-| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (12 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) ｜ Every command supports `--json` machine-readable output |
+| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/repo/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (19 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) ｜ Every command supports `--json` machine-readable output |
 | **Storage** | SQLite + markdown dual persistence ｜ Time-decay scoring (90-day half-life) + consolidation + stale eviction ｜ Utility-weighted retention (high-utility memories survive pruning) ｜ Backward-compatible schema auto-upgrades |
 | **Retrieval** | `keyword / tree / hybrid` recall + opt-in semantic `vector` recall (local embeddings + libSQL native vectors, RRF-fused, fail-open) ｜ Adaptive gate skips trivial queries ｜ Lightweight scope isolation (`global / project / agent / user`) ｜ Recall routing telemetry (`stats` + API) |
 | **Utility feedback (UFL)** | Every recall gets a `recall_id`; adapters report observed lexical-reuse utility back (`POST /v1/recall/:id/outcome`) ｜ Explicit host feedback (`signal:'explicit'`, SDK `markRecallUseful`) overrides the reuse proxy ｜ Confidence×utility calibration in `stats`/telemetry ｜ Aggregated utility down-weights persistently-ignored memories in ranking and spares useful ones from pruning |
+| **Git-Aware Memory** | Read-only observation of existing git repos (`repo add/sync/...`) ｜ Incremental commit/ref/tag scan → typed events (incl. history-rewrite detection) ｜ Deterministic range summaries + agent enrichment write-back ｜ High-value summaries promote into recall with SHA-level provenance (`hit.source`) ｜ Non-invasive by contract (runtime allowlist, byte-identical git state) |
 | **Wiki workflows** | Raw source import (markdown/text) ｜ Compiled wiki special pages (`index / log / overview`) ｜ Query file-back (`synthesis / comparison`) ｜ Wiki governance lint |
 | **Governance** | Governance review (duplicate decisions/skills candidates) ｜ Import guardrails (low-value summary correction + duplicate event suppression) |
 | **Bootstrap** | One-shot `./cli setup --serve --json` ｜ No-clone release-artifact install path ｜ Deployed skill auto-installed to `<memoria-home>/.agents/` |
@@ -131,6 +132,13 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 | `POST` | `/v1/wiki/file-query` | File a high-value query back into a wiki page |
 | `POST` | `/v1/wiki/lint` | Run wiki governance lint |
 | `GET`  | `/v1/sessions/:id/summary` | Session summary |
+| `POST` | `/v1/repos` | Register a git repository for read-only observation |
+| `GET`  | `/v1/repos` | List observed repositories |
+| `GET`  | `/v1/repos/:ref/status` | Registry + live git state |
+| `POST` | `/v1/repos/:ref/sync` | Incremental git scan (`{generate_summaries?, dry_run?, ...}`) |
+| `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag |
+| `GET`  | `/v1/repos/:ref/summaries/pending` | Summaries awaiting agent enrichment |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back |
 
 All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `latency_ms`).
 
@@ -147,11 +155,14 @@ All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `
 ./cli index build --scope agent:main # Rebuild only the given scope
 ./cli source add notes/research.md   # Import a markdown/text source
 ./cli source list --json             # List raw sources
+./cli repo add /path/to/project      # Observe a git repo (read-only)
+./cli repo sync project              # Incremental scan → events → summaries → promotion
+./cli repo summarize project --pending --json  # Summary requests for agent enrichment
 ./cli wiki build --json              # Rebuild the compiled wiki
 ./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 ./cli wiki lint --json               # Produce durable wiki governance findings
 ./cli govern review --json           # Check for rule/skill promotion candidates
-./cli prune --all --dry-run          # Cleanup preview (consolidate 90d + stale 180d)
+./cli prune --all --dry-run          # Cleanup preview (consolidate 90d + stale 180d + git-observations 90d)
 ./cli prune --consolidate-days 90    # Merge old session nodes under the same topic
 ./cli prune --stale-days 180         # Remove memory never hit by recall
 ./cli export --type all --format json # Export

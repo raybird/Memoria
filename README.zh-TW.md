@@ -78,10 +78,11 @@ curl http://localhost:3917/v1/stats
 
 | 領域 | 能力 |
 |------|------|
-| **入口** | CLI（init/sync/stats/doctor/verify/index/source/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（12 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）｜所有指令支援 `--json` 機器可讀輸出 |
+| **入口** | CLI（init/sync/stats/doctor/verify/index/source/repo/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（19 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）｜所有指令支援 `--json` 機器可讀輸出 |
 | **儲存** | SQLite + markdown 雙軌持久化｜時間衰減評分（halfLife 90 天）+ 合併 + 過期清理｜utility-weighted retention（高效用記憶不被清掉）｜backward-compatible schema 自動升級 |
 | **檢索** | `keyword / tree / hybrid` recall + 選用語意 `vector` recall（本地 embedding + libSQL 原生向量，RRF 融合，fail-open）｜adaptive gate 跳過 trivial query｜Lightweight scope isolation（`global / project / agent / user`）｜Recall 路由 telemetry（`stats` + API） |
 | **效用回饋（UFL）** | 每次 recall 發 `recall_id`；adapter 把觀測到的字面重用效用寫回（`POST /v1/recall/:id/outcome`）｜明確回饋（`signal:'explicit'`、SDK `markRecallUseful`）凌駕 reuse proxy｜confidence×utility 校準呈現在 `stats`/telemetry｜聚合效用讓長期被忽略的記憶降權排序、有用的記憶免於清理 |
+| **Git-Aware Memory** | 唯讀觀察既有 git repo（`repo add/sync/...`）｜增量掃描 commits/refs/tags → 型別化事件（含 history rewrite 偵測）｜deterministic range 摘要 + agent 回寫增強｜高價值摘要升級為可 recall 記憶並附 SHA 級溯源（`hit.source`）｜非侵入式契約（runtime 白名單，git 狀態 byte-identical） |
 | **Wiki 工作流** | Raw source 匯入（markdown/text）｜Compiled wiki special pages（`index / log / overview`）｜Query file-back（`synthesis / comparison`）｜Wiki governance lint |
 | **治理** | Governance review（重複 decisions/skills 候選檢查）｜Import guardrails（低價值 summary 修正 + duplicate event suppression） |
 | **Bootstrap** | `./cli setup --serve --json` 一鍵安裝｜no-clone release artifact 安裝路徑｜deployed skill 自動部署到 `<memoria-home>/.agents/` |
@@ -131,6 +132,13 @@ curl http://localhost:3917/v1/stats
 | `POST` | `/v1/wiki/file-query` | 將高價值 query 回寫成 wiki page |
 | `POST` | `/v1/wiki/lint` | 執行 wiki governance lint |
 | `GET`  | `/v1/sessions/:id/summary` | 會話摘要 |
+| `POST` | `/v1/repos` | 註冊 git repository（唯讀觀察） |
+| `GET`  | `/v1/repos` | 列出受觀察的 repositories |
+| `GET`  | `/v1/repos/:ref/status` | Registry + 即時 git 狀態 |
+| `POST` | `/v1/repos/:ref/sync` | 增量掃描（`{generate_summaries?, dry_run?, ...}`） |
+| `POST` | `/v1/repos/:ref/summarize` | 摘要 branch/range/merge/tag |
+| `GET`  | `/v1/repos/:ref/summaries/pending` | 等待 agent 增強的摘要請求 |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫 |
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
 
@@ -147,11 +155,14 @@ curl http://localhost:3917/v1/stats
 ./cli index build --scope agent:main # 只重建指定 scope
 ./cli source add notes/research.md   # 匯入 markdown/text source
 ./cli source list --json             # 列出 raw sources
+./cli repo add /path/to/project      # 唯讀觀察 git repo
+./cli repo sync project              # 增量掃描 → 事件 → 摘要 → promotion
+./cli repo summarize project --pending --json  # 待 agent 增強的摘要請求
 ./cli wiki build --json              # 重建 compiled wiki
 ./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 ./cli wiki lint --json               # 產生 durable wiki governance findings
 ./cli govern review --json           # 檢查可提升成 rule/skill 的候選項
-./cli prune --all --dry-run          # 清理預覽（含 consolidate 90d + stale 180d）
+./cli prune --all --dry-run          # 清理預覽（含 consolidate 90d + stale 180d + git-observations 90d）
 ./cli prune --consolidate-days 90    # 合併同 topic 下的舊 session nodes
 ./cli prune --stale-days 180         # 移除從未被 recall 命中的過期記憶
 ./cli export --type all --format json # 匯出

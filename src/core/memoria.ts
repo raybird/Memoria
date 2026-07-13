@@ -114,6 +114,28 @@ type ResultPayload<T> = {
 // registering a huge repo must not trigger a full-history walk (spec §28).
 const DEFAULT_FIRST_SCAN_COMMITS = 200
 
+// Per-repository sync serialization (issue-1 Phase 6): the scan's read-compare-write against the
+// previous state is not atomic, so concurrent syncs of the SAME repository (HTTP + CLI, or two
+// worktrees) queue behind each other in this process. Cross-process concurrency remains a
+// documented v1 limitation (single-user assumption).
+const repoSyncLocks = new Map<string, Promise<void>>()
+
+async function withRepoSyncLock<T>(repositoryId: string, fn: () => Promise<T>): Promise<T> {
+    const previous = repoSyncLocks.get(repositoryId) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const chained = previous.then(() => gate)
+    repoSyncLocks.set(repositoryId, chained)
+    await previous
+    try {
+        return await fn()
+    } finally {
+        release()
+        // Only clear the entry if no later caller queued behind us.
+        if (repoSyncLocks.get(repositoryId) === chained) repoSyncLocks.delete(repositoryId)
+    }
+}
+
 // Wraps a producer in the MemoriaResult envelope: success meta on return, error meta on throw.
 // `elapsed()` exposes the same clock the final latency_ms uses, for producers that log latency
 // mid-flight (e.g. recall telemetry). Throwing produces the ok:false envelope with this source.
@@ -595,10 +617,18 @@ export class MemoriaCore {
         })
     }
 
-    // Shared by repoAdd (initial scan) and repoSync. Metadata scan only in Phase 2 —
-    // events (Phase 3) and summaries (Phase 4) hang off the returned counts later.
+    // Shared by repoAdd (initial scan) and repoSync. Serialized per repository — see
+    // withRepoSyncLock. Dry runs write nothing but still queue, so they observe settled state.
     private async performRepoSync(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {
         const hostId = await getHostId(this.paths.memoryDir)
+        const preflight = findRepository(this.paths.dbPath, ref, hostId)
+        if (!preflight || !preflight.instance) throw new Error(`repository_not_found: ${ref}`)
+        return withRepoSyncLock(preflight.repository.id, () => this.performRepoSyncLocked(ref, options))
+    }
+
+    private async performRepoSyncLocked(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {
+        const hostId = await getHostId(this.paths.memoryDir)
+        // Re-resolve inside the lock: a queued sync must see the state its predecessor wrote.
         const found = findRepository(this.paths.dbPath, ref, hostId)
         if (!found || !found.instance) throw new Error(`repository_not_found: ${ref}`)
         if (found.repository.status === 'disabled') {

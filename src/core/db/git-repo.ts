@@ -146,8 +146,29 @@ export type RegisterRepositoryInput = {
 export function registerRepository(dbPath: string, input: RegisterRepositoryInput): RepoRegistrationData {
     return withDb(dbPath, (db) => db.transaction(() => {
         const now = nowIso()
-        const existing = db.prepare('SELECT * FROM repositories WHERE fingerprint = ?')
+        let existing = db.prepare('SELECT * FROM repositories WHERE fingerprint = ?')
             .get(input.fingerprint) as RepositoryRow | undefined
+
+        // §25: a shallow clone that later gained full history computes a NEW (root-commit)
+        // fingerprint. If this exact path was registered as limited_history, upgrade that
+        // repository's identity in place instead of creating a duplicate logical repository.
+        if (!existing && input.status === 'active') {
+            const instanceAtPath = db.prepare('SELECT * FROM repository_instances WHERE host_id = ? AND local_path = ?')
+                .get(input.hostId, input.localPath) as InstanceRow | undefined
+            if (instanceAtPath) {
+                const candidate = db.prepare('SELECT * FROM repositories WHERE id = ?')
+                    .get(instanceAtPath.repository_id) as RepositoryRow | undefined
+                if (candidate && candidate.status === 'limited_history') {
+                    db.prepare(`
+                      UPDATE repositories
+                      SET fingerprint = ?, root_commit_sha = ?, status = 'active', updated_at = ?
+                      WHERE id = ?
+                    `).run(input.fingerprint, input.rootCommitSha, now, candidate.id)
+                    existing = db.prepare('SELECT * FROM repositories WHERE id = ?').get(candidate.id) as RepositoryRow
+                }
+            }
+        }
+
         const repositoryId = existing?.id ?? shortId('repo', input.fingerprint)
 
         if (existing) {

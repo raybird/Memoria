@@ -11,7 +11,8 @@ export function registerPruneCommand(program: Command, paths: MemoriaPaths): voi
         .option('--dedupe-skills', 'Delete duplicate skills by normalized skill name')
         .option('--consolidate-days <days>', 'Consolidate old session nodes under same topic older than N days')
         .option('--stale-days <days>', 'Remove memory nodes and sessions never recalled and older than N days')
-        .option('--all', 'Apply default pruning targets (30 days + dedupe + consolidate 90d + stale 180d)')
+        .option('--git-observations-days <days>', 'Remove superseded git ref observations, consumed events, and finished scan runs older than N days')
+        .option('--all', 'Apply default pruning targets (30 days + dedupe + consolidate 90d + stale 180d + git-observations 90d)')
         .option('--dry-run', 'Preview prune actions without deleting')
         .option('--json', 'Machine-readable JSON output')
         .action(async (options: PruneOptions & { json?: boolean }) => {
@@ -41,6 +42,10 @@ export function registerPruneCommand(program: Command, paths: MemoriaPaths): voi
                 if (result.stale) {
                     const r = result.stale
                     console.log(`- stale: nodes=${r.staleNodes}, sessions=${r.staleSessions}, removed_nodes=${r.removedNodes}, removed_sessions=${r.removedSessions}`)
+                }
+                if (result.gitObservations) {
+                    const r = result.gitObservations
+                    console.log(`- git-observations: stale_refs=${r.staleRefs}, consumed_events=${r.consumedEvents}, finished_scan_runs=${r.finishedScanRuns}, ${dryRun ? 'would_remove' : 'removed'}=${dryRun ? r.staleRefs + r.consumedEvents + r.finishedScanRuns : r.removed}`)
                 }
             }
         })
