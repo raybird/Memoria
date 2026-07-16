@@ -9,21 +9,32 @@ export type RuntimeLayout = {
     canSelfInstallDeps: boolean
 }
 
+export type RuntimeInvocation = {
+    command: string
+    args: string[]
+}
+
 function hasRepoMarkers(candidateRoot: string): boolean {
     return existsSync(path.join(candidateRoot, 'package.json')) && existsSync(path.join(candidateRoot, 'src', 'cli.ts'))
 }
 
+function findRepoRoot(moduleDir: string): string | undefined {
+    return [
+        moduleDir,
+        path.resolve(moduleDir, '..'),
+        path.resolve(moduleDir, '..', '..')
+    ].find((candidateRoot) => hasRepoMarkers(candidateRoot))
+}
+
 export function getRuntimeLayout(): RuntimeLayout {
     const moduleDir = path.dirname(fileURLToPath(import.meta.url))
-    const candidateRoots = [moduleDir, path.resolve(moduleDir, '..')]
+    const repoRoot = findRepoRoot(moduleDir)
 
-    for (const candidateRoot of candidateRoots) {
-        if (hasRepoMarkers(candidateRoot)) {
-            return {
-                mode: 'repo',
-                runtimeRoot: candidateRoot,
-                canSelfInstallDeps: true
-            }
+    if (repoRoot) {
+        return {
+            mode: 'repo',
+            runtimeRoot: repoRoot,
+            canSelfInstallDeps: true
         }
     }
 
@@ -41,7 +52,38 @@ export function getBundledSkillSourcePath(runtimeLayout: RuntimeLayout): string 
 
 export function getSkillWrapperTarget(runtimeLayout: RuntimeLayout): string {
     if (runtimeLayout.mode === 'repo') return path.join(runtimeLayout.runtimeRoot, 'cli')
-    return path.join(runtimeLayout.runtimeRoot, 'bin', 'memoria')
+
+    const installedCandidates = [
+        path.join(runtimeLayout.runtimeRoot, 'bin', 'memoria'),
+        path.join(runtimeLayout.runtimeRoot, 'dist', 'cli.mjs')
+    ]
+    const target = installedCandidates.find((candidate) => existsSync(candidate))
+
+    if (!target) {
+        throw new Error(`Installed Memoria launcher not found under ${runtimeLayout.runtimeRoot}`)
+    }
+
+    return target
+}
+
+export function getRuntimeInvocation(runtimeLayout: RuntimeLayout): RuntimeInvocation {
+    const bundledCandidates = runtimeLayout.mode === 'repo'
+        ? [path.join(runtimeLayout.runtimeRoot, 'dist', 'cli.mjs')]
+        : [
+            path.join(runtimeLayout.runtimeRoot, 'lib', 'cli.mjs'),
+            path.join(runtimeLayout.runtimeRoot, 'dist', 'cli.mjs')
+        ]
+    const bundledCli = bundledCandidates.find((candidate) => existsSync(candidate))
+
+    if (bundledCli) {
+        return { command: process.execPath, args: [bundledCli] }
+    }
+
+    return { command: getSkillWrapperTarget(runtimeLayout), args: [] }
+}
+
+function quoteShellArg(value: string): string {
+    return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 
 export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome: string): Promise<string | undefined> {
@@ -55,11 +97,12 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
 
     const wrapperDir = path.join(targetDir, 'bin')
     const wrapperPath = path.join(wrapperDir, 'memoria')
-    const runtimeBin = getSkillWrapperTarget(runtimeLayout)
+    const runtime = getRuntimeInvocation(runtimeLayout)
+    const invocation = [runtime.command, ...runtime.args].map(quoteShellArg).join(' ')
     await fs.mkdir(wrapperDir, { recursive: true })
     await fs.writeFile(
         wrapperPath,
-        `#!/usr/bin/env bash\nset -euo pipefail\nexec "${runtimeBin}" "$@"\n`,
+        `#!/usr/bin/env bash\nset -euo pipefail\nexec ${invocation} "$@"\n`,
         'utf8'
     )
     await fs.chmod(wrapperPath, 0o755)

@@ -19,12 +19,28 @@ Cross-session, traceable, self-hostable persistent memory for AI agents.
 ### Install from npm (Recommended)
 
 ```bash
-# One-shot via npx (no install needed)
-npx @raybird.chen/memoria setup --serve --json
-
-# Or install globally
+# Persistent installation for regular use
 npm install -g @raybird.chen/memoria
+memoria setup
+```
+
+For agent automation, keep the machine-readable step log and optionally start the server:
+
+```bash
 memoria setup --serve --json
+```
+
+On macOS or Linux, install a per-user background service after setup (no sudo):
+
+```bash
+memoria service install --memoria-home "$(pwd)/memoria"
+memoria service status
+```
+
+For a quick evaluation without a persistent global command:
+
+```bash
+npx @raybird.chen/memoria setup --json
 ```
 
 `setup` also deploys the built-in agent skill into `<memoria-home>/.agents/skills/memoria/` (discoverable as the **memoria** skill), including a runtime-safe `SKILL.md`, `REFERENCE.md`, helper scripts, and a local `bin/memoria` wrapper — so agents can discover and use it immediately after install. Each folder gets its own data root, so you can give a clean folder its own memory by running `setup` there.
@@ -66,9 +82,9 @@ curl -X POST http://localhost:3917/v1/recall \
 curl http://localhost:3917/v1/stats
 ```
 
-**Prerequisites**: Node.js ≥ 18. `better-sqlite3` ships prebuilt binaries for Linux / macOS / Windows.
+**Prerequisites**: Node.js ≥ 18. `better-sqlite3` ships prebuilt binaries for Linux / macOS / Windows. Packed npm installation is exercised in CI on Ubuntu and macOS.
 
-**Other install paths**: no-clone tarball (`install.sh`) and repo-mode developer setup are documented in [docs/INSTALL.md](docs/INSTALL.md).
+**Standalone install**: `install.sh` auto-selects the native no-clone artifact for Ubuntu/Linux and macOS on x64 or arm64. Standalone and repo-mode setup are documented in [docs/INSTALL.md](docs/INSTALL.md).
 
 **Full agent integration guide**: [AGENTS.md](AGENTS.md) (covers Core Architecture / HTTP API / Bootstrap).
 

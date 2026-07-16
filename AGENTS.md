@@ -57,6 +57,9 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-adapter-runtime.sh`
 - `scripts/test-utility-shadow.sh`
 - `scripts/test-no-clone-install.sh`
+- `scripts/test-installer-platform.sh`
+- `scripts/test-npm-install.sh`
+- `scripts/test-service-manager.sh`
 - `scripts/test-mcp-e2e.sh`
 - `scripts/test-http-api.sh`
 - `scripts/test-vector-recall.sh`
@@ -81,6 +84,9 @@ This repo currently has explicit runtime and wiki test scripts:
 - Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
 - Run utility-shadow spike plumbing test: `bash scripts/test-utility-shadow.sh`
 - Run no-clone install test: `bash scripts/test-no-clone-install.sh`
+- Run installer platform routing test: `bash scripts/test-installer-platform.sh`
+- Run packed npm install test: `bash scripts/test-npm-install.sh`
+- Run macOS/Linux user service lifecycle test: `bash scripts/test-service-manager.sh`
 - Run MCP/libSQL e2e test: `bash scripts/test-mcp-e2e.sh`
 - Run HTTP API contract test: `bash scripts/test-http-api.sh`
 - Run semantic vector recall contract test: `bash scripts/test-vector-recall.sh`
@@ -134,6 +140,9 @@ Before opening PRs, mirror CI locally in this order:
 26. `bash scripts/test-repo-promotion.sh`
 27. `bash scripts/test-repo-edge.sh`
 28. `bash scripts/test-repo-noninvasive.sh`
+29. `bash scripts/test-installer-platform.sh` (all Linux/macOS x64/arm64 URL routes)
+30. `bash scripts/test-npm-install.sh` (also runs on macOS in its own CI job)
+31. `bash scripts/test-service-manager.sh` (mocked systemd/launchd lifecycle; also runs on macOS)
 
 ## Repository Layout
 
@@ -159,6 +168,9 @@ Before opening PRs, mirror CI locally in this order:
 - `scripts/test-mcp-e2e.sh`: MCP/libSQL hybrid + incremental sync test.
 - `scripts/test-vector-recall.sh`: semantic recall (`mode:'vector'`) contract — embed→store→top_k→map→fuse plumbing, degradation matrix, stats counters (stub provider; `MEMORIA_VECTOR_E2E_REAL=1` adds a live-model assertion).
 - `scripts/test-bootstrap.sh`: bootstrap test (AI Agent self-install flow).
+- `scripts/test-installer-platform.sh`: installer release URL routing contract for Linux/macOS on x64/arm64.
+- `scripts/test-npm-install.sh`: packs and installs the published npm layout, then verifies installed mode and the deployed skill launcher (Ubuntu/macOS CI).
+- `scripts/test-service-manager.sh`: mock-based Linux systemd user + macOS LaunchAgent definition/lifecycle test.
 - `scripts/test-wiki-ingest.sh`: raw source ingest + source-summary page test.
 - `scripts/test-wiki-build.sh`: compiled wiki special pages test.
 - `scripts/test-wiki-query-fileback.sh`: query filing test.

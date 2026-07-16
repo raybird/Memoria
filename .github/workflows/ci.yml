@@ -113,6 +113,44 @@ jobs:
               ;;
           esac
 
+  npm-install:
+    name: npm install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: static
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build dist artifact
+        run: pnpm run build
+
+      - name: Test installer platform routing
+        run: bash scripts/test-installer-platform.sh
+
+      - name: Test user service lifecycle
+        run: bash scripts/test-service-manager.sh
+
+      - name: Test packed npm installation
+        run: bash scripts/test-npm-install.sh
+
   node18-smoke:
     name: Node 18 smoke (min supported)
     runs-on: ubuntu-latest

@@ -19,12 +19,28 @@
 ### 從 npm 安裝（推薦）
 
 ```bash
-# 一次性執行（無須安裝）
-npx @raybird.chen/memoria setup --serve --json
-
-# 或全域安裝
+# 日常使用建議採持久安裝
 npm install -g @raybird.chen/memoria
+memoria setup
+```
+
+Agent automation 可保留機器可讀的逐步輸出，並視需要直接啟動 server：
+
+```bash
 memoria setup --serve --json
+```
+
+macOS 或 Linux 可在 setup 後安裝個人層級背景服務，不需要 sudo：
+
+```bash
+memoria service install --memoria-home "$(pwd)/memoria"
+memoria service status
+```
+
+若只想快速試用、不建立持久的全域指令：
+
+```bash
+npx @raybird.chen/memoria setup --json
 ```
 
 `setup` 也會把內建 agent skill 部署到 `<memoria-home>/.agents/skills/memoria/`(在 active_skills 中以 **memoria** 名稱出現),其中包含 runtime-safe 的 `SKILL.md`、`REFERENCE.md`、helper scripts 與本地 `bin/memoria` wrapper,讓 agent 安裝後即可直接發現並使用。每個資料夾各有獨立 data root,所以只要在乾淨資料夾執行 `setup`,該資料夾就能擁有自己的記憶。
@@ -66,9 +82,9 @@ curl -X POST http://localhost:3917/v1/recall \
 curl http://localhost:3917/v1/stats
 ```
 
-**前置需求**：Node.js ≥ 18。`better-sqlite3` 自帶 Linux / macOS / Windows prebuilt binaries。
+**前置需求**：Node.js ≥ 18。`better-sqlite3` 自帶 Linux / macOS / Windows prebuilt binaries；packed npm 安裝會在 Ubuntu 與 macOS CI 實際驗證。
 
-**其他安裝路徑**：no-clone tarball（`install.sh`）與 repo 開發模式請見 [docs/INSTALL.md](docs/INSTALL.md)。
+**獨立安裝**：`install.sh` 會依 Node runtime 自動選擇 Ubuntu/Linux 或 macOS 的 x64/arm64 no-clone artifact。獨立安裝與 repo 開發模式請見 [docs/INSTALL.md](docs/INSTALL.md)。
 
 **完整 Agent 整合指南**：[AGENTS.md](AGENTS.md)（含 Core Architecture / HTTP API / Bootstrap 章節）
 

@@ -19,6 +19,7 @@ import { registerExportCommand } from './cli/commands/export.js'
 import { registerServeCommand } from './cli/commands/serve.js'
 import { registerPreflightCommand } from './cli/commands/preflight-cmd.js'
 import { registerSetupCommand } from './cli/commands/setup.js'
+import { registerServiceCommand } from './cli/commands/service.js'
 import { registerAdapterCommand } from './cli/commands/adapter.js'
 
 // Injected by esbuild (scripts/build.mjs) from package.json in the production bundle.
@@ -58,6 +59,7 @@ async function run(): Promise<void> {
   registerPruneCommand(program, paths)
   registerExportCommand(program, paths)
   registerServeCommand(program)
+  registerServiceCommand(program, paths, runtimeLayout)
   registerPreflightCommand(program, paths, runtimeLayout)
   registerSetupCommand(program, runtimeLayout)
   registerAdapterCommand(program)

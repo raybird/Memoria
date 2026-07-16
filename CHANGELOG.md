@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-07-16
+
+### Added
+- Native no-clone release artifacts for Linux and macOS on x64 and arm64. The tag workflow packages and exercises each artifact on a matching GitHub-hosted runner before publishing; `install.sh` auto-detects the Node runtime platform, supports URL preview/explicit platform routing, and has a shell contract test for all four targets.
+- Per-user background service management for macOS and Linux: `memoria service install/start/stop/status/uninstall` writes a LaunchAgent or `systemd --user` definition without sudo. Installed services use an absolute Node executable and bundled CLI path so launchd/systemd do not depend on interactive shell `PATH`; lifecycle rendering and command sequences are covered for both platforms with mock-based tests.
+
+### Fixed
+- npm/npx installed mode now deploys the agent skill wrapper against the packaged `dist/cli.mjs` launcher instead of assuming the no-clone-only `bin/memoria` layout; repo-mode detection also works when running directly through `tsx`, and generated wrappers safely quote paths containing spaces.
+
+### Changed
+- Human-readable `memoria setup` output now reports the resolved data root, database, deployed skill, and server URL without changing the existing `--json` automation contract.
+- Added a packed npm installation E2E and an Ubuntu/macOS CI matrix; release tags now test the npm artifact before publishing.
+
 ## [1.19.0] - 2026-07-13
 
 ### Added

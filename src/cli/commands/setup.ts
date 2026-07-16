@@ -8,7 +8,7 @@ import type { RuntimeLayout } from '../runtime.js'
 export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLayout): void {
     program
         .command('setup')
-        .description('One-shot setup: preflight → install deps → init → (optional serve)')
+        .description('Prepare the runtime, initialize data, verify health, and deploy the agent skill')
         .option('--serve', 'Start HTTP server after setup')
         .option('--port <port>', 'Port for serve (default: 3917)')
         .option('--memoria-home <path>', 'Data root for .memory/ knowledge/ configs (default: ./memoria)')
@@ -24,10 +24,27 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 const ms = Date.now() - stepStart
                 if (jsonOut) {
                     console.log(JSON.stringify({ step, ok, ms, ...extra }))
-                } else {
-                    const icon = ok ? '✓' : '✗'
-                    console.log(`${icon} [${step}] ${JSON.stringify(extra)}`)
+                    return
                 }
+
+                const labels: Record<string, string> = {
+                    preflight: 'Preflight',
+                    install: 'Runtime dependencies',
+                    init: 'Data initialized',
+                    verify: 'Database verified',
+                    skill: 'Agent skill deployed',
+                    serve: 'Server running'
+                }
+                const detail =
+                    typeof extra.error === 'string' ? extra.error :
+                    typeof extra.path === 'string' ? extra.path :
+                    typeof extra.home === 'string' ? extra.home :
+                    typeof extra.port === 'number' ? `http://127.0.0.1:${extra.port}` :
+                    typeof extra.reason === 'string' ? extra.reason :
+                    typeof extra.mode === 'string' ? `${extra.mode} mode` :
+                    undefined
+                const icon = ok ? '✓' : '✗'
+                console.log(`${icon} ${labels[step] ?? step}${detail ? `: ${detail}` : ''}`)
             }
 
             let stepStart = Date.now()
@@ -64,7 +81,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             stepStart = Date.now()
             try {
                 await setupCore.init()
-                stepLog('init', true)
+                stepLog('init', true, { home: setupPaths.memoriaHome })
             } catch (error) {
                 stepLog('init', false, { error: error instanceof Error ? error.message : String(error) })
                 process.exitCode = 1
@@ -74,7 +91,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             // Step 4: verify
             stepStart = Date.now()
             const { ok: verifyOk, checks: verifyChecks } = await runVerify(setupPaths)
-            stepLog('verify', verifyOk, verifyOk ? {} : { checks: verifyChecks.filter((c) => c.status === 'fail') })
+            stepLog('verify', verifyOk, verifyOk ? { path: setupPaths.dbPath } : { checks: verifyChecks.filter((c) => c.status === 'fail') })
             if (!verifyOk) {
                 process.exitCode = 1
                 return
@@ -101,9 +118,19 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 process.on('SIGINT', shutdown)
                 process.on('SIGTERM', shutdown)
             } else if (!jsonOut) {
-                console.log('\n✅ Memoria setup complete!')
-                console.log(`   Data root: ${setupPaths.memoriaHome}`)
-                console.log(`   Run: MEMORIA_HOME="${setupPaths.memoriaHome}" ./cli serve`)
+                const installedBin = deployedSkillPath
+                    ? path.join(deployedSkillPath, 'bin', 'memoria')
+                    : 'memoria'
+                console.log('\nMemoria setup complete.')
+                console.log(`Data root: ${setupPaths.memoriaHome}`)
+                console.log(
+                    `Start server: MEMORIA_HOME=${JSON.stringify(setupPaths.memoriaHome)} ` +
+                    `${JSON.stringify(installedBin)} serve`
+                )
+                console.log(
+                    `Install background service: ${JSON.stringify(installedBin)} service install ` +
+                    `--memoria-home ${JSON.stringify(setupPaths.memoriaHome)}`
+                )
             }
         })
 }

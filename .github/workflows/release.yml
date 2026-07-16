@@ -6,7 +6,121 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Type check
+        run: pnpm run check
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Release docs sync check
+        run: pnpm run release:docs-check
+
+      - name: Smoke / bootstrap / installation tests
+        run: |
+          bash scripts/test-smoke.sh
+          bash scripts/test-bootstrap.sh
+          bash scripts/test-installer-platform.sh
+          bash scripts/test-service-manager.sh
+          bash scripts/test-npm-install.sh
+
+  artifacts:
+    name: Artifact (${{ matrix.platform }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15-intel
+            platform: darwin-x64
+          - runner: macos-15
+            platform: darwin-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify native runner platform
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+        run: |
+          ACTUAL_PLATFORM="$(node -p "process.platform + '-' + process.arch")"
+          if [ "$ACTUAL_PLATFORM" != "$EXPECTED_PLATFORM" ]; then
+            echo "Runner platform $ACTUAL_PLATFORM does not match $EXPECTED_PLATFORM" >&2
+            exit 1
+          fi
+
+      - name: Capture release version
+        id: release_meta
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Package native release artifact
+        env:
+          MEMORIA_RELEASE_PLATFORM: ${{ matrix.platform }}
+        run: pnpm run release:package
+
+      - name: Test no-clone installation
+        run: bash scripts/test-no-clone-install.sh
+
+      - name: Upload native release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            dist/release/memoria-${{ matrix.platform }}-v${{ steps.release_meta.outputs.version }}.tar.gz
+            dist/release/memoria-${{ matrix.platform }}-v${{ steps.release_meta.outputs.version }}.tar.gz.sha256
+
+  publish:
+    name: Publish release
+    needs: artifacts
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -30,32 +144,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify tag matches package.json version
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          PKG="$(node -p "require('./package.json').version")"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG"
-            exit 1
-          fi
-
-      - name: Release docs sync check
-        run: pnpm run release:docs-check
-
-      - name: Type check
-        run: pnpm run check
-
-      - name: Build
+      - name: Build npm package
         run: pnpm run build
 
-      - name: Package release artifact
-        run: pnpm run release:package
-
-      - name: Smoke / bootstrap / no-clone tests
-        run: |
-          bash scripts/test-smoke.sh
-          bash scripts/test-bootstrap.sh
-          bash scripts/test-no-clone-install.sh
+      - name: Download native release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist/release
+          merge-multiple: true
 
       - name: Extract release notes from CHANGELOG
         run: |
@@ -75,8 +172,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "dist/release/memoria-linux-x64-$GITHUB_REF_NAME.tar.gz" \
-            "dist/release/memoria-linux-x64-$GITHUB_REF_NAME.tar.gz.sha256" \
+            dist/release/*.tar.gz \
+            dist/release/*.tar.gz.sha256 \
+            install.sh \
             --title "$GITHUB_REF_NAME" \
             --notes-file release-notes.md
 

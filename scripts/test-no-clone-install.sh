@@ -4,7 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(node -e "const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).version);" "$ROOT_DIR/package.json")"
-ARTIFACT_PATH="${1:-$ROOT_DIR/dist/release/memoria-linux-x64-v${VERSION}.tar.gz}"
+PLATFORM="$(node -p "process.platform + '-' + process.arch")"
+ARTIFACT_PATH="${1:-$ROOT_DIR/dist/release/memoria-${PLATFORM}-v${VERSION}.tar.gz}"
 TMP_DIR="$(mktemp -d)"
 INSTALL_DIR="$TMP_DIR/install"
 WORK_DIR="$TMP_DIR/work"
@@ -36,7 +37,14 @@ mkdir -p "$WORK_DIR"
 # Packaging emits the SHA256 sidecar; generate it for standalone runs so the checksum path is
 # always exercised deterministically (the build dir is gitignored, so this is harmless).
 if [ ! -f "${ARTIFACT_PATH}.sha256" ]; then
-  ( cd "$(dirname "$ARTIFACT_PATH")" && sha256sum "$(basename "$ARTIFACT_PATH")" > "$(basename "$ARTIFACT_PATH").sha256" )
+  if command -v sha256sum >/dev/null 2>&1; then
+    ( cd "$(dirname "$ARTIFACT_PATH")" && sha256sum "$(basename "$ARTIFACT_PATH")" > "$(basename "$ARTIFACT_PATH").sha256" )
+  elif command -v shasum >/dev/null 2>&1; then
+    ( cd "$(dirname "$ARTIFACT_PATH")" && shasum -a 256 "$(basename "$ARTIFACT_PATH")" > "$(basename "$ARTIFACT_PATH").sha256" )
+  else
+    echo "sha256sum or shasum is required for this test"
+    exit 1
+  fi
 fi
 
 echo "[no-clone] install artifact (with checksum verification)"

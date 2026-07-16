@@ -1,35 +1,41 @@
 #!/usr/bin/env bash
-# AI Agent 持久化記憶系統 - 快速安裝腳本 v1.19.0
+# AI Agent 持久化記憶系統 - 快速安裝腳本 v1.20.0
 
 set -euo pipefail
 
-VERSION="1.19.0"
-PLATFORM="linux-x64"
-DEFAULT_ARTIFACT_NAME="memoria-${PLATFORM}-v${VERSION}.tar.gz"
-DEFAULT_RELEASE_URL="https://github.com/raybird/Memoria/releases/download/v${VERSION}/${DEFAULT_ARTIFACT_NAME}"
+VERSION="1.20.0"
+SUPPORTED_PLATFORMS="linux-x64 linux-arm64 darwin-x64 darwin-arm64"
 DEFAULT_INSTALL_DIR="${HOME}/.local/share/memoria"
 
 ARTIFACT_SOURCE=""
 INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 REQUESTED_VERSION="$VERSION"
+REQUESTED_PLATFORM=""
+PRINT_RELEASE_URL=0
+PLATFORM=""
+DEFAULT_ARTIFACT_NAME=""
+DEFAULT_RELEASE_URL=""
 
 usage() {
   cat <<EOF
 Memoria 快速安裝腳本 v${VERSION}
 
 Usage:
-  ./install.sh [--artifact <path-or-url>] [--install-dir <path>] [--version <tag-or-semver>]
+  ./install.sh [--artifact <path-or-url>] [--install-dir <path>]
+               [--version <tag-or-semver>] [--platform <os-arch>]
 
 Options:
   --artifact <path-or-url>  Local release tarball path or HTTPS URL
   --install-dir <path>      Install runtime into this directory
   --version <tag-or-semver> Release version/tag to download when --artifact is omitted
+  --platform <os-arch>      Override auto-detection (linux/darwin × x64/arm64)
+  --print-release-url       Print the resolved release artifact URL and exit
   -h, --help                Show this help message
 
 Examples:
-  ./install.sh --artifact ./dist/release/${DEFAULT_ARTIFACT_NAME}
-  ./install.sh --artifact https://github.com/raybird/Memoria/releases/download/v${VERSION}/${DEFAULT_ARTIFACT_NAME}
+  ./install.sh --artifact ./memoria-linux-x64-v${VERSION}.tar.gz
   ./install.sh --version ${VERSION} --install-dir "${HOME}/memoria"
+  ./install.sh --version ${VERSION} --platform darwin-arm64 --print-release-url
 
 Installed layout:
   <install-dir>/bin/memoria
@@ -48,6 +54,20 @@ has_cmd() {
 fail() {
   echo "✗ $1" >&2
   exit 1
+}
+
+validate_platform() {
+  case " $SUPPORTED_PLATFORMS " in
+    *" $1 "*) ;;
+    *) fail "unsupported platform: '$1' (supported: $SUPPORTED_PLATFORMS)" ;;
+  esac
+}
+
+detect_platform() {
+  local detected
+  detected="$(node -p "process.platform + '-' + process.arch")"
+  validate_platform "$detected"
+  printf '%s\n' "$detected"
 }
 
 download_artifact() {
@@ -79,6 +99,7 @@ validate_version() {
 
 resolve_release_url() {
   local raw_version="$1"
+  local platform="$2"
   local normalized="$raw_version"
 
   if [[ "$normalized" != v* ]]; then
@@ -86,7 +107,7 @@ resolve_release_url() {
   fi
 
   local clean_version="${normalized#v}"
-  printf 'https://github.com/raybird/Memoria/releases/download/%s/memoria-%s-v%s.tar.gz\n' "$normalized" "$PLATFORM" "$clean_version"
+  printf 'https://github.com/raybird/Memoria/releases/download/%s/memoria-%s-v%s.tar.gz\n' "$normalized" "$platform" "$clean_version"
 }
 
 # Verify the downloaded tarball against a SHA256 sidecar (<source>.sha256). The sidecar is fetched
@@ -142,6 +163,16 @@ while [ "$#" -gt 0 ]; do
       REQUESTED_VERSION="$2"
       shift 2
       ;;
+    --platform)
+      [ "$#" -ge 2 ] || fail "missing value for --platform"
+      validate_platform "$2"
+      REQUESTED_PLATFORM="$2"
+      shift 2
+      ;;
+    --print-release-url)
+      PRINT_RELEASE_URL=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -160,12 +191,20 @@ if ! has_cmd tar; then
   fail "tar is required to extract release artifacts"
 fi
 
+PLATFORM="${REQUESTED_PLATFORM:-$(detect_platform)}"
+validate_platform "$PLATFORM"
+REQUESTED_CLEAN_VERSION="${REQUESTED_VERSION#v}"
+DEFAULT_ARTIFACT_NAME="memoria-${PLATFORM}-v${REQUESTED_CLEAN_VERSION}.tar.gz"
+DEFAULT_RELEASE_URL="$(resolve_release_url "$REQUESTED_VERSION" "$PLATFORM")"
+
+if [ "$PRINT_RELEASE_URL" -eq 1 ]; then
+  [ -z "$ARTIFACT_SOURCE" ] || fail "--print-release-url cannot be combined with --artifact"
+  printf '%s\n' "$DEFAULT_RELEASE_URL"
+  exit 0
+fi
+
 if [ -z "$ARTIFACT_SOURCE" ]; then
-  if [ "$REQUESTED_VERSION" = "$VERSION" ]; then
-    ARTIFACT_SOURCE="$DEFAULT_RELEASE_URL"
-  else
-    ARTIFACT_SOURCE="$(resolve_release_url "$REQUESTED_VERSION")"
-  fi
+  ARTIFACT_SOURCE="$DEFAULT_RELEASE_URL"
 fi
 
 TMP_DIR="$(mktemp -d)"
@@ -181,6 +220,7 @@ echo "=================================="
 echo ""
 echo "[preflight]"
 echo "- node: $(node --version)"
+echo "- platform: $PLATFORM"
 echo "- install dir: $INSTALL_DIR"
 echo "- artifact: $ARTIFACT_SOURCE"
 echo ""

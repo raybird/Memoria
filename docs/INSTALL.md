@@ -4,39 +4,88 @@
 
 - Node.js `>=18`（建議 20/22）
 - npm 安裝跨平台（Linux / macOS / Windows，`better-sqlite3` 自帶 prebuilt binaries）
-- no-clone release artifact 目前只支援 Linux x64
+- no-clone release artifact 支援 Linux/macOS 的 x64 與 arm64；installer 依目前 Node runtime 自動選擇
 - repo 開發模式需要 `pnpm`
 
 ## Method A: npm Install (Recommended)
 
-```bash
-# 一次性執行（無須全域安裝）
-npx @raybird.chen/memoria setup --serve --json
+一般使用者建議持久安裝，讓 deployed skill wrapper 有穩定的 runtime 可以呼叫：
 
-# 或全域安裝
+```bash
 npm install -g @raybird.chen/memoria
+memoria setup
+```
+
+Agent automation 可使用 JSON Lines step log，並選擇直接啟動 server：
+
+```bash
 memoria setup --serve --json
 ```
 
+一次性試用可使用 `npx @raybird.chen/memoria setup --json`；正式長期使用仍建議安裝套件。packed npm artifact 與 deployed skill wrapper 會在 Ubuntu、macOS CI 實際安裝及執行。
+
 `setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
+
+### Background service (macOS / Ubuntu)
+
+Setup 完成後，可安裝個人層級的常駐服務，不需要 sudo：
+
+```bash
+memoria service install --memoria-home "$(pwd)/memoria"
+memoria service status
+```
+
+支援的 lifecycle commands：
+
+```bash
+memoria service install [--port 3917] [--no-start]
+memoria service start
+memoria service stop
+memoria service status [--json]
+memoria service uninstall
+```
+
+- Ubuntu/Linux 使用 `~/.config/systemd/user/memoria.service` 與 `systemctl --user`；log 可用 `journalctl --user -u memoria.service` 查看。
+- macOS 使用 `~/Library/LaunchAgents/io.github.raybird.memoria.plist`；stdout/stderr 位於 `~/Library/Logs/Memoria/`。
+- installed runtime 會使用絕對 Node executable 與 bundled CLI 路徑，不依賴 launchd/systemd 的 shell `PATH`。
+- `service uninstall` 只停止並移除 service definition，不刪除 `<memoria-home>` 的資料。
+- Ubuntu 若需要登出後仍持續執行，可另外啟用 user lingering；一般桌面登入使用不需要。
 
 ## Method B: No-Clone Tarball Install
 
+下載 release 中的 `install.sh` 後執行；installer 會依目前 Node runtime 自動選擇原生 artifact：
+
+```bash
+bash install.sh --version 1.20.0 --install-dir "$HOME/.local/share/memoria"
+```
+
+可先檢查將要下載的 URL，不會寫入任何檔案：
+
+```bash
+bash install.sh --version 1.20.0 --print-release-url
+```
+
+也可直接指定已下載的本地 artifact：
+
 ```bash
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.19.0.tar.gz \
+  --artifact ./memoria-linux-x64-v1.20.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 ```
 
-也可省略 `--artifact`，直接用 `--version` 從 GitHub release 下載：
+可用 artifact 平台名稱：
 
-```bash
-bash install.sh --version 1.19.0 --install-dir "$HOME/.local/share/memoria"
-```
+| OS | Node architecture | Artifact platform |
+|----|-------------------|-------------------|
+| Ubuntu/Linux | x64 | `linux-x64` |
+| Ubuntu/Linux | arm64 | `linux-arm64` |
+| macOS Intel | x64 | `darwin-x64` |
+| macOS Apple Silicon | arm64 | `darwin-arm64` |
 
 Installer behavior:
 
 - 只部署 release runtime，不建立 repo
+- 依 `process.platform` + `process.arch` 選擇與 Node 相同架構的 native artifact；`--platform` 可供 URL 檢查與自動化明確指定
 - 支援本地 tarball 路徑或 HTTPS URL
 - **自動驗證 tarball SHA256**：release 同時發布 `.tar.gz.sha256`，installer 會下載/讀取並比對，不符即中止；找不到 checksum 檔時警告後繼續（`--version` 也會先驗證格式）
 - 安裝後入口固定在 `<install-dir>/bin/memoria`

@@ -7,20 +7,23 @@ Standard release workflow for Memoria. Releases are **tag-driven** — push a `v
 From repo root, working tree clean:
 
 ```bash
-# 1. Bump version (updates package.json / src/cli.ts / install.sh / DEPLOYED_SKILL.md / docs/INSTALL.md)
+# 1. Bump version (updates package.json / install.sh / DEPLOYED_SKILL.md / docs/INSTALL.md)
 pnpm run release:bump <patch|minor|major>
 
 # 2. Edit CHANGELOG.md — move [Unreleased] items into a new [X.Y.Z] - YYYY-MM-DD section
 $EDITOR CHANGELOG.md
 
 # 3. Local pre-flight (CI will run the same checks, but cheaper to catch failures here)
-pnpm run release:docs-check
 pnpm run check
 pnpm run build
+pnpm run release:docs-check
 pnpm run release:package
 bash scripts/test-smoke.sh
 bash scripts/test-bootstrap.sh
 bash scripts/test-no-clone-install.sh
+bash scripts/test-installer-platform.sh
+bash scripts/test-service-manager.sh
+bash scripts/test-npm-install.sh
 
 # 4. Commit + tag + push
 git add -A
@@ -32,9 +35,9 @@ git push --follow-tags
 After `git push --follow-tags`, the `release.yml` workflow:
 
 1. Verifies the tag matches `package.json` version.
-2. Re-runs docs-check / check / build / package / smoke / bootstrap / no-clone tests.
+2. Re-runs docs-check / check / build plus smoke, bootstrap, installer, service, and packed npm tests.
 3. Extracts the matching `[X.Y.Z]` section from `CHANGELOG.md` as release notes.
-4. Creates the GitHub Release and uploads `dist/release/memoria-linux-x64-vX.Y.Z.tar.gz`.
+4. Builds and tests native Linux/macOS x64/arm64 artifacts on matching runners, then uploads all tarballs, checksums, and `install.sh`.
 5. Publishes `@raybird.chen/memoria` to npm with provenance.
 
 **Required GitHub secret**: `NPM_TOKEN` (automation token from npmjs.com).
@@ -50,8 +53,7 @@ After `git push --follow-tags`, the `release.yml` workflow:
 | File | Field |
 |------|-------|
 | `package.json` | `version` |
-| `src/cli.ts` | `.version('X.Y.Z')` |
-| `install.sh` | `# v…` header + `VERSION="…"` |
+| `install.sh` | `VERSION="…"` |
 | `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` | `version: "…"` |
 | `docs/INSTALL.md` | `vX.Y.Z` in install commands |
 
@@ -65,10 +67,17 @@ Release should stop immediately if any of these fail (they all run in CI as well
 - `pnpm run release:package` — deployed skill packaging contract (`DEPLOYED_SKILL.md` version + required assets + no repo-only instructions)
 - `bash scripts/test-bootstrap.sh` — bootstrap deployed skill checks
 - `bash scripts/test-no-clone-install.sh` — no-clone deployed skill checks
+- `bash scripts/test-installer-platform.sh` — Linux/macOS x64/arm64 URL routing contract
+- `bash scripts/test-service-manager.sh` — mocked systemd user and LaunchAgent lifecycle
+- `bash scripts/test-npm-install.sh` — packed npm layout and installed runtime checks
 
 ## Release Artifacts
 
-- `dist/release/memoria-linux-x64-vX.Y.Z.tar.gz` — uploaded to GitHub Release
+- `dist/release/memoria-linux-x64-vX.Y.Z.tar.gz`
+- `dist/release/memoria-linux-arm64-vX.Y.Z.tar.gz`
+- `dist/release/memoria-darwin-x64-vX.Y.Z.tar.gz`
+- `dist/release/memoria-darwin-arm64-vX.Y.Z.tar.gz`
+- A `.tar.gz.sha256` sidecar for every native artifact, plus standalone `install.sh`
 - `@raybird.chen/memoria` on npm — published from `dist/cli.mjs` + bundled deployed skill
 
 Artifact layout (tarball):
@@ -103,6 +112,6 @@ Do not force-push `main` unless explicitly approved.
 ## Manual Fallback (if CI is unavailable)
 
 ```bash
-gh release create vX.Y.Z dist/release/memoria-linux-x64-vX.Y.Z.tar.gz --notes-file <(awk '...' CHANGELOG.md)
+gh release create vX.Y.Z dist/release/*.tar.gz dist/release/*.tar.gz.sha256 install.sh --notes-file <(awk '...' CHANGELOG.md)
 npm publish --provenance --access public
 ```
