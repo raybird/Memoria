@@ -7,6 +7,7 @@ VERSION="$(node -e "const fs=require('node:fs');process.stdout.write(JSON.parse(
 PLATFORM="$(node -p "process.platform + '-' + process.arch")"
 ARTIFACT_PATH="${1:-$ROOT_DIR/dist/release/memoria-${PLATFORM}-v${VERSION}.tar.gz}"
 TMP_DIR="$(mktemp -d)"
+TMP_DIR="$(cd "$TMP_DIR" && pwd -P)"
 INSTALL_DIR="$TMP_DIR/install"
 WORK_DIR="$TMP_DIR/work"
 DATA_DIR="$WORK_DIR/memoria"
