@@ -12,6 +12,10 @@ dist/
 .memory/exports/**/*.json
 .memory/sessions/*.json
 .memory/events.jsonl
+mcp-memory-libsql.db
+mcp-memory-libsql.db-journal
+mcp-memory-libsql.db-wal
+mcp-memory-libsql.db-shm
 
 # Environment files
 .env
