@@ -8,11 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-07-13 更新
+> 2026-07-27 更新
 
-- **版本**:`v1.19.0` 已發(2026-07-13,GitHub Release + npm),內容 = Git-Aware Memory v1 全量。
-- **最新出貨(main,未發版,2026-07-13)**:**Git-Aware Memory v1 全數 ship**(issue-1,`docs/issues/issue-1/` 四件套 + decomposition,Phase 0–6 共 7 個 commits):唯讀觀察 git repo → 增量掃描(migrations 9–13,11 張新表)→ 事件推斷(含 history rewrite)→ deterministic 摘要 + agent 回寫(`repo summarize --pending/--submit`)→ promotion 進既有 recall 語料,hit 附 `source`(SHA 溯源)。CLI `repo` 七個子命令、HTTP `/v1/repos/*` 七端點、SDK 方法、8 支 `test-repo-*.sh`(CI `repo` 群組)。非侵入性總驗收通過(git 狀態 byte-identical)。
-- **既有基礎(v1.18.0 已發)**:UFL Phase 0–3(`phase-3-shipped`)+ 語意召回 MVP(`phase-1-shipped`)。
+- **版本**:`v1.20.0` 已發(2026-07-16,GitHub Release + npm),內容 = 四平台 no-clone 發佈產物 + per-user 背景服務管理。
+- **v1.20.0 重點**:(a) Linux/macOS × x64/arm64 四種原生 release 產物,tag workflow 在對應 runner 上實測後才發佈;`install.sh` 自動偵測平台並支援 URL 預覽/指定平台。(b) `memoria service install/start/stop/status/uninstall` 免 sudo 寫入 LaunchAgent 或 `systemd --user`,用絕對 Node 路徑與 bundled CLI,不依賴互動 shell `PATH`。(c) 修好 npm/npx 安裝模式的 skill wrapper 部署(原本假設 no-clone 的 `bin/memoria` 佈局)。
+- **main 未發版的異動(2026-07-27)**:只有兩筆瑣碎項——`test-no-clone-install.sh` 的 macOS 路徑驗證修正(`03d50b5`)、Serena 設定檔 schema 同步 + `mcp-memory-libsql.db` 進 gitignore(`0c0c80b`)。**不需要為此發版**;`CHANGELOG.md` 的 `[Unreleased]` 保持空白是正確的。
+- **既有基礎**:Git-Aware Memory v1(v1.19.0)、UFL Phase 0–3 + 語意召回 MVP(v1.18.0),全部 `done`。
 - **下一步**:(a) 真實 repo 試用 Git-Aware Memory(add 自己的專案 → sync → agent 回寫閉環);(b) v1.1 候選(RFC.md #10:FF-merge 推斷、session 整合、MCP repo_* tools、跨 process 鎖);(c) UFL/vector 真實資料累積照舊。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
@@ -32,7 +33,7 @@
 
 ---
 
-## 2. 本 session 出貨紀錄（v1.13.0 → v1.17.0）
+## 2. 出貨紀錄（v1.13.0 → v1.20.0）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -44,6 +45,9 @@
 | v1.16.2 | Zod 邊界 | 5 個 POST handler 改 `readValidatedBody` + Zod(`.passthrough`),畸形 body 回 400 |
 | v1.16.3 | 抽取去重 | `parseDecisionEvent`/`parseSkillEvent` 統一到 `src/core/extract.ts`(sync/recall/telemetry 三處共用) |
 | v1.17.0 | adapter 契約 | Codex 驗證正確(僅改註解);Antigravity 修好(改 transcript-based + 扁平輸出);加 `MEMORIA_ADAPTER_DEBUG` |
+| v1.18.0 | UFL + 語意召回 | UFL Phase 0–3 全數 ship;`mode:'vector'`(本地 e5 + libSQL 原生向量 + RRF,選用 fail-open);HTTP body 上限 + install.sh SHA256 驗證;CI 拆平行 job |
+| v1.19.0 | Git-Aware Memory v1 | issue-1 Phase 0–6:唯讀觀察 → 增量掃描(migrations 9–13)→ 事件推斷(含 history rewrite)→ deterministic 摘要 + agent 回寫 → promotion 進 recall 語料(hit 附 `source` SHA 溯源);`repo` 七個子命令 + `/v1/repos/*` + 8 支 e2e;非侵入性總驗收 byte-identical |
+| v1.20.0 | 發佈與服務化 | Linux/macOS × x64/arm64 四平台 no-clone 產物(對應 runner 實測後才發);`memoria service` 免 sudo 管理 LaunchAgent / `systemd --user`;修好 npm/npx 模式的 skill wrapper 部署;新增 npm 打包 E2E 與 Ubuntu/macOS CI 矩陣 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 
@@ -51,7 +55,9 @@
 
 ## 3. 當前未提交的工作(git status)
 
-> 2026-07-07:無。main 乾淨(除一貫排除的 `.serena/project.yml`),所有交付均已 commit + push。
+> 2026-07-27:無。main 乾淨且與 `origin/main` 同步,所有交付均已 commit + push。
+>
+> 註:`.serena/project.yml` 已於 `0c0c80b` 隨 Serena 新版 schema(`languages` → `language_servers`)一併提交,不再是長期髒檔;`mcp-memory-libsql.db`(MCP 本機記憶 DB)已加入 `.gitignore`,檔案保留在磁碟但不進版控。
 
 ---
 
@@ -67,6 +73,16 @@
 ---
 
 ## 5. 下一步（接續就從這開始）
+
+> **2026-07-27 現況:三條主線(UFL / 語意召回 / Git-Aware Memory)皆已 ship,RFC 快照上剩下的都是 `idea` 級。缺的不是功能,是真實資料。**
+>
+> 建議順序:
+>
+> 1. **真實 repo 試用 Git-Aware Memory**(最高價值):`repo add` 自己的專案 → `repo sync` → `repo summarize --pending` → agent 回寫 `--submit` → 確認 recall hit 帶得出 `source`。目的是驗證閉環在真實 commit 歷史上的訊噪比,而不是再加功能。
+> 2. **啟用 adapter + vector 模式累積 outcome**,再用 `route_mode` 分組比較 utility uplift,客觀回答「語意召回是否勝過字面」。標尺(UFL)與待測物(vector)都已就位,只差資料。
+> 3. **工程債(非急件)**:`core/memoria.ts` 因 Git-Aware 新增 9 個 `repo*` 方法而回到 1,100 行(P4 曾壓到 500),下次動 repo 邏輯時可抽 `core/repo-facade.ts` 由門面委派;另 `effectiveUtility`/`buildCalibration`/`tokenCoverage`/`applyUtilityWeighting` 等純函式目前只被 e2e 間接覆蓋,可比照 `scripts/repo-git-exec-driver.mts` 的 tsx driver 模式補一支直測腳本(不引入測試框架)。
+>
+> 以下為歷史紀錄,保留備查。
 
 > **2026-07-07 更新:UFL Phase 0/1/2/3 全數完成**(見 `docs/RFC-utility-feedback.md`)。Phase 1：`recall_id` + Migration 6 + `recordRecallOutcome` + `POST /v1/recall/:id/outcome` + SDK + adapter 回報。Phase 2：`buildCalibration` confidence×utility 校準(`memoria stats`/telemetry,不改 confidence)。**Phase 3(b)**:Migration 7 `memory_utility` per-memory 歸因 + `applyUtilityWeighting` utility-weighted **召回排序**(只降權)+ **prune retention**(stale/consolidate 保留高效用)。**Phase 3(a)**:Migration 8 explicit 累加器 + `effectiveUtility`(explicit 高保真、與 reuse **分開累計永不相加**、存在即凌駕)+ SDK `markRecallUseful`。全數**零觀測即 byte-identical、可回退**。**下一步 = 轉入語意召回評測靶場**(語意 RFC 解 embedding backend 後,用 utility uplift 客觀證明語意勝過字面);或讓資料在實際使用中累積,回看校準曲線與排序/保留效果。以下為 Phase 0 的原始說明,保留備查。
 
@@ -124,4 +140,4 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
   `test-smoke.sh` → `test-migrations.sh` → adapter 三支 → `test-http-api.sh`。
 - **DoD**:`pnpm run check` 過 → `pnpm run build` + `node dist/cli.mjs --help` → 相關 `test-*.sh` 過 → 觸及 shell 過 `bash -n`。
 - **Release SOP**:`bump-version.mjs` → CHANGELOG 從 `[Unreleased]` 提升 → guards → tests → commit(`Release vX.Y.Z`)→ tag → `push --follow-tags` → `release.yml` 自動發 npm + GitHub Release。
-- **`.serena/project.yml` 一律不提交。**
+- **`.serena/project.yml` 隨 Serena schema 升級才提交**(2026-07-27 起);`mcp-memory-libsql.db` 等 MCP/執行期產物一律不進版控(已在 `.gitignore`)。
