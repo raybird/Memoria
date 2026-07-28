@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-07-28
+
 ### Changed
 - **`repo summarize --pending` no longer ships the diff by default** (issue-2 Phase 1). The diff was 63–67% of a measured response and enrichment rarely used it; one real request dropped from 104 KB to 2.4 KB, which is what makes an automated agent write-back loop affordable. Opt back in with `--pending --with-diff` (HTTP `?with_diff=true`, SDK `repoPendingSummaries(ref, { includeDiff: true })`). New `--limit` / `?limit=` caps the batch (default 20 as before) — each pending summary rebuilds its own context, so the count multiplies response size.
 - **No `pending` summary skeleton is auto-promoted during `repo sync`** (issue-2 Phase 2 + R1). Two paths previously let one through: §7.6 passed `merge`/`release` unconditionally, and any skeleton scoring at or above `promoteImportanceThreshold` (default 0.7) passed on importance alone. A skeleton is deterministic output — commit subjects only, empty `decisions`/`known_limitations`/`risks`, confidence 0.4 — so it now has to be enriched (`--submit`) before it can reach the recall corpus, whatever its type or score. Explicit `repo summarize --promote` is unchanged: it still force-promotes regardless of eligibility, and is the intended escape hatch.
