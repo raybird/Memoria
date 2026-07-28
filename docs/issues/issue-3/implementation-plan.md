@@ -11,7 +11,7 @@
 ### 退化鏈
 
 ```
-repo summarize --tag backend-2026.0723.1131
+repo summarize --tag nightly-2026.0723
   └─ summarizeTag (summary-pipeline.ts:275)
        └─ previousReleaseTag(tags, tagName)      ← 只認 /^(?:v|release-)?\d+\.\d+\.\d+$/
             └─ parse(current) === null → return null
@@ -61,5 +61,5 @@ repo summarize --tag backend-2026.0723.1131
 
 1. `pnpm run check` / `pnpm run build` / `node dist/cli.mjs --help`
 2. `bash scripts/test-repo-summary.sh`（含新斷言）+ `test-repo-promotion.sh` + `test-repo-noninvasive.sh` 無回歸
-3. 真實驗證：對 line-oa-plus 重跑 `repo summarize --tag backend-2026.0723.1131`（新 range fingerprint 會建新摘要），`base_sha` = `angular+backend-2026.0721.1649` 的 commit，context 落在數 KB 級
+3. 真實驗證：對 external-repo 重跑 `repo summarize --tag nightly-2026.0723`（新 range fingerprint 會建新摘要），`base_sha` = `nightly-2026.0721` 的 commit，context 落在數 KB 級
 4. `bash -n` 過；CHANGELOG 有對應條目

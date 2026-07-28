@@ -57,7 +57,7 @@ repo add ─→ repo sync ─→ summarize --branch/--range/--merge/--tag
 | 1.5 | `scripts/test-repo-summary.sh` 補測：預設不含 diff、`--with-diff` 含、`--limit` 生效、payload 確實變小 | 腳本通過 | ✅ |
 | 1.6 | 文件：`AGENTS.md` 端點表、`docs/OPERATIONS.md` payload 體積說明 | 文件與實作一致 | ✅ |
 
-**驗收結果**：line-oa-plus `099394f..a0790ad` range，`104,392 → 2,412 bytes`（**減 97.7%**）。`commits` / `changed_files` / `diffstat` 三欄位逐位元不變，僅 `diff`（61,672 bytes）移除。
+**驗收結果**：external-repo 的 5-commit range，`104,392 → 2,412 bytes`（**減 97.7%**）。`commits` / `changed_files` / `diffstat` 三欄位逐位元不變，僅 `diff`（61,672 bytes）移除。
 
 > **實作發現（安全性）**：`test-repo-summary.sh` 的 secret 遮罩斷言是靠掃描 context 內是否出現 `sk-live...`。diff 改為預設不含之後，該斷言會**空過**（沒有 diff 就必然掃不到）。已將該段改為明確使用 `--with-diff`，並補一條 `--with-diff carries a diff` 前置斷言，確保遮罩邏輯真的被執行到。
 

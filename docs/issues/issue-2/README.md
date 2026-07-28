@@ -29,14 +29,14 @@ issue-1 交付的鏈路（`repo add` → `sync` → `summarize` → `--pending` 
 
 ## 實測證據（2026-07-28）
 
-試用對象：`Memoria` 自身（126 commits）與 `line-oa-plus`（626 commits，掃描上限 200）。
+試用對象：`Memoria` 自身（126 commits）與一個外部私有專案 repo（626 commits，掃描上限 200；下稱 external-repo，細節不入文件）。
 
 ### 發現 1：`--pending` payload 過大
 
 | 摘要 | payload 總計 | 其中 `diff` | 佔比 |
 |---|---|---|---|
 | Memoria `issue-1` commit range | 296 KB | 198 KB（已觸發截斷） | 67% |
-| line-oa-plus `#112` branch | 140 KB | 88 KB | 63% |
+| external-repo feature branch | 140 KB | 88 KB | 63% |
 
 `repoPendingSummaries` 一次最多回 20 筆待增強摘要（`src/core/memoria.ts:884`），每筆各自重建完整 context。最壞情況單一回應可達數 MB，換算約 35–75K token／筆。
 
@@ -128,7 +128,7 @@ return decisions.length > 0 || known_limitations.length > 0 || risks.length > 0
 
 | 日期 | 事件 |
 |---|---|
-| 2026-07-28 | 於 Memoria 與 line-oa-plus 兩個真實 repository 實跑 v1 全鏈路，取得三項可用性發現 |
+| 2026-07-28 | 於 Memoria 與一個外部私有 repo 實跑 v1 全鏈路，取得三項可用性發現 |
 | 2026-07-28 | 對照原始碼查證三項發現；修正發現 3 的定性（機制已存在，屬預設值/文件缺口） |
 | 2026-07-28 | 建立 issue 文件（README + implementation-plan） |
 | 2026-07-28 | Q1–Q3 拍板（全數採建議方案），Phase 1–3 實作完成並通過 e2e |

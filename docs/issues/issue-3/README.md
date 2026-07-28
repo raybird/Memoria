@@ -7,7 +7,7 @@
 | Issue 編號 | 3（本地文件編號） |
 | 複雜度級別 | Medium（局部修正 + 兩個 config 欄位，無 schema 變更） |
 | 狀態 | **實作完成**（2026-07-28，Phase 1–2 交付並通過真實驗證） |
-| 需求來源 | 2026-07-28 以 v1.21.0 對 `line-oa-plus`（20 個非 semver tag）實測 Git-Aware Memory 時發現 |
+| 需求來源 | 2026-07-28 以 v1.21.0 對 `external-repo`（20 個非 semver tag）實測 Git-Aware Memory 時發現 |
 | 建立日期 | 2026-07-28 |
 | 前置 | [issue-1](../issue-1/README.md)（Git-Aware Memory v1）、[issue-2](../issue-2/README.md)（可用性改進） |
 
@@ -17,14 +17,14 @@
 
 ## 摘要
 
-`repo summarize --tag <tag>` 在 tag 名不符 semver 時，找不到「前一個 release」會**退回空樹**當 base，把 release 範圍變成「從創世到該 tag」。在 line-oa-plus 上實測：542 commits / 1065 files、context 157 KB（issue-2 的 diff opt-in 救不到——膨脹的是 `commits[]` 58 KB 與 `changed_files[]` 98 KB）、diff 因超過輸出上限而取不到、摘要語意完全失真。
+`repo summarize --tag <tag>` 在 tag 名不符 semver 時，找不到「前一個 release」會**退回空樹**當 base，把 release 範圍變成「從創世到該 tag」。在 external-repo 上實測：542 commits / 1065 files、context 157 KB（issue-2 的 diff opt-in 救不到——膨脹的是 `commits[]` 58 KB 與 `changed_files[]` 98 KB）、diff 因超過輸出上限而取不到、摘要語意完全失真。
 
 連帶暴露第二個問題：`buildRangeContext` 的 `commits[]` / `changed_files[]` **沒有上限**，即使 base 正確，超大 range 的 context 仍會無界膨脹。
 
-## 實測證據（2026-07-28，line-oa-plus）
+## 實測證據（2026-07-28，external-repo）
 
 ```
-$ memoria repo summarize line-oa-plus --tag backend-2026.0723.1131
+$ memoria repo summarize external-repo --tag nightly-2026.0723
 - sum_0d4242f928b446fa [release] importance=0.85 status=pending
 
 git_summary_ranges.base_sha = ''（空）→ 範圍 = 整個 repo
@@ -32,7 +32,7 @@ context: commits 542 筆（58,445 bytes）、changed_files 1,065 筆（98,457 by
 warnings: "diff unavailable (objects missing or too large); context reduced to messages + stats"
 ```
 
-line-oa-plus 的 20 個 tag（`202606251200`、`backend-2026.0723.1131`、`angular+backend-2026.0721.1649`、`v0721.1600`…）**沒有一個**符合 `previousReleaseTag` 的正則 `/^(?:v|release-)?(\d+)\.(\d+)\.(\d+)$/`（`src/core/git/summary-pipeline.ts:107`）。Memoria 自身用 `v1.20.0` 是 semver，所以 issue-2 之前的試用沒踩到。
+external-repo 的 20 個 tag（`202606251200`、`nightly-2026.0723`、`nightly-2026.0721`、`v0721.1600`…）**沒有一個**符合 `previousReleaseTag` 的正則 `/^(?:v|release-)?(\d+)\.(\d+)\.(\d+)$/`（`src/core/git/summary-pipeline.ts:107`）。Memoria 自身用 `v1.20.0` 是 semver，所以 issue-2 之前的試用沒踩到。
 
 ## 影響面的精確界定（比第一眼窄）
 
@@ -71,16 +71,16 @@ line-oa-plus 的 20 個 tag（`202606251200`、`backend-2026.0723.1131`、`angul
 
 | 日期 | 事件 |
 |---|---|
-| 2026-07-28 | v1.21.0 對 line-oa-plus 實測發現；查證程式碼並修正影響面認定（sync 有閘門）；建立 issue 文件 |
+| 2026-07-28 | v1.21.0 對 external-repo 實測發現；查證程式碼並修正影響面認定（sync 有閘門）；建立 issue 文件 |
 | 2026-07-28 | Phase 1（creatordate fallback）+ Phase 2（context caps）實作完成，e2e 與真實 repo 驗證通過 |
 
-## 真實驗證結果（line-oa-plus，修復後）
+## 真實驗證結果（external-repo，修復後）
 
 同一個 tag 重跑，新舊摘要並排：
 
 | 摘要 | base | 跨度 | context |
 |---|---|---|---|
-| 新（修復後） | `240254a0` = `angular+backend-2026.0721.1649^{commit}` | 23 commits / 52 files | **7.4 KB**，無警告 |
+| 新（修復後） | `240254a0` = `nightly-2026.0721^{commit}` | 23 commits / 52 files | **7.4 KB**，無警告 |
 | 舊（退化殘留，root..tag） | 空 | 542 commits / 1065 files | 被上限截到 200/500、**73 KB**（原 157 KB），警告明示 `truncated to newest 200 of 542` |
 
 舊退化摘要（`sum_0d4242f928b446fa`）留在 `pending` 不會進語料（issue-2 R1 閘門），無需清理。

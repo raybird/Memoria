@@ -103,7 +103,7 @@ async function createRangeSummary(args: CreateSummaryArgs): Promise<{ summary: G
 
 /** Creatordate fallback for repos whose tags don't parse as semver (issue-3): ask git for tags
  *  sorted by creation time and take the one right before `current`. Without this, a non-semver tag
- *  (date stamps, `backend-2026.0723.1131`, …) found no previous release and the range silently
+ *  (date stamps, `nightly-2026.0723`, …) found no previous release and the range silently
  *  degraded to root..tag — the whole repository. `for-each-ref` is on the §5 read allowlist;
  *  `%(*objectname)` peels annotated tags to their commit. Returns null when `current` is the oldest
  *  tag (a genuine first release) or isn't in the list. */
