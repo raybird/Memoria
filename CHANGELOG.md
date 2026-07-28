@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.21.1] - 2026-07-28
+
 ### Fixed
 - **`repo summarize --tag` with a non-semver tag no longer degrades to a whole-repository range** (issue-3). The previous-release lookup only understood `v1.2.3`-style names; anything else (date stamps, `backend-2026.0723.1131`, …) found no previous tag and silently fell back to root..tag — on a real repository that meant a 542-commit / 1065-file "release" whose context ran to 157 KB with the diff unavailable. Semver comparison still wins when it applies; otherwise the boundary now comes from git creatordate order (`for-each-ref`, read-only). A genuine first release keeps its root..tag meaning. `repo sync` is unchanged — it still auto-summarizes semver tags only.
 

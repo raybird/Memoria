@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# AI Agent 持久化記憶系統 - 快速安裝腳本 v1.21.0
+# AI Agent 持久化記憶系統 - 快速安裝腳本 v1.21.1
 
 set -euo pipefail
 
-VERSION="1.21.0"
+VERSION="1.21.1"
 SUPPORTED_PLATFORMS="linux-x64 linux-arm64 darwin-x64 darwin-arm64"
 DEFAULT_INSTALL_DIR="${HOME}/.local/share/memoria"
 
