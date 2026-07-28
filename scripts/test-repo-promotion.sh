@@ -75,7 +75,17 @@ git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/reserva
 SYNC=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}')
 assert_eq "sync ok" "$(json_get "$SYNC" "d.ok")" "true"
 assert_eq "summaries created" "$(json_get "$SYNC" "d.data.summaries_created >= 2")" "true"
-assert_eq "merge summary auto-promoted (§7.6 merge rule)" "$(json_get "$SYNC" "d.data.memories_promoted >= 1")" "true"
+# issue-2 Phase 2: a milestone skeleton is no longer auto-promoted — it must be enriched first,
+# otherwise the corpus gets a commit-subject list with empty decisions and confidence 0.4.
+assert_eq "merge skeleton NOT auto-promoted (issue-2 Phase 2)" "$(json_get "$SYNC" "d.data.memories_promoted")" "0"
+MERGE_ID=$(json_get "$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")" "d.data.requests.find(r => r.summary_type === 'merge').summary_id")
+assert_eq "merge skeleton still pending" "$(test -n "$MERGE_ID" && echo yes)" "yes"
+MERGE_SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$MERGE_ID" -H 'Content-Type: application/json' -d '{
+  "title": "合併預訂衝突驗證分支", "summary": "把 feature/reservation 併回 main。",
+  "decisions": [{"decision": "以資料庫唯一約束為最終防線", "reason": "應用層檢查有 race window"}],
+  "importance": 0.5, "confidence": 0.8
+}')
+assert_eq "merge promoted after enrichment" "$(json_get "$MERGE_SUBMIT" "d.data.promoted")" "true"
 
 PENDING=$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")
 SUM_ID=$(json_get "$PENDING" "d.data.requests.find(r => r.summary_type === 'commit_range').summary_id")
@@ -130,10 +140,18 @@ curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/jso
 assert_eq "memory_sources unchanged" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_BEFORE"
 assert_eq "sessions unchanged" "$(db_get "SELECT COUNT(*) FROM sessions")" "$SESS_BEFORE"
 
-echo "[repo-promotion] release auto-promotion during sync"
+echo "[repo-promotion] release skeleton waits for enrichment (issue-2 Phase 2)"
 git -C "$REPO" "${GIT_ID[@]}" tag -a v1.0.0 -m "v1"
 SYNC2=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}')
-assert_eq "release promoted in sync" "$(json_get "$SYNC2" "d.data.memories_promoted >= 1")" "true"
+assert_eq "release skeleton not promoted in sync" "$(json_get "$SYNC2" "d.data.memories_promoted")" "0"
+assert_eq "no release checkpoint yet" \
+    "$(db_get "SELECT COUNT(*) FROM memory_checkpoints WHERE checkpoint_type = 'release_created'")" "0"
+REL_ID=$(json_get "$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")" "d.data.requests.find(r => r.summary_type === 'release').summary_id")
+REL_SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$REL_ID" -H 'Content-Type: application/json' -d '{
+  "title": "Release v1.0.0", "summary": "首個正式版本。",
+  "known_limitations": ["尚未支援跨時區預訂"], "importance": 0.6, "confidence": 0.8
+}')
+assert_eq "release promoted after enrichment" "$(json_get "$REL_SUBMIT" "d.data.promoted")" "true"
 assert_eq "release checkpoint" \
     "$(db_get "SELECT COUNT(*) FROM memory_checkpoints WHERE checkpoint_type = 'release_created'")" "1"
 

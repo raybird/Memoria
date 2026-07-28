@@ -28,9 +28,15 @@ const CHECKPOINT_TYPE_BY_SUMMARY: Record<GitSummaryType, string> = {
     release: 'release_created'
 }
 
-/** §7.6 eligibility: merge/release milestones, threshold importance, or substantive content. */
+/** §7.6 eligibility: merge/release milestones, threshold importance, or substantive content.
+ *
+ *  Milestones used to pass unconditionally, which let a *pending* skeleton — commit subjects only,
+ *  empty decisions/limitations/risks, confidence 0.4 — auto-promote during `repo sync` (issue-2
+ *  Phase 2). They now have to be enriched first. Explicit `repo summarize --promote` is unaffected:
+ *  it force-promotes through `promoteEligible(force)` without consulting this gate. */
 export function isPromotable(summary: GitSummaryRecord, threshold: number): boolean {
-    if (summary.summary_type === 'merge' || summary.summary_type === 'release') return true
+    const isMilestone = summary.summary_type === 'merge' || summary.summary_type === 'release'
+    if (isMilestone) return summary.status !== 'pending'
     if (summary.importance >= threshold) return true
     return summary.decisions.length > 0 || summary.known_limitations.length > 0 || summary.risks.length > 0
 }
