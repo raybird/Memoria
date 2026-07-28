@@ -26,6 +26,7 @@ import type {
     RepoSummarizeOptions,
     RepoSummarizeData,
     PendingSummariesData,
+    PendingSummariesOptions,
     GitSummaryRecord
 } from './core/types.js'
 
@@ -152,9 +153,13 @@ export class MemoriaClient {
         return this.post(`/v1/repos/${encodeURIComponent(ref)}/summarize`, opts ?? {})
     }
 
-    /** Pending summary requests awaiting agent enrichment (with rebuilt context) */
-    async repoPendingSummaries(ref: string): Promise<MemoriaResult<PendingSummariesData>> {
-        return this.get(`/v1/repos/${encodeURIComponent(ref)}/summaries/pending`)
+    /** Pending summary requests awaiting agent enrichment (context omits the diff unless asked) */
+    async repoPendingSummaries(ref: string, opts?: PendingSummariesOptions): Promise<MemoriaResult<PendingSummariesData>> {
+        const query = new URLSearchParams()
+        if (opts?.includeDiff) query.set('with_diff', 'true')
+        if (opts?.limit !== undefined) query.set('limit', String(opts.limit))
+        const suffix = query.size > 0 ? `?${query.toString()}` : ''
+        return this.get(`/v1/repos/${encodeURIComponent(ref)}/summaries/pending${suffix}`)
     }
 
     /** Write back an agent-generated §7.5 summary payload */

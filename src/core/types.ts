@@ -707,6 +707,13 @@ export type PendingSummariesData = {
     requests: PendingSummaryRequest[]
 }
 
+/** `--pending` shaping (issue-2 Phase 1). `includeDiff` defaults to **false**: the diff was 63–67%
+ *  of a measured payload and enrichment rarely uses it — opt back in per call when needed. */
+export type PendingSummariesOptions = {
+    includeDiff?: boolean
+    limit?: number
+}
+
 export type RepoRemoveOptions = {
     deleteObservations?: boolean
     deleteSummaries?: boolean

@@ -16,6 +16,16 @@ function shortSha(sha?: string): string {
     return sha ? sha.slice(0, 8) : '-'
 }
 
+/** Shared by the numeric flags on this command (`--history-limit`, `--limit`). */
+function parsePositiveInt(raw: string | undefined, flag: string): number | undefined {
+    if (raw === undefined) return undefined
+    const value = Number(raw)
+    if (!Number.isFinite(value) || value <= 0) {
+        throw new Error(`Invalid ${flag} '${raw}'. Use a positive number`)
+    }
+    return value
+}
+
 export function registerRepoCommand(program: Command, core: MemoriaCore): void {
     const repoCommand = program
         .command('repo')
@@ -33,10 +43,7 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
         .action(async (repoPath: string, options: {
             name?: string; defaultBranch?: string; scanHistory?: boolean; historyLimit?: string; json?: boolean
         }) => {
-            const historyLimit = options.historyLimit === undefined ? undefined : Number(options.historyLimit)
-            if (historyLimit !== undefined && (!Number.isFinite(historyLimit) || historyLimit <= 0)) {
-                throw new Error(`Invalid --history-limit '${options.historyLimit}'. Use a positive number`)
-            }
+            const historyLimit = parsePositiveInt(options.historyLimit, '--history-limit')
             const result = await core.repoAdd({
                 path: path.resolve(repoPath),
                 name: options.name,
@@ -164,15 +171,21 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
         .option('--force', 'Bypass the trivial-change filter')
         .option('--promote', 'Promote resulting summaries to memory (Phase 5)')
         .option('--pending', 'List summaries awaiting agent enrichment (with rebuilt context)')
+        .option('--with-diff', 'Include the full diff in --pending context (default: messages + file list only)')
+        .option('--limit <n>', 'Max pending summaries returned by --pending (default: 20)')
         .option('--submit <summaryId>', 'Write back an agent-generated summary payload')
         .option('--file <path>', 'JSON payload file for --submit (default: stdin, "-" for stdin)')
         .option('--json', 'Machine-readable JSON output')
         .action(async (ref: string, options: {
             branch?: string; range?: string; merge?: string; tag?: string; type?: string
-            force?: boolean; promote?: boolean; pending?: boolean; submit?: string; file?: string; json?: boolean
+            force?: boolean; promote?: boolean; pending?: boolean; withDiff?: boolean; limit?: string
+            submit?: string; file?: string; json?: boolean
         }) => {
             if (options.pending) {
-                const result = await core.repoPendingSummaries(ref)
+                const result = await core.repoPendingSummaries(ref, {
+                    includeDiff: options.withDiff,
+                    limit: parsePositiveInt(options.limit, '--limit')
+                })
                 if (!result.ok) throw new Error(result.error)
                 if (options.json) {
                     console.log(JSON.stringify(result))
@@ -183,6 +196,7 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
                         console.log(`- ${request.summary_id} [${request.summary_type}] ${shortSha(request.range.base_sha)}..${shortSha(request.range.head_sha)} | files=${request.context.diffstat.files} (+${request.context.diffstat.additions}/-${request.context.diffstat.deletions})`)
                     }
                     if (requests.length > 0) {
+                        if (!options.withDiff) console.log('提示: context 不含 diff，需要完整 diff 請加 --with-diff')
                         console.log(`提示: repo summarize <repository> --submit <summaryId> --file <payload.json>`)
                     }
                 }

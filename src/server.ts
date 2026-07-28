@@ -20,7 +20,7 @@
 //   GET  /v1/repos/:ref/status
 //   POST /v1/repos/:ref/sync       body: { generate_summaries?, dry_run?, force_summary?, from?, to? } (empty ok)
 //   POST /v1/repos/:ref/summarize  body: { branch?, range?, merge?, tag?, type?, force?, promote? } (empty ok)
-//   GET  /v1/repos/:ref/summaries/pending
+//   GET  /v1/repos/:ref/summaries/pending?with_diff=true&limit=20
 //   POST /v1/repos/:ref/summaries/:summaryId   body: §7.5 summary payload (agent write-back)
 
 import http from 'node:http'
@@ -414,7 +414,16 @@ export function createServer(core: MemoriaCore): http.Server {
 
             const repoPendingMatch = /^\/v1\/repos\/([^/]+)\/summaries\/pending$/.exec(pathname)
             if (method === 'GET' && repoPendingMatch) {
-                const result = await core.repoPendingSummaries(decodeURIComponent(repoPendingMatch[1]))
+                const limitRaw = parsedUrl.searchParams.get('limit')
+                const limit = limitRaw ? Number(limitRaw) : undefined
+                if (limitRaw && (!Number.isFinite(limit) || (limit as number) <= 0)) {
+                    sendError(res, 400, 'Invalid limit query param; expected positive number')
+                    return
+                }
+                const result = await core.repoPendingSummaries(decodeURIComponent(repoPendingMatch[1]), {
+                    includeDiff: parsedUrl.searchParams.get('with_diff') === 'true',
+                    limit
+                })
                 send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
                 return
             }

@@ -26,6 +26,13 @@ export type SummaryContext = {
     warnings: string[]
 }
 
+/** Per-call overrides. `includeDiff` beats `git.summarization.includeDiff` when given (issue-2 Phase 1):
+ *  the diff dominates payload size (measured 63–67% of a `--pending` response), so callers that only
+ *  need messages + file list can drop it without touching the repo-wide config. */
+export type SummaryContextOptions = {
+    includeDiff?: boolean
+}
+
 function splitDiffSections(diff: string): string[] {
     // Every file section starts with "diff --git "; keep the leading chunk with its section.
     const sections: string[] = []
@@ -51,7 +58,8 @@ export async function buildRangeContext(
     baseSha: string | null,
     headSha: string,
     gitConfig: MemoriaGitConfig,
-    explicitCommits?: SummaryContextCommit[]
+    explicitCommits?: SummaryContextCommit[],
+    options?: SummaryContextOptions
 ): Promise<SummaryContext> {
     const warnings: string[] = []
     const base = baseSha ?? EMPTY_TREE_SHA
@@ -96,7 +104,8 @@ export async function buildRangeContext(
     }
 
     let diff: string | undefined
-    if (gitConfig.summarization.includeDiff && changedFiles.length > 0) {
+    const includeDiff = options?.includeDiff ?? gitConfig.summarization.includeDiff
+    if (includeDiff && changedFiles.length > 0) {
         const diffOut = await runGit(repositoryRoot, ['diff', base, headSha], {
             maxOutputBytes: Math.max(gitConfig.summarization.maxDiffBytes * 4, 1024 * 1024)
         }).catch(() => null)

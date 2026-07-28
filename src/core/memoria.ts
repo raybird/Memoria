@@ -97,6 +97,7 @@ import type {
     RepoSummarizeOptions,
     RepoSummarizeData,
     PendingSummariesData,
+    PendingSummariesOptions,
     PendingSummaryRequest,
     GitSummaryRecord
 } from './types.js'
@@ -113,6 +114,10 @@ type ResultPayload<T> = {
 // First `repo sync` after registration only ingests recent history unless told otherwise —
 // registering a huge repo must not trigger a full-history walk (spec §28).
 const DEFAULT_FIRST_SCAN_COMMITS = 200
+
+// How many pending summaries one `--pending` call returns (issue-2 Phase 1). Each one rebuilds its
+// own context, so this is the multiplier on response size — callers can lower it per call.
+const DEFAULT_PENDING_SUMMARY_LIMIT = 20
 
 // Per-repository sync serialization (issue-1 Phase 6): the scan's read-compare-write against the
 // previous state is not atomic, so concurrent syncs of the SAME repository (HTTP + CLI, or two
@@ -876,17 +881,21 @@ export class MemoriaCore {
         })
     }
 
-    /** Pending summary requests for agent enrichment (D1): skeleton + freshly rebuilt context. */
-    async repoPendingSummaries(ref: string): Promise<MemoriaResult<PendingSummariesData>> {
+    /** Pending summary requests for agent enrichment (D1): skeleton + freshly rebuilt context.
+     *  The diff is omitted unless `options.includeDiff` asks for it (issue-2 Phase 1) — every pending
+     *  summary rebuilds its own context, so shipping diffs by default made a full response run to MBs. */
+    async repoPendingSummaries(ref: string, options: PendingSummariesOptions = {}): Promise<MemoriaResult<PendingSummariesData>> {
         return withResult('sqlite', async () => {
             await this.init()
             const input = await this.buildPipelineInput(ref)
-            const pending = listSummaries(this.paths.dbPath, input.repositoryId, { status: 'pending', limit: 20 })
+            const limit = options.limit ?? DEFAULT_PENDING_SUMMARY_LIMIT
+            const pending = listSummaries(this.paths.dbPath, input.repositoryId, { status: 'pending', limit })
             const requests: PendingSummaryRequest[] = []
             for (const summary of pending) {
                 if (!summary.range) continue
                 const context = await buildRangeContext(
-                    input.repositoryRoot, summary.range.base_sha ?? null, summary.range.head_sha, input.gitConfig
+                    input.repositoryRoot, summary.range.base_sha ?? null, summary.range.head_sha, input.gitConfig,
+                    undefined, { includeDiff: options.includeDiff ?? false }
                 ).catch(() => null)
                 if (!context) continue // range objects gone (rewritten history) — skip, stays pending
                 requests.push({

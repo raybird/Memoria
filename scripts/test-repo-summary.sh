@@ -108,8 +108,11 @@ echo "SECRET_TOKEN=verysecretvalue12345" > "$REPO/.env"
 { echo "const apiKey = \"sk-live1234567890abcdefghij\""; seq 1 30; } > "$REPO/conf/client.js"
 git -C "$REPO" add -f . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c8: client config"
 "$CLI" repo sync "$REPO_ID" --json >/dev/null
-PENDING=$("$CLI" repo summarize "$REPO_ID" --pending --json)
+# Masking must be asserted against a context that ACTUALLY carries the diff — since issue-2 Phase 1
+# the diff is opt-in, so without --with-diff this check would pass vacuously.
+PENDING=$("$CLI" repo summarize "$REPO_ID" --pending --with-diff --json)
 assert_eq "pending requests exist" "$(json_get "$PENDING" "d.data.requests.length > 0")" "true"
+assert_eq "--with-diff carries a diff" "$(json_get "$PENDING" "d.data.requests.some(r => typeof r.context.diff === 'string' && r.context.diff.length > 0)")" "true"
 node -e "
 const d = JSON.parse(process.argv[1]);
 const text = JSON.stringify(d);
@@ -119,6 +122,16 @@ const anyEnv = d.data.requests.some(r => r.context.changed_files.some(f => f.pat
 if (anyEnv) { console.error('  ✗ .env listed in changed files'); process.exit(1); }
 console.log('  ✓ secrets excluded/masked in context');
 " "$PENDING"
+
+echo "[repo-summary] --pending context level (issue-2 Phase 1)"
+PENDING_MIN=$("$CLI" repo summarize "$REPO_ID" --pending --json)
+assert_eq "default omits diff" "$(json_get "$PENDING_MIN" "d.data.requests.every(r => r.context.diff === undefined)")" "true"
+assert_eq "default keeps commits" "$(json_get "$PENDING_MIN" "d.data.requests.every(r => Array.isArray(r.context.commits))")" "true"
+assert_eq "default keeps changed_files" "$(json_get "$PENDING_MIN" "d.data.requests.every(r => Array.isArray(r.context.changed_files))")" "true"
+assert_eq "default keeps diffstat" "$(json_get "$PENDING_MIN" "d.data.requests.every(r => typeof r.context.diffstat.files === 'number')")" "true"
+assert_eq "default payload smaller than --with-diff" \
+    "$(node -e "process.stdout.write(String(process.argv[1].length < process.argv[2].length))" "$PENDING_MIN" "$PENDING")" "true"
+assert_eq "--limit caps the request count" "$(json_get "$("$CLI" repo summarize "$REPO_ID" --pending --limit 1 --json)" "d.data.requests.length <= 1")" "true"
 
 echo "[repo-summary] agent write-back enriches in place (no duplicate row)"
 SUM_ID=$(json_get "$PENDING" "d.data.requests[0].summary_id")
