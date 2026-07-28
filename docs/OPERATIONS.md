@@ -55,6 +55,12 @@ Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `s
 - You can attach `scope` to imported session JSON (for example `agent:main`, `user:alice`, `project:Memoria`, `global`).
 - If omitted, Memoria defaults to `project:<project>` when `project` exists, otherwise `global`.
 - Use `scope` in recall requests to isolate memory reads.
+- **With multiple repositories registered, always pass `project` on recall.** Promoted git summaries
+  carry `project = <repository name>`, so an unscoped query ranks every repository's memories
+  together. Measured on a two-repo store, an unscoped question pulled an unrelated repository's
+  decision into the top 5 (score 0.383); the same question scoped to one `project` returned the
+  right decision at 0.936 with nothing foreign in the list. The bundled adapters already pass it
+  (`BaseAdapter.recallForContext`); direct HTTP/SDK callers must do so themselves.
 
 ## Governance Review
 
@@ -138,7 +144,8 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
 ./cli repo add /path/to/project          # register (initial scan: recent 200 commits; --scan-history lifts)
 ./cli repo sync <repo> [--dry-run]       # incremental scan → events → summaries → promotion
 ./cli repo status <repo>                 # registry + live head/dirty/shallow state
-./cli repo summarize <repo> --pending --json     # summary requests awaiting agent enrichment
+./cli repo summarize <repo> --pending --json     # summary requests awaiting agent enrichment (no diff)
+./cli repo summarize <repo> --pending --with-diff --limit 5      # opt back into the diff, cap the batch
 ./cli repo summarize <repo> --submit <id> --file payload.json   # agent write-back (auto-promotes if eligible)
 ./cli repo relocate <repo> <new-path>    # re-bind a moved clone (same history required)
 ./cli repo remove <repo>                 # stop scanning; memories/summaries kept unless --delete-* flags
@@ -152,9 +159,18 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
 - **Retention**: `prune --git-observations-days <N>` (in `--all` at 90d) removes superseded ref
   observations, consumed events, and finished scan runs — never `git_commits`, summaries, or
   promoted memories, so SHA traceability survives pruning.
+- **Enrichment payload size**: `--pending` omits the diff by default (issue-2 Phase 1). Measured on
+  a real branch, the diff was 63–67% of the response — dropping it took one request from 104 KB to
+  2.4 KB, which is what makes an automated write-back loop affordable. Add `--with-diff` when the
+  commit messages and file list genuinely are not enough, and `--limit` to cap the batch (each
+  pending summary rebuilds its own context, so the count multiplies response size).
+- **Promotion gate**: a `merge`/`release` skeleton is *not* auto-promoted during `repo sync` — it
+  must be enriched first (empty decisions at confidence 0.4 would only dilute the corpus). Explicit
+  `repo summarize --promote` still force-promotes regardless, and is the intended escape hatch.
 - **Secrets**: sensitive paths are excluded from summary context and secret-like values in diffs
   are masked (best-effort, pattern-based); masking leaves a `sensitive_content_detected` warning
-  in the summary metadata. Raw diffs are never persisted.
+  in the summary metadata. Raw diffs are never persisted. Note masking only applies to diff text —
+  it is only exercised when the diff is actually requested (`--with-diff`).
 - **Troubleshooting**:
   - `repository_not_found` on sync after moving a clone → `repo relocate`.
   - `repository_identity_mismatch` → the path now holds a different history; re-check the path or `repo add` it as a new repository.

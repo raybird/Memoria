@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **`repo summarize --pending` no longer ships the diff by default** (issue-2 Phase 1). The diff was 63–67% of a measured response and enrichment rarely used it; one real request dropped from 104 KB to 2.4 KB, which is what makes an automated agent write-back loop affordable. Opt back in with `--pending --with-diff` (HTTP `?with_diff=true`, SDK `repoPendingSummaries(ref, { includeDiff: true })`). New `--limit` / `?limit=` caps the batch (default 20 as before) — each pending summary rebuilds its own context, so the count multiplies response size.
+- **A `merge`/`release` summary skeleton is no longer auto-promoted during `repo sync`** (issue-2 Phase 2). §7.6 previously let milestones through unconditionally, so a deterministic skeleton — commit subjects only, empty `decisions`/`known_limitations`/`risks`, confidence 0.4 — could enter the recall corpus. Milestones must now be enriched (`--submit`) first. Explicit `repo summarize --promote` is unchanged: it still force-promotes regardless of eligibility, and is the intended escape hatch.
+
+### Documentation
+- `docs/OPERATIONS.md` + `AGENTS.md`: pass `project` on recall when several repositories are registered — promoted git summaries use the repository name as their project, so an unscoped query mixes repositories (measured: an unrelated repository's decision reached the top 5 at score 0.383; scoped, the right decision came back at 0.936).
+
 ## [1.20.0] - 2026-07-16
 
 ### Added

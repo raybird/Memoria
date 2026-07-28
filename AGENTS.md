@@ -271,11 +271,15 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `GET`  | `/v1/repos/:ref/status` | Registry + live git state (`:ref` = id, name, or path) |
 | `POST` | `/v1/repos/:ref/sync` | Incremental scan (`{generate_summaries?, dry_run?, force_summary?, from?, to?}`) |
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag or pending events |
-| `GET`  | `/v1/repos/:ref/summaries/pending` | Summary requests awaiting agent enrichment |
+| `GET`  | `/v1/repos/:ref/summaries/pending` | Summary requests awaiting agent enrichment (`?with_diff=true&limit=20`; diff omitted by default) |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent write-back of a structured summary payload |
 
 All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
 Recall hits promoted from git summaries additionally carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`).
+
+With more than one repository registered, pass `project` on recall — promoted git summaries use the
+repository name as their project, so an unscoped query mixes repositories (see `docs/OPERATIONS.md`
+§Scope Filtering for the measured before/after).
 
 ## Bootstrap Flow for AI Agents (Phase 1.5)
 

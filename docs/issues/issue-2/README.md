@@ -44,17 +44,26 @@ issue-1 交付的鏈路（`repo add` → `sync` → `summarize` → `--pending` 
 
 ### 發現 2：骨架摘要會被 promote
 
-`isPromotable`（`src/core/db/git-promote.ts:32-36`）：
+`isPromotable`（`src/core/db/git-promote.ts`）原本第一行對 `merge`/`release` **無條件放行**，不看 `status`（`pending` / `enriched`）：
 
 ```ts
 if (summary.summary_type === 'merge' || summary.summary_type === 'release') return true
-if (summary.importance >= threshold) return true
-return summary.decisions.length > 0 || summary.known_limitations.length > 0 || summary.risks.length > 0
 ```
 
-第一行對 `merge`/`release` **無條件放行**，不看 `status`（`pending` / `enriched`）。
+實測 v1.20.0 的 release 骨架：`importance=0.85`、`confidence=0.4`、`decisions=[]`、`known_limitations=[]`、`risks=[]`。三筆摘要的骨架 `decisions` 全為空是設計使然（決策要靠 agent 補），因此「未增強即 promote」的產出價值極低。
 
-實測 v1.20.0 的 release 骨架：`importance=0.85`、`confidence=0.4`、`decisions=[]`、`known_limitations=[]`、`risks=[]`——若當時直接 `--promote`，會把一筆只有 commit subject 清單的記憶寫進召回語料。三筆摘要的骨架 `decisions` 全為空是設計使然（決策要靠 agent 補），因此「未增強即 promote」的產出價值極低。
+> ⚠️ **實作階段修正了觸發路徑的認定**：我最初以為問題出在自己下的 `--promote`，實際查證後是**兩條不同路徑**——
+>
+> | 路徑 | `promoteEligible` 的 `force` | 是否經過 `isPromotable` |
+> |---|---|---|
+> | `repo sync` 自動 promote（`memoria.ts:763`） | `false` | **是** ← 真正的破口 |
+> | `repo summarize --promote`（`memoria.ts:870`） | `true` | 否，刻意繞過（程式碼註解已載明「使用者手動指定保留」） |
+>
+> 所以我實測時看到的骨架被 promote，是**明示 `--promote` 的既定設計行為**，不是 bug。真正的缺口是 `repo sync` 時里程碑骨架會自動進語料。
+>
+> 連帶結論：原計畫 Task 2.2「新增 `--force` 逃生口」**不需要做**——`--promote` 本身就是逃生口，也因此完全避開了 `--force` 一詞兩義的風險。
+>
+> 另註：舊行為是**有測試明文覆蓋**的（`test-repo-promotion.sh` 的 `merge summary auto-promoted (§7.6 merge rule)`），因此本次屬**契約變更**，已記入 CHANGELOG 的 Changed。
 
 ### 發現 3：跨 repository 混排
 
@@ -92,15 +101,19 @@ return summary.decisions.length > 0 || summary.known_limitations.length > 0 || s
 | promotion 收緊導致既有流程「東西不見了」 | 已 promote 的資料不受影響，但新流程可能不再自動 promote | 收緊條件寫進 CHANGELOG 的 Changed；`--force` 保留逃生口 |
 | 三項綁在同一 issue 出貨 | 任一項卡住會拖累其他兩項 | 三個 Phase 各自獨立 commit、獨立可回滾，順序無依賴 |
 
-## 待確認事項
+## 已拍板決策（2026-07-28）
 
-| # | 議題 | 選項 | 現況 |
-|---|---|---|---|
-| **Q1** | `--pending` 的 diff 預設值 | (a) 維持 `includeDiff=true`，新增 `--no-diff` opt-out；(b) 改為預設不含 diff，需要時 `--with-diff` opt-in | **未定**。(a) 向後相容但預設仍痛；(b) 對自動化友善但屬破壞性變更 |
-| **Q2** | `merge`/`release` 無條件 promote 是否為刻意設計 | 若刻意（里程碑一律留痕），則改為「骨架也 promote 但降權」而非擋掉 | **未定**。issue-1 規格 §7.6 只寫「milestones」，未明示是否要求 enriched |
-| **Q3** | Phase 3 是否需要程式碼變更 | (a) 只補文件與 adapter 預設值；(b) 另加 `repository` 專用 filter | **傾向 (a)**。`project` filter 實測已足夠，(b) 有疊床架屋之嫌 |
+| # | 議題 | 決議 |
+|---|---|---|
+| **Q1** | `--pending` 的 diff 預設值 | **預設不含 diff，`--with-diff` opt-in**。屬破壞性變更，記入 CHANGELOG 的 Changed |
+| **Q2** | `merge`/`release` 未增強時如何處理 | **擋掉，增強後才能 promote**。`repo summarize --promote` 為既有逃生口（不需新旗標） |
+| **Q3** | Phase 3 是否需要程式碼變更 | **只補文件**。查證後 adapter 已全數帶 `project`（`adapter.ts:128-131`、`stdin-hook-adapter.ts:96`），連 adapter 預設值都不必改 |
 
-> 三項待確認都不阻塞 Phase 的**分析**，但 Q1／Q2 會直接改變 Phase 1／Phase 2 的驗收判準，實作前需拍板。
+## 殘留待決（實作後浮現）
+
+| # | 議題 | 現況 |
+|---|---|---|
+| **R1** | 非里程碑的 pending 骨架仍可能自動 promote | Q2 只收緊 `merge`/`release`。`commit_range`/`branch` 的骨架若 `importance ≥ promoteImportanceThreshold`（預設 0.7）仍會在 sync 時自動進語料，品質疑慮相同。**未處理**——超出本次拍板範圍，需另行決定是否一併收緊 |
 
 ## Timeline
 
@@ -109,14 +122,16 @@ return summary.decisions.length > 0 || summary.known_limitations.length > 0 || s
 | 2026-07-28 | 於 Memoria 與 line-oa-plus 兩個真實 repository 實跑 v1 全鏈路，取得三項可用性發現 |
 | 2026-07-28 | 對照原始碼查證三項發現；修正發現 3 的定性（機制已存在，屬預設值/文件缺口） |
 | 2026-07-28 | 建立 issue 文件（README + implementation-plan） |
+| 2026-07-28 | Q1–Q3 拍板（全數採建議方案），Phase 1–3 實作完成並通過 e2e |
 
 ## Changelog
 
 - 2026-07-28: 初版建立。三項發現皆附實測數據與原始碼行號；Q1–Q3 待拍板。
+- 2026-07-28: Q1–Q3 定案並完成 Phase 1–3。實作過程修正兩處分析：(a) 發現 2 的觸發路徑是 `repo sync` 自動 promote 而非 `--promote`（後者為刻意繞過的設計），連帶取消原 Task 2.2；(b) Phase 3 查證後 adapter 已全數帶 `project`，範圍縮為純文件。新增殘留待決 R1。
 
 ---
 **建立日期**: 2026-07-28
 **最後更新**: 2026-07-28
-**文件版本**: 1.0
-**狀態**: 分析完成，待拍板 Q1–Q3 後可進實作
+**文件版本**: 2.0
+**狀態**: **實作完成**（Phase 1–3 全數交付，R1 待決）
 **分級**: Medium
