@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`repo summarize --tag` with a non-semver tag no longer degrades to a whole-repository range** (issue-3). The previous-release lookup only understood `v1.2.3`-style names; anything else (date stamps, `backend-2026.0723.1131`, …) found no previous tag and silently fell back to root..tag — on a real repository that meant a 542-commit / 1065-file "release" whose context ran to 157 KB with the diff unavailable. Semver comparison still wins when it applies; otherwise the boundary now comes from git creatordate order (`for-each-ref`, read-only). A genuine first release keeps its root..tag meaning. `repo sync` is unchanged — it still auto-summarizes semver tags only.
+
+### Added
+- **Summary context caps**: `git.summarization.maxContextCommits` (default 200) and `maxContextFiles` (default 500) bound the `commits[]` / `changed_files[]` lists in summary context — even a correctly-based huge range measured 58 KB + 98 KB. Truncation is never silent (a warning names kept/total) and `diffstat` always reflects the full range.
+
 ## [1.21.0] - 2026-07-28
 
 ### Changed

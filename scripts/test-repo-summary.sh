@@ -118,6 +118,27 @@ B1_SHA=$(git -C "$REPO" rev-parse 'build-2026.0701^{commit}')
 assert_eq "non-semver release based on previous tag by creatordate" \
     "$(db_get "SELECT base_sha FROM git_summary_ranges WHERE summary_type = 'release' AND tag_name = 'build-2026.0715'")" "$B1_SHA"
 
+echo "[repo-summary] context caps: commits/files truncated with warnings (issue-3 Phase 2)"
+mkdir -p "$MEMORIA_HOME/configs"
+echo '{"git":{"summarization":{"maxContextCommits":1,"maxContextFiles":2}}}' > "$MEMORIA_HOME/configs/config.json"
+CAPPED=$("$CLI" repo summarize "$REPO_ID" --pending --json)
+node -e "
+const d = JSON.parse(process.argv[1]);
+const reqs = d.data.requests;
+if (!reqs.length) { console.error('  ✗ no pending requests to test caps'); process.exit(1); }
+const over = reqs.find(r => r.context.diffstat.files > 2);
+if (!over) { console.error('  ✗ no request with more files than the cap'); process.exit(1); }
+if (over.context.commits.length > 1) { console.error('  ✗ commits not capped: ' + over.context.commits.length); process.exit(1); }
+if (over.context.changed_files.length > 2) { console.error('  ✗ changed_files not capped: ' + over.context.changed_files.length); process.exit(1); }
+if (over.context.diffstat.files <= over.context.changed_files.length) { console.error('  ✗ diffstat no longer reflects the full range'); process.exit(1); }
+const warns = over.context.warnings.join(' | ');
+if (!warns.includes('commit list truncated') || !warns.includes('changed file list truncated')) {
+  console.error('  ✗ truncation warnings missing: ' + warns); process.exit(1);
+}
+console.log('  ✓ caps applied, diffstat full-range, warnings explicit');
+" "$CAPPED"
+rm "$MEMORIA_HOME/configs/config.json"   # back to defaults for the remaining sections
+
 echo "[repo-summary] secret filtering in pending-request context"
 mkdir -p "$REPO/conf"
 echo "SECRET_TOKEN=verysecretvalue12345" > "$REPO/.env"

@@ -20,7 +20,12 @@ const gitSummarizationSchema = z
         branchIdleHours: z.number().min(0).default(24),
         promoteImportanceThreshold: z.number().min(0).max(1).default(0.7),
         includeDiff: z.boolean().default(true),
-        maxDiffBytes: z.number().int().min(0).default(200_000)
+        maxDiffBytes: z.number().int().min(0).default(200_000),
+        // Context caps (issue-3): even with a correct base a huge range can balloon commits[] /
+        // changed_files[] — a whole-repo release range measured 58 KB + 98 KB. Truncation is never
+        // silent (a warning names the dropped count); diffstat always reflects the full range.
+        maxContextCommits: z.number().int().min(1).default(200),
+        maxContextFiles: z.number().int().min(1).default(500)
     })
     .prefault({})
 

@@ -154,8 +154,14 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
 - **Sync cadence**: run `repo sync` at session start/end or on demand; unchanged repos complete
   fast (incremental `--not <previous tips>` walk) and insert nothing.
 - **Config**: `<configPath>/config.json`, `git.*` block (optional; Zod-validated). Tunables:
-  `summarization.{minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes}`,
-  `filters.{excludePaths,sensitivePaths}`.
+  `summarization.{minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes,maxContextCommits,maxContextFiles}`,
+  `filters.{excludePaths,sensitivePaths}`. `maxContextCommits` (200) / `maxContextFiles` (500) cap
+  the summary context lists; truncation is never silent (a warning names the dropped count) and
+  `diffstat` always reflects the full range.
+- **Release tags**: the previous-release boundary prefers semver comparison; tags that don't parse
+  as semver (date stamps, `backend-2026.0723.1131`, …) fall back to git creatordate order, so an
+  explicit `repo summarize --tag` no longer degrades to a whole-repository root..tag range. Note
+  `repo sync` still auto-summarizes **semver tags only**.
 - **Retention**: `prune --git-observations-days <N>` (in `--all` at 90d) removes superseded ref
   observations, consumed events, and finished scan runs — never `git_commits`, summaries, or
   promoted memories, so SHA traceability survives pruning.

@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 3（本地文件編號） |
 | 複雜度級別 | Medium（局部修正 + 兩個 config 欄位，無 schema 變更） |
-| 狀態 | **待實作**（分析完成） |
+| 狀態 | **實作完成**（2026-07-28，Phase 1–2 交付並通過真實驗證） |
 | 需求來源 | 2026-07-28 以 v1.21.0 對 `line-oa-plus`（20 個非 semver tag）實測 Git-Aware Memory 時發現 |
 | 建立日期 | 2026-07-28 |
 | 前置 | [issue-1](../issue-1/README.md)（Git-Aware Memory v1）、[issue-2](../issue-2/README.md)（可用性改進） |
@@ -72,14 +72,27 @@ line-oa-plus 的 20 個 tag（`202606251200`、`backend-2026.0723.1131`、`angul
 | 日期 | 事件 |
 |---|---|
 | 2026-07-28 | v1.21.0 對 line-oa-plus 實測發現；查證程式碼並修正影響面認定（sync 有閘門）；建立 issue 文件 |
+| 2026-07-28 | Phase 1（creatordate fallback）+ Phase 2（context caps）實作完成，e2e 與真實 repo 驗證通過 |
+
+## 真實驗證結果（line-oa-plus，修復後）
+
+同一個 tag 重跑，新舊摘要並排：
+
+| 摘要 | base | 跨度 | context |
+|---|---|---|---|
+| 新（修復後） | `240254a0` = `angular+backend-2026.0721.1649^{commit}` | 23 commits / 52 files | **7.4 KB**，無警告 |
+| 舊（退化殘留，root..tag） | 空 | 542 commits / 1065 files | 被上限截到 200/500、**73 KB**（原 157 KB），警告明示 `truncated to newest 200 of 542` |
+
+舊退化摘要（`sum_0d4242f928b446fa`）留在 `pending` 不會進語料（issue-2 R1 閘門），無需清理。
 
 ## Changelog
 
 - 2026-07-28: 初版建立（README + implementation-plan）。
+- 2026-07-28: Phase 1–2 交付（commits `244a047` + Phase 2）。真實驗證：同 tag 的 range 從全 repo 修正為前一 tag 起算，context 157 KB → 7.4 KB。
 
 ---
 **建立日期**: 2026-07-28
 **最後更新**: 2026-07-28
-**文件版本**: 1.0
-**狀態**: 分析完成，可進實作
+**文件版本**: 2.0
+**狀態**: **實作完成**
 **分級**: Medium

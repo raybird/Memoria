@@ -66,13 +66,19 @@ export async function buildRangeContext(
     const sensitive = gitConfig.filters.sensitivePaths
     const excluded = gitConfig.filters.excludePaths
 
-    const commits = explicitCommits ?? await (async () => {
+    let commits = explicitCommits ?? await (async () => {
         const out = await runGit(repositoryRoot, ['log', '--format=%H%x1f%s', `${base}..${headSha}`])
         return out.stdout.split('\n').filter(Boolean).map((line) => {
             const [sha, subject] = line.split('\x1f')
             return { sha, subject: (subject ?? '').slice(0, 200) }
         })
     })()
+    const maxCommits = gitConfig.summarization.maxContextCommits
+    if (commits.length > maxCommits) {
+        // `git log` lists newest-first, so slicing keeps the most recent work.
+        warnings.push(`commit list truncated to newest ${maxCommits} of ${commits.length}`)
+        commits = commits.slice(0, maxCommits)
+    }
 
     const numstatOut = await runGit(repositoryRoot, ['diff', '--numstat', base, headSha])
     const changedFiles: FileChange[] = []
@@ -97,10 +103,18 @@ export async function buildRangeContext(
         warnings.push(`sensitive_content_detected: ${sensitiveDropped} file(s) excluded from summary context`)
     }
 
+    // diffstat is computed from the FULL filtered list before any truncation — the totals stay
+    // accurate even when changed_files below is capped.
     const diffstat = {
         files: changedFiles.length,
         additions: changedFiles.reduce((sum, f) => sum + f.additions, 0),
         deletions: changedFiles.reduce((sum, f) => sum + f.deletions, 0)
+    }
+    const maxFiles = gitConfig.summarization.maxContextFiles
+    let contextFiles = changedFiles
+    if (changedFiles.length > maxFiles) {
+        warnings.push(`changed file list truncated to first ${maxFiles} of ${changedFiles.length}`)
+        contextFiles = changedFiles.slice(0, maxFiles)
     }
 
     let diff: string | undefined
@@ -134,5 +148,5 @@ export async function buildRangeContext(
         }
     }
 
-    return { commits, changed_files: changedFiles, diffstat, diff, warnings }
+    return { commits, changed_files: contextFiles, diffstat, diff, warnings }
 }
