@@ -101,6 +101,30 @@ async function createRangeSummary(args: CreateSummaryArgs): Promise<{ summary: G
     })
 }
 
+/** Creatordate fallback for repos whose tags don't parse as semver (issue-3): ask git for tags
+ *  sorted by creation time and take the one right before `current`. Without this, a non-semver tag
+ *  (date stamps, `backend-2026.0723.1131`, …) found no previous release and the range silently
+ *  degraded to root..tag — the whole repository. `for-each-ref` is on the §5 read allowlist;
+ *  `%(*objectname)` peels annotated tags to their commit. Returns null when `current` is the oldest
+ *  tag (a genuine first release) or isn't in the list. */
+async function previousTagByCreatordate(
+    repositoryRoot: string,
+    current: string
+): Promise<{ name: string; commitSha: string } | null> {
+    const out = await runGit(repositoryRoot, [
+        'for-each-ref', '--sort=creatordate',
+        '--format=%(refname:short)%1f%(objectname)%1f%(*objectname)',
+        'refs/tags'
+    ]).catch(() => null)
+    if (!out) return null
+    const tags = out.stdout.split('\n').filter(Boolean).map((line) => {
+        const [name, objectSha, peeledSha] = line.split('\x1f')
+        return { name, commitSha: peeledSha || objectSha }
+    })
+    const index = tags.findIndex((t) => t.name === current)
+    return index > 0 ? tags[index - 1] : null
+}
+
 /** Compare release versions numerically; returns the newest tag older than `current`, if any. */
 function previousReleaseTag(tags: Array<{ name: string; commitSha: string }>, current: string): { name: string; commitSha: string } | null {
     const parse = (name: string): number[] | null => {
@@ -206,10 +230,11 @@ export async function runSummaryPipeline(input: SummaryPipelineInput): Promise<S
             }
             const tags = listCurrentTags(input.dbPath, input.repositoryId)
             const previous = previousReleaseTag(tags, tagName)
+                ?? await previousTagByCreatordate(input.repositoryRoot, tagName)
             const result = await createRangeSummary({
                 input,
                 summaryType: 'release',
-                baseSha: previous?.commitSha ?? null, // null → root..tag (§14)
+                baseSha: previous?.commitSha ?? null, // null → root..tag (§14, genuine first release)
                 headSha: event.after_sha!,
                 tagName,
                 plannerNotes: previous ? [`previous release: ${previous.name}`] : ['first release (from root)']
@@ -276,6 +301,7 @@ export async function summarizeTag(input: SummaryPipelineInput, tagName: string)
     const tagSha = (await runGit(input.repositoryRoot, ['rev-parse', `refs/tags/${tagName}^{commit}`])).stdout.trim()
     const tags = listCurrentTags(input.dbPath, input.repositoryId)
     const previous = previousReleaseTag(tags, tagName)
+        ?? await previousTagByCreatordate(input.repositoryRoot, tagName)
     return createRangeSummary({
         input,
         summaryType: 'release',

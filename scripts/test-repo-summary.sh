@@ -102,6 +102,22 @@ assert_eq "second release based on v1.0.0" \
     "$(db_get "SELECT base_sha FROM git_summary_ranges WHERE summary_type = 'release' AND tag_name = 'v1.1.0'")" "$V1_SHA"
 assert_eq "non-release tag names would be ignored (2 releases total)" "$(summaries_of_type release)" "2"
 
+echo "[repo-summary] non-semver tag: previous tag via creatordate, not root (issue-3 Phase 1)"
+# Distinct tagger dates — annotated-tag creatordate has 1-second resolution, and two tags created
+# in the same second would sort unstably.
+seq 1 20 > "$REPO/src/audit.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c8a: audit log"
+GIT_COMMITTER_DATE="2026-07-01T10:00:00+08:00" git -C "$REPO" "${GIT_ID[@]}" tag -a build-2026.0701 -m "b1"
+seq 1 22 > "$REPO/src/audit2.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c8b: audit filters"
+GIT_COMMITTER_DATE="2026-07-15T10:00:00+08:00" git -C "$REPO" "${GIT_ID[@]}" tag -a build-2026.0715 -m "b2"
+"$CLI" repo sync "$REPO_ID" --json >/dev/null   # ingest the tags; non-semver names create no summaries
+assert_eq "sync still ignores non-semver tags" "$(summaries_of_type release)" "2"
+"$CLI" repo summarize "$REPO_ID" --tag build-2026.0715 --json >/dev/null
+B1_SHA=$(git -C "$REPO" rev-parse 'build-2026.0701^{commit}')
+assert_eq "non-semver release based on previous tag by creatordate" \
+    "$(db_get "SELECT base_sha FROM git_summary_ranges WHERE summary_type = 'release' AND tag_name = 'build-2026.0715'")" "$B1_SHA"
+
 echo "[repo-summary] secret filtering in pending-request context"
 mkdir -p "$REPO/conf"
 echo "SECRET_TOKEN=verysecretvalue12345" > "$REPO/.env"
