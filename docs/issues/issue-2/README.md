@@ -109,11 +109,20 @@ if (summary.summary_type === 'merge' || summary.summary_type === 'release') retu
 | **Q2** | `merge`/`release` 未增強時如何處理 | **擋掉，增強後才能 promote**。`repo summarize --promote` 為既有逃生口（不需新旗標） |
 | **Q3** | Phase 3 是否需要程式碼變更 | **只補文件**。查證後 adapter 已全數帶 `project`（`adapter.ts:128-131`、`stdin-hook-adapter.ts:96`），連 adapter 預設值都不必改 |
 
-## 殘留待決（實作後浮現）
+## 實作後追加（R1）
 
-| # | 議題 | 現況 |
+| # | 議題 | 決議 |
 |---|---|---|
-| **R1** | 非里程碑的 pending 骨架仍可能自動 promote | Q2 只收緊 `merge`/`release`。`commit_range`/`branch` 的骨架若 `importance ≥ promoteImportanceThreshold`（預設 0.7）仍會在 sync 時自動進語料，品質疑慮相同。**未處理**——超出本次拍板範圍，需另行決定是否一併收緊 |
+| **R1** | 非里程碑的 pending 骨架仍可能自動 promote | **一併收緊**（2026-07-28 拍板）。Q2 原只處理 `merge`/`release`，但 `commit_range`/`branch` 骨架若 `importance ≥ promoteImportanceThreshold`（預設 0.7）仍會在 sync 時自動進語料。改為 `status === 'pending'` 一律擋下，`isPromotable` 反而更簡單：里程碑規則回歸無條件（只是前提改成必須已 enriched） |
+
+收緊後的 `isPromotable`：
+
+```ts
+if (summary.status === 'pending') return false          // ← R1：一切未增強者皆擋
+if (type === 'merge' || type === 'release') return true
+if (summary.importance >= threshold) return true
+return decisions.length > 0 || known_limitations.length > 0 || risks.length > 0
+```
 
 ## Timeline
 
@@ -123,15 +132,17 @@ if (summary.summary_type === 'merge' || summary.summary_type === 'release') retu
 | 2026-07-28 | 對照原始碼查證三項發現；修正發現 3 的定性（機制已存在，屬預設值/文件缺口） |
 | 2026-07-28 | 建立 issue 文件（README + implementation-plan） |
 | 2026-07-28 | Q1–Q3 拍板（全數採建議方案），Phase 1–3 實作完成並通過 e2e |
+| 2026-07-28 | R1 拍板一併收緊：pending 骨架一律不自動 promote，不分型別與 importance |
 
 ## Changelog
 
 - 2026-07-28: 初版建立。三項發現皆附實測數據與原始碼行號；Q1–Q3 待拍板。
 - 2026-07-28: Q1–Q3 定案並完成 Phase 1–3。實作過程修正兩處分析：(a) 發現 2 的觸發路徑是 `repo sync` 自動 promote 而非 `--promote`（後者為刻意繞過的設計），連帶取消原 Task 2.2；(b) Phase 3 查證後 adapter 已全數帶 `project`，範圍縮為純文件。新增殘留待決 R1。
+- 2026-07-28: R1 一併收緊並補測（`no skeleton auto-promoted`、`every skeleton is still pending`、`high-importance skeleton not promoted either`）。全數待決事項清空。
 
 ---
 **建立日期**: 2026-07-28
 **最後更新**: 2026-07-28
-**文件版本**: 2.0
-**狀態**: **實作完成**（Phase 1–3 全數交付，R1 待決）
+**文件版本**: 2.1
+**狀態**: **實作完成**（Phase 1–3 + R1 全數交付，無待決事項）
 **分級**: Medium

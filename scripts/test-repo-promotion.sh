@@ -75,9 +75,13 @@ git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/reserva
 SYNC=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}')
 assert_eq "sync ok" "$(json_get "$SYNC" "d.ok")" "true"
 assert_eq "summaries created" "$(json_get "$SYNC" "d.data.summaries_created >= 2")" "true"
-# issue-2 Phase 2: a milestone skeleton is no longer auto-promoted — it must be enriched first,
-# otherwise the corpus gets a commit-subject list with empty decisions and confidence 0.4.
-assert_eq "merge skeleton NOT auto-promoted (issue-2 Phase 2)" "$(json_get "$SYNC" "d.data.memories_promoted")" "0"
+# issue-2 Phase 2 (+R1): no pending skeleton is auto-promoted — not milestones, not high-importance
+# ranges — otherwise the corpus gets a commit-subject list with empty decisions and confidence 0.4.
+assert_eq "no skeleton auto-promoted (issue-2 Phase 2 + R1)" "$(json_get "$SYNC" "d.data.memories_promoted")" "0"
+assert_eq "every skeleton is still pending" \
+    "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status <> 'pending'")" "0"
+assert_eq "high-importance skeleton not promoted either (R1)" \
+    "$(db_get "SELECT COUNT(*) FROM memory_sources")" "0"
 MERGE_ID=$(json_get "$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")" "d.data.requests.find(r => r.summary_type === 'merge').summary_id")
 assert_eq "merge skeleton still pending" "$(test -n "$MERGE_ID" && echo yes)" "yes"
 MERGE_SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$MERGE_ID" -H 'Content-Type: application/json' -d '{

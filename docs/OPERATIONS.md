@@ -164,9 +164,10 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
   2.4 KB, which is what makes an automated write-back loop affordable. Add `--with-diff` when the
   commit messages and file list genuinely are not enough, and `--limit` to cap the batch (each
   pending summary rebuilds its own context, so the count multiplies response size).
-- **Promotion gate**: a `merge`/`release` skeleton is *not* auto-promoted during `repo sync` — it
-  must be enriched first (empty decisions at confidence 0.4 would only dilute the corpus). Explicit
-  `repo summarize --promote` still force-promotes regardless, and is the intended escape hatch.
+- **Promotion gate**: a `pending` skeleton is *not* auto-promoted during `repo sync` — regardless of
+  summary type or importance, it must be enriched via `--submit` first (empty decisions at
+  confidence 0.4 would only dilute the corpus). Explicit `repo summarize --promote` still
+  force-promotes regardless, and is the intended escape hatch.
 - **Secrets**: sensitive paths are excluded from summary context and secret-like values in diffs
   are masked (best-effort, pattern-based); masking leaves a `sensitive_content_detected` warning
   in the summary metadata. Raw diffs are never persisted. Note masking only applies to diff text —
