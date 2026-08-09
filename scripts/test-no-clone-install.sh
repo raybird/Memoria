@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+# This script exercises `setup` choosing its own data root, so an inherited MEMORIA_HOME both breaks
+# the "separated data root" assertion AND makes the test operate on the developer's real memory
+# database — installing the skill and starting a server against it. CI never sets the variable, so
+# the hazard only shows up locally (a shell whose profile exports MEMORIA_HOME). Drop it up front.
+unset MEMORIA_HOME
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(node -e "const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).version);" "$ROOT_DIR/package.json")"
 PLATFORM="$(node -p "process.platform + '-' + process.arch")"

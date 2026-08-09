@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-08-09
+
+### Fixed
+- **`scripts/test-no-clone-install.sh` no longer runs against a real memory database.** The script exercises `setup` picking its own data root, so an inherited `MEMORIA_HOME` (exported by a developer's shell profile) both failed the "separated data root" assertion and pointed the test at the developer's actual `~/.memoria` — initialising it, deploying the skill into it, and starting a server against it. CI never sets the variable, so this only bit locally. The script now unsets it up front. Audited the other 30 test scripts the same way: every one of them already scopes `MEMORIA_HOME` to a temp directory.
+
 ### Changed
 - **Superseded memories no longer appear in recall by default** (issue-5 Phase 2). `memoria remember "..." --supersedes <ref_id>` marks an existing memory as replaced; recall then returns only the current version, because a memory system whose answer to "which one is current?" is "here are both" has not actually resolved the contradiction. Nothing is deleted — `recall --include-superseded` (HTTP `include_superseded: true`) returns them with a `superseded_by` field attached, and `export` never applies the filter since it is the audit path. This is a contract change, but a no-op until something is marked: on a database with no markers, recall output is unchanged.
 
