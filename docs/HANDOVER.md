@@ -17,7 +17,8 @@
 - **既有基礎**:Git-Aware Memory v1(v1.19.0)、四平台發佈 + service(v1.20.0)、UFL Phase 0–3 + 語意召回 MVP(v1.18.0),全部 `done`。
 - **v1.22.0 = issue-4 + issue-5**(2026-08-09,兩批一起發):(a) **issue-4 Agent-Native 記憶介面**——新增 `recall` / `remember` / `feedback` / `brief` 四個 CLI 命令,補上 skill 型部署下唯一的記憶讀寫與 UFL 回報入口,`brief` 產 `<knowledge>/BRIEF.md` 供 `CLAUDE.md` 以 `@` 引入(不接 hooks 也能開場注入),`recall()` 邏輯零變更;(b) **issue-5 長期記憶語意**——migration 14 側表 `memory_attributes` 承載 durable(豁免衰減與 stale 裁剪)/ supersedes(預設退出召回,資料不刪)/ sensitivity(`export --redact` 代稱化),未標記的資料庫行為不變(已用舊版 build 對照驗證),**assessment 缺點 4／5 至此收斂**。
 - **⚠ 發版過程順手修掉一個會踩到真實資料的測試缺陷**:`test-no-clone-install.sh` 未清除繼承的 `MEMORIA_HOME`,在有設該變數的開發機上(本機 `~/.bashrc` 就有設)會**對真實 `~/.memoria` 執行 init、部署 skill、起 server**,同時讓「分離資料根目錄」的斷言失效。已加 `unset MEMORIA_HOME`;另 30 支測試腳本逐一稽核過,全部已把 `MEMORIA_HOME` 侷限在暫存目錄。
-- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 修 `recall_fts` 重複列(issue-4 R1 發現的既有 bug,`sync` 路徑未修);(c) 工程債(見 §5);(d) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
+- **issue-6 `recall_fts` 重複列已修**(2026-08-09,`docs/issues/issue-6/`,**未發版**):`importSession` 的兩個語句改用 `ON CONFLICT(id) DO UPDATE`(走 UPDATE trigger,正確汰換索引列)+ migration 15 重建既有索引。影響面經查證只有 `sessions`/`events` 兩張表(其餘 8 處 `INSERT OR REPLACE` 的表沒有 trigger);本機資料庫當時未受污染。
+- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 發 `v1.22.1`(issue-6 已進 main 但未發);(c) 工程債(見 §5);(d) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -148,7 +149,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | — | **Agent-Native 記憶介面** | **`done`**(2026-08-09) | `recall`/`remember`/`feedback`/`brief` 四個 CLI 命令 + `test-cli-memory.sh`。見 `docs/issues/issue-4/`(Phase 1–2 全交付,零 schema 變更,未發版) |
 | D5 | 矛盾偵測(B supersedes A) | **`done`**(2026-08-09) | 評估文件缺點 #5。`docs/issues/issue-5/` Phase 2 交付:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**(需語意召回實測資料才判斷得準門檻)。同 issue 併交 durable 衰減/裁剪豁免(缺點 #4 的殘餘)與 `sensitivity`/`export --redact` |
 | — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift。**issue-4 出貨後才在 skill 型部署下可行**(`feedback` 是 explicit 訊號唯一入口) |
-| — | **`recall_fts` 重複列**(既有 bug) | `idea`(2026-08-09 發現) | `importSession` 用 `INSERT OR REPLACE`,REPLACE 的隱式 DELETE 不觸發 FTS delete trigger → 以相同 id 重複 `sync` 會讓同一筆命中翻倍。issue-4 R1 發現並已在 `remember` 路徑規避(相同 id 直接跳過寫入),**`sync` 路徑未修**;修法在 schema 層(補 trigger 或改成明確 DELETE + INSERT) |
+| — | **`recall_fts` 重複列**(既有 bug) | **`done`**(2026-08-09) | `importSession` 用 `INSERT OR REPLACE`,REPLACE 的隱式 DELETE 不觸發 FTS delete trigger → 以相同 id 重複 `sync` 會讓同一筆命中翻倍。issue-4 R1 發現,`docs/issues/issue-6/` 修復:兩個語句改真正的 upsert(`ON CONFLICT(id) DO UPDATE`,走 UPDATE trigger)+ migration 15 重建既有索引。**未採用當初推測的 trigger 修法**——寫入端修比 schema 端修簡單且對任何寫入者都成立 |
 | D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |

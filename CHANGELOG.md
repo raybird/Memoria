@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Re-importing the same session no longer duplicates its `recall_fts` rows** (issue-6). `importSession` used `INSERT OR REPLACE`, and SQLite resolves a key conflict there as an implicit DELETE + INSERT — but that implicit DELETE does not fire the `AFTER DELETE` trigger (`recursive_triggers` defaults to OFF) while the `AFTER INSERT` trigger does fire. Every re-`sync` of the same session id therefore left a stale index row beside the fresh one, and recall returned that memory twice, burning `top_k` slots that should have gone to other hits. Both statements now use a real upsert (`ON CONFLICT(id) DO UPDATE`), which takes the UPDATE path whose trigger correctly replaces the index row; every column is listed, so stored rows are identical to what REPLACE produced. Migration 15 rebuilds `recall_fts` from `sessions`/`events` to clear duplicates that existing databases already accumulated — the index is derived data, so a full refill is lossless and also corrects unrelated drift. Only these two tables have FTS triggers; the other eight `INSERT OR REPLACE` sites in the codebase write to trigger-less tables and are unaffected.
+
 ## [1.22.0] - 2026-08-09
 
 ### Fixed

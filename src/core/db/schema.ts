@@ -472,6 +472,41 @@ const MIGRATIONS: Migration[] = [
               ON memory_attributes(retention);
             `)
         }
+    },
+    {
+        id: 15,
+        name: 'recall_fts_rebuild',
+        up: (db) => {
+            // Clears the fallout of the bug migration 15 ships alongside (docs/issues/issue-6):
+            // importSession used INSERT OR REPLACE, whose implicit DELETE never fired the FTS delete
+            // trigger while the insert trigger did — so re-importing a session id left a stale index
+            // row next to the fresh one and recall returned that memory twice. The write path is
+            // fixed at the source (ON CONFLICT DO UPDATE); this rebuilds indexes that already
+            // accumulated duplicates.
+            //
+            // Rebuilding rather than de-duplicating: recall_fts is DERIVED data whose only source of
+            // truth is sessions/events, so a full refill is lossless and also corrects any other
+            // drift. Same backfill SQL as migration 4. Guarded because a database that somehow never
+            // ran migration 4 has no table to rebuild.
+            const hasFts = db
+                .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'recall_fts' LIMIT 1`)
+                .get() as { ok: number } | undefined
+            if (!hasFts) return
+
+            db.exec(`
+              DELETE FROM recall_fts;
+
+              INSERT INTO recall_fts(kind, ref_id, session_id, body)
+              SELECT 'session', id, id, COALESCE(summary, '') || ' ' || COALESCE(project, '')
+              FROM sessions;
+
+              INSERT INTO recall_fts(kind, ref_id, session_id, body)
+              SELECT CASE event_type WHEN 'DecisionMade' THEN 'decision' ELSE 'skill' END,
+                     id, session_id, COALESCE(content, '')
+              FROM events
+              WHERE event_type IN ('DecisionMade', 'SkillLearned');
+            `)
+        }
     }
 ]
 

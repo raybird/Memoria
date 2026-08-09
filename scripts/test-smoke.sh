@@ -202,4 +202,19 @@ if [ "$DAILY_COUNT" -lt 1 ] || [ "$DECISION_COUNT" -lt 1 ] || [ "$SKILL_COUNT" -
   exit 1
 fi
 
+# issue-6: re-importing the same session id must not duplicate recall_fts rows. Under the old
+# INSERT OR REPLACE the implicit DELETE skipped the FTS delete trigger, so every re-sync added a
+# stale row and recall returned the same memory twice.
+HITS_ONCE=$(MEMORIA_HOME="$TMP_MEMORIA_HOME" node "$ROOT_DIR/dist/cli.mjs" recall "TypeScript CLI migration" --json 2>/dev/null | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).data.length")
+MEMORIA_HOME="$TMP_MEMORIA_HOME" node "$ROOT_DIR/dist/cli.mjs" sync "$ROOT_DIR/examples/session.sample.json" >/dev/null
+HITS_TWICE=$(MEMORIA_HOME="$TMP_MEMORIA_HOME" node "$ROOT_DIR/dist/cli.mjs" recall "TypeScript CLI migration" --json 2>/dev/null | node -pe "JSON.parse(require('fs').readFileSync(0,'utf8')).data.length")
+node -e "
+const D = require('$ROOT_DIR/node_modules/better-sqlite3');
+const db = new D('$TMP_MEMORIA_HOME/.memory/sessions.db', { readonly: true });
+const dupes = db.prepare('SELECT count(*) c FROM (SELECT kind, ref_id FROM recall_fts GROUP BY kind, ref_id HAVING count(*) > 1)').get().c;
+db.close();
+if (dupes !== 0) { console.error('re-sync produced ' + dupes + ' duplicated recall_fts refs'); process.exit(1); }
+if (process.argv[1] !== process.argv[2]) { console.error('recall hit count changed after re-sync: ' + process.argv[1] + ' -> ' + process.argv[2]); process.exit(1); }
+" "$HITS_ONCE" "$HITS_TWICE"
+
 echo "[smoke] ok"

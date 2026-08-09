@@ -93,7 +93,9 @@ UFL Phase 1–3 全數 ship（`recall_id`、per-memory 歸因、explicit 訊號�
 
 ## 實作後追加
 
-### R1 · 發現既有 bug：`INSERT OR REPLACE` 會在 `recall_fts` 留下重複列（**本 issue 未修**）
+### R1 · 發現既有 bug：`INSERT OR REPLACE` 會在 `recall_fts` 留下重複列（**已由 [issue-6](../issue-6/README.md) 修復**）
+
+> **2026-08-09 更新**：`sync` 路徑已於 [issue-6](../issue-6/README.md) 修復——`importSession` 的兩個語句改用 `ON CONFLICT(id) DO UPDATE`，並以 migration 15 重建既有索引。本節以下為當時的原始記錄。
 
 實作 `remember` 的冪等重跑時踩到：同一則筆記寫第二次後，`recall` 回傳的命中數翻倍。
 
@@ -111,7 +113,7 @@ SELECT kind, ref_id, COUNT(*) FROM recall_fts GROUP BY 1,2 HAVING COUNT(*) > 1
 | | 處置 |
 |---|---|
 | `remember` 路徑（本 issue 新增） | **已處理**：`rememberNote` 偵測到相同 id 就整個跳過寫入。這本來就是冪等的正確語意（已存在即不動），順帶避開 trigger 缺口，也省掉無謂的 wiki rebuild |
-| `sync` 路徑（既有） | **未處理**。修法是 schema 層（migration 補 `INSTEAD OF` trigger，或把 `importSession` 改成明確的 DELETE + INSERT），屬既有行為變更，不塞進本 issue。已記入 `docs/HANDOVER.md` §7 backlog |
+| `sync` 路徑（既有） | 當時**未處理**，已記入 backlog；後由 [issue-6](../issue-6/README.md) 修復（改用 `ON CONFLICT DO UPDATE` + migration 15 重建索引）。當時推測的修法方向（補 `INSTEAD OF` trigger 或明確 DELETE + INSERT）**都不是最後採用的方案**——真正的 upsert 更簡單且不觸及 trigger |
 
 `scripts/test-cli-memory.sh` 的 (B) 直接斷言「無重複 `recall_fts` 列」而非只數 session——拿掉 short-circuit 會立刻紅。
 

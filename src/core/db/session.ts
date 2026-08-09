@@ -13,9 +13,22 @@ export function importSession(dbPath: string, sessionData: SessionData): string 
     const events = sanitized.events ?? []
 
     withDb(dbPath, (db) => {
+        // A real upsert, NOT `INSERT OR REPLACE` (docs/issues/issue-6). REPLACE resolves a key
+        // conflict as an implicit DELETE + INSERT, and that implicit DELETE does not fire the
+        // AFTER DELETE trigger (recursive_triggers defaults to OFF) while the AFTER INSERT trigger
+        // does fire — so re-importing the same session id left a stale recall_fts row behind the new
+        // one and recall returned that memory twice. ON CONFLICT DO UPDATE takes the UPDATE path,
+        // whose trigger correctly deletes the old FTS row before inserting the new one. Every column
+        // is listed, so the stored result is identical to what REPLACE produced.
         const upsertSession = db.prepare(`
-      INSERT OR REPLACE INTO sessions (id, timestamp, project, scope, event_count, summary)
+      INSERT INTO sessions (id, timestamp, project, scope, event_count, summary)
       VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        timestamp = excluded.timestamp,
+        project = excluded.project,
+        scope = excluded.scope,
+        event_count = excluded.event_count,
+        summary = excluded.summary
     `)
 
         upsertSession.run(
@@ -28,8 +41,14 @@ export function importSession(dbPath: string, sessionData: SessionData): string 
         )
 
         const upsertEvent = db.prepare(`
-      INSERT OR REPLACE INTO events (id, session_id, timestamp, event_type, content, metadata)
+      INSERT INTO events (id, session_id, timestamp, event_type, content, metadata)
       VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        session_id = excluded.session_id,
+        timestamp = excluded.timestamp,
+        event_type = excluded.event_type,
+        content = excluded.content,
+        metadata = excluded.metadata
     `)
 
         for (const [index, event] of events.entries()) {

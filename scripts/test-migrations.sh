@@ -87,4 +87,34 @@ if (n < 8) { console.error('  ✗ schema_migrations regressed: ' + n); process.e
 console.log('  idempotent (schema_migrations=' + n + ')');
 "
 
+echo "[migrations] recall_fts rebuild removes duplicates left by the old REPLACE path (issue-6)"
+# Simulate a database polluted before the fix: duplicate every FTS row, then roll back migration 15
+# so reopening the database re-applies it.
+node -e "
+const D = require('$BSQ'); const db = new D('$DB');
+const rows = db.prepare('SELECT kind, ref_id, session_id, body FROM recall_fts').all();
+if (rows.length === 0) { console.error('  ✗ fixture has no fts rows'); process.exit(1); }
+const ins = db.prepare('INSERT INTO recall_fts(kind, ref_id, session_id, body) VALUES (?,?,?,?)');
+for (const r of rows) ins.run(r.kind, r.ref_id, r.session_id, r.body);
+db.prepare('DELETE FROM schema_migrations WHERE id = 15').run();
+const dupes = db.prepare('SELECT count(*) c FROM (SELECT kind, ref_id FROM recall_fts GROUP BY kind, ref_id HAVING count(*) > 1)').get().c;
+db.close();
+if (dupes === 0) { console.error('  ✗ fixture did not create duplicates'); process.exit(1); }
+console.log('  polluted fixture: ' + rows.length * 2 + ' rows, ' + dupes + ' duplicated refs');
+"
+"$ROOT_DIR/cli" verify >/dev/null 2>&1 || true
+node -e "
+const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
+const dupes = db.prepare('SELECT count(*) c FROM (SELECT kind, ref_id FROM recall_fts GROUP BY kind, ref_id HAVING count(*) > 1)').get().c;
+const fts = db.prepare('SELECT count(*) c FROM recall_fts').get().c;
+const src = db.prepare('SELECT count(*) c FROM sessions').get().c
+          + db.prepare(\"SELECT count(*) c FROM events WHERE event_type IN ('DecisionMade','SkillLearned')\").get().c;
+const applied = db.prepare('SELECT count(*) c FROM schema_migrations WHERE id = 15').get().c;
+db.close();
+if (applied !== 1) { console.error('  ✗ migration 15 was not re-applied'); process.exit(1); }
+if (dupes !== 0) { console.error('  ✗ duplicates survived the rebuild: ' + dupes); process.exit(1); }
+if (fts !== src) { console.error('  ✗ index out of sync with source: fts=' + fts + ' src=' + src); process.exit(1); }
+console.log('  rebuilt: fts=' + fts + ' matches source rows, no duplicates');
+"
+
 echo "[migrations] ok"
