@@ -96,6 +96,10 @@ grep -q "改用 pnpm 作為套件管理器" "$BRIEF" || { echo "  ✗ recent dec
 # not the raw JSON blob the event stores.
 grep -q "explicit ×" "$BRIEF" || { echo "  ✗ high-utility section did not pick up the explicit outcome"; exit 1; }
 grep -q '"decision":' "$BRIEF" && { echo "  ✗ raw event JSON leaked into the brief"; exit 1; }
+# A note owns two refs (session + event) and an outcome attributes utility to both — they must
+# collapse to one line, or every CLI note is listed twice in the brief.
+NOTE_LINES=$(grep -c "改用 pnpm 作為套件管理器" "$BRIEF" || true)
+[ "$NOTE_LINES" = "2" ] || { echo "  ✗ expected the note once under decisions and once under high-utility, got $NOTE_LINES lines"; exit 1; }
 echo "  brief written with decisions + UFL section"
 
 echo "[cli-memory] (G) brief is stable across runs (timestamp aside)"

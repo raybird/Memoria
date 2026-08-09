@@ -90,10 +90,29 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                     texts.set(row.id, { text: readable || String(row.text ?? ''), project: row.project })
                 }
 
+                // A CLI note occupies two refs (its session and its event) and an outcome attributes
+                // utility to both, so without this the same note is listed twice. Collapse the pair
+                // on its shared content fingerprint, keeping the session (whose snippet is the plain
+                // text rather than the event's JSON payload).
+                const noteFingerprintOf = (ref: string): string | null =>
+                    ref.startsWith('note-') ? ref.slice('note-'.length)
+                        : ref.startsWith('noteev-') ? ref.slice('noteev-'.length)
+                            : null
+                const sessionRefs = new Set(scored.map((e) => e.ref_id).filter((ref) => ref.startsWith('note-')))
+                const seenNotes = new Set<string>()
+
                 for (const entry of scored) {
                     const found = texts.get(entry.ref_id)
                     if (!found) continue
                     if (project && found.project !== project) continue
+
+                    const fingerprint = noteFingerprintOf(entry.ref_id)
+                    if (fingerprint !== null) {
+                        // Prefer the session half when both are present.
+                        if (entry.ref_id.startsWith('noteev-') && sessionRefs.has(`note-${fingerprint}`)) continue
+                        if (seenNotes.has(fingerprint)) continue
+                        seenNotes.add(fingerprint)
+                    }
                     high_utility.push({
                         ref_id: entry.ref_id,
                         project: found.project,
