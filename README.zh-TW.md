@@ -168,6 +168,7 @@ curl http://localhost:3917/v1/stats
 ./cli remember "改用 pnpm" --project Memoria --rationale "lockfile 是權威"
 ./cli remember "..." --type skill --category cli   # 改寫成 SkillLearned 筆記
 ./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL 效用回報
+./cli brief [--project X] [--days 30]  # 編譯 knowledge/BRIEF.md，供 CLAUDE.md 以 @ 引入
 ./cli stats [--json]                 # 統計
 ./cli doctor [--json]                # 本地健康檢查
 ./cli verify [--json]                # 完整驗證

@@ -121,6 +121,18 @@ SELECT kind, ref_id, COUNT(*) FROM recall_fts GROUP BY 1,2 HAVING COUNT(*) > 1
 
 改為在 core 新增 `MemoriaCore.rememberNote()`（內部組出 `SessionData` 後呼叫**既有的** `remember()`，再寫 provenance）+ `src/core/db/memory-note.ts`。既有 `remember()` 一行未改，`POST /v1/remember` 契約不變。`recall` 與 `feedback` 仍是純薄殼。
 
+### R3 · `BRIEF.md` 落點改為 `<knowledge>/`，順帶修正 CLAUDE.md 的舊敘述
+
+計畫寫 `<home>/memoria/BRIEF.md`，但 `MemoriaPaths`（`src/core/paths.ts:65-70`）根本沒有 `memoria/` 這個目錄——衍生 markdown 一律在 `knowledgeDir` = `<home>/knowledge/`（`Daily` / `Decisions` / `Skills` / `Sources` / 編譯 wiki 都在那）。`BRIEF.md` 因此落在 `<knowledge>/BRIEF.md`，`--out` 可覆寫。
+
+連帶發現 `CLAUDE.md` 的持久化段落寫著「markdown files under `<home>/memoria/`」，是過時敘述，一併修正為 `<home>/knowledge/`。
+
+### R4 · adaptive gate 會讓短查詢拿不到 `recall_id`（非 bug，但要寫進運維文件）
+
+手動驗證 `brief` 時，用 `recall "pnpm"` 取到的 `recall_id` 餵給 `feedback`，`memory_utility` 卻是空的。原因是 `shouldSkipAdaptiveRecall` 判定該查詢過於瑣碎（`route_mode=skipped`），**成功但不發 `recall_id`**；`feedback` 因此對著 `undefined` 做了 graceful no-op，兩端都「成功」卻什麼也沒發生。
+
+行為本身正確（gate 是刻意設計，no-op 也是刻意設計），但兩個正確行為疊起來會靜默吃掉回饋。已寫入 `docs/OPERATIONS.md`：「效用沒進 `memory_utility` 時，先確認該次召回是不是被 gate 跳過」。
+
 ## Timeline
 
 | 日期 | 事件 |
@@ -128,16 +140,18 @@ SELECT kind, ref_id, COUNT(*) FROM recall_fts GROUP BY 1,2 HAVING COUNT(*) > 1
 | 2026-08-09 | 以 agent 永久記憶的使用視角盤點現況，確認三條出口不對稱與 skill 型部署下的阻斷；建立 issue 文件（README + implementation-plan） |
 | 2026-08-09 | Q1–Q4 拍板（全數採建議方案），轉入 Phase 1 實作 |
 | 2026-08-09 | Phase 1 交付：三個命令 + `scripts/test-cli-memory.sh`（掛進 CI core 群組）。實作中發現既有 FTS trigger 缺口（R1）與一處規格偏離（R2） |
+| 2026-08-09 | Phase 2 交付：`brief` + `BRIEF.md` 注入面。落點與計畫不同（R3），並記錄 adaptive gate 與 feedback no-op 疊加的靜默失敗（R4） |
 
 ## Changelog
 
 - 2026-08-09: 初版建立。三項缺口皆附 `file:line` 證據；Q1–Q4 待拍板。
 - 2026-08-09: Q1–Q4 定案（沿用既有事件類型 / 一則一 session / 手動 brief / 頂層 feedback），狀態轉為實作中。
-- 2026-08-09: Phase 1 完成。新增 R1（`INSERT OR REPLACE` 造成 `recall_fts` 重複列的既有 bug，remember 路徑已規避、sync 路徑留給後續）與 R2（`rememberNote()` 破例進 core，避免 provenance 寫入漏到 CLI 層）。Phase 2（`brief`）待實作。
+- 2026-08-09: Phase 1 完成。新增 R1（`INSERT OR REPLACE` 造成 `recall_fts` 重複列的既有 bug，remember 路徑已規避、sync 路徑留給後續）與 R2（`rememberNote()` 破例進 core，避免 provenance 寫入漏到 CLI 層）。
+- 2026-08-09: Phase 2 完成（`brief` + `BRIEF.md`）。新增 R3（落點改 `<knowledge>/`，順帶修正 CLAUDE.md 舊敘述）與 R4（adaptive gate 跳過短查詢 → 無 `recall_id` → feedback 靜默 no-op，已寫入 OPERATIONS）。**issue-4 全數交付，無待決事項。**
 
 ---
 **建立日期**: 2026-08-09
 **最後更新**: 2026-08-09
-**文件版本**: 1.2
-**狀態**: **Phase 1 完成，Phase 2 待實作**
+**文件版本**: 2.0
+**狀態**: **實作完成**（Phase 1–2 全數交付）
 **分級**: Medium

@@ -370,6 +370,46 @@ export type RememberNoteData = {
     created: boolean    // false = an identical note already existed (idempotent re-run)
 }
 
+/** Memory brief (docs/issues/issue-4 Phase 2): the derived view CLAUDE.md pulls in for
+ *  zero-execution context injection. Read-only aggregate — never a source of truth. */
+export type BriefDecision = {
+    id: string
+    timestamp: string
+    project: string
+    decision: string
+    rationale: string
+}
+
+export type BriefMemory = {
+    ref_id: string
+    project: string
+    utility: number
+    observations: number
+    signal: 'explicit' | 'reuse'
+    snippet: string
+}
+
+export type BriefRepository = {
+    repository: string
+    default_branch: string | null
+    latest_summary: { id: string; title: string; type: string; created_at: string } | null
+    pending_summaries: number
+}
+
+export type BriefData = {
+    generated_at: string
+    project: string | null
+    days: number
+    decisions: BriefDecision[]
+    high_utility: BriefMemory[]
+    repositories: BriefRepository[]
+    totals: {
+        sessions: number
+        decisions_in_window: number
+        pending_summaries: number
+    }
+}
+
 export type RecallTelemetryData = {
     window: string
     total: number

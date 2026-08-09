@@ -59,6 +59,8 @@ export {
     findRepository,
     relocateRepositoryInstance,
     removeRepository,
+    queryBrief,
+    renderBrief,
     closeAllConnections
 } from './db/index.js'
 export { resolveRepositoryIdentity, normalizeRemoteUrl } from './git/identity.js'
@@ -93,6 +95,7 @@ export type {
     PruneOptions, MemoriaResult, RecallFilter, RecallHit, RecallHitSource,
     SessionSummary, HealthStatus, StatsData,
     RecallOutcomeInput, RememberNoteInput, RememberNoteData,
+    BriefData, BriefDecision, BriefMemory, BriefRepository,
     RecallTelemetryPoint, RecallTelemetryData,
     GovernanceReviewOptions, GovernanceReviewItem, GovernanceReviewData,
     MemoryIndexBuildOptions, MemoryIndexBuildResult,

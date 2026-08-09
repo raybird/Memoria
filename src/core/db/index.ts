@@ -53,4 +53,6 @@ export {
     lookupGitSources
 } from './git-promote.js'
 export { noteFingerprint, noteExists, recordNoteProvenance, CLI_NOTE_SOURCE_TYPE } from './memory-note.js'
+export { queryBrief, renderBrief } from './brief.js'
+export type { BriefOptions } from './brief.js'
 export { closeAllConnections } from './connection.js'

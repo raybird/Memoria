@@ -85,6 +85,53 @@ Operational guidance:
 - `wiki file-query` should be reserved for high-value synthesis/comparison outputs, not trivial Q&A
 - `wiki lint` writes durable governance findings so follow-up cleanup can be reviewed later
 
+## Memory Access Without a Server (issue-4)
+
+Under skill-style integration — no hooks, no `memoria service` — the CLI is the only way in, and all
+three memory actions have direct commands. Nothing here needs `./cli serve`:
+
+```bash
+./cli remember "改用 pnpm" --project Memoria --rationale "lockfile 是權威"
+./cli recall "為什麼用 pnpm" --project Memoria --json     # meta.recall_id feeds the next command
+./cli feedback <recall_id> --signal explicit --score 0.9 --hits <hit_id,hit_id>
+```
+
+Notes that matter in practice:
+
+- `remember` writes **one atomic note**, not a session. Ids are content fingerprints, so re-running an
+  identical note is a skipped write (not a rewrite — a rewrite would leave a duplicate `recall_fts`
+  row, see the trigger caveat in `docs/issues/issue-4/README.md` R1).
+- Human-readable `recall` output shows `relevance` (0–1). The raw ranking `score` is bm25-derived and
+  rounds to `0.000` for every hit, which is why it is not displayed; `--json` still carries both.
+- A very short query can be skipped by the adaptive gate (`route_mode=skipped`) — **no `recall_id` is
+  issued**, so a `feedback` call against it is a silent no-op. If utility is not landing in
+  `memory_utility`, check that first.
+- `feedback` on an unknown or pruned `recall_id` exits 0 with `updated:false` by design.
+
+### Context injection via BRIEF.md
+
+`brief` compiles the high-value slice of memory into a derived markdown file:
+
+```bash
+./cli brief --project Memoria --days 30      # writes <knowledge>/BRIEF.md
+./cli brief --stdout                         # print instead of writing
+```
+
+Import it once from `CLAUDE.md`:
+
+```markdown
+@knowledge/BRIEF.md
+```
+
+Every session then starts with recent decisions, high-utility memories (UFL) and repository state
+already in context — no hooks, no server, nothing to execute. Operational caveats:
+
+- It is a **derived view**. Each run overwrites the whole file; do not edit it by hand.
+- Generation is **manual by design** — no write path regenerates it. Re-run `brief` after a batch of
+  `remember` / `repo sync` work, otherwise the file silently ages.
+- The UFL section stays empty until outcomes exist (`effectiveUtility` needs 1 explicit or 2 reuse
+  observations), which is expected on a fresh database.
+
 ## Recall Quality Checks
 
 Start server and inspect tree/hybrid routing metadata:
@@ -185,7 +232,7 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
   - Failed scans keep their reason in `git_scan_runs` (`status='failed'`); the next sync resumes from the last good state.
   - Concurrent syncs of one repository are serialized in-process; avoid concurrent CLI+server syncs from separate processes (documented v1 limitation).
 
-## Test Commands
+## Test Commands (see also `scripts/test-cli-memory.sh` for the no-server memory loop)
 
 ```bash
 bash scripts/test-smoke.sh

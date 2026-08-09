@@ -168,6 +168,7 @@ All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `
 ./cli remember "switched to pnpm" --project Memoria --rationale "lockfile is authoritative"
 ./cli remember "..." --type skill --category cli   # Write a SkillLearned note instead
 ./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL utility write-back
+./cli brief [--project X] [--days 30]  # Compile knowledge/BRIEF.md for CLAUDE.md `@`-import
 ./cli stats [--json]                 # Statistics
 ./cli doctor [--json]                # Local health check
 ./cli verify [--json]                # Full verification

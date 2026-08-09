@@ -46,7 +46,9 @@ import {
     noteFingerprint,
     noteExists,
     recordNoteProvenance,
-    CLI_NOTE_SOURCE_TYPE
+    CLI_NOTE_SOURCE_TYPE,
+    queryBrief,
+    type BriefOptions
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
 import { loadMemoriaConfig } from './config.js'
@@ -89,6 +91,7 @@ import type {
     RecallOutcomeInput,
     RememberNoteInput,
     RememberNoteData,
+    BriefData,
     WikiBuildResult,
     WikiLintOptions,
     WikiLintResult,
@@ -354,6 +357,23 @@ export class MemoriaCore {
 
             const created: RememberNoteData = { noteId, sessionId, eventId, type, created: true }
             return { data: created, evidence: [sessionId, eventId], confidence: 1.0 }
+        })
+    }
+
+    // ─── brief() — derived context view (docs/issues/issue-4 Phase 2) ────────
+    //
+    // Read-only aggregate over decisions / UFL utility / repository state. The CLI writes it to
+    // knowledge/BRIEF.md so CLAUDE.md can `@`-import it — context injection without hooks.
+
+    async brief(options?: BriefOptions): Promise<MemoriaResult<BriefData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const data = queryBrief(this.paths.dbPath, options ?? {})
+            const evidence = [
+                ...data.decisions.map((decision) => decision.id),
+                ...data.high_utility.map((memory) => memory.ref_id)
+            ]
+            return { data, evidence, confidence: 1 }
         })
     }
 
