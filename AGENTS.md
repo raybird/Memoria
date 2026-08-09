@@ -50,6 +50,7 @@ There is an optional distribution build step and no dedicated ESLint/Prettier co
 This repo currently has explicit runtime and wiki test scripts:
 
 - `scripts/test-smoke.sh`
+- `scripts/test-pure-functions.sh`
 - `scripts/test-cli-memory.sh`
 - `scripts/test-memory-attributes.sh`
 - `scripts/test-migrations.sh`

@@ -2,7 +2,7 @@
 // Extracted from cli.ts – pure functions with no side-effects
 
 import { createHash } from 'node:crypto'
-import type { Json, SessionData, SessionEvent, CalibrationSummary, CalibrationBucket } from './types.js'
+import type { Json, SessionData, SessionEvent, CalibrationSummary, CalibrationBucket, RouteUtilitySummary, RouteUtilityRow } from './types.js'
 
 export function safeDate(raw?: string): Date {
     const d = raw ? new Date(raw) : new Date()
@@ -122,6 +122,52 @@ export function buildCalibration(
     }
 
     return { scoredQueries, buckets, monotonic }
+}
+
+// Utility grouped by recall route (RFC-semantic-recall §14). The UFL ruler and the semantic route
+// have both shipped; this is the readout that finally compares them — mean observed utility per
+// route_mode, plus the gap between the top two. Deliberately NOT a significance test: with a handful
+// of outcomes the honest answer is "not enough data", which the raw scoredQueries counts convey.
+// Pure (no better-sqlite3) so stats and telemetry can share it.
+export function buildRouteUtility(
+    points: Array<{ route: string | null | undefined; confidence: number | null | undefined; utility: number | null | undefined }>
+): RouteUtilitySummary {
+    const acc = new Map<string, { count: number; utilSum: number; confSum: number }>()
+    let scoredQueries = 0
+
+    for (const p of points) {
+        if (typeof p.utility !== 'number' || !Number.isFinite(p.utility)) continue
+        const route = typeof p.route === 'string' && p.route ? p.route : 'unknown'
+        const util = Math.min(1, Math.max(0, p.utility))
+        const conf = typeof p.confidence === 'number' && Number.isFinite(p.confidence)
+            ? Math.min(1, Math.max(0, p.confidence))
+            : 0
+        const entry = acc.get(route) ?? { count: 0, utilSum: 0, confSum: 0 }
+        entry.count += 1
+        entry.utilSum += util
+        entry.confSum += conf
+        acc.set(route, entry)
+        scoredQueries += 1
+    }
+
+    const routes: RouteUtilityRow[] = [...acc.entries()]
+        .map(([route_mode, e]) => ({
+            route_mode,
+            scoredQueries: e.count,
+            meanUtility: Number((e.utilSum / e.count).toFixed(4)),
+            meanConfidence: Number((e.confSum / e.count).toFixed(4))
+        }))
+        .sort((a, b) => (b.meanUtility - a.meanUtility) || a.route_mode.localeCompare(b.route_mode))
+
+    // A single route has nothing to be compared against — reporting it as "best" would imply a
+    // comparison that never happened.
+    const comparable = routes.length >= 2
+    return {
+        scoredQueries,
+        routes,
+        best: comparable ? routes[0].route_mode : null,
+        uplift: comparable ? Number((routes[0].meanUtility - routes[1].meanUtility).toFixed(4)) : null
+    }
 }
 
 export function slugify(input: string): string {

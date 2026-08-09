@@ -34,6 +34,7 @@ There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts
 bash scripts/test-smoke.sh                  # CLI full flow (most common)
 bash scripts/test-cli-memory.sh             # issue-4: recall/remember/feedback CLI loop (no server), note idempotency, UFL write-back, brief rendering
 bash scripts/test-memory-attributes.sh      # issue-5: durable decay/prune exemption, supersedes filtering, export --redact
+bash scripts/test-pure-functions.sh         # direct assertions on the pure ranking/retention/calibration helpers (tsx driver)
 bash scripts/test-migrations.sh             # schema migration upgrade on a populated old DB
 bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe/utility-retention) delete exactly the right rows
 bash scripts/test-utility-ranking.sh        # UFL Phase 3 utility-weighted recall ranking (threshold/flip/explicit-override)
@@ -132,7 +133,7 @@ Two rules to preserve when touching this: **(1) zero markers must stay byte-iden
 
 **Context injection without hooks (issue-4 Phase 2)**: `memoria brief` compiles recent decisions + high-utility memories (UFL) + per-repository state into `<knowledge>/BRIEF.md`, which `CLAUDE.md` can pull in with `@knowledge/BRIEF.md` — memory loads every session at zero execution cost, with no hooks and no service. It is a **derived view**: read-only, whole-file overwrite on every run, never a source of truth. Generation stays manual (Q3) — no write path triggers it.
 
-**Utility feedback loop (UFL)**: every successful recall carries `meta.recall_id`; `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back — `hits[]` attributes it per memory (`memory_utility` table), `signal:'explicit'` is the high-fidelity host signal that overrides the lexical-reuse proxy (`effectiveUtility`). Adapters report reuse automatically. Confidence×utility calibration appears in `stats`/telemetry once outcomes exist. Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
+**Utility feedback loop (UFL)**: every successful recall carries `meta.recall_id`; `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back — `hits[]` attributes it per memory (`memory_utility` table), `signal:'explicit'` is the high-fidelity host signal that overrides the lexical-reuse proxy (`effectiveUtility`). Adapters report reuse automatically. Confidence×utility calibration appears in `stats`/telemetry once outcomes exist, alongside `routeUtility` — mean observed utility grouped by `route_mode` with `uplift` between the top two routes, which is how "does semantic recall beat lexical?" gets answered from data rather than argued. Both blocks are additive: absent until an outcome exists. Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
 
 ### Git-Aware Memory (issue-1)
 

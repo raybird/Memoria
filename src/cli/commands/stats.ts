@@ -49,6 +49,19 @@ export function registerStatsCommand(program: Command, paths: MemoriaPaths, core
                             console.log(`    - conf ${b.range}: n=${b.count}, mean_conf=${b.meanConfidence}, mean_utility=${b.meanUtility}`)
                         }
                     }
+                    // Utility per route — the comparison that answers "does semantic beat lexical?".
+                    // Appears only once outcomes exist; `uplift` stays null until two routes are scored,
+                    // because a single route has nothing to be better than.
+                    if (rr.routeUtility && rr.routeUtility.scoredQueries > 0) {
+                        const ru = rr.routeUtility
+                        const verdict = ru.best !== null && ru.uplift !== null
+                            ? `best=${ru.best} (+${ru.uplift})`
+                            : 'best=n/a (需要至少兩種 route 有 outcome 才能比較)'
+                        console.log(`  - route_utility: scored=${ru.scoredQueries}, ${verdict}`)
+                        for (const r of ru.routes) {
+                            console.log(`    - ${r.route_mode}: n=${r.scoredQueries}, mean_utility=${r.meanUtility}, mean_conf=${r.meanConfidence}`)
+                        }
+                    }
                 }
             }
         })

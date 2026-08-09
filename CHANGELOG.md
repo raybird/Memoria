@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`stats` and `GET /v1/telemetry/recall` now report observed utility per recall route** (`recallRouting.routeUtility`). Both halves of the semantic-vs-lexical question have been shipped for a while — the UFL ruler since v1.18.0 and the `vector` route alongside it — but the readout that actually compares them was missing: `routeCounts` said how often each route ran and `calibration` said whether confidence tracked usefulness, while nothing said which route produced *more useful* memories. This adds mean observed utility grouped by `route_mode`, sorted best-first, with `uplift` as the gap to the runner-up. `best`/`uplift` stay `null` until at least two routes have scored outcomes, because naming a winner among one contestant would imply a comparison that never happened; per-route `scoredQueries` counts are kept visible so "not enough data yet" is legible rather than hidden behind an average. Additive and presentational: the block is omitted entirely until an outcome exists, so existing `stats` output is unchanged.
+
+### Changed
+- `scripts/test-pure-functions.sh` joins the CI core group. The pure ranking/retention/calibration helpers (`effectiveUtility`, `computeDecayFactor`, `tokenCoverage`, `buildCalibration`, `buildRouteUtility`) were previously covered only indirectly through e2e flows — which prove the pipeline runs but not that the reuse threshold is 2, or that an explicit signal fully overrides the reuse proxy rather than being averaged with it. Those invariants are what the RFCs commit to, so they are now asserted directly against the functions (43 assertions, tsx driver, still no test framework).
+
 ## [1.22.1] - 2026-08-09
 
 ### Fixed

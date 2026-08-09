@@ -311,6 +311,23 @@ export type CalibrationSummary = {
     monotonic: boolean | null         // does meanUtility rise with confidence? null if <2 buckets
 }
 
+/** Observed utility grouped by the route that served the query — the direct measure of whether one
+ *  recall route actually outperforms another (RFC-semantic-recall §14: "用 utility uplift 說話").
+ *  Routes with no scored outcome are omitted, so this stays empty until real feedback exists. */
+export type RouteUtilityRow = {
+    route_mode: string
+    scoredQueries: number    // rows on this route carrying an observed utility_score
+    meanUtility: number
+    meanConfidence: number
+}
+
+export type RouteUtilitySummary = {
+    scoredQueries: number         // total across all routes
+    routes: RouteUtilityRow[]     // descending by meanUtility
+    best: string | null           // highest meanUtility; null unless ≥2 routes are scored
+    uplift: number | null         // best minus runner-up; null unless ≥2 routes are scored
+}
+
 export type StatsData = {
     sessions: number
     events: number
@@ -346,6 +363,7 @@ export type StatsData = {
         zeroHitRate: number      // fraction of non-skipped queries that returned no hits
         avgConfidence: number    // mean calibrated top confidence over non-skipped queries
         calibration?: CalibrationSummary  // confidence×utility buckets (UFL Phase 2), present only if any row is scored
+        routeUtility?: RouteUtilitySummary // observed utility per route (semantic vs lexical), present only if any row is scored
     }
 }
 
@@ -445,6 +463,7 @@ export type RecallTelemetryData = {
     total: number
     rows: RecallTelemetryPoint[]
     calibration?: CalibrationSummary  // confidence×utility buckets (UFL Phase 2) over the returned rows
+    routeUtility?: RouteUtilitySummary // observed utility per route over the returned rows
 }
 
 export type GovernanceReviewOptions = {

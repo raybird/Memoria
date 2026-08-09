@@ -85,7 +85,8 @@ export {
     maybeParseJson, normalizeSkillKey,
     parseDaysOption, parseBoundaryDate,
     inDateRange, parseCreatedAt,
-    isLowValueMemoryText, sanitizeSessionDataForImport
+    isLowValueMemoryText, sanitizeSessionDataForImport,
+    effectiveUtility, buildCalibration, buildRouteUtility, tokenCoverage
 } from './utils.js'
 export type {
     Json, SourceType, SourceStatus, SourceRecord, SessionEvent, SessionData, MemoriaPaths,
@@ -100,6 +101,7 @@ export type {
     RecallOutcomeInput, RememberNoteInput, RememberNoteData,
     BriefData, BriefDecision, BriefMemory, BriefRepository,
     MemoryRetention, MemorySensitivity, MemoryAttributes,
+    CalibrationSummary, CalibrationBucket, RouteUtilitySummary, RouteUtilityRow,
     RecallTelemetryPoint, RecallTelemetryData,
     GovernanceReviewOptions, GovernanceReviewItem, GovernanceReviewData,
     MemoryIndexBuildOptions, MemoryIndexBuildResult,

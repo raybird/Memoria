@@ -13,6 +13,7 @@ import {
     tokenCoverage,
     effectiveUtility,
     buildCalibration,
+    buildRouteUtility,
     REUSE_UTILITY_MIN_OBS,
     EXPLICIT_UTILITY_MIN_OBS
 } from '../src/core/utils.js'
@@ -130,6 +131,45 @@ eq('confidence that does not track usefulness → monotonic false', inverted.mon
 const clamped = buildCalibration([{ confidence: 5, utility: -3 }])
 eq('out-of-range inputs are clamped into the top bucket', clamped.buckets[0].meanConfidence, 1)
 eq('…and the clamped utility lands at 0', clamped.buckets[0].meanUtility, 0)
+
+// ── buildRouteUtility: semantic-vs-lexical uplift readout (RFC-semantic-recall §14) ─────────────
+console.log('[pure] buildRouteUtility')
+
+const noOutcomes = buildRouteUtility([
+    { route: 'keyword', confidence: 0.8, utility: null },
+    { route: 'vector', confidence: 0.7, utility: undefined }
+])
+eq('rows without an outcome are ignored', noOutcomes.scoredQueries, 0)
+eq('no scored rows → no routes', noOutcomes.routes.length, 0)
+eq('best is null when nothing is scored', noOutcomes.best, null)
+
+const single = buildRouteUtility([
+    { route: 'keyword', confidence: 0.5, utility: 0.6 },
+    { route: 'keyword', confidence: 0.7, utility: 0.8 }
+])
+eq('one route → averaged', single.routes[0].meanUtility, 0.7)
+// Declaring a winner with only one contestant would imply a comparison that never happened.
+eq('a single route yields no best', single.best, null)
+eq('…and no uplift', single.uplift, null)
+
+const compared = buildRouteUtility([
+    { route: 'keyword', confidence: 0.5, utility: 0.4 },
+    { route: 'keyword', confidence: 0.5, utility: 0.6 },
+    { route: 'vector', confidence: 0.6, utility: 0.9 },
+    { route: 'vector', confidence: 0.6, utility: 0.7 }
+])
+eq('two scored routes → totals add up', compared.scoredQueries, 4)
+eq('routes are sorted by mean utility, best first', compared.routes[0].route_mode, 'vector')
+eq('best names the top route', compared.best, 'vector')
+near('uplift is the gap to the runner-up', compared.uplift as number, 0.3, 1e-9)
+eq('per-route counts are kept so "not enough data" stays visible', compared.routes[0].scoredQueries, 2)
+
+const missingRoute = buildRouteUtility([{ route: null, confidence: 0.5, utility: 0.5 }])
+eq('a missing route_mode is bucketed as unknown rather than dropped', missingRoute.routes[0].route_mode, 'unknown')
+
+const clampedRoute = buildRouteUtility([{ route: 'keyword', confidence: 9, utility: 9 }])
+eq('utility is clamped into [0,1]', clampedRoute.routes[0].meanUtility, 1)
+eq('confidence is clamped too', clampedRoute.routes[0].meanConfidence, 1)
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

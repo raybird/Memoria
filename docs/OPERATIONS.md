@@ -192,6 +192,21 @@ You can also inspect aggregated telemetry in stats:
 
 Check `recallRouting` for 7-day route counts, fallback rate, and latency percentiles. Once recall outcomes have been reported (adapters do this automatically), a `calibration` block appears — confidence buckets vs mean observed utility, with a monotonicity flag that tells you whether `confidence` actually tracks usefulness. Vector-route counters (`vector` / `hybrid_vector` / `vector_unavailable` / `vector_timeout`) show up once `mode:'vector'` has been used.
 
+A `routeUtility` block appears alongside it once outcomes exist — **this is the one that answers "is semantic recall actually better than lexical?"**:
+
+```
+- route_utility: scored=24, best=vector (+0.18)
+  - vector: n=11, mean_utility=0.78, mean_conf=0.61
+  - keyword: n=13, mean_utility=0.6, mean_conf=0.55
+```
+
+Read it carefully:
+
+- `best` and `uplift` are `null` until **two** routes have scored outcomes. One route has nothing to be better than, and reporting it as the winner would imply a comparison that never happened.
+- The per-route `n` is the whole basis of the claim. A `+0.18` uplift over `n=2` versus `n=3` means nothing; give it dozens of outcomes per route before drawing conclusions.
+- Nothing here is a significance test. It is a readout, not a verdict — the numbers are for you to judge.
+- To get `vector` rows at all you need `LIBSQL_URL` plus the `skills/memoria-vector` helper, and queries actually issued with `mode:'vector'`.
+
 For raw recall telemetry rows (HTTP; rows carry `utility_score` / `outcome_kind` / `observed_at` when an outcome was written back):
 
 ```bash

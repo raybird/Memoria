@@ -1,5 +1,5 @@
 import { existsSync } from '../paths.js'
-import { shortHash, normalizeSkillKey, parseCreatedAt, tokenizeQuery, buildCalibration } from '../utils.js'
+import { shortHash, normalizeSkillKey, parseCreatedAt, tokenizeQuery, buildCalibration, buildRouteUtility } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
@@ -212,6 +212,13 @@ export function queryStats(dbPath: string): StatsData {
             telemetryRows.map((row) => ({ confidence: row.top_confidence, utility: row.utility_score }))
         )
 
+        // Utility grouped by route (RFC-semantic-recall §14): the readout that answers "does the
+        // semantic route beat the lexical one?". Same additive discipline as calibration — absent
+        // until outcomes exist, so stats output is unchanged on a database with no feedback.
+        const routeUtility = buildRouteUtility(
+            telemetryRows.map((row) => ({ route: row.route_mode, confidence: row.top_confidence, utility: row.utility_score }))
+        )
+
         const recallRouting = {
             window,
             totalQueries,
@@ -222,7 +229,8 @@ export function queryStats(dbPath: string): StatsData {
             avgHitCount,
             zeroHitRate,
             avgConfidence,
-            ...(calibration.scoredQueries > 0 ? { calibration } : {})
+            ...(calibration.scoredQueries > 0 ? { calibration } : {}),
+            ...(routeUtility.scoredQueries > 0 ? { routeUtility } : {})
         }
 
         return { sessions, events, skills, lastSession, topSkills, recallRouting }
@@ -276,11 +284,15 @@ export function queryRecallTelemetry(
         const calibration = buildCalibration(
             rows.map((r) => ({ confidence: r.top_confidence, utility: r.utility_score }))
         )
+        const routeUtility = buildRouteUtility(
+            rows.map((r) => ({ route: r.route_mode, confidence: r.top_confidence, utility: r.utility_score }))
+        )
 
         return {
             window,
             total: rows.length,
             ...(calibration.scoredQueries > 0 ? { calibration } : {}),
+            ...(routeUtility.scoredQueries > 0 ? { routeUtility } : {}),
             rows: rows.map((r) => ({
                 id: r.id,
                 route_mode: r.route_mode,
