@@ -227,6 +227,46 @@ export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge paylo
 - `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the recall-side helper; warm-cache spawn measures ~1s.
 - Compare utility uplift across `route_mode` groups (telemetry + UFL outcomes) to judge whether semantic recall beats lexical for your corpus.
 
+### Two things that will silently give you no semantic recall
+
+**1. A globally-installed `memoria` cannot find the helper.** `resolveHelperScript()` looks for
+`<dist>/../skills/memoria-vector/vector-recall.mjs`, but the npm package's `files` list only ships
+`skills/memoria-memory-sync/` — the vector helper is excluded because its embedding runtime is
+~700MB of devDependencies. Installed from npm, `mode:'vector'` therefore always degrades to
+`vector_unavailable`. Point it at a checkout explicitly:
+
+```bash
+export MEMORIA_VECTOR_RECALL_CMD="/path/to/Memoria/skills/memoria-vector/vector-recall.mjs"
+```
+
+It fails open, so a stale path costs you semantic recall but never breaks lexical recall.
+
+**2. Promoted git memories carry no `memory_node`, so they never reach the vector index.**
+`promoteSummary()` writes sessions/events/`memory_sources` but does not call `buildMemoryIndex`,
+while `build-mcp-bridge-payload.mjs` derives its scope from `memory_nodes`. On a database whose
+content came mostly from `repo sync`, the payload silently covers only the handful of memories
+written through `remember`. Run the index build first — it is incremental and exists precisely for
+unindexed sessions:
+
+```bash
+memoria index build                     # picks up every session that has no node yet
+MEMORIA_MCP_PAYLOAD_MODE=full node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs \
+  --memoria-home "$MEMORIA_HOME" --out /tmp/payload
+LIBSQL_URL="file:$MEMORIA_HOME/.memory/vectors.db" MEMORIA_EMBED_PROVIDER=local \
+  node skills/memoria-vector/vector-ingest.mjs /tmp/payload/mcp-bridge-*.json
+```
+
+Verify coverage rather than assuming it: the ingest result's `embedded` count should match the
+sessions + decisions + nodes you expect, and `SELECT COUNT(*) FROM memoria_vectors` should agree.
+
+### Reading vector distances
+
+e5 compresses its cosine range, so **absolute distances mean nothing across queries** — in one real
+corpus an unrelated hit scored 0.1485 while a near-paraphrase of a different memory scored 0.1068.
+Judge only the *relative* spread within a single query: a genuine match sits visibly below the rest,
+whereas a query with no good answer returns a flat band of near-identical distances. This is why
+fusion is rank-based (RRF) and why nothing thresholds on raw cosine.
+
 ## Git-Aware Memory Operations
 
 Read-only observation of existing git repositories (`docs/issues/issue-1/`). Memoria never

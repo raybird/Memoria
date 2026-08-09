@@ -20,7 +20,8 @@
 - **v1.22.1 = issue-6 修 bug**(`docs/issues/issue-6/`):`recall_fts` 重複列——`importSession` 的兩個語句改用 `ON CONFLICT(id) DO UPDATE`(走 UPDATE trigger,正確汰換索引列)+ migration 15 重建既有索引。影響面經查證只有 `sessions`/`events` 兩張表(其餘 8 處 `INSERT OR REPLACE` 的表沒有 trigger);本機資料庫當時未受污染。**未採用 `PRAGMA recursive_triggers`**——那是連線層的全域行為變更,且只在透過本專案連線時生效。
 - **v1.23.0 = 評測讀數 + 直測 + brief 修正**:(a) `stats` / telemetry 新增 `recallRouting.routeUtility`——依 route 分組的已觀測 utility + 冠亞軍 uplift,**這是回答「語意召回是否勝過字面」的讀數**(先前只有 route 次數與 confidence 校準,沒有「哪個 route 比較有用」);(b) `scripts/test-pure-functions.sh` 純函式直測(43 斷言,tsx driver,進 CI);(c) 修 `brief` 把同一則 CLI 筆記列兩次(一則筆記占 session + event 兩個 ref,outcome 兩個都歸因)。
 - **⚠ Memoria 已實際接上本機使用**(2026-08-09):全域升級至 v1.23.0;`~/.memoria/knowledge/BRIEF.md` 由 `memoria brief` 產生,並在 `~/.claude/CLAUDE.md` 以 `@` 絕對路徑引入(不放專案 CLAUDE.md——那是版控檔且路徑為絕對);寫入三則 `--durable` 記憶(skill 型整合拍板、停 server 用 PID、TeleNexus 容器為獨立資料),皆屬 **git 抓不到的環境事實**。工程決策不手寫,由 `repo sync` 促升。**(c) 這個 bug 正是實際使用十分鐘後才浮現的——fixture 測不出來,因為它沒有「一則筆記 + 對它回報過 outcome」的組合。**
-- **下一步**:(a) **讓真實 recall/outcome 資料累積**——工具已備齊、通道已接上,現在唯一缺的是使用量(要比較語意 vs 字面還需設 `LIBSQL_URL` 並實際下 `--mode vector`);(b) 工程債:`repo-facade` 抽取,等下次動 repo 邏輯一併做(見 §5)。**無待拍板事項**。
+- **語意召回也已實際接上**(2026-08-09):`skills/memoria-vector` 裝了 devDeps(723MB)、真模型 e2e(`MEMORIA_VECTOR_E2E_REAL=1`)通過、67 個實體 ingest 進 `~/.memoria/.memory/vectors.db`、`~/.bashrc` 設好四個變數。**實測語意勝過字面的案例**:查「停止伺服器行程要注意什麼」對記憶「停 Memoria server 一律用 PID 精準停」——keyword 0 hits、vector 命中且排前二。另**確認 libSQL 原生向量是真的在運作**(獨立探針:`vector_distance_cos` 與手算餘弦一致、`vector_top_k` 走 ANN 索引排序正確)——當初 §13.2 證偽的是 `mcp-memory-libsql` 那個 MCP server,不是 libSQL 本身。
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量;(b) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)、vector helper 不入 npm 包、promotion 不建 memory_node(後兩者見 §7,皆為 2026-08-09 實測發現)。**無待拍板事項**。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -166,6 +167,8 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |
 | C4 | opencode adapter e2e 測試 | `idea` | 測試覆蓋缺口(其餘三個 adapter 已有 e2e) |
+| — | **vector helper 不入 npm 包** | `idea`(2026-08-09 實測發現) | `resolveHelperScript()` 找 `<dist>/../skills/memoria-vector/`,但 npm `files` 只含 `skills/memoria-memory-sync/`(helper 帶 ~700MB devDeps 故不入包)→ **全域安裝的 `mode:'vector'` 永遠 `vector_unavailable`**,必須手設 `MEMORIA_VECTOR_RECALL_CMD`。可考慮把 helper 的 `.mjs`(不含 node_modules)納入 `files`,讓使用者只需在該目錄 `npm install`。已先寫入 OPERATIONS |
+| — | **promotion 不建 memory_node** | `idea`(2026-08-09 實測發現) | `promoteSummary()` 寫 sessions/events/`memory_sources` 但不呼叫 `buildMemoryIndex`,而 bridge payload 的範圍由 `memory_nodes` 驅動 → **以 `repo sync` 為主的資料庫,ingest 會靜默漏掉絕大多數記憶**(實測:10 個 session 只涵蓋 3 個)。現況要先手動 `memoria index build`。可考慮 promote 後順帶建 index,或在 ingest 前置。已先寫入 OPERATIONS |
 
 ---
 
