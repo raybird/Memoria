@@ -15,7 +15,7 @@
 - **v1.21.1 = issue-3 修 bug**(`docs/issues/issue-3/`):(a) 非 semver tag 的 `--tag` release 邊界不再退化成全 repo range——semver 比較優先,否則 creatordate fallback(`for-each-ref`,白名單內);(b) context 上限 `maxContextCommits`(200)/`maxContextFiles`(500),截斷永不靜默,`diffstat` 維持全範圍。實測同一 tag:context 157KB → 7.4KB。
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
 - **既有基礎**:Git-Aware Memory v1(v1.19.0)、四平台發佈 + service(v1.20.0)、UFL Phase 0–3 + 語意召回 MVP(v1.18.0),全部 `done`。
-- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 工程債(見 §5);(c) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
+- **下一步**:(a) **issue-4 Agent-Native 記憶介面**(`docs/issues/issue-4/`,**待拍板**):CLI 沒有 `recall`/`remember`/`feedback` 出口,skill 型部署下記憶讀不回來、UFL explicit 訊號也回報不了;(b) **issue-5 長期記憶語意**(`docs/issues/issue-5/`,**待拍板**,前置 issue-4):durable 衰減豁免 / supersedes / sensitivity;(c) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(d) 工程債(見 §5);(e) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -77,6 +77,20 @@
 
 ## 5. 下一步（接續就從這開始）
 
+> **2026-08-09 更新:以「把 Memoria 當成 coding agent 的永久記憶」視角盤點,產出 issue-4 與 issue-5 兩份規格(皆待拍板)。**
+>
+> 盤點結論:**記憶能力已到位,缺的是介面**。`core/` 的召回/寫入/UFL 回報全齊、HTTP 與 SDK 也都有出口,但 `src/cli.ts:49-65` 註冊的 17 個命令裡**沒有讀取路徑**。在本機採用的 skill 型整合下(2026-07-29 拍板:不接 hooks、不裝 service),agent 手上只有 bash——要召回一次記憶得先起 server 或臨時寫 Node script,結果是記憶寫得進去、讀不回來,UFL 的 explicit 訊號也沒有入口。
+>
+> 現在的排序:
+>
+> 1. **issue-4 — Agent-Native 記憶介面**(`docs/issues/issue-4/`,Medium,**零 schema 變更**):Phase 1 補 `recall`/`remember`/`feedback` 三個薄殼命令(全部只包既有 `MemoriaCore` 方法);Phase 2 加 `brief` 把高價值記憶編譯成 `<home>/memoria/BRIEF.md`,由 `CLAUDE.md` 以 `@memoria/BRIEF.md` 引入,在不接 hooks 的前提下取得近似開場注入的效果。**排第 1 的理由**:它同時是下面第 3 項的前置——`feedback` 是 skill 型部署下 explicit 訊號的唯一入口,沒有它,「累積真實 outcome 資料」在此部署形態下累積不起來。待拍板 Q1–Q4 見該 issue README。
+> 2. **issue-5 — 長期記憶語意**(`docs/issues/issue-5/`,Medium,migration 14,**前置 issue-4**):(a) durable 記憶豁免時間衰減與 stale 裁剪(恆真事實如使用者偏好,套 90 天半衰期是錯的;UFL 的高效用豁免救不到尚未累積觀測的新記憶);(b) 明示 `supersedes` 取代關係(= 下表 D5);(c) `sensitivity` + `export --redact`,把「版控文件用代稱」從人腦紀律變成機制。三者共用單一側表 `memory_attributes`(key 同 `memory_utility.ref_id`),**零標記時召回/保留/匯出全數 byte-identical**。待拍板 Q1–Q4 見該 issue README。
+> 3. **累積真實 recall/outcome 資料**:adapter + vector 模式日常使用,累積夠了用 `route_mode` 分組比較 utility uplift,客觀回答「語意召回是否勝過字面」。標尺(UFL)與待測物(vector)都已就位,只差資料——issue-4 出貨後這條路徑才在 skill 型部署下真正可行。
+> 4. **工程債(非急件)**:見下方 2026-07-28 更新第 2 項。
+> 5. **待拍板**:`repo sync` 的 `RELEASE_TAG_PATTERN` 是否放寬(issue-3 刻意留在範圍外)。
+>
+> 以下為歷史紀錄,保留備查。
+
 > **2026-07-28 更新:上一版排的第 1 項(真實 repo 試用)已完成**——閉環全通,並直接產出 issue-2(v1.21.0)與 issue-3(v1.21.1)兩批交付。試用對象為 Memoria 自身 + 一個外部私有 repo;**外部 repo 的名稱/路徑/tag 命名一律不寫入版控文件**(統一用 external-repo 代稱),UFL/promotion 的試用資料在使用者的 `~/.memoria`,不在本 repo。
 >
 > 現在的排序:
@@ -124,8 +138,9 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 |------|------|------|------|
 | **UFL** | 召回效用回饋迴路 | **`done`**(2026-07-07) | Phase 0–3 全數 ship:recall_id / outcome 寫回 / per-memory 歸因 / 校準 / utility-weighted 排序與保留 / explicit 回饋。見 `docs/RFC-utility-feedback.md` |
 | E2/E3/F | 語意召回(vector mode + embedding) | **`done` MVP**(2026-07-07) | 解鎖:本地 e5 + libSQL 原生向量,選用、fail-open。殘餘(hybrid 融合、語意去重)待 uplift 資料。見 `docs/RFC-semantic-recall.md` §14 |
-| — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift |
-| D5 | 矛盾偵測(B supersedes A) | `idea` | 評估文件缺點 #5,記憶智能最後一塊大缺口 |
+| — | **Agent-Native 記憶介面** | `planned`(2026-08-09) | CLI 缺 `recall`/`remember`/`feedback` 出口 + `brief` 注入面。已展開為 `docs/issues/issue-4/`(Medium,零 schema),Q1–Q4 待拍板 |
+| D5 | 矛盾偵測(B supersedes A) | `planned`(2026-08-09) | 評估文件缺點 #5。已展開為 `docs/issues/issue-5/` Phase 2:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**。同 issue 併入 durable 衰減豁免(補 UFL 高效用豁免蓋不到的恆真事實)與 `sensitivity`/`export --redact` |
+| — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift。**issue-4 出貨後才在 skill 型部署下可行**(`feedback` 是 explicit 訊號唯一入口) |
 | D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |
