@@ -77,6 +77,7 @@ jobs:
         run: |
           case "${{ matrix.group }}" in
             core)
+              bash scripts/test-pure-functions.sh
               bash scripts/test-smoke.sh
               bash scripts/test-cli-memory.sh
               bash scripts/test-memory-attributes.sh
