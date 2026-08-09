@@ -50,6 +50,7 @@ There is an optional distribution build step and no dedicated ESLint/Prettier co
 This repo currently has explicit runtime and wiki test scripts:
 
 - `scripts/test-smoke.sh`
+- `scripts/test-cli-memory.sh`
 - `scripts/test-migrations.sh`
 - `scripts/test-prune.sh`
 - `scripts/test-utility-ranking.sh`
@@ -390,6 +391,23 @@ MEMORIA_HOME=$(pwd) ./cli wiki file-query \
 MEMORIA_HOME=$(pwd) ./cli wiki lint --json
 ```
 
+### No-server path (skill-style deployment)
+
+If no server is running — a skill-style integration with no hooks and no `memoria service` — steps 3, 4
+and 4b have direct CLI equivalents (issue-4 Phase 1). Use these instead of starting a server for a
+one-off read or write:
+
+```bash
+./cli remember "switched to pnpm" --project Memoria --rationale "lockfile is authoritative"
+./cli recall "why pnpm" --project Memoria --json     # meta.recall_id feeds the next command
+./cli feedback <recall_id> --signal explicit --score 0.9 --hits <hit_id,hit_id>
+```
+
+`remember` writes ONE atomic note (synthetic session + a single `DecisionMade`/`SkillLearned` event),
+not a whole session — no session JSON file needed. Its ids are content fingerprints, so re-running the
+same note is a no-op. Human-readable `recall` output prints `relevance` (0–1); use `--json` for the
+full envelope. `feedback` on an unknown/pruned `recall_id` exits 0 with `updated:false`.
+
 Optional enhancement (not required):
 
 ```bash
@@ -470,7 +488,7 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 
 ## What Not to Change Implicitly
 
-- Do not rename CLI commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `govern`, `prune`, `export`) without request.
+- Do not rename CLI commands (`init`, `sync`, `recall`, `remember`, `feedback`, `stats`, `doctor`, `verify`, `index`, `govern`, `prune`, `export`) without request.
 - Do not change persisted table names/columns without migration plan.
 - `prune --all` includes consolidate (90d) and stale (180d) by default. Use `--consolidate-days` or `--stale-days` for custom thresholds.
 - Do not alter sample file formats unless all readers are updated.

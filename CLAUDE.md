@@ -32,6 +32,7 @@ There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts
 
 ```bash
 bash scripts/test-smoke.sh                  # CLI full flow (most common)
+bash scripts/test-cli-memory.sh             # issue-4 Phase 1: recall/remember/feedback CLI loop (no server), note idempotency, UFL write-back
 bash scripts/test-migrations.sh             # schema migration upgrade on a populated old DB
 bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe/utility-retention) delete exactly the right rows
 bash scripts/test-utility-ranking.sh        # UFL Phase 3 utility-weighted recall ranking (threshold/flip/explicit-override)
@@ -96,7 +97,7 @@ CLI modules under `src/cli/`:
 - `shared.ts` — `readSession` (Zod validator), `previewSync`
 - `runtime.ts` — `getRuntimeLayout`, `deployAgentSkill` and related helpers
 - `preflight.ts` — `runPreflight`
-- `commands/` — one file per command (`init`, `sync`, `source`, `wiki`, `stats`, `index-cmd`, `govern`, `doctor`, `verify`, `prune`, `export`, `serve`, `preflight-cmd`, `setup`)
+- `commands/` — one file per command (`init`, `sync`, `recall`, `remember`, `feedback`, `source`, `wiki`, `stats`, `index-cmd`, `govern`, `doctor`, `verify`, `prune`, `export`, `serve`, `preflight-cmd`, `setup`)
 
 Three entrypoints consume `core/`:
 
@@ -116,6 +117,8 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 
 `recall()` supports `keyword | tree | hybrid | vector` modes with an adaptive gate that skips trivial queries. Hits are ranked by relevance × time-decay (halfLife = 90 days), then down-weighted by accrued per-memory utility (UFL; no-op until a memory has enough observations). `vector` is opt-in semantic recall: `LIBSQL_URL` + the `skills/memoria-vector` helper (local embeddings, libSQL native vectors, RRF-fused with the lexical floor, fail-open — degrades to `vector_unavailable`/`vector_timeout` route modes).
 
+**CLI access (issue-4 Phase 1)**: `memoria recall <query>`, `memoria remember <text>` and `memoria feedback <recall_id>` are the CLI counterparts of `POST /v1/recall`, `/v1/remember` and `/v1/recall/:id/outcome` — they exist because a skill-style deployment has no server running. `remember` writes ONE atomic note (a synthetic session + one `DecisionMade`/`SkillLearned` event, provenance `source_type='cli_note'`); its ids are content fingerprints, so an identical re-run is a no-op rather than a rewrite. Human-readable `recall` output prints `relevance` (0–1), not the raw bm25-derived `score` that drives ordering; `--json` carries the full envelope including `meta.recall_id`.
+
 **Utility feedback loop (UFL)**: every successful recall carries `meta.recall_id`; `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back — `hits[]` attributes it per memory (`memory_utility` table), `signal:'explicit'` is the high-fidelity host signal that overrides the lexical-reuse proxy (`effectiveUtility`). Adapters report reuse automatically. Confidence×utility calibration appears in `stats`/telemetry once outcomes exist. Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
 
 ### Git-Aware Memory (issue-1)
@@ -124,7 +127,7 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 
 ## Conventions That Are Easy to Get Wrong
 
-- **Don't rename CLI commands** without an explicit request — they are part of the agent contract. This covers both top-level commands (`init`, `sync`, `stats`, `doctor`, `verify`, `index`, `source`, `repo`, `wiki`, `govern`, `prune`, `export`, `serve`, `preflight`, `setup`) and their subcommands (`source add/list`, `repo add/list/status/sync/summarize/relocate/remove`, `wiki build/file-query/lint`, `index build`, `govern review`). Note `sync` (session import) and `repo sync` (git scan) are different commands.
+- **Don't rename CLI commands** without an explicit request — they are part of the agent contract. This covers both top-level commands (`init`, `sync`, `recall`, `remember`, `feedback`, `stats`, `doctor`, `verify`, `index`, `source`, `repo`, `wiki`, `govern`, `prune`, `export`, `serve`, `preflight`, `setup`) and their subcommands (`source add/list`, `repo add/list/status/sync/summarize/relocate/remove`, `wiki build/file-query/lint`, `index build`, `govern review`). Note `sync` (session import) and `repo sync` (git scan) are different commands.
 - **`prune --all`** includes consolidate (90d) + stale (180d) + git-observations (90d) by default. Use `--consolidate-days` / `--stale-days` / `--git-observations-days` for custom thresholds; don't change defaults silently.
 - **Schema changes** must keep older DBs readable (see existing patch pattern in `initDatabase()`); add migrations rather than breaking columns.
 - **Validate at boundaries** with Zod (`unknown` → parse), not deep inside core logic.

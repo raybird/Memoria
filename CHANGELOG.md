@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`memoria recall` / `memoria remember` / `memoria feedback`** (issue-4 Phase 1). The recall, single-note write and UFL utility write-back all existed in `core/` with HTTP and SDK exits, but none of the 17 registered CLI commands could reach them. That is only an inconvenience when a server is running — under skill-style integration (no hooks, no `memoria service`) an agent has bash and nothing else, so memory could be written but never read back and explicit utility had no way in at all. `recall` mirrors `POST /v1/recall` (`--project` / `--scope` / `--top-k` / `--time-window` / `--mode`), `feedback` mirrors `POST /v1/recall/:id/outcome` (`--signal` / `--score` / `--used` / `--hits`), and both print `--json` for machine consumption — human-readable `recall` output shows `relevance` (0–1) rather than the raw bm25-derived `score`, which rounds to `0.000` for every hit. Recall ordering, ranking and envelope are untouched: these are new callers, not new behaviour.
+- **`memoria remember <text>`** writes one atomic note without going through a session JSON file, using the same shape `promoteSummary()` writes for git summaries: a synthetic session plus one `DecisionMade` or `SkillLearned` event, so extraction, recall, export and governance pick it up unchanged. Provenance lands in `memory_sources` as `source_type='cli_note'`. Session and event ids are content fingerprints, so re-running an identical note is a no-op — deliberately a *skipped write* rather than a rewrite, because `importSession` uses `INSERT OR REPLACE` whose implicit DELETE does not fire the `recall_fts` delete trigger, and a rewrite would therefore leave a duplicate FTS row and return the note twice. (That trigger gap is pre-existing and also affects re-running `sync` on the same session id; it is recorded in `docs/issues/issue-4/README.md` and not fixed here.)
+
 ## [1.21.1] - 2026-07-28
 
 ### Fixed

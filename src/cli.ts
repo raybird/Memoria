@@ -6,6 +6,9 @@ import { MemoriaCore, resolveMemoriaPaths } from './core/index.js'
 import { getRuntimeLayout } from './cli/runtime.js'
 import { registerInitCommand } from './cli/commands/init.js'
 import { registerSyncCommand } from './cli/commands/sync.js'
+import { registerRecallCommand } from './cli/commands/recall.js'
+import { registerRememberCommand } from './cli/commands/remember.js'
+import { registerFeedbackCommand } from './cli/commands/feedback.js'
 import { registerSourceCommand } from './cli/commands/source.js'
 import { registerRepoCommand } from './cli/commands/repo.js'
 import { registerWikiCommand } from './cli/commands/wiki.js'
@@ -48,6 +51,9 @@ async function run(): Promise<void> {
 
   registerInitCommand(program, paths, core)
   registerSyncCommand(program, paths, core)
+  registerRecallCommand(program, core)
+  registerRememberCommand(program, core)
+  registerFeedbackCommand(program, core)
   registerSourceCommand(program, core)
   registerRepoCommand(program, core)
   registerWikiCommand(program, core)

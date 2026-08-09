@@ -42,7 +42,11 @@ import {
     isPromotable,
     promotionExists,
     promoteSummary,
-    lookupGitSources
+    lookupGitSources,
+    noteFingerprint,
+    noteExists,
+    recordNoteProvenance,
+    CLI_NOTE_SOURCE_TYPE
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
 import { loadMemoriaConfig } from './config.js'
@@ -83,6 +87,8 @@ import type {
     GovernanceReviewData,
     GovernanceReviewOptions,
     RecallOutcomeInput,
+    RememberNoteInput,
+    RememberNoteData,
     WikiBuildResult,
     WikiLintOptions,
     WikiLintResult,
@@ -295,6 +301,59 @@ export class MemoriaCore {
             }
 
             return { data: { sessionId }, evidence: [sessionId], confidence: 1.0 }
+        })
+    }
+
+    // ─── rememberNote() — single atomic note (docs/issues/issue-4 Phase 1) ────
+    //
+    // Builds the SessionData a note maps to and hands it to remember(), so daily-note sync,
+    // decision/skill extraction, index rebuild and wiki build all run exactly as they do for an
+    // imported session. Deterministic ids (Q2) make a re-run collapse onto the same rows.
+
+    async rememberNote(input: RememberNoteInput): Promise<MemoriaResult<RememberNoteData>> {
+        return withResult('sqlite', async () => {
+            const text = input.text.trim()
+            if (!text) throw new Error('note text is empty')
+            const type = input.type ?? 'decision'
+
+            const noteId = noteFingerprint({ text, type, project: input.project, scope: input.scope })
+            const sessionId = `note-${noteId}`
+            const eventId = `noteev-${noteId}`
+
+            await this.init()
+
+            // Idempotent re-run: an identical note already exists, so skip the write entirely.
+            // Rewriting is not merely wasteful — importSession uses INSERT OR REPLACE, whose implicit
+            // DELETE does not fire the recall_fts delete trigger, so a rewrite leaves a duplicate FTS
+            // row and the note comes back twice from recall. (That trigger gap predates this command
+            // and also affects re-running `sync` on the same session; tracked separately.)
+            if (noteExists(this.paths.dbPath, sessionId)) {
+                const existing: RememberNoteData = { noteId, sessionId, eventId, type, created: false }
+                return { data: existing, evidence: [sessionId, eventId], confidence: 1.0 }
+            }
+
+            const content = type === 'decision'
+                ? { decision: text, rationale: input.rationale ?? '', impact_level: 'medium' }
+                : { skill_name: text, category: input.category ?? 'general', success_rate: 0, pattern: input.rationale ?? '' }
+
+            const result = await this.remember({
+                id: sessionId,
+                project: input.project,
+                scope: input.scope,
+                summary: text,
+                events: [{
+                    id: eventId,
+                    type: type === 'decision' ? 'DecisionMade' : 'SkillLearned',
+                    content,
+                    metadata: { source: CLI_NOTE_SOURCE_TYPE, note_id: noteId }
+                }]
+            })
+            if (!result.ok) throw new Error(result.error ?? 'remember failed')
+
+            recordNoteProvenance(this.paths.dbPath, [sessionId, eventId], noteId)
+
+            const created: RememberNoteData = { noteId, sessionId, eventId, type, created: true }
+            return { data: created, evidence: [sessionId, eventId], confidence: 1.0 }
         })
     }
 

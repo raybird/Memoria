@@ -350,6 +350,26 @@ export type RecallOutcomeInput = {
     }>
 }
 
+/** A single atomic note written straight from the CLI (docs/issues/issue-4 Phase 1, Q1/Q2).
+ *  Q1: no new event types — a note lands as DecisionMade or SkillLearned, so the whole existing
+ *  extract/recall/export machinery picks it up unchanged. */
+export type RememberNoteInput = {
+    text: string
+    type?: 'decision' | 'skill'  // default: 'decision'
+    project?: string
+    scope?: string
+    rationale?: string           // decision only
+    category?: string            // skill only
+}
+
+export type RememberNoteData = {
+    noteId: string      // deterministic content fingerprint shared by the session/event ids
+    sessionId: string
+    eventId: string
+    type: 'decision' | 'skill'
+    created: boolean    // false = an identical note already existed (idempotent re-run)
+}
+
 export type RecallTelemetryData = {
     window: string
     total: number

@@ -92,6 +92,7 @@ export type {
     ExportType, ExportFormat, ExportDecision, ExportSkill, ExportOptions,
     PruneOptions, MemoriaResult, RecallFilter, RecallHit, RecallHitSource,
     SessionSummary, HealthStatus, StatsData,
+    RecallOutcomeInput, RememberNoteInput, RememberNoteData,
     RecallTelemetryPoint, RecallTelemetryData,
     GovernanceReviewOptions, GovernanceReviewItem, GovernanceReviewData,
     MemoryIndexBuildOptions, MemoryIndexBuildResult,

@@ -52,4 +52,5 @@ export {
     promoteSummary,
     lookupGitSources
 } from './git-promote.js'
+export { noteFingerprint, noteExists, recordNoteProvenance, CLI_NOTE_SOURCE_TYPE } from './memory-note.js'
 export { closeAllConnections } from './connection.js'

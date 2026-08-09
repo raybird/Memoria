@@ -141,6 +141,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | — | **Agent-Native 記憶介面** | `planned`(2026-08-09) | CLI 缺 `recall`/`remember`/`feedback` 出口 + `brief` 注入面。已展開為 `docs/issues/issue-4/`(Medium,零 schema),Q1–Q4 待拍板 |
 | D5 | 矛盾偵測(B supersedes A) | `planned`(2026-08-09) | 評估文件缺點 #5。已展開為 `docs/issues/issue-5/` Phase 2:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**。同 issue 併入 durable 衰減豁免(補 UFL 高效用豁免蓋不到的恆真事實)與 `sensitivity`/`export --redact` |
 | — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift。**issue-4 出貨後才在 skill 型部署下可行**(`feedback` 是 explicit 訊號唯一入口) |
+| — | **`recall_fts` 重複列**(既有 bug) | `idea`(2026-08-09 發現) | `importSession` 用 `INSERT OR REPLACE`,REPLACE 的隱式 DELETE 不觸發 FTS delete trigger → 以相同 id 重複 `sync` 會讓同一筆命中翻倍。issue-4 R1 發現並已在 `remember` 路徑規避(相同 id 直接跳過寫入),**`sync` 路徑未修**;修法在 schema 層(補 trigger 或改成明確 DELETE + INSERT) |
 | D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |

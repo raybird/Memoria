@@ -164,6 +164,10 @@ All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `
 ./cli init                           # Initialize DB + directories
 ./cli sync <session.json>            # Import a session
 ./cli sync --dry-run <session.json>  # Preview without writing
+./cli recall "why pnpm" [--json]     # Search memory (--project/--scope/--top-k/--time-window/--mode)
+./cli remember "switched to pnpm" --project Memoria --rationale "lockfile is authoritative"
+./cli remember "..." --type skill --category cli   # Write a SkillLearned note instead
+./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL utility write-back
 ./cli stats [--json]                 # Statistics
 ./cli doctor [--json]                # Local health check
 ./cli verify [--json]                # Full verification

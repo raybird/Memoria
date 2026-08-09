@@ -164,6 +164,10 @@ curl http://localhost:3917/v1/stats
 ./cli init                           # 初始化 DB + 目錄
 ./cli sync <session.json>            # 匯入 session
 ./cli sync --dry-run <session.json>  # 預覽不寫入
+./cli recall "為什麼用 pnpm" [--json] # 召回記憶（--project/--scope/--top-k/--time-window/--mode）
+./cli remember "改用 pnpm" --project Memoria --rationale "lockfile 是權威"
+./cli remember "..." --type skill --category cli   # 改寫成 SkillLearned 筆記
+./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL 效用回報
 ./cli stats [--json]                 # 統計
 ./cli doctor [--json]                # 本地健康檢查
 ./cli verify [--json]                # 完整驗證
