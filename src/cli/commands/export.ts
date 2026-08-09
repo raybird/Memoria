@@ -13,6 +13,7 @@ export function registerExportCommand(program: Command, paths: MemoriaPaths): vo
         .option('--type <type>', 'Export type: all|decisions|skills', 'all')
         .option('--format <fmt>', 'Output format: json|markdown', 'json')
         .option('--out <path>', 'Output directory (default: .memory/exports)')
+        .option('--redact', "Code-name known entities inside memories marked sensitivity='private'")
         .option('--json', 'Machine-readable summary output')
         .action(async (options: ExportOptions & { json?: boolean }) => {
             const type = (options.type ?? 'all') as ExportType
@@ -26,12 +27,22 @@ export function registerExportCommand(program: Command, paths: MemoriaPaths): vo
             const result = await exportMemory(paths, { ...options, type, format })
 
             if (options.json) {
-                console.log(JSON.stringify({ ok: true, filePath: result.filePath, decisions: result.decisions.length, skills: result.skills.length }))
+                console.log(JSON.stringify({
+                    ok: true, filePath: result.filePath,
+                    decisions: result.decisions.length, skills: result.skills.length,
+                    ...(result.redaction ? { redaction: result.redaction } : {})
+                }))
             } else {
                 console.log('📦 Memoria Export complete')
                 console.log(`- file: ${result.filePath}`)
                 console.log(`- decisions: ${result.decisions.length}`)
                 console.log(`- skills: ${result.skills.length}`)
+                if (result.redaction) {
+                    console.log(`- redacted: ${result.redaction.redacted} 筆（已代稱 ${result.redaction.entities} 個實體）`)
+                    // Unmarked memories are exported verbatim — say so, so --redact is never mistaken
+                    // for a blanket guarantee.
+                    console.log(`- ⚠ unclassified: ${result.redaction.unclassified} 筆（未標記 sensitivity，原樣輸出）`)
+                }
             }
         })
 }

@@ -168,6 +168,14 @@ export type ExportOptions = {
     type?: ExportType
     format?: ExportFormat
     out?: string
+    redact?: boolean   // issue-5: code-name known entities inside memories marked sensitivity='private'
+}
+
+/** What `export --redact` actually covered — surfaced so "unclassified" is never invisible. */
+export type ExportRedaction = {
+    redacted: number
+    unclassified: number
+    entities: number
 }
 
 export type PruneOptions = {
@@ -208,6 +216,20 @@ export type RecallFilter = {
     top_k?: number         // default 5
     time_window?: string   // ISO duration, e.g. 'P7D'
     mode?: 'keyword' | 'tree' | 'hybrid' | 'vector'  // vector: opt-in semantic route (LIBSQL_URL-gated)
+    include_superseded?: boolean  // issue-5: superseded memories are hidden unless asked for
+}
+
+/** Long-term memory markers (docs/issues/issue-5). Sparse by design: an unmarked memory has no row,
+ *  and every consumer treats "no row" as pre-issue-5 behaviour. */
+export type MemoryRetention = 'durable' | 'episodic'
+export type MemorySensitivity = 'private' | 'shareable'
+
+export type MemoryAttributes = {
+    ref_id: string
+    retention: MemoryRetention | null
+    sensitivity: MemorySensitivity | null
+    superseded_by: string | null
+    note: string | null
 }
 
 /** Git provenance attached to hits that came from a promoted git summary (issue-1 §21). */
@@ -233,6 +255,8 @@ export type RecallHit = {
     node_id?: string
     reasoning_path?: string[]
     source?: RecallHitSource
+    retention?: MemoryRetention   // issue-5: present only when marked (durable = decay exempt)
+    superseded_by?: string        // issue-5: set when surfaced via --include-superseded
 }
 
 export type MemoryIndexBuildOptions = {
@@ -360,6 +384,11 @@ export type RememberNoteInput = {
     scope?: string
     rationale?: string           // decision only
     category?: string            // skill only
+    // issue-5 markers, all optional — omitting them leaves the memory unmarked (pre-issue-5 behaviour)
+    retention?: MemoryRetention
+    sensitivity?: MemorySensitivity
+    supersedes?: string          // ref_id this note replaces; must already exist
+    supersedeNote?: string       // why it was replaced
 }
 
 export type RememberNoteData = {
@@ -368,6 +397,7 @@ export type RememberNoteData = {
     eventId: string
     type: 'decision' | 'skill'
     created: boolean    // false = an identical note already existed (idempotent re-run)
+    superseded?: string[]  // ref ids marked as replaced by this note
 }
 
 /** Memory brief (docs/issues/issue-4 Phase 2): the derived view CLAUDE.md pulls in for

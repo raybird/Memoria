@@ -48,6 +48,9 @@ import {
     recordNoteProvenance,
     CLI_NOTE_SOURCE_TYPE,
     queryBrief,
+    applyMemoryAttributes,
+    upsertMemoryAttributes,
+    memoryRefExists,
     type BriefOptions
 } from './db/index.js'
 import { importSourceFile } from './source-import.js'
@@ -325,13 +328,37 @@ export class MemoriaCore {
 
             await this.init()
 
+            // issue-5: validate `--supersedes` BEFORE writing anything — a marker pointing at nothing
+            // is worse than a rejected command. An atomic note occupies two refs (its session and its
+            // event), so superseding one of them supersedes both; otherwise the note's other half
+            // would keep surfacing after it was replaced.
+            const supersedeTargets: string[] = []
+            if (input.supersedes) {
+                const target = input.supersedes.trim()
+                if (!memoryRefExists(this.paths.dbPath, target)) {
+                    throw new Error(`--supersedes target not found: ${target}`)
+                }
+                supersedeTargets.push(target)
+                const pair = target.startsWith('note-') ? `noteev-${target.slice('note-'.length)}`
+                    : target.startsWith('noteev-') ? `note-${target.slice('noteev-'.length)}`
+                        : null
+                if (pair && memoryRefExists(this.paths.dbPath, pair)) supersedeTargets.push(pair)
+            }
+
             // Idempotent re-run: an identical note already exists, so skip the write entirely.
             // Rewriting is not merely wasteful — importSession uses INSERT OR REPLACE, whose implicit
             // DELETE does not fire the recall_fts delete trigger, so a rewrite leaves a duplicate FTS
             // row and the note comes back twice from recall. (That trigger gap predates this command
             // and also affects re-running `sync` on the same session; tracked separately.)
             if (noteExists(this.paths.dbPath, sessionId)) {
-                const existing: RememberNoteData = { noteId, sessionId, eventId, type, created: false }
+                // The write is skipped, but markers still apply — re-running an identical note with
+                // `--durable` / `--sensitivity` / `--supersedes` is how an EXISTING memory gets
+                // marked, so this doubles as the marking entry point (issue-5, no extra command).
+                this.applyNoteAttributes(input, sessionId, eventId, supersedeTargets)
+                const existing: RememberNoteData = {
+                    noteId, sessionId, eventId, type, created: false,
+                    ...(supersedeTargets.length > 0 ? { superseded: supersedeTargets } : {})
+                }
                 return { data: existing, evidence: [sessionId, eventId], confidence: 1.0 }
             }
 
@@ -355,9 +382,38 @@ export class MemoriaCore {
 
             recordNoteProvenance(this.paths.dbPath, [sessionId, eventId], noteId)
 
-            const created: RememberNoteData = { noteId, sessionId, eventId, type, created: true }
+            this.applyNoteAttributes(input, sessionId, eventId, supersedeTargets)
+
+            const created: RememberNoteData = {
+                noteId, sessionId, eventId, type, created: true,
+                ...(supersedeTargets.length > 0 ? { superseded: supersedeTargets } : {})
+            }
             return { data: created, evidence: [sessionId, eventId], confidence: 1.0 }
         })
+    }
+
+    /** issue-5 markers for a note. Both of its refs carry them, so a marker holds whichever ref a
+     *  later recall surfaces. Writes nothing when no marker was requested. */
+    private applyNoteAttributes(
+        input: RememberNoteInput,
+        sessionId: string,
+        eventId: string,
+        supersedeTargets: string[]
+    ): void {
+        if (input.retention || input.sensitivity) {
+            for (const ref of [sessionId, eventId]) {
+                upsertMemoryAttributes(this.paths.dbPath, ref, {
+                    retention: input.retention,
+                    sensitivity: input.sensitivity
+                })
+            }
+        }
+        for (const target of supersedeTargets) {
+            upsertMemoryAttributes(this.paths.dbPath, target, {
+                superseded_by: sessionId,
+                note: input.supersedeNote
+            })
+        }
     }
 
     // ─── brief() — derived context view (docs/issues/issue-4 Phase 2) ────────
@@ -504,9 +560,16 @@ export class MemoriaCore {
                 reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
             }))
 
+            // issue-5: drop superseded memories and undo time-decay for durable ones. Runs FIRST so
+            // that utility weighting below stays the final arbiter — a mis-marked durable memory can
+            // still be pushed down by poor observed utility. Byte-identical when nothing is marked.
+            const attributed: RecallHit[] = applyMemoryAttributes(this.paths.dbPath, rawHits, {
+                includeSuperseded: filter.include_superseded
+            })
+
             // UFL Phase 3: re-rank by accrued per-memory utility (byte-identical when no observations
             // exist). Runs before telemetry so recall_id's top_confidence reflects the surfaced order.
-            const weighted: RecallHit[] = applyUtilityWeighting(this.paths.dbPath, rawHits)
+            const weighted: RecallHit[] = applyUtilityWeighting(this.paths.dbPath, attributed)
 
             // Git provenance (issue-1 §21): hits promoted from git summaries carry their source
             // (repository/branch/tag + base/head SHA). Fail-open — enrichment never blocks recall.

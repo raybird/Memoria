@@ -440,6 +440,38 @@ const MIGRATIONS: Migration[] = [
               ON memory_sources(repository_id, source_type);
             `)
         }
+    },
+    {
+        id: 14,
+        name: 'memory_attributes',
+        up: (db) => {
+            // Long-term memory semantics (docs/issues/issue-5). One side table carries all three
+            // markers because they share a key: ref_id is the RecallHit.id (a session or event id),
+            // the same id space memory_utility uses. Marking is sparse — an unmarked memory has no
+            // row at all — so recall ranking, prune retention and export stay byte-identical to
+            // pre-issue-5 behaviour on any DB where nothing has been marked.
+            //
+            //   retention='durable'   → exempt from time-decay AND from stale pruning
+            //   superseded_by=<ref>   → filtered out of recall by default (data is never deleted)
+            //   sensitivity='private' → redacted by `export --redact`
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS memory_attributes (
+                ref_id TEXT PRIMARY KEY,
+                retention TEXT,
+                sensitivity TEXT,
+                superseded_by TEXT,
+                note TEXT,
+                created_at DATETIME,
+                updated_at DATETIME
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_memory_attributes_superseded
+              ON memory_attributes(superseded_by);
+
+              CREATE INDEX IF NOT EXISTS idx_memory_attributes_retention
+              ON memory_attributes(retention);
+            `)
+        }
     }
 ]
 

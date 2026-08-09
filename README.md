@@ -169,6 +169,11 @@ All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `
 ./cli remember "..." --type skill --category cli   # Write a SkillLearned note instead
 ./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL utility write-back
 ./cli brief [--project X] [--days 30]  # Compile knowledge/BRIEF.md for CLAUDE.md `@`-import
+./cli remember "..." --durable         # Evergreen fact: no time-decay, survives stale pruning
+./cli remember "..." --supersedes <ref_id>       # Old memory drops out of recall (data kept)
+./cli remember "..." --sensitivity private       # Mark for export --redact
+./cli recall "..." --include-superseded          # Include replaced versions
+./cli export --redact                  # Code-name known entities in private memories
 ./cli stats [--json]                 # Statistics
 ./cli doctor [--json]                # Local health check
 ./cli verify [--json]                # Full verification

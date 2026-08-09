@@ -169,6 +169,11 @@ curl http://localhost:3917/v1/stats
 ./cli remember "..." --type skill --category cli   # 改寫成 SkillLearned 筆記
 ./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL 效用回報
 ./cli brief [--project X] [--days 30]  # 編譯 knowledge/BRIEF.md，供 CLAUDE.md 以 @ 引入
+./cli remember "..." --durable         # 恆真事實：不衰減、不被 stale 裁剪
+./cli remember "..." --supersedes <ref_id>       # 舊記憶退出召回（資料保留）
+./cli remember "..." --sensitivity private       # 標記供 export --redact 使用
+./cli recall "..." --include-superseded          # 一併顯示被取代的版本
+./cli export --redact                  # 對 private 記憶中的已知實體代稱化
 ./cli stats [--json]                 # 統計
 ./cli doctor [--json]                # 本地健康檢查
 ./cli verify [--json]                # 完整驗證

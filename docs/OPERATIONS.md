@@ -132,6 +132,37 @@ already in context — no hooks, no server, nothing to execute. Operational cave
 - The UFL section stays empty until outcomes exist (`effectiveUtility` needs 1 explicit or 2 reuse
   observations), which is expected on a fresh database.
 
+### Long-term memory markers (issue-5)
+
+Three markers, all optional, all set through `remember`. Re-running `remember` with identical text
+applies markers **without** rewriting the memory — that is how an existing memory gets marked:
+
+```bash
+./cli remember "使用者一律用 pnpm" --project Memoria --durable
+./cli remember "資料庫改用 SQLite" --supersedes note-abc123 --supersede-note "單機部署不需要 PG"
+./cli remember "內部部署細節" --sensitivity private
+```
+
+| marker | effect | escape hatch |
+|---|---|---|
+| `--durable` | recall undoes time-decay for it; `prune --stale-days` spares it | `--episodic` marks it explicitly time-bound |
+| `--supersedes <ref>` | the old memory stops appearing in recall | `recall --include-superseded`; `export` never filters |
+| `--sensitivity private` | `export --redact` code-names known entities inside it | — |
+
+Operational notes:
+
+- **Nothing marked = nothing changed.** Every consumer probes `memory_attributes` first, so a
+  database where no marker exists behaves exactly as it did before issue-5.
+- **`durable` does not make a memory immortal in ranking.** It only removes time-decay; UFL utility
+  weighting still runs afterwards, so a wrongly-marked memory with poor observed utility sinks anyway.
+- **Superseding is explicit, never inferred.** A `--supersedes` target that does not exist is rejected
+  before anything is written. Chains (A←B←C) work without recursion — each row records only its own
+  replacement, so a cycle cannot hang recall.
+- **`--redact` is an aid, not a guarantee.** It replaces only entities Memoria already knows
+  (repository names, project tags) and only inside memories explicitly marked `private`. The export
+  summary always reports the `unclassified` count — memories exported verbatim because nobody marked
+  them. Code names are deterministic per database (`proj-1a82`), so two exports stay diffable.
+
 ## Recall Quality Checks
 
 Start server and inspect tree/hybrid routing metadata:

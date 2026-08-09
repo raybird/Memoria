@@ -33,6 +33,7 @@ There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts
 ```bash
 bash scripts/test-smoke.sh                  # CLI full flow (most common)
 bash scripts/test-cli-memory.sh             # issue-4: recall/remember/feedback CLI loop (no server), note idempotency, UFL write-back, brief rendering
+bash scripts/test-memory-attributes.sh      # issue-5: durable decay/prune exemption, supersedes filtering, export --redact
 bash scripts/test-migrations.sh             # schema migration upgrade on a populated old DB
 bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe/utility-retention) delete exactly the right rows
 bash scripts/test-utility-ranking.sh        # UFL Phase 3 utility-weighted recall ranking (threshold/flip/explicit-override)
@@ -119,6 +120,16 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 
 **CLI access (issue-4 Phase 1)**: `memoria recall <query>`, `memoria remember <text>` and `memoria feedback <recall_id>` are the CLI counterparts of `POST /v1/recall`, `/v1/remember` and `/v1/recall/:id/outcome` — they exist because a skill-style deployment has no server running. `remember` writes ONE atomic note (a synthetic session + one `DecisionMade`/`SkillLearned` event, provenance `source_type='cli_note'`); its ids are content fingerprints, so an identical re-run is a no-op rather than a rewrite. Human-readable `recall` output prints `relevance` (0–1), not the raw bm25-derived `score` that drives ordering; `--json` carries the full envelope including `meta.recall_id`.
 
+**Long-term memory semantics (issue-5)**: one sparse side table `memory_attributes` (migration 14) keyed by `ref_id` — the same id space as `memory_utility` (a `RecallHit.id`, i.e. a session or event id) — carries three markers, each with one consumer:
+
+| marker | set by | effect |
+|---|---|---|
+| `retention='durable'` | `remember --durable` | time-decay is undone at recall (score ÷ its own decay factor) **and** the memory is spared by `prune --stale-days` |
+| `superseded_by` | `remember --supersedes <ref>` | dropped from recall by default; `--include-superseded` (HTTP `include_superseded`) brings it back with the field attached. Data is never deleted and `export` never applies the filter |
+| `sensitivity='private'` | `remember --sensitivity private` | `export --redact` replaces known entities (repository names, project tags) with deterministic code names |
+
+Two rules to preserve when touching this: **(1) zero markers must stay byte-identical** — every reader probes the table first and returns input untouched when nothing is marked (the discipline `applyUtilityWeighting` set); **(2) `applyMemoryAttributes` runs BEFORE `applyUtilityWeighting`** so utility stays the final arbiter and a mis-marked durable memory can still be pushed down by poor observed utility. Re-running `remember` with identical text applies markers without rewriting — that is also how an *existing* memory gets marked (there is no separate `mark` command).
+
 **Context injection without hooks (issue-4 Phase 2)**: `memoria brief` compiles recent decisions + high-utility memories (UFL) + per-repository state into `<knowledge>/BRIEF.md`, which `CLAUDE.md` can pull in with `@knowledge/BRIEF.md` — memory loads every session at zero execution cost, with no hooks and no service. It is a **derived view**: read-only, whole-file overwrite on every run, never a source of truth. Generation stays manual (Q3) — no write path triggers it.
 
 **Utility feedback loop (UFL)**: every successful recall carries `meta.recall_id`; `POST /v1/recall/:id/outcome` (`{signal, utility_score?, used?, hits?}`) writes observed utility back — `hits[]` attributes it per memory (`memory_utility` table), `signal:'explicit'` is the high-fidelity host signal that overrides the lexical-reuse proxy (`effectiveUtility`). Adapters report reuse automatically. Confidence×utility calibration appears in `stats`/telemetry once outcomes exist. Telemetry rows are exposed via `recallTelemetry({ window, limit })` and `GET /v1/telemetry/recall`.
@@ -130,7 +141,7 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 ## Conventions That Are Easy to Get Wrong
 
 - **Don't rename CLI commands** without an explicit request — they are part of the agent contract. This covers both top-level commands (`init`, `sync`, `recall`, `remember`, `feedback`, `brief`, `stats`, `doctor`, `verify`, `index`, `source`, `repo`, `wiki`, `govern`, `prune`, `export`, `serve`, `preflight`, `setup`) and their subcommands (`source add/list`, `repo add/list/status/sync/summarize/relocate/remove`, `wiki build/file-query/lint`, `index build`, `govern review`). Note `sync` (session import) and `repo sync` (git scan) are different commands.
-- **`prune --all`** includes consolidate (90d) + stale (180d) + git-observations (90d) by default. Use `--consolidate-days` / `--stale-days` / `--git-observations-days` for custom thresholds; don't change defaults silently.
+- **`prune --all`** includes consolidate (90d) + stale (180d) + git-observations (90d) by default. Use `--consolidate-days` / `--stale-days` / `--git-observations-days` for custom thresholds; don't change defaults silently. Stale pruning spares two kinds of memory: high accrued utility (UFL) and `retention='durable'` (issue-5) — both are exemptions, neither changes the thresholds.
 - **Schema changes** must keep older DBs readable (see existing patch pattern in `initDatabase()`); add migrations rather than breaking columns.
 - **Validate at boundaries** with Zod (`unknown` → parse), not deep inside core logic.
 - **DB lifecycle**: every code path that opens the DB must close it in `try/finally`.

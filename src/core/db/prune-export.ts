@@ -5,8 +5,10 @@ import { existsSync } from '../paths.js'
 import { withDb } from './connection.js'
 import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRange, normalizeSkillKey, parseCreatedAt, effectiveUtility } from '../utils.js'
 import { initDatabase } from './schema.js'
+import { loadDurableRefs } from './memory-attributes.js'
+import { buildRedactionMap, redactText, loadPrivateRefs } from './redact.js'
 import { truncateText } from './mappers.js'
-import type { Json, MemoriaPaths, PruneOptions, ExportDecision, ExportSkill, ExportOptions, ExportType, ExportFormat } from '../types.js'
+import type { Json, MemoriaPaths, PruneOptions, ExportDecision, ExportSkill, ExportOptions, ExportType, ExportFormat, ExportRedaction } from '../types.js'
 
 // UFL Phase 3(b)-prune — utility-weighted retention. Stale pruning spares any memory whose effective
 // utility (explicit host signal, else the trusted reuse proxy — see effectiveUtility) reaches this
@@ -252,9 +254,15 @@ function pruneStaleMemory(
             : []
         const sessionByNode = new Map<string, string>()
         for (const r of nodeSessRows) if (!sessionByNode.has(r.node_id)) sessionByNode.set(r.node_id, r.session_id)
-        const means = loadUtilityMeans(db, [...sessionByNode.values(), ...staleSessions.map((s) => s.id)])
+        const candidateRefs = [...sessionByNode.values(), ...staleSessions.map((s) => s.id)]
+        const means = loadUtilityMeans(db, candidateRefs)
+        // issue-5: a memory marked `durable` is an evergreen fact (a user preference, a standing
+        // convention). Time-based staleness is the wrong test for it, and the UFL exemption above
+        // cannot save it until it has accrued observations — which a rarely-recalled but always-true
+        // memory may never do. Empty set when nothing is marked, so removal stays unchanged.
+        const durable = loadDurableRefs(db, candidateRefs)
         const isRetained = (ref: string | undefined): boolean =>
-            typeof ref === 'string' && (means.get(ref) ?? -1) >= UTILITY_RETAIN_THRESHOLD
+            typeof ref === 'string' && (durable.has(ref) || (means.get(ref) ?? -1) >= UTILITY_RETAIN_THRESHOLD)
         const nodesToRemove = staleNodes.filter((n) => !isRetained(sessionByNode.get(n.id)))
         const sessionsToRemove = staleSessions.filter((s) => !isRetained(s.id))
 
@@ -388,6 +396,7 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
     filePath: string
     decisions: ExportDecision[]
     skills: ExportSkill[]
+    redaction?: ExportRedaction
 }> {
     if (!existsSync(paths.dbPath)) {
         throw new Error(`sessions.db not found: ${paths.dbPath}. Run 'memoria init' first.`)
@@ -445,6 +454,34 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
                 }
             })
 
+        // issue-5 Phase 3: code-name known entities inside memories marked private. Only explicit
+        // markers count (Q3) — everything else is exported verbatim and reported as unclassified,
+        // so an empty memory_attributes table leaves this export byte-identical to before.
+        let redaction: ExportRedaction | undefined
+        if (options.redact) {
+            const privateRefs = loadPrivateRefs(db)
+            const map = buildRedactionMap(db)
+            let redacted = 0
+            const isPrivate = (id: string, sessionId: string): boolean =>
+                privateRefs.has(id) || privateRefs.has(sessionId)
+
+            for (const decision of decisions) {
+                if (!isPrivate(decision.id, decision.session_id)) continue
+                decision.decision = redactText(decision.decision, map)
+                decision.rationale = redactText(decision.rationale, map)
+                decision.project = redactText(decision.project, map)
+                redacted += 1
+            }
+            for (const skill of skills) {
+                if (!isPrivate(skill.id, skill.session_id)) continue
+                skill.skill_name = redactText(skill.skill_name, map)
+                skill.pattern = redactText(skill.pattern, map)
+                skill.project = redactText(skill.project, map)
+                redacted += 1
+            }
+            redaction = { redacted, unclassified: decisions.length + skills.length - redacted, entities: map.size }
+        }
+
         await fs.mkdir(outDir, { recursive: true })
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
         const projectPart = projectFilter ? `_${slugify(projectFilter).slice(0, 30)}` : ''
@@ -455,6 +492,7 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
             generated_at: new Date().toISOString(),
             filters: { from: options.from ?? null, to: options.to ?? null, project: projectFilter ?? null, scope: scopeFilter ?? null, type, format },
             counts: { decisions: decisions.length, skills: skills.length },
+            ...(redaction ? { redaction } : {}),
             decisions, skills
         }
 
@@ -471,6 +509,6 @@ export async function exportMemory(paths: MemoriaPaths, options: ExportOptions):
             await fs.writeFile(filePath, md, 'utf8')
         }
 
-        return { filePath, decisions, skills }
+        return { filePath, decisions, skills, redaction }
     })
 }

@@ -10,6 +10,7 @@ type RecallCommandOptions = {
     topK?: string
     timeWindow?: string
     mode?: string
+    includeSuperseded?: boolean
     json?: boolean
 }
 
@@ -23,6 +24,7 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
         .option('--top-k <n>', 'Maximum hits to return', '5')
         .option('--time-window <duration>', 'ISO duration window, e.g. P7D')
         .option(`--mode <mode>`, `Recall mode: ${RECALL_MODES.join('|')}`)
+        .option('--include-superseded', 'Also return memories that were replaced by a newer one')
         .option('--json', 'Machine-readable JSON output')
         .action(async (query: string, options: RecallCommandOptions) => {
             const topK = Number(options.topK ?? '5')
@@ -37,7 +39,8 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
                 scope: options.scope,
                 top_k: topK,
                 time_window: options.timeWindow,
-                mode: options.mode as RecallMode | undefined
+                mode: options.mode as RecallMode | undefined,
+                include_superseded: options.includeSuperseded
             }
             const result = await core.recall(filter)
             if (!result.ok) throw new Error(result.error)
@@ -55,7 +58,11 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
                 // the raw bm25-derived `score` that drives ordering is orders of magnitude smaller
                 // and unreadable rounded. Ordering still follows score — only the display differs.
                 const quality = (hit.relevance ?? hit.score).toFixed(3)
-                console.log(`- [${quality}] ${hit.type} | ${hit.project} | ${hit.timestamp}`)
+                const marks = [
+                    hit.retention === 'durable' ? 'durable' : null,
+                    hit.superseded_by ? `superseded by ${hit.superseded_by}` : null
+                ].filter(Boolean).join(', ')
+                console.log(`- [${quality}] ${hit.type} | ${hit.project} | ${hit.timestamp}${marks ? ` | ${marks}` : ''}`)
                 console.log(`  ${hit.snippet}`)
                 if (hit.source) {
                     const ref = hit.source.tag ?? hit.source.branch ?? hit.source.head_sha?.slice(0, 8) ?? hit.source.type

@@ -51,6 +51,7 @@ This repo currently has explicit runtime and wiki test scripts:
 
 - `scripts/test-smoke.sh`
 - `scripts/test-cli-memory.sh`
+- `scripts/test-memory-attributes.sh`
 - `scripts/test-migrations.sh`
 - `scripts/test-prune.sh`
 - `scripts/test-utility-ranking.sh`
@@ -403,6 +404,19 @@ one-off read or write:
 ./cli feedback <recall_id> --signal explicit --score 0.9 --hits <hit_id,hit_id>
 ./cli brief --project Memoria          # compile knowledge/BRIEF.md
 ```
+
+Long-term markers (issue-5) ride on the same command:
+
+```bash
+./cli remember "使用者一律用 pnpm" --durable                    # evergreen: no decay, survives prune
+./cli remember "資料庫改用 SQLite" --supersedes <old_ref_id>    # old memory drops out of recall
+./cli remember "內部部署細節" --sensitivity private             # export --redact will code-name it
+./cli recall "..." --include-superseded                        # see replaced versions too
+./cli export --redact                                          # code-name private memories
+```
+
+Re-running `remember` with identical text applies markers without rewriting the memory — that is
+how an existing memory gets marked; there is no separate `mark` command.
 
 `remember` writes ONE atomic note (synthetic session + a single `DecisionMade`/`SkillLearned` event),
 not a whole session — no session JSON file needed. Its ids are content fingerprints, so re-running the

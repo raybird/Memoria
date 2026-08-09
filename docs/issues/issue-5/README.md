@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 5（本地文件編號） |
 | 複雜度級別 | Medium（新增 1 張側表 + 召回／保留／匯出語意擴充；**零標記時行為 byte-identical**） |
-| 狀態 | **待拍板**（分析完成，Q1–Q4 見「待確認決策」） |
+| 狀態 | **實作完成**（2026-08-09，Q1–Q4 拍板後 Phase 1–3 全數交付） |
 | 需求來源 | 2026-08-09 以「把 Memoria 當成 coding agent 的永久記憶」角度盤點記憶語意；三項缺口與 `docs/memory-mechanism-assessment.md` 的開放缺點 4／5 對應 |
 | 建立日期 | 2026-08-09 |
 | 前置 | [issue-4](../issue-4/README.md)（`remember` CLI 是本 issue 三個標記的唯一寫入入口，**必須先出貨**） |
@@ -86,14 +86,55 @@ issue-4 補完介面之後，Memoria 已能被 agent 當日常記憶用。接著
 | redact 代稱不穩定或可逆推 | 兩次匯出代稱不一致 → 無法比對；代稱可反推 → 遮蔽無效 | 代稱用**確定性 hash 短碼**（同一原詞跨匯出恆等）、且不含原詞任何片段；映射表**不寫入匯出檔** |
 | 誤以為 `--redact` 等於安全 | 只遮明示標記者，未標記的敏感內容照樣輸出 | 匯出摘要明文列出「遮蔽 N 筆／未標記 M 筆」，文件明載這是**輔助而非保證** |
 
-## 待確認決策
+## 已拍板決策（2026-08-09，全數採建議方案）
 
-| # | 議題 | 選項 | 建議 |
-|---|---|---|---|
-| **Q1** | durable 的判定方式 | (a) 明示旗標 `remember --durable`；(b) 由事件類型自動推導（如 `SkillLearned` 恆為 durable） | **(a)**。自動推導會把「上週學到的某個 CLI 用法」也變成永不衰減，誤判成本高且不可見。明示旗標貴一點但可稽核 |
-| **Q2** | superseded 記憶的召回預設 | (a) 預設濾掉，`--include-superseded` opt-in；(b) 預設回傳但標記 `superseded: true` 由下游決定 | **(a)**。記憶系統的價值在於給出**現行**答案；(b) 等於把矛盾原封不動丟給下游，缺點 5 沒有真正解決。`RecallHit` 仍附 `superseded_by` 欄位供追溯 |
-| **Q3** | 未標記記憶的 sensitivity 預設 | (a) 視為未分類，`--redact` 不處理；(b) 視為 private，`--redact` 一律遮蔽 | **(a)**。(b) 會讓既有 DB 一開 `--redact` 就整份遮成無用；且違反「零標記即行為不變」的紀律。以匯出摘要提示未標記筆數補足 |
-| **Q4** | 寫入端的相似記憶提示 | (a) 本 issue 納入（`remember` 偵測高相似既有記憶並提示 `--supersedes <id>`）；(b) 延後 | **(b) 延後**。它需要一條相似度門檻，而門檻好壞只有在語意召回累積實測資料後才判斷得準；`--supersedes` 先給明示入口即可 |
+| # | 議題 | 決議 |
+|---|---|---|
+| **Q1** | durable 的判定方式 | **明示旗標 `remember --durable`**（`--episodic` 可明示相反）。自動推導會把「上週學到的某個 CLI 用法」也變成永不衰減，誤判成本高且不可見 |
+| **Q2** | superseded 記憶的召回預設 | **預設濾掉**，`--include-superseded` 為逃生口。記憶系統的價值在於給出**現行**答案；把矛盾原封不動丟給下游等於沒解決缺點 5。`RecallHit` 仍附 `superseded_by` 供追溯，`export` 不套用此過濾 |
+| **Q3** | 未標記記憶的 sensitivity 預設 | **視為未分類，`--redact` 不處理**。全遮會讓既有 DB 一開 `--redact` 就整份無用，也違反「零標記即行為不變」；改以匯出摘要明示未分類筆數補足 |
+| **Q4** | 寫入端的相似記憶提示 | **延後**。需要一條相似度門檻，而門檻好壞只有在語意召回累積實測資料後才判斷得準；`--supersedes` 先給明示入口即可 |
+
+## 實作後追加
+
+### R1 · 「byte-identical」在含 `Date.now()` 的 score 上不成立，驗收標準已修正
+
+驗收原本寫「輸出逐欄位一致」。實測發現**升級前後的 score 末位必然不同**——`computeDecayFactor` 吃 `Date.now()`（`src/core/db/recall.ts:64`），兩次執行相隔幾秒就會讓 `score` 變動。
+
+已用對照實驗確認這與 issue-5 無關：**同一個舊版 build 自己連跑兩次，score 同樣不同**。
+
+```
+舊版第一次: "score":0.10283446991216542
+舊版第二次: "score":0.10283446062565046
+```
+
+驗收標準因此改為：**順序、`id`、`relevance`、`snippet`、欄位集合嚴格相同；`score` 相對誤差 < 1e-5**（時間抖動量級）。以此標準，把 migration 13 的資料庫交給新版就地升級到 14 後：
+
+| 路徑 | 結果 |
+|---|---|
+| `recall --mode keyword / tree / hybrid` | 順序與所有欄位相同，score 僅時間抖動 ✓ |
+| `export --type all --format json` | 完全 byte-identical ✓ |
+| `prune --all --dry-run` | 完全 byte-identical ✓ |
+
+### R2 · 規格缺一個入口：既有記憶如何標記
+
+計畫只寫了寫入時標記（`remember --durable`），沒有回答「已經在庫裡的記憶怎麼標」。`--supersedes` 反而有（透過新記憶標記舊記憶），三個標記裡就它有入口，不一致。
+
+處置：**冪等重跑即標記**。`remember` 對相同內容第二次執行時本來就跳過寫入（issue-4 R1），現在改為「跳過寫入，但套用標記」。不新增命令、語意自然（「這件事我記過了，而且它是恆真的」），也讓 `--durable` 的效果可以在同一則記憶上前後對照驗證。
+
+### R3 · `--redact` 的「專有名詞」具體化為「已知實體查表」
+
+計畫寫「內容中的專有名詞以確定性短碼代稱」，但專有名詞辨識是 NLP 問題，誤判（漏遮或錯遮）都很貴。
+
+改為：只替換 **Memoria 自己知道的實體**——`repositories.name` 與 `sessions.project`。這是查表不是猜測，沒有誤判，且使用者能預測 `--redact` 會動到什麼。代價是覆蓋面限於已知實體，因此文件一律寫明「`--redact` 是輔助，不是保證」，並在匯出摘要固定回報 `unclassified` 筆數。
+
+替換時長名優先（避免 `acme-web-api` 被 `acme-web` 先吃掉），salt 取自該資料庫最早一筆 migration 的 `applied_at`——同一份 DB 代稱穩定可 diff，不同 DB 的代稱不同。
+
+### R4 · 測試獨立成 `test-memory-attributes.sh`
+
+計畫把斷言分散掛在 `test-prune.sh`（durable 豁免）與 `test-cli-memory.sh`（其餘）。實作時改為單一新腳本涵蓋 (A)–(G) 七項，理由與 `test-utility-ranking.sh` 相同：一個能力一支腳本，壞掉時定位快。既有兩支腳本未動。
+
+踩到的坑：`memoria init` **不是** reset（它建目錄、patch schema，但保留既有資料），腳本裡把它當重置用會讓後段的計數被前段污染——已改為每個段落用各自的 `MEMORIA_HOME`。
 
 ## 範圍外
 
@@ -106,14 +147,16 @@ issue-4 補完介面之後，Memoria 已能被 agent 當日常記憶用。接著
 | 日期 | 事件 |
 |---|---|
 | 2026-08-09 | 盤點記憶語意三缺口，對應 assessment 開放缺點 4／5；確認可用單一側表承載且維持 byte-identical；建立 issue 文件（README + implementation-plan） |
+| 2026-08-09 | Q1–Q4 拍板（全數採建議方案）；Phase 1–3 實作完成，新增 `scripts/test-memory-attributes.sh`（CI core 群組）。記錄 R1–R4 四項實作發現 |
 
 ## Changelog
 
 - 2026-08-09: 初版建立。三項缺口皆附 `file:line` 證據與 assessment 對應；Q1–Q4 待拍板。
+- 2026-08-09: Q1–Q4 定案並完成 Phase 1–3（migration 14 + durable / supersedes / redact）。四項實作修正：R1（byte-identical 標準因 `Date.now()` 衰減而不成立，已改為「欄位嚴格相同 + score 相對誤差 < 1e-5」並用舊版自比證實抖動與本 issue 無關）、R2（規格缺「既有記憶如何標記」，改由冪等重跑套用標記，不新增命令）、R3（`--redact` 的專有名詞改為已知實體查表，避免 NLP 誤判）、R4（測試獨立成單一腳本；`init` 不是 reset 的坑）。**assessment 缺點 4／5 至此收斂。**
 
 ---
 **建立日期**: 2026-08-09
 **最後更新**: 2026-08-09
-**文件版本**: 1.0
-**狀態**: **待拍板**（前置 [issue-4](../issue-4/README.md) 未出貨前不啟動）
+**文件版本**: 2.0
+**狀態**: **實作完成**（Phase 1–3 全數交付，無待決事項）
 **分級**: Medium

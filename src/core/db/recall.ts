@@ -61,7 +61,7 @@ export function applyUtilityWeighting(dbPath: string, hits: RecallHit[]): Recall
     }
 }
 
-function computeDecayFactor(timestamp: string, halfLifeDays = DEFAULT_DECAY_HALF_LIFE_DAYS): number {
+export function computeDecayFactor(timestamp: string, halfLifeDays = DEFAULT_DECAY_HALF_LIFE_DAYS): number {
     const ageMs = Date.now() - parseCreatedAt(timestamp)
     if (ageMs <= 0) return 1.0
     const ageDays = ageMs / (24 * 60 * 60 * 1000)

@@ -72,7 +72,8 @@ const recallSchema = z
         scope: z.string().optional(),
         top_k: z.number().optional(),
         time_window: z.string().optional(),
-        mode: recallModeSchema.optional()
+        mode: recallModeSchema.optional(),
+        include_superseded: z.boolean().optional()  // issue-5: default hides superseded memories
     })
     .passthrough()
 

@@ -79,6 +79,7 @@ jobs:
             core)
               bash scripts/test-smoke.sh
               bash scripts/test-cli-memory.sh
+              bash scripts/test-memory-attributes.sh
               bash scripts/test-migrations.sh
               bash scripts/test-prune.sh
               bash scripts/test-utility-ranking.sh
