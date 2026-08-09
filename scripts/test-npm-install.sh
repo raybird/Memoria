@@ -31,6 +31,21 @@ npm install --silent --no-audit --no-fund --prefix "$PREFIX" "$PACKAGE_PATH"
 CLI="$PREFIX/node_modules/.bin/memoria"
 [ -x "$CLI" ] || { echo "Installed npm launcher missing: $CLI"; exit 1; }
 
+# The vector helper ships as source only (its ~700MB embedding runtime stays in devDependencies).
+# Without these files in the package, resolveHelperScript() can never find a helper on an npm
+# install and mode:'vector' degrades to vector_unavailable forever — which is exactly what happened
+# before this was fixed. node_modules must NOT come along.
+echo "[npm-install] vector helper source is packaged (source only, no node_modules)"
+HELPER_DIR="$PREFIX/node_modules/@raybird.chen/memoria/skills/memoria-vector"
+for f in vector-recall.mjs vector-ingest.mjs embed.mjs package.json; do
+    [ -f "$HELPER_DIR/$f" ] || { echo "Vector helper missing from package: $f"; exit 1; }
+done
+[ ! -d "$HELPER_DIR/node_modules" ] || { echo "Vector helper node_modules must not be packaged"; exit 1; }
+# resolveHelperScript() resolves <dist>/../skills/memoria-vector/vector-recall.mjs — assert that
+# exact relationship rather than just "a file exists somewhere".
+[ -f "$PREFIX/node_modules/@raybird.chen/memoria/dist/../skills/memoria-vector/vector-recall.mjs" ] || {
+    echo "Helper not reachable at the path resolveHelperScript() computes"; exit 1; }
+
 echo "[npm-install] verify installed mode"
 PREFLIGHT_OUTPUT="$("$CLI" preflight --json)"
 echo "$PREFLIGHT_OUTPUT" | node -e "const fs=require('node:fs');const data=JSON.parse(fs.readFileSync(0,'utf8'));if(!data.ok||data.mode!=='installed')process.exit(1)"

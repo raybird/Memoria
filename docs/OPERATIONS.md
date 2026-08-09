@@ -215,13 +215,23 @@ curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 
 ## Semantic Recall Operations (optional)
 
-`mode:'vector'` is gated by `LIBSQL_URL` and the `skills/memoria-vector` helper:
+`mode:'vector'` is gated by `LIBSQL_URL` and the `skills/memoria-vector` helper. The helper ships as
+**source only** — its embedding runtime is ~700MB of devDependencies, so you install those yourself,
+once, wherever the helper lives:
 
 ```bash
-cd skills/memoria-vector && npm install     # one-time (embedding runtime + libSQL client)
+# from a checkout
+cd skills/memoria-vector && npm install
+
+# from an npm install (the helper travels with the package since v1.23.1)
+cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector" && npm install
+
 export LIBSQL_URL="file:/path/to/vectors.db"
 export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge payload into vectors
 ```
+
+`npm install --omit=dev` there installs only `@libsql/client` (~24MB) — enough for the `stub`
+provider and for ingest plumbing, but the `local` provider needs the full install.
 
 - First `local` embedding downloads the model (~120MB, cached in `~/.cache/huggingface`); a query that hits the download window fails open to lexical (`vector_timeout`) and recovers afterwards.
 - `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the recall-side helper; warm-cache spawn measures ~1s.
@@ -229,17 +239,21 @@ export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge paylo
 
 ### Two things that will silently give you no semantic recall
 
-**1. A globally-installed `memoria` cannot find the helper.** `resolveHelperScript()` looks for
-`<dist>/../skills/memoria-vector/vector-recall.mjs`, but the npm package's `files` list only ships
-`skills/memoria-memory-sync/` — the vector helper is excluded because its embedding runtime is
-~700MB of devDependencies. Installed from npm, `mode:'vector'` therefore always degrades to
-`vector_unavailable`. Point it at a checkout explicitly:
+**1. The helper's dependencies are never installed for you.** `resolveHelperScript()` finds the
+packaged helper at `<dist>/../skills/memoria-vector/vector-recall.mjs`, but installing `memoria`
+does not install *that* directory's `package.json` — it is a separate npm project on purpose, so the
+~700MB embedding runtime stays opt-in. Until you run `npm install` inside it, `mode:'vector'`
+degrades to `vector_unavailable` (fail-open: lexical recall still answers).
+
+On **v1.23.0 and earlier** the helper was not packaged at all, so an npm install could never resolve
+it. There the only route is pointing at a checkout:
 
 ```bash
 export MEMORIA_VECTOR_RECALL_CMD="/path/to/Memoria/skills/memoria-vector/vector-recall.mjs"
 ```
 
-It fails open, so a stale path costs you semantic recall but never breaks lexical recall.
+That override still works on current versions — useful when you already have a checkout with the
+runtime installed and would rather not download it twice.
 
 **2. Promoted git memories carry no `memory_node`, so they never reach the vector index.**
 `promoteSummary()` writes sessions/events/`memory_sources` but does not call `buildMemoryIndex`,

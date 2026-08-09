@@ -167,8 +167,8 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |
 | C4 | opencode adapter e2e 測試 | `idea` | 測試覆蓋缺口(其餘三個 adapter 已有 e2e) |
-| — | **vector helper 不入 npm 包** | `idea`(2026-08-09 實測發現) | `resolveHelperScript()` 找 `<dist>/../skills/memoria-vector/`,但 npm `files` 只含 `skills/memoria-memory-sync/`(helper 帶 ~700MB devDeps 故不入包)→ **全域安裝的 `mode:'vector'` 永遠 `vector_unavailable`**,必須手設 `MEMORIA_VECTOR_RECALL_CMD`。可考慮把 helper 的 `.mjs`(不含 node_modules)納入 `files`,讓使用者只需在該目錄 `npm install`。已先寫入 OPERATIONS |
-| — | **promotion 不建 memory_node** | `idea`(2026-08-09 實測發現) | `promoteSummary()` 寫 sessions/events/`memory_sources` 但不呼叫 `buildMemoryIndex`,而 bridge payload 的範圍由 `memory_nodes` 驅動 → **以 `repo sync` 為主的資料庫,ingest 會靜默漏掉絕大多數記憶**(實測:10 個 session 只涵蓋 3 個)。現況要先手動 `memoria index build`。可考慮 promote 後順帶建 index,或在 ingest 前置。已先寫入 OPERATIONS |
+| — | **vector helper 不入 npm 包** | **`done`**(v1.23.1) | helper 的 `.mjs` + package.json 納入 `files`(node_modules 不入,包 1.20→1.22MB)→ 全域安裝的 `resolveHelperScript()` 解析得到,不再需要 `MEMORIA_VECTOR_RECALL_CMD`;helper 依賴仍為明示 opt-in(`cd .../skills/memoria-vector && npm install`)。`test-npm-install.sh` 釘住路徑與「不含 node_modules」 |
+| — | **promotion 不建 memory_node** | `planned` | 已展開為 `docs/issues/issue-7/`(**待評估**,未拍板)。`promoteSummary()` 不呼叫 `buildMemoryIndex`,而 bridge payload 範圍由 `memory_nodes` 驅動 → 以 `repo sync` 為主的資料庫,ingest **靜默**漏掉絕大多數記憶(實測 10 個 session 只涵蓋 3 個;先跑 `index build` 後 payload 從 17 → 104 個實體)。同一成因也讓 `tree` 模式召不到 git 促升記憶。四個修法選項與三個待確認見該 issue |
 
 ---
 

@@ -30,6 +30,10 @@
   "files": [
     "dist/cli.mjs",
     "skills/memoria-memory-sync/",
+    "skills/memoria-vector/*.mjs",
+    "skills/memoria-vector/package.json",
+    "skills/memoria-vector/package-lock.json",
+    "skills/memoria-vector/README.md",
     "examples/session.sample.json",
     "README.md",
     "README.zh-TW.md",
