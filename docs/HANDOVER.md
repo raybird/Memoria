@@ -10,7 +10,7 @@
 
 > 2026-07-28 更新
 
-- **版本**:`v1.22.1` 已發(2026-08-09,GitHub Release + npm;同日連發 v1.22.0 → v1.22.1)。
+- **版本**:`v1.23.0` 已發(2026-08-09,GitHub Release + npm;同日連發 v1.22.0 → v1.22.1 → v1.23.0)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
 - **v1.21.1 = issue-3 修 bug**(`docs/issues/issue-3/`):(a) 非 semver tag 的 `--tag` release 邊界不再退化成全 repo range——semver 比較優先,否則 creatordate fallback(`for-each-ref`,白名單內);(b) context 上限 `maxContextCommits`(200)/`maxContextFiles`(500),截斷永不靜默,`diffstat` 維持全範圍。實測同一 tag:context 157KB → 7.4KB。
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
@@ -18,8 +18,9 @@
 - **v1.22.0 = issue-4 + issue-5**(2026-08-09,兩批一起發):(a) **issue-4 Agent-Native 記憶介面**——新增 `recall` / `remember` / `feedback` / `brief` 四個 CLI 命令,補上 skill 型部署下唯一的記憶讀寫與 UFL 回報入口,`brief` 產 `<knowledge>/BRIEF.md` 供 `CLAUDE.md` 以 `@` 引入(不接 hooks 也能開場注入),`recall()` 邏輯零變更;(b) **issue-5 長期記憶語意**——migration 14 側表 `memory_attributes` 承載 durable(豁免衰減與 stale 裁剪)/ supersedes(預設退出召回,資料不刪)/ sensitivity(`export --redact` 代稱化),未標記的資料庫行為不變(已用舊版 build 對照驗證),**assessment 缺點 4／5 至此收斂**。
 - **⚠ 發版過程順手修掉一個會踩到真實資料的測試缺陷**:`test-no-clone-install.sh` 未清除繼承的 `MEMORIA_HOME`,在有設該變數的開發機上(本機 `~/.bashrc` 就有設)會**對真實 `~/.memoria` 執行 init、部署 skill、起 server**,同時讓「分離資料根目錄」的斷言失效。已加 `unset MEMORIA_HOME`;另 30 支測試腳本逐一稽核過,全部已把 `MEMORIA_HOME` 侷限在暫存目錄。
 - **v1.22.1 = issue-6 修 bug**(`docs/issues/issue-6/`):`recall_fts` 重複列——`importSession` 的兩個語句改用 `ON CONFLICT(id) DO UPDATE`(走 UPDATE trigger,正確汰換索引列)+ migration 15 重建既有索引。影響面經查證只有 `sessions`/`events` 兩張表(其餘 8 處 `INSERT OR REPLACE` 的表沒有 trigger);本機資料庫當時未受污染。**未採用 `PRAGMA recursive_triggers`**——那是連線層的全域行為變更,且只在透過本專案連線時生效。
-- **`[Unreleased]` 已累積兩項**(2026-08-09,v1.22.1 之後):(a) `stats` / telemetry 新增 `recallRouting.routeUtility`——依 route 分組的已觀測 utility + uplift,**這是回答「語意召回是否勝過字面」的讀數**(先前只有 route 次數與 confidence 校準,沒有「哪個 route 比較有用」);(b) `scripts/test-pure-functions.sh` 補上純函式直測(43 斷言,tsx driver,進 CI)。
-- **下一步**:(a) **讓真實 recall/outcome 資料累積**——工具已備齊,現在唯一缺的是使用量(本機目前 4 筆 telemetry、1 筆有 outcome、無 vector 資料);(b) 工程債:`repo-facade` 抽取,等下次動 repo 邏輯一併做(見 §5)。**無待拍板事項**——`RELEASE_TAG_PATTERN` 已於 2026-08-09 拍板不放寬。
+- **v1.23.0 = 評測讀數 + 直測 + brief 修正**:(a) `stats` / telemetry 新增 `recallRouting.routeUtility`——依 route 分組的已觀測 utility + 冠亞軍 uplift,**這是回答「語意召回是否勝過字面」的讀數**(先前只有 route 次數與 confidence 校準,沒有「哪個 route 比較有用」);(b) `scripts/test-pure-functions.sh` 純函式直測(43 斷言,tsx driver,進 CI);(c) 修 `brief` 把同一則 CLI 筆記列兩次(一則筆記占 session + event 兩個 ref,outcome 兩個都歸因)。
+- **⚠ Memoria 已實際接上本機使用**(2026-08-09):全域升級至 v1.23.0;`~/.memoria/knowledge/BRIEF.md` 由 `memoria brief` 產生,並在 `~/.claude/CLAUDE.md` 以 `@` 絕對路徑引入(不放專案 CLAUDE.md——那是版控檔且路徑為絕對);寫入三則 `--durable` 記憶(skill 型整合拍板、停 server 用 PID、TeleNexus 容器為獨立資料),皆屬 **git 抓不到的環境事實**。工程決策不手寫,由 `repo sync` 促升。**(c) 這個 bug 正是實際使用十分鐘後才浮現的——fixture 測不出來,因為它沒有「一則筆記 + 對它回報過 outcome」的組合。**
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——工具已備齊、通道已接上,現在唯一缺的是使用量(要比較語意 vs 字面還需設 `LIBSQL_URL` 並實際下 `--mode vector`);(b) 工程債:`repo-facade` 抽取,等下次動 repo 邏輯一併做(見 §5)。**無待拍板事項**。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -57,6 +58,7 @@
 | v1.21.1 | Git-Aware 修 bug(issue-3) | 非 semver tag 的 release 邊界 creatordate fallback(不再退化成全 repo range);context 上限 `maxContextCommits`/`maxContextFiles`(截斷不靜默,diffstat 全範圍) |
 | v1.22.0 | Agent-Native 介面 + 長期記憶語意(issue-4/5) | CLI 補 `recall`/`remember`/`feedback`/`brief`(skill 型部署下唯一的讀寫與 UFL 入口);migration 14 `memory_attributes` = durable 衰減/裁剪豁免 + 明示 supersedes(**召回預設變更**,零標記時 no-op)+ `export --redact`;修掉 `test-no-clone-install.sh` 會踩真實 `~/.memoria` 的缺陷 |
 | v1.22.1 | `recall_fts` 重複列(issue-6) | `importSession` 改真正的 upsert(`ON CONFLICT DO UPDATE`,走 UPDATE trigger)——REPLACE 的隱式 DELETE 不觸發 FTS delete trigger,重複 `sync` 同一 id 會讓召回命中翻倍;migration 15 重建既有索引 |
+| v1.23.0 | 評測讀數 + 直測 + brief 修正 | `recallRouting.routeUtility`(依 route 分組的已觀測 utility + uplift,兩種 route 都有 outcome 才給 `best`);`test-pure-functions.sh` 純函式直測 43 斷言(tsx driver);修 `brief` 把同一則 CLI 筆記列兩次 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 
