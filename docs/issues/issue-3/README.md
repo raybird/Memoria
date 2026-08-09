@@ -56,7 +56,7 @@ external-repo 的 20 個 tag（`202606251200`、`nightly-2026.0723`、`nightly-2
 ### 禁止修改
 
 - **不動 git 唯讀白名單**——fallback 只能用既有允許的子命令（`for-each-ref` 在清單內）
-- **不放寬 sync 的 `RELEASE_TAG_PATTERN`**：讓非 semver tag 在 sync 時自動產生 release 摘要是行為擴張，需另行拍板（見「範圍外」）
+- **不放寬 sync 的 `RELEASE_TAG_PATTERN`**：讓非 semver tag 在 sync 時自動產生 release 摘要是行為擴張，需另行拍板（見「範圍外」）。**2026-08-09 已拍板：維持不放寬**——`repo summarize --tag` 明示觸發這條逃生口已經存在（且本 issue 修好了它的範圍邊界），自動化的價值不足以換取「每個日期 tag 都生成一筆 pending 摘要」的量。此待決事項就此關閉
 - 不新增資料表、不改 CLI 命令名、不引入依賴
 
 ### 風險
@@ -89,6 +89,7 @@ external-repo 的 20 個 tag（`202606251200`、`nightly-2026.0723`、`nightly-2
 
 - 2026-07-28: 初版建立（README + implementation-plan）。
 - 2026-07-28: Phase 1–2 交付（commits `244a047` + Phase 2）。真實驗證：同 tag 的 range 從全 repo 修正為前一 tag 起算，context 157 KB → 7.4 KB。
+- 2026-08-09: 唯一的殘留待決事項（`repo sync` 是否放寬 `RELEASE_TAG_PATTERN`）拍板為**不放寬**，本 issue 無待決事項。
 
 ---
 **建立日期**: 2026-07-28

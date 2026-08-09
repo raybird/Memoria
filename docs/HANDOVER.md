@@ -18,7 +18,8 @@
 - **v1.22.0 = issue-4 + issue-5**(2026-08-09,兩批一起發):(a) **issue-4 Agent-Native 記憶介面**——新增 `recall` / `remember` / `feedback` / `brief` 四個 CLI 命令,補上 skill 型部署下唯一的記憶讀寫與 UFL 回報入口,`brief` 產 `<knowledge>/BRIEF.md` 供 `CLAUDE.md` 以 `@` 引入(不接 hooks 也能開場注入),`recall()` 邏輯零變更;(b) **issue-5 長期記憶語意**——migration 14 側表 `memory_attributes` 承載 durable(豁免衰減與 stale 裁剪)/ supersedes(預設退出召回,資料不刪)/ sensitivity(`export --redact` 代稱化),未標記的資料庫行為不變(已用舊版 build 對照驗證),**assessment 缺點 4／5 至此收斂**。
 - **⚠ 發版過程順手修掉一個會踩到真實資料的測試缺陷**:`test-no-clone-install.sh` 未清除繼承的 `MEMORIA_HOME`,在有設該變數的開發機上(本機 `~/.bashrc` 就有設)會**對真實 `~/.memoria` 執行 init、部署 skill、起 server**,同時讓「分離資料根目錄」的斷言失效。已加 `unset MEMORIA_HOME`;另 30 支測試腳本逐一稽核過,全部已把 `MEMORIA_HOME` 侷限在暫存目錄。
 - **v1.22.1 = issue-6 修 bug**(`docs/issues/issue-6/`):`recall_fts` 重複列——`importSession` 的兩個語句改用 `ON CONFLICT(id) DO UPDATE`(走 UPDATE trigger,正確汰換索引列)+ migration 15 重建既有索引。影響面經查證只有 `sessions`/`events` 兩張表(其餘 8 處 `INSERT OR REPLACE` 的表沒有 trigger);本機資料庫當時未受污染。**未採用 `PRAGMA recursive_triggers`**——那是連線層的全域行為變更,且只在透過本專案連線時生效。
-- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 工程債(見 §5);(c) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
+- **`[Unreleased]` 已累積兩項**(2026-08-09,v1.22.1 之後):(a) `stats` / telemetry 新增 `recallRouting.routeUtility`——依 route 分組的已觀測 utility + uplift,**這是回答「語意召回是否勝過字面」的讀數**(先前只有 route 次數與 confidence 校準,沒有「哪個 route 比較有用」);(b) `scripts/test-pure-functions.sh` 補上純函式直測(43 斷言,tsx driver,進 CI)。
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——工具已備齊,現在唯一缺的是使用量(本機目前 4 筆 telemetry、1 筆有 outcome、無 vector 資料);(b) 工程債:`repo-facade` 抽取,等下次動 repo 邏輯一併做(見 §5)。**無待拍板事項**——`RELEASE_TAG_PATTERN` 已於 2026-08-09 拍板不放寬。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -90,13 +91,21 @@
 >
 > **issue-5 亦已交付**(`docs/issues/issue-5/`,Phase 1–3,commit `80e05fc`):migration 14 側表 `memory_attributes` 承載三個標記——`durable`(召回還原時間衰減 + 豁免 stale 裁剪)、`superseded_by`(預設退出召回,`--include-superseded` 為逃生口,資料不刪且 export 不過濾)、`sensitivity='private'`(`export --redact` 對已知實體代稱化)。標記稀疏、消費點先探測表,**未標記的資料庫行為不變**。**assessment 缺點 4／5 至此收斂**。四項實作修正見該 issue R1–R4,其中 R1 最值得記:**「byte-identical」在含 `Date.now()` 的 score 上本來就不成立**(舊版自己連跑兩次 score 也不同),驗收標準已改為「順序/id/relevance/欄位集合嚴格相同 + score 相對誤差 < 1e-5」。
 >
+> **2026-08-09 收尾:上一版排的三項全部處理完畢**(v1.22.0 / v1.22.1 已發,後續變更在 `[Unreleased]`)。
+>
+> | 原第 N 項 | 結果 |
+> |---|---|
+> | 1. 累積真實 recall/outcome 資料 | **工具缺口已補**:`stats` / `GET /v1/telemetry/recall` 新增 `recallRouting.routeUtility`——依 `route_mode` 分組的平均已觀測 utility + 冠亞軍 `uplift`。先前 `routeCounts` 只說各 route 跑幾次、`calibration` 只說 confidence 準不準,**沒有任何欄位回答「哪個 route 召回的記憶比較有用」**。現在剩下的真的只有資料本身(本機目前 4 筆 telemetry、1 筆有 outcome、全是 `hybrid_fallback`,且無 `vector` 資料——vector 需要 `LIBSQL_URL`)。 |
+> | 2. `recall_fts` 重複列 | **已修**(issue-6 / v1.22.1) |
+> | 3. 發版 | **已發**(v1.22.0 + v1.22.1) |
+> | 4. 工程債 | **純函式直測已補**(`scripts/test-pure-functions.sh`,43 個斷言,tsx driver,已進 CI core 群組)。**`repo-facade` 抽取維持不做**——原文寫的是「下次動 repo 邏輯時可抽」,屬條件觸發;目前沒有動 repo 邏輯,為行數而重構不划算(`memoria.ts` 現 1,251 行)。 |
+> | 5. 待拍板 `RELEASE_TAG_PATTERN` | **已拍板:不放寬**(2026-08-09)。`repo sync` 維持只對 semver tag 自動產 release 摘要;非 semver 仍可用 `repo summarize --tag` 明示觸發(issue-3 已修好它的範圍邊界)。逃生口既然存在,自動化的價值不足以換取「每個日期 tag 都生成 pending 摘要」的量。**此項就此關閉。** |
+>
 > 現在的排序:
 >
-> 1. **累積真實 recall/outcome 資料**:adapter + vector 模式日常使用,累積夠了用 `route_mode` 分組比較 utility uplift,客觀回答「語意召回是否勝過字面」。標尺(UFL)與待測物(vector)都已就位,只差資料——issue-4 交付後,skill 型部署也能用 `feedback` 餵 explicit 訊號了。
-> 2. **`recall_fts` 重複列**(issue-4 R1 發現的既有 bug):`sync` 路徑未修,見下表。
-> 3. **發版**:issue-4 與 issue-5 都已進 `main` 但**尚未發版**(v1.21.1 之後累積了兩批功能 + 一個召回預設的契約變更,CHANGELOG `[Unreleased]` 已就位)。
-> 4. **工程債(非急件)**:見下方 2026-07-28 更新第 2 項。
-> 5. **待拍板**:`repo sync` 的 `RELEASE_TAG_PATTERN` 是否放寬(issue-3 刻意留在範圍外)。
+> 1. **累積真實 recall/outcome 資料**——現在是**唯一**卡在「需要時間與實際使用」而非工程的項目。日常用 `recall` / `feedback`(skill 型部署也可以了),想比較語意 vs 字面就要另外設 `LIBSQL_URL` 並實際下 `--mode vector`;夠了就看 `stats` 的 `route_utility`。**判讀時看 per-route `n`**——uplift 在 n 個位數時沒有意義。
+> 2. **工程債(非急件)**:`repo-facade` 抽取(等下次動 repo 邏輯一併做)。
+> 3. (無待拍板事項)
 >
 > 以下為歷史紀錄,保留備查。
 
@@ -149,7 +158,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | E2/E3/F | 語意召回(vector mode + embedding) | **`done` MVP**(2026-07-07) | 解鎖:本地 e5 + libSQL 原生向量,選用、fail-open。殘餘(hybrid 融合、語意去重)待 uplift 資料。見 `docs/RFC-semantic-recall.md` §14 |
 | — | **Agent-Native 記憶介面** | **`done`**(2026-08-09) | `recall`/`remember`/`feedback`/`brief` 四個 CLI 命令 + `test-cli-memory.sh`。見 `docs/issues/issue-4/`(Phase 1–2 全交付,零 schema 變更,未發版) |
 | D5 | 矛盾偵測(B supersedes A) | **`done`**(2026-08-09) | 評估文件缺點 #5。`docs/issues/issue-5/` Phase 2 交付:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**(需語意召回實測資料才判斷得準門檻)。同 issue 併交 durable 衰減/裁剪豁免(缺點 #4 的殘餘)與 `sensitivity`/`export --redact` |
-| — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift。**issue-4 出貨後才在 skill 型部署下可行**(`feedback` 是 explicit 訊號唯一入口) |
+| — | **用資料評測語意 vs 字面** | `next`(**工具已備齊,只差資料**) | 讀數已於 2026-08-09 補上:`stats` / telemetry 的 `recallRouting.routeUtility`(依 route 分組平均 utility + 冠亞軍 uplift,兩種 route 都有 outcome 才給 `best`)。剩下的是使用量——要比較語意就得設 `LIBSQL_URL` 並實際下 `--mode vector`;判讀看 per-route `n` |
 | — | **`recall_fts` 重複列**(既有 bug) | **`done`**(2026-08-09) | `importSession` 用 `INSERT OR REPLACE`,REPLACE 的隱式 DELETE 不觸發 FTS delete trigger → 以相同 id 重複 `sync` 會讓同一筆命中翻倍。issue-4 R1 發現,`docs/issues/issue-6/` 修復:兩個語句改真正的 upsert(`ON CONFLICT(id) DO UPDATE`,走 UPDATE trigger)+ migration 15 重建既有索引。**未採用當初推測的 trigger 修法**——寫入端修比 schema 端修簡單且對任何寫入者都成立 |
 | D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
