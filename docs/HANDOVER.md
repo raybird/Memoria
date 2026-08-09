@@ -16,7 +16,8 @@
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
 - **既有基礎**:Git-Aware Memory v1(v1.19.0)、四平台發佈 + service(v1.20.0)、UFL Phase 0–3 + 語意召回 MVP(v1.18.0),全部 `done`。
 - **issue-4 Agent-Native 記憶介面已交付**(2026-08-09,`docs/issues/issue-4/`,未發版):新增 `recall` / `remember` / `feedback` / `brief` 四個 CLI 命令,補上 skill 型部署下唯一的記憶讀寫與 UFL 回報入口;`brief` 產 `<knowledge>/BRIEF.md` 供 `CLAUDE.md` 以 `@` 引入,不接 hooks 也能開場注入。`recall()` 邏輯零變更。
-- **下一步**:(a) **issue-5 長期記憶語意**(`docs/issues/issue-5/`,**待拍板**,前置已滿足):durable 衰減豁免 / supersedes / sensitivity;(b) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(c) 修 `recall_fts` 重複列(issue-4 R1 發現的既有 bug,`sync` 路徑未修);(d) 工程債(見 §5);(e) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
+- **issue-5 長期記憶語意已交付**(2026-08-09,`docs/issues/issue-5/`,未發版):migration 14 側表 `memory_attributes` 承載 durable(豁免衰減與 stale 裁剪)/ supersedes(預設退出召回,資料不刪)/ sensitivity(`export --redact` 代稱化)。未標記的資料庫行為不變(已用舊版 build 對照驗證)。**assessment 缺點 4／5 至此收斂**。
+- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 修 `recall_fts` 重複列(issue-4 R1 發現的既有 bug,`sync` 路徑未修);(c) 發版(issue-4 + issue-5 皆已進 main 但未發);(d) 工程債(見 §5);(e) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -84,11 +85,13 @@
 >
 > **issue-4 已交付**(`docs/issues/issue-4/`,Phase 1–2,commits `663242f` + `8d8ac0a`):新增 `recall` / `remember` / `feedback` / `brief` 四個命令 + `scripts/test-cli-memory.sh`(CI core 群組)。`remember` 寫單則原子筆記(synthetic session + 一個 DecisionMade/SkillLearned event,provenance `cli_note`),id 為內容指紋故重跑冪等;`brief` 把高價值記憶編譯成 `<knowledge>/BRIEF.md`,`CLAUDE.md` 以 `@knowledge/BRIEF.md` 引入即得開場注入。`recall()` 與既有 `remember()` 邏輯零變更。**過程中發現兩件事(R1/R4,見該 issue README)**:`INSERT OR REPLACE` 會在 `recall_fts` 留重複列(既有 bug,`sync` 路徑未修,見下表);adaptive gate 跳過的短查詢不發 `recall_id`,`feedback` 對其為 no-op——兩個正確行為疊起來會靜默吃掉效用回饋。
 >
+> **issue-5 亦已交付**(`docs/issues/issue-5/`,Phase 1–3,commit `80e05fc`):migration 14 側表 `memory_attributes` 承載三個標記——`durable`(召回還原時間衰減 + 豁免 stale 裁剪)、`superseded_by`(預設退出召回,`--include-superseded` 為逃生口,資料不刪且 export 不過濾)、`sensitivity='private'`(`export --redact` 對已知實體代稱化)。標記稀疏、消費點先探測表,**未標記的資料庫行為不變**。**assessment 缺點 4／5 至此收斂**。四項實作修正見該 issue R1–R4,其中 R1 最值得記:**「byte-identical」在含 `Date.now()` 的 score 上本來就不成立**(舊版自己連跑兩次 score 也不同),驗收標準已改為「順序/id/relevance/欄位集合嚴格相同 + score 相對誤差 < 1e-5」。
+>
 > 現在的排序:
 >
-> 1. **issue-5 — 長期記憶語意**(`docs/issues/issue-5/`,Medium,migration 14,前置 issue-4 **已滿足**):(a) durable 記憶豁免時間衰減與 stale 裁剪(恆真事實如使用者偏好,套 90 天半衰期是錯的;UFL 的高效用豁免救不到尚未累積觀測的新記憶);(b) 明示 `supersedes` 取代關係(= 下表 D5);(c) `sensitivity` + `export --redact`,把「版控文件用代稱」從人腦紀律變成機制。三者共用單一側表 `memory_attributes`(key 同 `memory_utility.ref_id`),**零標記時召回/保留/匯出全數 byte-identical**。待拍板 Q1–Q4 見該 issue README。
-> 2. **累積真實 recall/outcome 資料**:adapter + vector 模式日常使用,累積夠了用 `route_mode` 分組比較 utility uplift,客觀回答「語意召回是否勝過字面」。標尺(UFL)與待測物(vector)都已就位,只差資料——issue-4 交付後,skill 型部署也能用 `feedback` 餵 explicit 訊號了。
-> 3. **`recall_fts` 重複列**(issue-4 R1 發現的既有 bug):`sync` 路徑未修,見下表。
+> 1. **累積真實 recall/outcome 資料**:adapter + vector 模式日常使用,累積夠了用 `route_mode` 分組比較 utility uplift,客觀回答「語意召回是否勝過字面」。標尺(UFL)與待測物(vector)都已就位,只差資料——issue-4 交付後,skill 型部署也能用 `feedback` 餵 explicit 訊號了。
+> 2. **`recall_fts` 重複列**(issue-4 R1 發現的既有 bug):`sync` 路徑未修,見下表。
+> 3. **發版**:issue-4 與 issue-5 都已進 `main` 但**尚未發版**(v1.21.1 之後累積了兩批功能 + 一個召回預設的契約變更,CHANGELOG `[Unreleased]` 已就位)。
 > 4. **工程債(非急件)**:見下方 2026-07-28 更新第 2 項。
 > 5. **待拍板**:`repo sync` 的 `RELEASE_TAG_PATTERN` 是否放寬(issue-3 刻意留在範圍外)。
 >
@@ -142,7 +145,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | **UFL** | 召回效用回饋迴路 | **`done`**(2026-07-07) | Phase 0–3 全數 ship:recall_id / outcome 寫回 / per-memory 歸因 / 校準 / utility-weighted 排序與保留 / explicit 回饋。見 `docs/RFC-utility-feedback.md` |
 | E2/E3/F | 語意召回(vector mode + embedding) | **`done` MVP**(2026-07-07) | 解鎖:本地 e5 + libSQL 原生向量,選用、fail-open。殘餘(hybrid 融合、語意去重)待 uplift 資料。見 `docs/RFC-semantic-recall.md` §14 |
 | — | **Agent-Native 記憶介面** | **`done`**(2026-08-09) | `recall`/`remember`/`feedback`/`brief` 四個 CLI 命令 + `test-cli-memory.sh`。見 `docs/issues/issue-4/`(Phase 1–2 全交付,零 schema 變更,未發版) |
-| D5 | 矛盾偵測(B supersedes A) | `planned`(2026-08-09) | 評估文件缺點 #5。已展開為 `docs/issues/issue-5/` Phase 2:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**。同 issue 併入 durable 衰減豁免(補 UFL 高效用豁免蓋不到的恆真事實)與 `sensitivity`/`export --redact` |
+| D5 | 矛盾偵測(B supersedes A) | **`done`**(2026-08-09) | 評估文件缺點 #5。`docs/issues/issue-5/` Phase 2 交付:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**(需語意召回實測資料才判斷得準門檻)。同 issue 併交 durable 衰減/裁剪豁免(缺點 #4 的殘餘)與 `sensitivity`/`export --redact` |
 | — | **用資料評測語意 vs 字面** | `next` | 啟用 adapter + vector 模式累積真實 outcome,比較 route_mode 分組 utility uplift。**issue-4 出貨後才在 skill 型部署下可行**(`feedback` 是 explicit 訊號唯一入口) |
 | — | **`recall_fts` 重複列**(既有 bug) | `idea`(2026-08-09 發現) | `importSession` 用 `INSERT OR REPLACE`,REPLACE 的隱式 DELETE 不觸發 FTS delete trigger → 以相同 id 重複 `sync` 會讓同一筆命中翻倍。issue-4 R1 發現並已在 `remember` 路徑規避(相同 id 直接跳過寫入),**`sync` 路徑未修**;修法在 schema 層(補 trigger 或改成明確 DELETE + INSERT) |
 | D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
