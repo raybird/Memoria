@@ -10,14 +10,14 @@
 
 > 2026-07-28 更新
 
-- **版本**:`v1.21.1` 已發(2026-07-28,GitHub Release + npm;同日連發 v1.21.0 → v1.21.1)。
+- **版本**:`v1.22.0` 已發(2026-08-09,GitHub Release + npm,四平台產物 + checksum 齊備)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
 - **v1.21.1 = issue-3 修 bug**(`docs/issues/issue-3/`):(a) 非 semver tag 的 `--tag` release 邊界不再退化成全 repo range——semver 比較優先,否則 creatordate fallback(`for-each-ref`,白名單內);(b) context 上限 `maxContextCommits`(200)/`maxContextFiles`(500),截斷永不靜默,`diffstat` 維持全範圍。實測同一 tag:context 157KB → 7.4KB。
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
 - **既有基礎**:Git-Aware Memory v1(v1.19.0)、四平台發佈 + service(v1.20.0)、UFL Phase 0–3 + 語意召回 MVP(v1.18.0),全部 `done`。
-- **issue-4 Agent-Native 記憶介面已交付**(2026-08-09,`docs/issues/issue-4/`,未發版):新增 `recall` / `remember` / `feedback` / `brief` 四個 CLI 命令,補上 skill 型部署下唯一的記憶讀寫與 UFL 回報入口;`brief` 產 `<knowledge>/BRIEF.md` 供 `CLAUDE.md` 以 `@` 引入,不接 hooks 也能開場注入。`recall()` 邏輯零變更。
-- **issue-5 長期記憶語意已交付**(2026-08-09,`docs/issues/issue-5/`,未發版):migration 14 側表 `memory_attributes` 承載 durable(豁免衰減與 stale 裁剪)/ supersedes(預設退出召回,資料不刪)/ sensitivity(`export --redact` 代稱化)。未標記的資料庫行為不變(已用舊版 build 對照驗證)。**assessment 缺點 4／5 至此收斂**。
-- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 修 `recall_fts` 重複列(issue-4 R1 發現的既有 bug,`sync` 路徑未修);(c) 發版(issue-4 + issue-5 皆已進 main 但未發);(d) 工程債(見 §5);(e) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
+- **v1.22.0 = issue-4 + issue-5**(2026-08-09,兩批一起發):(a) **issue-4 Agent-Native 記憶介面**——新增 `recall` / `remember` / `feedback` / `brief` 四個 CLI 命令,補上 skill 型部署下唯一的記憶讀寫與 UFL 回報入口,`brief` 產 `<knowledge>/BRIEF.md` 供 `CLAUDE.md` 以 `@` 引入(不接 hooks 也能開場注入),`recall()` 邏輯零變更;(b) **issue-5 長期記憶語意**——migration 14 側表 `memory_attributes` 承載 durable(豁免衰減與 stale 裁剪)/ supersedes(預設退出召回,資料不刪)/ sensitivity(`export --redact` 代稱化),未標記的資料庫行為不變(已用舊版 build 對照驗證),**assessment 缺點 4／5 至此收斂**。
+- **⚠ 發版過程順手修掉一個會踩到真實資料的測試缺陷**:`test-no-clone-install.sh` 未清除繼承的 `MEMORIA_HOME`,在有設該變數的開發機上(本機 `~/.bashrc` 就有設)會**對真實 `~/.memoria` 執行 init、部署 skill、起 server**,同時讓「分離資料根目錄」的斷言失效。已加 `unset MEMORIA_HOME`;另 30 支測試腳本逐一稽核過,全部已把 `MEMORIA_HOME` 侷限在暫存目錄。
+- **下一步**:(a) 讓真實 recall/outcome 資料累積,用 `route_mode` 分組比較 utility uplift;(b) 修 `recall_fts` 重複列(issue-4 R1 發現的既有 bug,`sync` 路徑未修);(c) 工程債(見 §5);(d) 待拍板:`repo sync` 是否對非 semver tag 也自動產 release 摘要(issue-3 刻意留在範圍外)。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -53,6 +53,7 @@
 | v1.20.0 | 發佈與服務化 | Linux/macOS × x64/arm64 四平台 no-clone 產物(對應 runner 實測後才發);`memoria service` 免 sudo 管理 LaunchAgent / `systemd --user`;修好 npm/npx 模式的 skill wrapper 部署;新增 npm 打包 E2E 與 Ubuntu/macOS CI 矩陣 |
 | v1.21.0 | Git-Aware 可用性(issue-2) | `--pending` diff 改 opt-in + `--limit`(payload -97.7%);pending 骨架一律不自動 promote(含 R1 收緊,`--promote` 為逃生口);多 repo recall 帶 `project` 文件化 |
 | v1.21.1 | Git-Aware 修 bug(issue-3) | 非 semver tag 的 release 邊界 creatordate fallback(不再退化成全 repo range);context 上限 `maxContextCommits`/`maxContextFiles`(截斷不靜默,diffstat 全範圍) |
+| v1.22.0 | Agent-Native 介面 + 長期記憶語意(issue-4/5) | CLI 補 `recall`/`remember`/`feedback`/`brief`(skill 型部署下唯一的讀寫與 UFL 入口);migration 14 `memory_attributes` = durable 衰減/裁剪豁免 + 明示 supersedes(**召回預設變更**,零標記時 no-op)+ `export --redact`;修掉 `test-no-clone-install.sh` 會踩真實 `~/.memoria` 的缺陷 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 
