@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.23.1] - 2026-08-09
+
 ### Fixed
 - **The semantic-recall helper now ships with the npm package**, so `mode:'vector'` is reachable from a plain `npm install -g @raybird.chen/memoria`. Previously `files` listed only `skills/memoria-memory-sync/`, while `resolveHelperScript()` looks for `<dist>/../skills/memoria-vector/vector-recall.mjs` — so an npm-installed Memoria could *never* resolve a helper and silently degraded to `vector_unavailable` forever, no matter how correctly `LIBSQL_URL` was configured. The exclusion was there to keep the ~700MB embedding runtime out of the package, but that runtime lives in `node_modules`; the helper's own source is a few KB. Only the `.mjs` sources plus `package.json` / `package-lock.json` / `README.md` are added (npm always excludes `node_modules`), taking the published package from 1.20MB to 1.22MB. Installing the helper's dependencies stays a deliberate opt-in step — `cd .../skills/memoria-vector && npm install` — and until you do, recall still fails open to lexical. `MEMORIA_VECTOR_RECALL_CMD` continues to work for pointing at an existing checkout. `test-npm-install.sh` now asserts the helper is reachable at exactly the path `resolveHelperScript()` computes, and that `node_modules` is not packaged.
 
