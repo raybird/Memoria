@@ -10,7 +10,7 @@
 
 > 2026-07-28 更新
 
-- **版本**:`v1.23.1` 已發(2026-08-09,GitHub Release + npm;同日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
+- **版本**:`v1.24.0` 已發(2026-08-10,GitHub Release + npm;前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
 - **v1.21.1 = issue-3 修 bug**(`docs/issues/issue-3/`):(a) 非 semver tag 的 `--tag` release 邊界不再退化成全 repo range——semver 比較優先,否則 creatordate fallback(`for-each-ref`,白名單內);(b) context 上限 `maxContextCommits`(200)/`maxContextFiles`(500),截斷永不靜默,`diffstat` 維持全範圍。實測同一 tag:context 157KB → 7.4KB。
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
@@ -21,8 +21,9 @@
 - **v1.23.0 = 評測讀數 + 直測 + brief 修正**:(a) `stats` / telemetry 新增 `recallRouting.routeUtility`——依 route 分組的已觀測 utility + 冠亞軍 uplift,**這是回答「語意召回是否勝過字面」的讀數**(先前只有 route 次數與 confidence 校準,沒有「哪個 route 比較有用」);(b) `scripts/test-pure-functions.sh` 純函式直測(43 斷言,tsx driver,進 CI);(c) 修 `brief` 把同一則 CLI 筆記列兩次(一則筆記占 session + event 兩個 ref,outcome 兩個都歸因)。
 - **⚠ Memoria 已實際接上本機使用**(2026-08-09):全域升級至 v1.23.0;`~/.memoria/knowledge/BRIEF.md` 由 `memoria brief` 產生,並在 `~/.claude/CLAUDE.md` 以 `@` 絕對路徑引入(不放專案 CLAUDE.md——那是版控檔且路徑為絕對);寫入三則 `--durable` 記憶(skill 型整合拍板、停 server 用 PID、TeleNexus 容器為獨立資料),皆屬 **git 抓不到的環境事實**。工程決策不手寫,由 `repo sync` 促升。**(c) 這個 bug 正是實際使用十分鐘後才浮現的——fixture 測不出來,因為它沒有「一則筆記 + 對它回報過 outcome」的組合。**
 - **語意召回也已實際接上**(2026-08-09):`skills/memoria-vector` 裝了 devDeps(723MB)、真模型 e2e(`MEMORIA_VECTOR_E2E_REAL=1`)通過、67 個實體 ingest 進 `~/.memoria/.memory/vectors.db`、`~/.bashrc` 設好四個變數。**實測語意勝過字面的案例**:查「停止伺服器行程要注意什麼」對記憶「停 Memoria server 一律用 PID 精準停」——keyword 0 hits、vector 命中且排前二。另**確認 libSQL 原生向量是真的在運作**(獨立探針:`vector_distance_cos` 與手算餘弦一致、`vector_top_k` 走 ANN 索引排序正確)——當初 §13.2 證偽的是 `mcp-memory-libsql` 那個 MCP server,不是 libSQL 本身。
-- **issue-7 已修**(2026-08-10,未發版):促升後自動建 tree 索引,`tree` 模式終於看得到 git 記憶,bridge payload 也不再靜默縮水;`stats` 新增 `memoryIndex` 覆蓋率(缺口才出聲)。**既有資料庫仍需跑一次 `memoria index build` 回填**——`stats` 會提醒。
-- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量;(b) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故);(c) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。**無待拍板事項**。
+- **v1.24.0 = issue-7 修 bug + 覆蓋率讀數**(2026-08-10):促升後自動建 tree 索引,`tree` 模式終於看得到 git 記憶,bridge payload 也不再靜默縮水;`stats` 新增 `memoryIndex` 覆蓋率(缺口才出聲)。**既有資料庫仍需跑一次 `memoria index build` 回填**——`stats` 會提醒。修法的真正價值是**消除一個會復發的手動步驟**:每次 `repo summarize --submit` 促升都會製造新缺口,先前得靠人記得補索引。
+- **issue-7 先於 issue-8 發版的理由**(2026-08-10 優先序評估):兩者不對稱——issue-7 是**已寫完待發版的正確性修復**,issue-8 是**待決策未實作的資源上限**。issue-8 的觸發條件(並行 vector 召回)在 skill 型單人使用下不成立,本機 12 核/31GB 也吃得下 4 個並行(~2.4GB / 7.2 核);它真正會痛的是多客戶端 HTTP server 部署,或推上低配主機(8GB/4 核那台 2 個並行就吃掉 1.2GB / 3.6 核——**那會翻轉優先序**)。在 4 項待確認拍板前動工,寫的程式很可能要重寫。
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量;(b) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故;優先序理由見上);(c) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。**無待拍板事項**。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -62,6 +63,7 @@
 | v1.22.1 | `recall_fts` 重複列(issue-6) | `importSession` 改真正的 upsert(`ON CONFLICT DO UPDATE`,走 UPDATE trigger)——REPLACE 的隱式 DELETE 不觸發 FTS delete trigger,重複 `sync` 同一 id 會讓召回命中翻倍;migration 15 重建既有索引 |
 | v1.23.0 | 評測讀數 + 直測 + brief 修正 | `recallRouting.routeUtility`(依 route 分組的已觀測 utility + uplift,兩種 route 都有 outcome 才給 `best`);`test-pure-functions.sh` 純函式直測 43 斷言(tsx driver);修 `brief` 把同一則 CLI 筆記列兩次 |
 | v1.23.1 | vector helper 入包 | helper 的 `.mjs` + package.json 納入 npm `files`(node_modules 不入,包 1.20→1.22MB)——先前 `resolveHelperScript()` 在 npm 安裝下**永遠**解析不到 helper,`mode:'vector'` 靜默退回 `vector_unavailable`。helper 依賴仍為明示 opt-in;`test-npm-install.sh` 釘住解析路徑與「不含 node_modules」 |
+| v1.24.0 | promotion 建索引(issue-6→7 系列的最後一項) | 促升的兩個呼叫點各補一次 `buildMemoryIndex`(**刻意在 `promoteSummary` 的 transaction 之外**,best-effort——促升不因索引失敗而回滾);`stats.memoryIndex { sessions, indexed, missing }` 讓缺口可見(**不放 `verify`**:`VerifyStatus` 無 `warn` 且 `health()` 也呼叫它)。實測 ~3ms/session,不隨語料成長 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 
