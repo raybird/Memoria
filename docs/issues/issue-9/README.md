@@ -5,8 +5,8 @@
 | 項目 | 內容 |
 |---|---|
 | Issue 編號 | 9（本地文件編號） |
-| 複雜度級別 | 待評估（改動點小——一個欄位的來源；但「confidence 在語意路徑該怎麼定義」是設計問題，且動到 envelope 契約） |
-| 狀態 | **待評估**（根因已定位並實測驗證，未拍板、未實作） |
+| 複雜度級別 | Medium（改動點小——一個欄位的來源；但動到 envelope 契約，`confidence` 型別放寬為 `number \| null`） |
+| 狀態 | **實作完成**（2026-08-10，方案 D+E 組合） |
 | 需求來源 | 2026-08-10 v1.24.0 升級後的例行驗證。順手看 `--json` 輸出時發現 `relevance` 與 `confidence` 全是 0，而命中本身是正確的 |
 | 建立日期 | 2026-08-10 |
 | 相關 | `docs/RFC-semantic-recall.md` §5b（原始設計明文說 confidence 應為 fused score）、`src/core/recall-vector.ts`、`src/core/memoria.ts:606`、[issue-8](../issue-8/README.md)（同一模組的另一個獨立缺口） |
@@ -118,12 +118,36 @@ hits: 5
 
 **傾向 E（可與 C 或 D 組合）**——理由是本專案對「不靜默」一向嚴格：真正的問題不是「這個數字太小」，而是「同一個欄位在不同 route 下由完全不同的東西算出來，而下游無從得知」。先讓基礎可見，再談要不要換演算法。
 
-## 待確認
+## 待確認 → 已拍板（2026-08-10）
 
-1. **`confidence` 的型別是否可以放寬為 `number | null`**——這是 envelope 契約變更，會影響 SDK、HTTP 契約與 adapter。若不可以，方案 D 出局。
-2. **`hybrid_vector` 路徑要不要跟 `vector` 一致**——目前 hybrid 的 confidence 取決於 `hits[0]` 恰好來自哪一路，這個不穩定性本身就該修，但修法可能與 vector 路徑不同。
-3. **UFL calibration 是否需要回溯處理**——既有 telemetry 裡 vector 路徑的 confidence 全是 0，修好之後新舊資料混在同一張校準表裡。是否需要標記分界，或按 route 分開呈現。
-4. **`tokenCoverage` 的 CJK 分詞是否另案處理**——它讓「整句中文 = 一個 token」，影響不只本 issue（`HANDOVER-improvements.md` P5 已記錄 CJK token 範圍是一個待決項）。本 issue 可以不碰它（vector 路徑本就不該用字面覆蓋率），但兩者的關係應該寫清楚，避免各修各的。
+1. **`confidence` 型別放寬為 `number | null`**——**採納**（使用者拍板）。方案 D+E 組合：語意路徑回 `null`，並新增 `meta.confidence_basis` 說明這個值從哪來。
+2. **`hybrid_vector` 的處理**——**`confidence_basis` 誠實反映 `hits[0]` 的來源**。融合後排第一的若是 lexical hit，它有真實的覆蓋率，丟掉可惜；若是 vector-only hit 則回 null。值仍隨 top hit 變動，但下游不再需要猜——basis 直接說明了。
+3. **calibration 不回溯**——既有 telemetry 是歷史紀錄，改寫等於偽造。`buildCalibration` 本來就跳過非數值的 confidence（`typeof p.confidence !== 'number' → continue`），所以新資料自動不進桶，**零改動**；舊資料的 0 仍在表內，這一點寫進 CHANGELOG 而非靜默。
+4. **CJK 分詞不在本 issue 處理**——vector 路徑本來就不該用字面覆蓋率，改掉來源就夠了。`tokenCoverage` 的「整句中文 = 一個 token」是 keyword 路徑的獨立議題（`HANDOVER-improvements.md` P5）。
+
+## 實作（2026-08-10）
+
+| 檔案 | 改動 |
+|---|---|
+| `src/core/types.ts` | 新增 `ConfidenceBasis`（`lexical_coverage` / `unavailable` / `no_hits`）；`meta.confidence: number \| null` + `meta.confidence_basis?`；`RecallHit.relevance` 註解說明語意命中為何沒有這個欄位 |
+| `src/core/recall-vector.ts` | 移除 4 處 `tokenCoverage` 填值；`VectorRow.relevance` 型別改為 **`never`**——讓編譯器擋住日後有人再把字面分數填回這條路徑，不變式由型別保證而非註解；`mapNamesToRows` 的 `query` 參數隨之移除（成為死參數） |
+| `src/core/memoria.ts` | `ResultPayload.confidence` 放寬；`recall()` 依 top hit 有無 `relevance` 決定 `confidence` 與 `confidence_basis`；telemetry 同步寫入 null |
+| `src/core/db/telemetry.ts` | `topConfidence?: number \| null`（`top_confidence REAL` 本來就允許 NULL，無需 migration） |
+| `src/cli/commands/recall.ts` | 語意命中顯示 `n/a` 而非退回 RRF score——那是 ~0.016 的另一個尺度，放進 0–1 的品質欄位會誤導 |
+| `scripts/test-vector-recall.sh` | 新增 issue-9 斷言（per-hit + envelope 一起驗）；另修一個測試缺陷（見下） |
+
+### 驗收
+
+- `pnpm run check` 通過。**型別放寬是相容方向**，所以 `tsc` 零錯誤——真正需要人工處理的是它抓不到的行為問題（CLI 顯示會退回 RRF score）。
+- 三條路徑實測：`vector` → `confidence=null` / `basis=unavailable`；`keyword` 命中 → `confidence=1` / `lexical_coverage`；零命中 → `confidence=0` / `no_hits`。
+- `hybrid_vector` 實測：同一次召回裡 lexical hit 帶 `relevance=1`、vector-only hit 為 `undefined`，`basis` 正確反映排第一者的來源。
+- **斷言有牙齒**：把程式碼還原到修改前、只留新測試腳本，測試在 `vector-only hit must have NO relevance, got 0` 這一條紅——那正是本 issue 描述的原始 bug。
+
+### 順手修掉的測試缺陷
+
+`scripts/test-vector-recall.sh` 沒有清除繼承的 vector 環境變數。它斷言的是**降級矩陣**，所以必須自己控制每一個變數——而在已接上語意召回的開發機上，`LIBSQL_URL` / `MEMORIA_EMBED_PROVIDER` / `MEMORIA_VECTOR_RECALL_CMD` / `MEMORIA_VECTOR_TIMEOUT_MS` 四個都是 exported 的。結果「`LIBSQL_URL` unset → `vector_unavailable`」這個案例**實際連上了開發者的真實向量庫**，回傳的 id 對不到測試資料庫的任何一列，於是落到 `route_mode=keyword`，測試紅。
+
+CI 從不設這些變數，所以只在本機咬人——與 v1.22.0 修掉的繼承 `MEMORIA_HOME` 是同一種失敗模式。已在腳本開頭 unset（`MEMORIA_VECTOR_E2E_REAL` 刻意保留：那是呼叫端明示的 opt-in 開關）。另稽核其餘腳本：涉及 vector/route_mode 的另外 4 支在髒環境下實測皆 PASS——它們只引用欄位名或斷言 tree route，不跑語意召回。
 
 ## Timeline
 
@@ -132,6 +156,7 @@ hits: 5
 | 2026-08-10 | v1.24.0 升級後的例行驗證中發現：vector 召回命中正確但 `confidence: 0` |
 | 2026-08-10 | 根因定位完成——`tokenCoverage` 填 vector 路徑的 relevance、helper 的 distance 在 `recallVector` 被丟棄、`??` 不會 fallback；純函式直測驗證 CJK 整句單 token；比對 RFC §5b 確認實作與設計偏離。狀態：待評估 |
 | 2026-08-10 | 實測排除「模型中文能力不佳」這個誤判方向：中文查詢命中排第 1、跨語言排第 2、無關內容全部墊底；但冠亞差僅 0.017–0.049，方案 B 因此從理論否決升級為實測否決 |
+| 2026-08-10 | 四項待確認拍板（D+E 組合），實作完成並驗收；順手修掉 `test-vector-recall.sh` 繼承 vector 環境變數的缺陷。狀態：實作完成 |
 
 ---
 

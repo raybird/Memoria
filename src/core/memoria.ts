@@ -111,7 +111,8 @@ import type {
     PendingSummariesData,
     PendingSummariesOptions,
     PendingSummaryRequest,
-    GitSummaryRecord
+    GitSummaryRecord,
+    ConfidenceBasis
 } from './types.js'
 
 // Payload a producer hands back to withResult; the wrapper stamps source/timestamp/latency
@@ -119,7 +120,8 @@ import type {
 type ResultPayload<T> = {
     data: T
     evidence: string[]
-    confidence: number
+    // null = this operation cannot judge quality at all (issue-9); see MemoriaResult.confidence.
+    confidence: number | null
     extra?: Record<string, unknown>
 }
 
@@ -584,6 +586,19 @@ export class MemoriaCore {
                 }
             } catch { /* provenance is optional metadata */ }
 
+            // Confidence reflects decay-free match quality, not recency — and only the LEXICAL
+            // routes can measure it. A hit the semantic index alone found carries no `relevance`
+            // (issue-9), because token coverage would score ~0 for exactly the paraphrased query
+            // that hit exists to answer; reporting that 0 told callers "certainly untrustworthy"
+            // about a memory the vector route had found correctly. `null` says "cannot judge",
+            // which is a different instruction, and `confidence_basis` names which case this is so
+            // a caller never has to infer it from route_mode. Zero hits keeps 0: that is a measured
+            // fact, not an unmeasurable one.
+            const top: RecallHit | undefined = hits[0]
+            const confidence: number | null = top === undefined ? 0 : (top.relevance ?? null)
+            const confidenceBasis: ConfidenceBasis =
+                top === undefined ? 'no_hits' : top.relevance === undefined ? 'unavailable' : 'lexical_coverage'
+
             let recallId: string | null = null
             try {
                 recallId = logRecallTelemetry(this.paths.dbPath, {
@@ -592,7 +607,10 @@ export class MemoriaCore {
                     hitCount: hits.length,
                     latencyMs: elapsed(),
                     query: filter.query,
-                    topConfidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0
+                    // Stored as NULL, which buildCalibration already skips — so an unjudgeable
+                    // recall drops out of the calibration table instead of piling into its lowest
+                    // confidence bucket and faking a "low confidence, high utility" pattern.
+                    topConfidence: confidence
                 })
             } catch {
                 // Keep recall fail-open when telemetry logging fails.
@@ -601,10 +619,9 @@ export class MemoriaCore {
             return {
                 data: hits,
                 evidence: hits.map((h) => h.id),
-                // Confidence reflects match quality (decay-free), not recency; fall back to score
-                // for rows that predate the relevance field.
-                confidence: hits.length > 0 ? (hits[0].relevance ?? hits[0].score) : 0,
+                confidence,
                 extra: {
+                    confidence_basis: confidenceBasis,
                     reasoning_path: hits[0]?.reasoning_path,
                     route_mode: routeMode,
                     fallback_used: fallbackUsed,

@@ -11,7 +11,10 @@ function countQueryTokens(query: string): number {
 
 export function logRecallTelemetry(
     dbPath: string,
-    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number; query?: string; topConfidence?: number }
+    // topConfidence is nullable (issue-9): a recall whose top hit came from the semantic index has
+    // no measurable lexical match quality. Stored as NULL so buildCalibration skips the row rather
+    // than bucketing an unmeasurable recall as a low-confidence one.
+    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number; query?: string; topConfidence?: number | null }
 ): string | null {
     if (!existsSync(dbPath)) return null
 

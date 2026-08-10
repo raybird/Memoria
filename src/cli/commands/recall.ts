@@ -57,7 +57,10 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
                 // relevance is the decay-free 0–1 match quality (and the basis for meta.confidence);
                 // the raw bm25-derived `score` that drives ordering is orders of magnitude smaller
                 // and unreadable rounded. Ordering still follows score — only the display differs.
-                const quality = (hit.relevance ?? hit.score).toFixed(3)
+                // A semantic-only hit has no relevance at all (issue-9), and printing its RRF score
+                // here would put an unrelated scale (~0.016) in the same column as a 0–1 quality —
+                // so it prints as unmeasured instead. Ordering is unaffected either way.
+                const quality = hit.relevance === undefined ? ' n/a ' : hit.relevance.toFixed(3)
                 const marks = [
                     hit.retention === 'durable' ? 'durable' : null,
                     hit.superseded_by ? `superseded by ${hit.superseded_by}` : null

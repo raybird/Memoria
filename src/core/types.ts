@@ -191,6 +191,18 @@ export type PruneOptions = {
 
 // ─── Runtime API types ───────────────────────────────────────────────────────
 
+/**
+ * What produced `meta.confidence` (issue-9). The number alone is not interpretable across routes:
+ * lexical routes derive it from query-token coverage, while the vector route has no honest absolute
+ * measure to derive it FROM — e5 cosine is range-compressed (measured 0.017–0.049 between rank 1 and
+ * rank 2), so no scaling or threshold of it carries meaning. Naming the basis lets a caller decide
+ * whether a value is comparable to another recall's instead of assuming every `confidence` is.
+ */
+export type ConfidenceBasis =
+    | 'lexical_coverage'  // fraction of query tokens present in the top hit (0–1, comparable)
+    | 'unavailable'       // top hit came from the semantic index alone; `confidence` is null
+    | 'no_hits'           // nothing matched; `confidence` is 0 — a fact, not a low score
+
 /** Standard envelope for all MemoriaCore API responses */
 export type MemoriaResult<T> = {
     ok: boolean
@@ -199,7 +211,11 @@ export type MemoriaResult<T> = {
     meta: {
         source: string       // 'sqlite' | 'markdown' | 'mcp'
         evidence: string[]   // IDs of sessions/events/skills supporting this result
-        confidence: number   // 0–1; 1.0 for writes, keyword-match for reads
+        // 0–1; 1.0 for writes, match quality for reads. NULL means the route cannot judge match
+        // quality at all (issue-9) — distinct from 0, which asserts a genuinely poor match.
+        // `confidence_basis` says which case you are looking at.
+        confidence: number | null
+        confidence_basis?: ConfidenceBasis // issue-9; recall only, absent on other operations
         reasoning_path?: string[] // Optional retrieval path for tree/hybrid recall
         route_mode?: string  // Optional routing mode used by recall
         fallback_used?: boolean // Whether hybrid route fell back to keyword recall
@@ -251,7 +267,10 @@ export type RecallHit = {
     project: string
     snippet: string
     score: number          // ranking score = relevance × time-decay (drives ordering)
-    relevance?: number     // decay-free match quality (0–1); basis for meta.confidence
+    // Decay-free LEXICAL match quality (0–1); basis for meta.confidence. ABSENT on a hit that only
+    // the semantic index found (issue-9): token coverage would report ~0 for exactly the paraphrased
+    // query a vector hit exists to answer, so filling it there was worse than leaving it empty.
+    relevance?: number
     node_id?: string
     reasoning_path?: string[]
     source?: RecallHitSource

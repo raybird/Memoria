@@ -17,6 +17,17 @@
 
 set -euo pipefail
 
+# This script asserts the DEGRADATION matrix, so it must control every vector env var itself —
+# an inherited one silently turns a "not configured" case into a configured one. A developer with
+# semantic recall wired up in their shell profile has all four of these exported, and the
+# "LIBSQL_URL unset -> vector_unavailable" case then reached their REAL vector store, returned ids
+# that map to no local row, and fell through to route_mode=keyword. CI never sets them, so this
+# only bites locally — same failure mode as the inherited MEMORIA_HOME fixed in v1.22.0.
+# MEMORIA_VECTOR_E2E_REAL is deliberately NOT unset: it is the opt-in switch for the live-model
+# assertion below, and the caller sets it on purpose.
+unset LIBSQL_URL MEMORIA_EMBED_PROVIDER MEMORIA_VECTOR_RECALL_CMD MEMORIA_VECTOR_TIMEOUT_MS
+unset MEMORIA_HOME MEMORIA_DB_PATH MEMORIA_SESSIONS_PATH MEMORIA_CONFIG_PATH
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HELPER_DIR="$ROOT_DIR/skills/memoria-vector"
 TMP_DIR="$(mktemp -d)"
@@ -86,6 +97,39 @@ const c=d.data.find(h=>h.id==='$SID_C');
 if(!c.snippet.includes('zebra')) throw new Error('C snippet must be the LOCAL summary (authoritative re-read), got: '+c.snippet);
 " "$RES"
 echo "  hybrid_vector ok: C surfaced beyond lexical, snippet re-read locally, ghost dropped"
+
+# issue-9: `relevance` means LEXICAL match quality, so a hit only the vector index found must not
+# carry one — and `confidence` must be null rather than 0 whenever the top hit is such a hit. The
+# same response carries both kinds, which is why this asserts per-hit and envelope-level together.
+echo "[vector] issue-9: semantic-only hits carry no lexical relevance; confidence names its basis"
+node -e "
+const d=JSON.parse(process.argv[1]);
+const c=d.data.find(h=>h.id==='$SID_C');
+if(c.relevance!==undefined) throw new Error('vector-only hit must have NO relevance, got '+c.relevance);
+const a=d.data.find(h=>h.id==='$SID_A');
+if(typeof a.relevance!=='number') throw new Error('lexical hit must keep its relevance, got '+a.relevance);
+if(!['lexical_coverage','unavailable'].includes(d.meta.confidence_basis)) throw new Error('confidence_basis missing/unknown: '+d.meta.confidence_basis);
+const topIsLexical = typeof d.data[0].relevance === 'number';
+if(topIsLexical){
+  if(d.meta.confidence_basis!=='lexical_coverage') throw new Error('lexical top hit must report lexical_coverage, got '+d.meta.confidence_basis);
+  if(typeof d.meta.confidence!=='number') throw new Error('lexical top hit must report a numeric confidence, got '+d.meta.confidence);
+} else {
+  if(d.meta.confidence_basis!=='unavailable') throw new Error('semantic top hit must report unavailable, got '+d.meta.confidence_basis);
+  if(d.meta.confidence!==null) throw new Error('semantic top hit must report confidence null, got '+d.meta.confidence);
+}
+" "$RES"
+echo "  relevance absent on vector-only hit, confidence_basis matches the top hit's origin"
+
+echo "[vector] issue-9: zero hits report confidence 0 with basis no_hits (measured, not unmeasurable)"
+RES0=$(curl -sf -X POST "$URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"zzzznothingmatchesthisquery","mode":"keyword"}')
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(!d.ok) throw new Error('recall failed');
+if(d.data.length!==0) throw new Error('expected zero hits, got '+d.data.length);
+if(d.meta.confidence!==0) throw new Error('zero hits must report confidence 0, got '+d.meta.confidence);
+if(d.meta.confidence_basis!=='no_hits') throw new Error('expected basis no_hits, got '+d.meta.confidence_basis);
+" "$RES0"
+echo "  no_hits ok"
 
 echo "[vector] project filter is enforced on vector hits"
 RES=$(curl -sf -X POST "$URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"quantum flux capacitor","mode":"vector","project":"other-project"}')

@@ -14,7 +14,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from './paths.js'
 import { withDb } from './db/connection.js'
-import { tokenCoverage, maybeParseJson, parseCreatedAt } from './utils.js'
+import { maybeParseJson, parseCreatedAt } from './utils.js'
 import { parseSkillEvent } from './extract.js'
 
 export type VectorRecallStatus = 'ok' | 'unavailable' | 'timeout' | 'error'
@@ -27,7 +27,11 @@ export type VectorRow = {
     project: string
     snippet: string
     score: number
-    relevance?: number
+    // Deliberately never set on this path (issue-9). `relevance` means LEXICAL match quality, and a
+    // vector hit is precisely the case where that measure is meaningless — the query paraphrases the
+    // memory instead of quoting it. Leaving it absent is what lets recall() report
+    // `confidence: null` ("cannot judge") rather than 0 ("judged, and it is bad").
+    relevance?: never
     node_id?: string
 }
 
@@ -103,7 +107,6 @@ function runHelper(
 function mapNamesToRows(
     dbPath: string,
     names: string[],
-    query: string,
     projectFilter?: string,
     scopeFilter?: string,
     afterDate?: Date
@@ -163,22 +166,22 @@ function mapNamesToRows(
                 const s = sessionStmt.get(ref) as { id: string; timestamp: string; project: string; scope: string; summary: string | null } | undefined
                 if (!s || !passesFilters(s.project, s.scope, s.timestamp)) continue
                 const content = s.summary ?? ''
-                push({ type: 'session', id: s.id, session_id: s.id, timestamp: s.timestamp, project: s.project, snippet: toSnippet(content), score: 0, relevance: tokenCoverage(query, content) })
+                push({ type: 'session', id: s.id, session_id: s.id, timestamp: s.timestamp, project: s.project, snippet: toSnippet(content), score: 0 })
             } else if (prefix === 'decision') {
                 const e = eventStmt.get(ref, 'DecisionMade') as { id: string; session_id: string; timestamp: string; content: string; project: string; scope: string } | undefined
                 if (!e || !passesFilters(e.project, e.scope, e.timestamp)) continue
-                push({ type: 'decision', id: e.id, session_id: e.session_id, timestamp: e.timestamp, project: e.project, snippet: toSnippet(e.content), score: 0, relevance: tokenCoverage(query, e.content) })
+                push({ type: 'decision', id: e.id, session_id: e.session_id, timestamp: e.timestamp, project: e.project, snippet: toSnippet(e.content), score: 0 })
             } else if (prefix === 'skill') {
                 const e = loadSkillMap().get(ref)
                 if (!e || !passesFilters(e.project, e.scope, e.timestamp)) continue
-                push({ type: 'skill', id: e.id, session_id: e.session_id, timestamp: e.timestamp, project: e.project, snippet: toSnippet(e.content), score: 0, relevance: tokenCoverage(query, e.content) })
+                push({ type: 'skill', id: e.id, session_id: e.session_id, timestamp: e.timestamp, project: e.project, snippet: toSnippet(e.content), score: 0 })
             } else if (prefix === 'mem_node') {
                 const src = nodeSourceStmt.get(ref) as { session_id: string } | undefined
                 if (!src) continue
                 const s = sessionStmt.get(src.session_id) as { id: string; timestamp: string; project: string; scope: string; summary: string | null } | undefined
                 if (!s || !passesFilters(s.project, s.scope, s.timestamp)) continue
                 const content = s.summary ?? ''
-                push({ type: 'session', id: s.id, session_id: s.id, timestamp: s.timestamp, project: s.project, snippet: toSnippet(content), score: 0, relevance: tokenCoverage(query, content), node_id: ref })
+                push({ type: 'session', id: s.id, session_id: s.id, timestamp: s.timestamp, project: s.project, snippet: toSnippet(content), score: 0, node_id: ref })
             }
             // project: / skill_profile / anything else → not a RecallHit type; drop.
         }
@@ -205,7 +208,7 @@ export async function recallVector(
     try {
         const { status, hits } = await runHelper(script, query, Math.max(1, topK) * OVERFETCH_FACTOR, timeoutMs)
         if (status !== 'ok') return { rows: [], status }
-        const rows = mapNamesToRows(dbPath, hits.map((h) => h.name), query, projectFilter, scopeFilter, afterDate).slice(0, Math.max(1, topK))
+        const rows = mapNamesToRows(dbPath, hits.map((h) => h.name), projectFilter, scopeFilter, afterDate).slice(0, Math.max(1, topK))
         return { rows, status: 'ok' }
     } catch {
         return { rows: [], status: 'error' }
