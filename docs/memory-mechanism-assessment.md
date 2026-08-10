@@ -67,6 +67,7 @@ Memoria 目前是一套**工程紀律紮實的「字面記憶基礎設施」**�
 
 8. **規模隱憂:tree recall 目前為 O(N) 掃描;`project` tag 是平字串,無記憶可見範圍/隔離模型。**
    現在不痛、量大會痛。
+   > **2026-08-09 補實測**:痛點在**記憶體**而非延遲——`recallTree` 整表載入 `memory_nodes` 到 JS,10k sessions / 20k nodes 時單次召回 heap +46MB、rss 219MB(keyword 對照僅 +1MB);延遲 1k=8.9ms、10k=75.8ms。另**不能直接加 SQL LIMIT**(會從「掃全部→算分→取 top-k」變成「任取 N 筆再評分」),故修法是建索引。細節與緩解見 `docs/HANDOVER.md` §7 的 D2。
 
 ## 最深層的一個觀察
 

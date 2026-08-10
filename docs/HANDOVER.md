@@ -165,7 +165,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | D5 | 矛盾偵測(B supersedes A) | **`done`**(2026-08-09) | 評估文件缺點 #5。`docs/issues/issue-5/` Phase 2 交付:**只做明示 `--supersedes`,自動語意判斷仍在範圍外**(需語意召回實測資料才判斷得準門檻)。同 issue 併交 durable 衰減/裁剪豁免(缺點 #4 的殘餘)與 `sensitivity`/`export --redact` |
 | — | **用資料評測語意 vs 字面** | `next`(**工具已備齊,只差資料**) | 讀數已於 2026-08-09 補上:`stats` / telemetry 的 `recallRouting.routeUtility`(依 route 分組平均 utility + 冠亞軍 uplift,兩種 route 都有 outcome 才給 `best`)。剩下的是使用量——要比較語意就得設 `LIBSQL_URL` 並實際下 `--mode vector`;判讀看 per-route `n` |
 | — | **`recall_fts` 重複列**(既有 bug) | **`done`**(2026-08-09) | `importSession` 用 `INSERT OR REPLACE`,REPLACE 的隱式 DELETE 不觸發 FTS delete trigger → 以相同 id 重複 `sync` 會讓同一筆命中翻倍。issue-4 R1 發現,`docs/issues/issue-6/` 修復:兩個語句改真正的 upsert(`ON CONFLICT(id) DO UPDATE`,走 UPDATE trigger)+ migration 15 重建既有索引。**未採用當初推測的 trigger 修法**——寫入端修比 schema 端修簡單且對任何寫入者都成立 |
-| D2 | tree recall O(N) → 建索引 | `idea` | 規模議題,量大才痛;純效能 |
+| D2 | tree recall O(N) → 建索引 | `idea`(2026-08-09 補實測) | `recallTree` 把 `memory_nodes` **整表**載進 JS 再評分(`recall.ts` 的 `allNodes`,無 LIMIT)。**主要成本是記憶體不是延遲**——10k sessions / 20k nodes 時單次召回 heap +46MB、rss 219MB(對照 keyword +1MB / 95MB);延遲 median 1k=8.9ms、10k=75.8ms,線性。⚠ **不能直接在 SQL 加 LIMIT**:現行語意是「掃全部→算分→取 top-k」,加 LIMIT 會變成「任取 N 筆再評分」而漏掉最相關的——要正確地限就得先有可排序索引,這才是本項叫「建索引」而非「加 limit」的原因。既有緩解:帶 `--project`/`--scope` 時 `buildScopeClause` 已在 SQL 層過濾,可大幅縮小載入量。附帶:**keyword 有 LIMIT 但延遲一樣線性成長**(2.4→21.2ms)——LIMIT 限回傳筆數,不限 bm25 的掃描量 |
 | D3 | 手改衍生 summary 後 re-index staleness | `idea` | 正確性:SQLite/markdown/FTS 可能漂移 |
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |
 | C4 | opencode adapter e2e 測試 | `idea` | 測試覆蓋缺口(其餘三個 adapter 已有 e2e) |
