@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-08-10
+
 ### Fixed
 - **Promoted git memories now reach the tree index** (issue-7). issue-1's design called for promotion to write into `events` so the memory "automatically enters FTS and `buildMemoryIndex`'s existing path" — but only half of that held: FTS is trigger-maintained, while the tree index is a batch command nobody was calling. Two consequences, both silent: `mode:'tree'` recall could not see git-promoted memories *at all*, and the MCP bridge payload (whose scope is derived from `memory_nodes`) quietly narrowed to whatever `remember` had written, so vector ingest covered a fraction of the corpus while still reporting `{"ok":true}`. On a real database that was 3 of 10 sessions — 17 payload entities instead of 104. Promotion now indexes the session it just wrote, at both call sites, deliberately *outside* `promoteSummary`'s transaction (that function stays a pure DB write) and best-effort (a promotion is never undone by an indexing failure). Measured cost: ~3ms per session, flat as the corpus grows.
 

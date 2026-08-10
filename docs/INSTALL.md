@@ -56,20 +56,20 @@ memoria service uninstall
 下載 release 中的 `install.sh` 後執行；installer 會依目前 Node runtime 自動選擇原生 artifact：
 
 ```bash
-bash install.sh --version 1.23.1 --install-dir "$HOME/.local/share/memoria"
+bash install.sh --version 1.24.0 --install-dir "$HOME/.local/share/memoria"
 ```
 
 可先檢查將要下載的 URL，不會寫入任何檔案：
 
 ```bash
-bash install.sh --version 1.23.1 --print-release-url
+bash install.sh --version 1.24.0 --print-release-url
 ```
 
 也可直接指定已下載的本地 artifact：
 
 ```bash
 bash install.sh \
-  --artifact ./memoria-linux-x64-v1.23.1.tar.gz \
+  --artifact ./memoria-linux-x64-v1.24.0.tar.gz \
   --install-dir "$HOME/.local/share/memoria"
 ```
 
