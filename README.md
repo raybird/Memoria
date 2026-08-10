@@ -158,6 +158,12 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 
 All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `latency_ms`).
 
+`confidence` is `0–1` **or `null`**, and recall responses carry `confidence_basis` naming where the
+value came from: `lexical_coverage` (query-token coverage of the top hit), `no_hits` (nothing
+matched — `confidence` is `0`), or `unavailable` (the top hit came from the semantic index alone, so
+match quality is not measurable — `confidence` is `null`, which means "cannot judge", not "poor
+match"). Only the opt-in vector route ever produces `null`.
+
 ## Common CLI Commands
 
 ```bash

@@ -109,7 +109,7 @@ Three entrypoints consume `core/`:
 
 Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific agent runtimes (Antigravity CLI, Codex CLI, OpenCode, Claude Code).
 
-**Every public API returns `MemoriaResult<T>`** with `evidence[]`, `confidence`, `latency_ms`. Preserve this envelope when adding new endpoints/methods.
+**Every public API returns `MemoriaResult<T>`** with `evidence[]`, `confidence`, `latency_ms`. Preserve this envelope when adding new endpoints/methods. `confidence` is `number | null` (issue-9) — `null` means "this route cannot judge match quality", never "poor match"; recall also stamps `confidence_basis` so callers don't infer the scale from `route_mode`.
 
 ### Persistence Layout
 
@@ -118,6 +118,8 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 ### Recall
 
 `recall()` supports `keyword | tree | hybrid | vector` modes with an adaptive gate that skips trivial queries. Hits are ranked by relevance × time-decay (halfLife = 90 days), then down-weighted by accrued per-memory utility (UFL; no-op until a memory has enough observations). `vector` is opt-in semantic recall: `LIBSQL_URL` + the `skills/memoria-vector` helper (local embeddings, libSQL native vectors, RRF-fused with the lexical floor, fail-open — degrades to `vector_unavailable`/`vector_timeout` route modes).
+
+**`relevance` is a LEXICAL measure, and semantic hits deliberately have none** (issue-9). `RecallHit.relevance` is query-token coverage; a hit only the vector index found is exactly the case where that is meaningless (the query paraphrases instead of quoting), so `VectorRow.relevance` is typed `never` — the compiler, not a comment, keeps a literal score off that path. `meta.confidence` follows the top hit: a number when it has `relevance`, `null` when it doesn't. Do not "fix" the null by substituting the RRF fused score — that is a ~0.016-scale rank artifact, not a 0–1 quality, and e5 cosine is range-compressed (0.017–0.049 between rank 1 and 2), which is why fusion ranks by position in the first place.
 
 **CLI access (issue-4 Phase 1)**: `memoria recall <query>`, `memoria remember <text>` and `memoria feedback <recall_id>` are the CLI counterparts of `POST /v1/recall`, `/v1/remember` and `/v1/recall/:id/outcome` — they exist because a skill-style deployment has no server running. `remember` writes ONE atomic note (a synthetic session + one `DecisionMade`/`SkillLearned` event, provenance `source_type='cli_note'`); its ids are content fingerprints, so an identical re-run is a no-op rather than a rewrite. Human-readable `recall` output prints `relevance` (0–1), not the raw bm25-derived `score` that drives ordering; `--json` carries the full envelope including `meta.recall_id`.
 

@@ -103,7 +103,7 @@ bash scripts/test-repo-noninvasive.sh   # Git-Aware Memory end-to-end + non-inva
 
 - `src/core/` library: `types`, `paths`, `utils`, `db`, `memoria`, `index`
 - `MemoriaCore` class: `remember()`, `recall()`, `summarizeSession()`, `health()`, `stats()`
-- `MemoriaResult<T>` response envelope with `evidence[]`, `confidence`, `source`, `latency_ms`
+- `MemoriaResult<T>` response envelope with `evidence[]`, `confidence` (`number | null`), `source`, `latency_ms`; recall adds `confidence_basis` (`lexical_coverage` | `unavailable` | `no_hits`) naming what produced the value — `null` means the route cannot measure match quality, as distinct from `0`
 - HTTP API server (`src/server.ts`, node:http): 6 endpoints on default port 3917
 - Node.js SDK client (`src/sdk.ts`): `MemoriaClient` with `waitUntilReady()`
 - CLI refactored to thin shell; new commands: `serve`, `preflight`, `setup`

@@ -10,7 +10,7 @@
 
 > 2026-07-28 更新
 
-- **版本**:`v1.24.0` 已發(2026-08-10,GitHub Release + npm;前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
+- **版本**:`v1.25.0` 已發(2026-08-10,GitHub Release + npm;同日連發 v1.24.0 → v1.25.0,前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
 - **v1.21.1 = issue-3 修 bug**(`docs/issues/issue-3/`):(a) 非 semver tag 的 `--tag` release 邊界不再退化成全 repo range——semver 比較優先,否則 creatordate fallback(`for-each-ref`,白名單內);(b) context 上限 `maxContextCommits`(200)/`maxContextFiles`(500),截斷永不靜默,`diffstat` 維持全範圍。實測同一 tag:context 157KB → 7.4KB。
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
@@ -23,9 +23,9 @@
 - **語意召回也已實際接上**(2026-08-09):`skills/memoria-vector` 裝了 devDeps(723MB)、真模型 e2e(`MEMORIA_VECTOR_E2E_REAL=1`)通過、67 個實體 ingest 進 `~/.memoria/.memory/vectors.db`、`~/.bashrc` 設好四個變數。**實測語意勝過字面的案例**:查「停止伺服器行程要注意什麼」對記憶「停 Memoria server 一律用 PID 精準停」——keyword 0 hits、vector 命中且排前二。另**確認 libSQL 原生向量是真的在運作**(獨立探針:`vector_distance_cos` 與手算餘弦一致、`vector_top_k` 走 ANN 索引排序正確)——當初 §13.2 證偽的是 `mcp-memory-libsql` 那個 MCP server,不是 libSQL 本身。
 - **v1.24.0 = issue-7 修 bug + 覆蓋率讀數**(2026-08-10):促升後自動建 tree 索引,`tree` 模式終於看得到 git 記憶,bridge payload 也不再靜默縮水;`stats` 新增 `memoryIndex` 覆蓋率(缺口才出聲)。**既有資料庫仍需跑一次 `memoria index build` 回填**——`stats` 會提醒。修法的真正價值是**消除一個會復發的手動步驟**:每次 `repo summarize --submit` 促升都會製造新缺口,先前得靠人記得補索引。
 - **issue-7 先於 issue-8 發版的理由**(2026-08-10 優先序評估):兩者不對稱——issue-7 是**已寫完待發版的正確性修復**,issue-8 是**待決策未實作的資源上限**。issue-8 的觸發條件(並行 vector 召回)在 skill 型單人使用下不成立,本機 12 核/31GB 也吃得下 4 個並行(~2.4GB / 7.2 核);它真正會痛的是多客戶端 HTTP server 部署,或推上低配主機(8GB/4 核那台 2 個並行就吃掉 1.2GB / 3.6 核——**那會翻轉優先序**)。在 4 項待確認拍板前動工,寫的程式很可能要重寫。
-- **⚠ [issue-9](issues/issue-9/README.md) 已修,未發版**(2026-08-10):語意路徑不再填字面 `relevance`,`confidence` 回 `null`(「無法評估」)而非 0(「評估過,很差」),並新增 `meta.confidence_basis` 說明數字的來源(`lexical_coverage` / `unavailable` / `no_hits`)。**這是 envelope 契約變更**——`confidence: number` → `number | null`,但只影響 opt-in 的 vector route(未設 `LIBSQL_URL` 者輸出完全不變),**發版時需決定 major 還是 minor**。`VectorRow.relevance` 型別設為 `never`,讓編譯器擋住日後有人再把字面分數填回這條路徑。順手修掉 `test-vector-recall.sh` 繼承開發機 vector 環境變數的缺陷(與 v1.22.0 的 `MEMORIA_HOME` 同類)。原始問題描述如下:
+- **v1.25.0 = issue-9 語意信心語意化**(2026-08-10):語意路徑不再填字面 `relevance`,`confidence` 回 `null`(「無法評估」)而非 0(「評估過,很差」),並新增 `meta.confidence_basis` 說明數字的來源(`lexical_coverage` / `unavailable` / `no_hits`)。**envelope 契約變更**——`confidence: number` → `number | null`。**發 minor 而非 major 是刻意的**:契約字面上是 breaking,但實際影響面只有 opt-in 的 vector route,未設 `LIBSQL_URL` 者輸出一字不變;CHANGELOG 以 ⚠ 標明。`VectorRow.relevance` 型別設為 `never`,讓編譯器擋住日後有人再把字面分數填回這條路徑——不變式由型別保證而非註解。順手修掉 `test-vector-recall.sh` 繼承開發機 vector 環境變數的缺陷(與 v1.22.0 的 `MEMORIA_HOME` 同類:它斷言降級矩陣,卻讓「`LIBSQL_URL` unset」的案例連上開發者的真實向量庫)。原始問題描述如下:
 - **issue-9 的原始現象**:**語意召回成功時 `confidence` 反而回報 0**——vector 路徑的 `relevance` 用 `tokenCoverage()`(字面覆蓋率)填值,於是「查詢與記憶字面重疊越少 → 信心值越接近 0」,而字面不重疊正是語意召回存在的理由。helper 算了 cosine distance 但在 `recallVector` 被丟棄;`hits[0].relevance ?? hits[0].score` 的 `??` 也不會 fallback(0 是有效值)。**與 RFC §5b 明文相違**(該處寫 confidence 應為 fused score)。連鎖影響:UFL confidence×utility 校準對 vector 路徑失真——**v1.23.0 加 `routeUtility` 就是為了回答「語意是否勝過字面」,而校準那半邊目前對 vector 沒有意義**。召回本身完全正確,壞的只有元資料,所以 e2e 測不出來。
-- **下一步**:(a) **發版決策**——`[Unreleased]` 有 issue-9 的契約變更,要決定 major(v2.0.0)還是 minor(v1.25.0);(b) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量,且 issue-9 修好後 calibration 讀數才有意義;(c) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故;優先序理由見上);(d) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量,且 issue-9 修好後 calibration 讀數才有意義;(c) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故;優先序理由見上);(d) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -66,6 +66,7 @@
 | v1.23.0 | 評測讀數 + 直測 + brief 修正 | `recallRouting.routeUtility`(依 route 分組的已觀測 utility + uplift,兩種 route 都有 outcome 才給 `best`);`test-pure-functions.sh` 純函式直測 43 斷言(tsx driver);修 `brief` 把同一則 CLI 筆記列兩次 |
 | v1.23.1 | vector helper 入包 | helper 的 `.mjs` + package.json 納入 npm `files`(node_modules 不入,包 1.20→1.22MB)——先前 `resolveHelperScript()` 在 npm 安裝下**永遠**解析不到 helper,`mode:'vector'` 靜默退回 `vector_unavailable`。helper 依賴仍為明示 opt-in;`test-npm-install.sh` 釘住解析路徑與「不含 node_modules」 |
 | v1.24.0 | promotion 建索引(issue-6→7 系列的最後一項) | 促升的兩個呼叫點各補一次 `buildMemoryIndex`(**刻意在 `promoteSummary` 的 transaction 之外**,best-effort——促升不因索引失敗而回滾);`stats.memoryIndex { sessions, indexed, missing }` 讓缺口可見(**不放 `verify`**:`VerifyStatus` 無 `warn` 且 `health()` 也呼叫它)。實測 ~3ms/session,不隨語料成長 |
+| v1.25.0 | 語意信心語意化(issue-9) | `confidence: number \| null` + `meta.confidence_basis`——語意命中不再套字面覆蓋率,回 `null`(無法評估)而非 0(評估過且很差);連帶讓這類召回退出 calibration 分桶,不再偽造「低信心高效用」。`VectorRow.relevance` 型別設為 `never`(不變式由編譯器保證);CLI 顯示 `n/a` 而非退回 RRF score(那是 ~0.016 的另一個尺度)。⚠ 契約變更但只影響 opt-in 的 vector route |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 

@@ -51,6 +51,7 @@ Memoria 目前是一套**工程紀律紮實的「字面記憶基礎設施」**�
 
 3. **`confidence` 有被過度信任的風險。**
    它現在等於字面 relevance(`bm25()` → relevance / `tokenCoverage`)。一個「字面高度重合但語意不相關」的命中會回報高 confidence,誤導下游 agent。字面系統的 confidence 天生有 calibration 問題,而 envelope 又鼓勵下游信任它。
+   > **2026-08-10 補(v1.25.0,[issue-9](issues/issue-9/README.md))**:本項的**反向**failure mode 更早浮現——語意召回**成功**時 confidence 反而回報 0,因為 vector 路徑也套用了 `tokenCoverage`。已改為:語意命中不帶 `relevance`、`confidence` 回 `null`(無法評估),並加 `meta.confidence_basis` 讓下游知道數值的來源。**這只解決了「誠實標示尺度」,沒有解決本項原本指出的問題**——字面高度重合但語意不相關的命中,仍然會回報高 confidence。要治那個,需要的是「用語意驗證字面命中」,不是換一個數字。
 
 4. **「遺忘」是粗粒度的時間裁剪。**
    prune 的 consolidate(90 天)/ stale(180 天)是純時間閾值,不看**重要性或存取頻率**。一個 180 天沒被碰、卻關鍵的架構決策,和一句閒聊面對同樣的裁剪風險。

@@ -280,6 +280,14 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
 Recall hits promoted from git summaries additionally carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`).
 
+`confidence` is `number | null`, and recall adds `confidence_basis` — `lexical_coverage` |
+`no_hits` | `unavailable` — so a caller never has to infer the scale from `route_mode`. A hit found
+only by the semantic index carries **no `relevance` field** and yields `confidence: null`: token
+coverage is a lexical measure, and the vector route exists precisely for queries that paraphrase
+rather than quote, so reporting `0` there asserted a poor match about a hit that was correct.
+Treat `null` as "unmeasurable", never as a low score — sorting or thresholding on it is a bug.
+Without `LIBSQL_URL` no response ever carries `null`.
+
 With more than one repository registered, pass `project` on recall — promoted git summaries use the
 repository name as their project, so an unscoped query mixes repositories (see `docs/OPERATIONS.md`
 §Scope Filtering for the measured before/after).

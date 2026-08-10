@@ -96,8 +96,19 @@ score_fused(d) = Σ_route  1 / (k + rank_route(d))     // k = 60
 
 Lexical score is `relevance × decay`; vector score is a similarity distance — **different
 scales**. RRF ranks by position only, needs no score normalization, and is the standard
-robust choice for hybrid search. `confidence` becomes the top fused score (documented as a
-scale change; ties into the separate "decouple confidence from decay" item).
+robust choice for hybrid search. ~~`confidence` becomes the top fused score (documented as a
+scale change; ties into the separate "decouple confidence from decay" item).~~
+
+> **Superseded 2026-08-10 (v1.25.0, [issue-9](issues/issue-9/README.md)).** The struck-through
+> sentence was never implemented — the vector path filled `relevance` with `tokenCoverage()`, so
+> `confidence` reported ~0 for exactly the paraphrased queries this route exists to answer. It is
+> also not adopted retroactively: a fused value is `1/(60+rank+1)` ≈ **0.0164**, which swaps one
+> misleading number for another and, being a rank artifact, is not comparable across routes.
+> The shipped answer is that this route has **no** absolute confidence to report — semantic-only
+> hits carry no `relevance` at all and `confidence` is `null` ("cannot judge"), with
+> `meta.confidence_basis` naming which case a caller is looking at. The same range compression that
+> motivated RRF here (measured 0.017–0.049 between rank 1 and rank 2 on multilingual-e5-small)
+> is precisely why no scalar derived from cosine can carry absolute meaning.
 
 ## 6. Gating / Degradation Matrix
 

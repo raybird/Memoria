@@ -192,6 +192,8 @@ You can also inspect aggregated telemetry in stats:
 
 Check `recallRouting` for 7-day route counts, fallback rate, and latency percentiles. Once recall outcomes have been reported (adapters do this automatically), a `calibration` block appears — confidence buckets vs mean observed utility, with a monotonicity flag that tells you whether `confidence` actually tracks usefulness. Vector-route counters (`vector` / `hybrid_vector` / `vector_unavailable` / `vector_timeout`) show up once `mode:'vector'` has been used.
 
+Recalls whose top hit came from the semantic index alone record `top_confidence` as NULL and are **excluded from `calibration`** (since v1.25.0, issue-9) — there is no lexical match quality to bucket them by. Before that release they were recorded as `0` and piled into the lowest bucket, which manufactured a "low confidence, high utility" pattern; those rows were not rewritten, so a calibration table spanning the upgrade still contains them. `routeUtility` is unaffected either way — it reads observed utility, not confidence.
+
 A `routeUtility` block appears alongside it once outcomes exist — **this is the one that answers "is semantic recall actually better than lexical?"**:
 
 ```

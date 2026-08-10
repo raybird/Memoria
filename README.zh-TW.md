@@ -158,6 +158,11 @@ curl http://localhost:3917/v1/stats
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
 
+`confidence` 是 `0–1` **或 `null`**；recall 回傳另帶 `confidence_basis` 說明這個值從何而來：
+`lexical_coverage`（查詢 token 在首位命中的覆蓋率）、`no_hits`（沒有任何命中，`confidence` 為 `0`）、
+`unavailable`（首位命中僅來自語意索引，字面匹配品質無從衡量，`confidence` 為 `null`——意思是
+「無法評估」，不是「匹配很差」）。只有 opt-in 的 vector route 會產生 `null`。
+
 ## CLI 常用命令
 
 ```bash
