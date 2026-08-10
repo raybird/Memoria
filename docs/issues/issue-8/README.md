@@ -91,7 +91,7 @@ Elapsed (wall) 1.24s          → 約 1.78 個核心
 ## 待確認
 
 1. 上限預設值該是多少？是否要能以環境變數覆寫（比照 `MEMORIA_VECTOR_TIMEOUT_MS`）？
-2. 超限時排隊（A）還是降級（B）——取決於呼叫端更在意「拿到語意結果」還是「準時回應」。TeleNexus 那類部署設了 `MEMORIA_RECALL_TIMEOUT_MS: 1500`，排隊很可能直接撞牆。
+2. 超限時排隊（A）還是降級（B）——取決於呼叫端更在意「拿到語意結果」還是「準時回應」。已知有容器化部署把 `MEMORIA_RECALL_TIMEOUT_MS` 設到 1500，排隊很可能直接撞牆。
 3. 降級是否要新增一個 route_mode（如 `vector_saturated`）以便與 `vector_unavailable` 區分？沒有區分的話，telemetry 會把「沒裝 helper」和「負載過高」混在一起。
 4. helper 的記憶體峰值能否降低（例如換更小的量化模型、或限制 transformers 的執行緒數）？這會改變上限的合理值。
 
