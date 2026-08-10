@@ -65,6 +65,28 @@ hits: 5
 
 （但 RFC 那句本身也不完全可用——見「修法選項」對方案 A 的尺度批評。照抄 RFC 只能把 0 換成 0.0164。）
 
+## 排除一個誤判方向：模型的中文能力沒有問題
+
+調查時很自然會懷疑「是不是 embedding 模型對中文不行」。**實測否定了這個方向**，記錄於此以免日後重查。
+
+`Xenova/multilingual-e5-small`（q8），語料為 3 則中文記憶 + 3 則語意等價的英文記憶，查詢用 `query:` 前綴、語料用 `passage:` 前綴（e5 的正確用法，前綴錯了結論會反轉）：
+
+| 查詢 | 目標 | 名次 | 冠亞差 |
+|---|---|---|---|
+| 「怎麼安全地關掉伺服器行程」 | 中文記憶 | **第 1** | 0.0419 |
+| 「升級後舊的資料還讀得到嗎」 | 中文記憶 | **第 1** | 0.0494 |
+| `how to safely stop the server process` | **中文**記憶 | **第 2** | 0.0174 |
+| `will old data still be readable after upgrading` | **中文**記憶 | **第 2** | 0.0471 |
+
+兩個結論：
+
+1. **中文排序正確**，四組查詢中無關內容（一則講午餐的記憶）全部墊底。中文語意召回是有效的。
+2. **跨語言對齊也有效**——英文查詢命中中文記憶排第 2，僅次於英文的同義記憶。這正是 `docs/memory-mechanism-assessment.md` 缺點 1 說字面路徑「跨語言(中文問、英文存)全部 miss」的那個場景，語意路徑確實解決了它。
+
+**但絕對值不可用**：所有分數擠在 0.70–0.89，冠亞差只有 0.017–0.049。這與 `skills/memoria-vector/embed.mjs` 的既有註解一致（「cosine range is compressed — callers must rank (RRF), never threshold on raw cosine」）。
+
+**這對本 issue 的直接意義：方案 B 從「理論否決」升級為「實測否決」。** 冠亞差 0.017 意味著把 cosine 映射成 `confidence` 之後，正確命中與次佳命中的信心值幾乎無法區分——它撐不起「這次召回可不可信」這個問題。
+
 ## 影響範圍
 
 | 受影響 | 程度 |
@@ -89,7 +111,7 @@ hits: 5
 | 方案 | 做法 | 取捨 |
 |---|---|---|
 | A. 照 RFC §5b | `confidence` = top fused score | 忠於原設計，但 RRF fused 值是 `1/(60+rank+1)` ≈ **0.0164**，下游一樣讀成「幾乎不可信」。**把 0 換成 0.0164 不解決問題** |
-| B. 用 cosine distance | `relevance = 1 - distance` | **已否決**。e5 的 cosine 有區間壓縮，絕對值跨查詢不可比——這正是當初選 RRF 的理由（RFC §5b）。用它當 confidence 等於重新引入被否決過的假設 |
+| B. 用 cosine distance | `relevance = 1 - distance` | **已否決，且經實測確認**（見上節）。e5 的 cosine 有區間壓縮，絕對值跨查詢不可比——這正是當初選 RRF 的理由（RFC §5b）。實測冠亞差僅 0.017–0.049，撐不起信心語意 |
 | C. rank 導出的正規化信心 | 由名次映射到 0–1 | 尺度可讀，但衡量的是「排第幾」不是「多像」：第 1 名恆為滿分，沒有鑑別力，且無法表達「這批 hit 全都不太相關」 |
 | D. `confidence` 回報 `null` | 語意路徑明示「無法評估」 | **語意最誠實**（0 = 確定不可信，null = 無從判斷，兩者對下游是不同指令），符合本專案 no-silent-caps 的一貫立場；但 `ResultPayload.confidence` 型別是 `number`，改動 envelope 契約 |
 | E. 分路由定義 + `confidence_basis` | confidence 依 route 用不同基礎，另在 meta 明載它是怎麼算出來的 | 下游能自己決定信不信，不靜默換尺度；成本是 envelope 多一個欄位、文件與 adapter 都要同步 |
@@ -109,6 +131,7 @@ hits: 5
 |---|---|
 | 2026-08-10 | v1.24.0 升級後的例行驗證中發現：vector 召回命中正確但 `confidence: 0` |
 | 2026-08-10 | 根因定位完成——`tokenCoverage` 填 vector 路徑的 relevance、helper 的 distance 在 `recallVector` 被丟棄、`??` 不會 fallback；純函式直測驗證 CJK 整句單 token；比對 RFC §5b 確認實作與設計偏離。狀態：待評估 |
+| 2026-08-10 | 實測排除「模型中文能力不佳」這個誤判方向：中文查詢命中排第 1、跨語言排第 2、無關內容全部墊底；但冠亞差僅 0.017–0.049，方案 B 因此從理論否決升級為實測否決 |
 
 ---
 
