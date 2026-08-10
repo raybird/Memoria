@@ -5,8 +5,8 @@
 | 項目 | 內容 |
 |---|---|
 | Issue 編號 | 7（本地文件編號） |
-| 複雜度級別 | 待評估（傾向 Medium；行為變更需先確認效能與正確性） |
-| 狀態 | **待評估**（分析完成，未拍板、未實作） |
+| 複雜度級別 | Medium（兩個呼叫點各加一次索引建置 + 一項 verify 檢查，無 schema 變更） |
+| 狀態 | **待實作**（2026-08-09 三項待確認全數查證完畢，方案已收斂） |
 | 需求來源 | 2026-08-09 實際把語意召回接上本機 `~/.memoria` 時發現 |
 | 建立日期 | 2026-08-09 |
 | 相關 | [issue-1](../issue-1/README.md)（promotion 管線）；同批發現的另一項（helper 不入 npm 包）已於 v1.23.1 修復 |
@@ -43,7 +43,7 @@ memory_node_sources 涵蓋的 session：只有 3 筆 note-*
 
 > 附帶觀察：`tree` 模式召不到 git 促升的記憶，是同一個成因的另一面，且**先於**向量議題存在。
 
-## 修法選項（未拍板）
+## 修法選項（評估前的初始列舉，結論見下一節）
 
 | 方案 | 說明 | 疑慮 |
 |---|---|---|
@@ -52,22 +52,58 @@ memory_node_sources 涵蓋的 session：只有 3 筆 note-*
 | C. payload 範圍改為由 `sessions` 驅動，`memory_nodes` 僅作補充 | 從根本解除兩者的耦合 | 改動 payload 語意與增量 cursor 機制，影響面最大 |
 | D. 不修，文件明載「ingest 前先跑 `memoria index build`」 | 零風險 | 靠人記得；正是目前狀態（v1.23.1 已寫入 OPERATIONS） |
 
-**傾向 A**，但需先量測 `buildMemoryIndex` 在大型 repo 促升時的成本，並確認它與 `promoteSummary` 的交易邊界不衝突。
+當時傾向 A，但三項疑慮未經查證。**下一節逐項查證後，A 成立且形狀有修正**（索引建置放呼叫端而非 `promoteSummary` 內部）。
 
-## 待確認
+## 已查證（2026-08-09）
 
-1. `buildMemoryIndex` 對單一 session 的成本（`repo sync` 一次可能促升多筆摘要）。
-2. `tree` 模式召不到 git 記憶，是既有設計取捨還是同一個疏漏？——這會決定要修成因（A/C）還是只補 ingest（B）。
-3. 若採 A，既有資料庫仍需一次性 `index build` 回填；是否放進 migration。
+### Q1 · `buildMemoryIndex` 的成本 → **不是問題**
+
+實測（`importSession` 造合成語料，形態比照 promotion 產出的「一 session + 3 個 DecisionMade」）：
+
+| 語料規模 | 單一 session 建 index | 全量重建 |
+|---|---|---|
+| 100 sessions | median 3.27ms / p95 4.22ms | 12ms（240 nodes） |
+| 1000 sessions | median 2.63ms / p95 3.67ms | 75ms（2940 nodes） |
+
+單筆成本**不隨語料規模成長**。一次 `repo sync` 促升通常是個位數筆，即使 10 筆也只有 ~30ms，而 `repo sync` 本身要跑 git 命令、掃 commits、產摘要，是數百 ms 到數秒的量級。**方案 A 的效能疑慮排除。**
+
+### Q2 · 設計取捨還是疏漏？ → **疏漏**
+
+issue-1 的技術分析已經寫明意圖（`docs/issues/issue-1/technical-analysis.md:74`）：
+
+> 資料流關鍵：**promotion 寫入既有 `events` 表**（新 event_type 或沿用 `DecisionMade`），使其自動進入 FTS 與 **`buildMemoryIndex` 的既有路徑**；`memory_sources` 表只負責 provenance 回鏈。不建立平行 recall 體系。
+
+`requirement-analysis.md:108`（X3）同樣要求「promotion 必須寫入 recall 的資料路徑，而非平行體系」。
+
+落差出在**兩條路徑的觸發機制不同**：FTS 由 trigger 維護（寫入即自動生效），`buildMemoryIndex` 卻是批次命令（必須明確呼叫）。設計者假設「寫進 `events` 就會自動進兩者」，實作只滿足了 FTS。
+
+**所以要修成因（A/C），不是只補 ingest（B）。**
+
+### Q3 · 既有資料庫如何回填 → **不能用 migration**
+
+`recall.ts:6` 已經 `import { initDatabase } from './schema.js'`，migration 若反向 import `buildMemoryIndex` 會形成循環 import。在 migration 內複製一份索引邏輯則是更糟的重複。
+
+改為：**`verify` 加一項覆蓋率檢查**（`runVerify` 本來就開 DB，且已有 `VerifyCheck { id, status, detail }` 結構）——回報有多少 session 缺 `memory_node`，並提示跑 `memoria index build`。回填本身極便宜（1000 sessions 全量 75ms），只是不該靜默。
+
+> `doctor` 不適合：它只做路徑存在性檢查，完全不開 DB。
+
+## 建議方案（依查證結果收斂）
+
+1. **主修（成因）**：促升成功後呼叫 `buildMemoryIndex(dbPath, { sessionId })`。落點在**呼叫端**——`src/core/memoria.ts:971`（`repo sync` 自動促升）與 `:1097`（`repoSubmitSummary`）——而**不是** `promoteSummary` 內部：後者是 `withDb(...)` 內的 `db.transaction(...)`，把索引建置塞進去會擴大它的職責，也可能造成巢狀交易。
+2. **回填可見化**：`verify` 新增 `memory_index_coverage` 檢查，缺 node 時 `warn` + 提示 `memoria index build`。
+3. **不做**：方案 B（只補 ingest 前置）已被 Q2 否決；方案 C（payload 改由 sessions 驅動）影響 cursor 增量機制，收益不及風險。
+
+驗收要點：促升後不必手動 `index build`，`tree` 模式即可召回 git 記憶；bridge payload 涵蓋全部 session；既有 DB 在 `verify` 看得到缺口。
 
 ## Timeline
 
 | 日期 | 事件 |
 |---|---|
 | 2026-08-09 | 接語意召回時發現；當下以 `memoria index build` 繞過，並把步驟寫入 OPERATIONS；建立本 issue 待評估 |
+| 2026-08-09 | 三項待確認查證完畢：成本非問題（實測）、屬疏漏而非取捨（issue-1 技術分析原文）、migration 不可行（循環 import）→ 方案收斂為「呼叫端補索引 + verify 覆蓋率檢查」，狀態轉待實作 |
 
 ---
 **建立日期**: 2026-08-09
 **最後更新**: 2026-08-09
-**文件版本**: 1.0
-**狀態**: **待評估**
+**文件版本**: 1.1
+**狀態**: **待實作**（方案已收斂，未動工）
