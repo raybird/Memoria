@@ -21,7 +21,8 @@
 - **v1.23.0 = 評測讀數 + 直測 + brief 修正**:(a) `stats` / telemetry 新增 `recallRouting.routeUtility`——依 route 分組的已觀測 utility + 冠亞軍 uplift,**這是回答「語意召回是否勝過字面」的讀數**(先前只有 route 次數與 confidence 校準,沒有「哪個 route 比較有用」);(b) `scripts/test-pure-functions.sh` 純函式直測(43 斷言,tsx driver,進 CI);(c) 修 `brief` 把同一則 CLI 筆記列兩次(一則筆記占 session + event 兩個 ref,outcome 兩個都歸因)。
 - **⚠ Memoria 已實際接上本機使用**(2026-08-09):全域升級至 v1.23.0;`~/.memoria/knowledge/BRIEF.md` 由 `memoria brief` 產生,並在 `~/.claude/CLAUDE.md` 以 `@` 絕對路徑引入(不放專案 CLAUDE.md——那是版控檔且路徑為絕對);寫入三則 `--durable` 記憶(skill 型整合拍板、停 server 用 PID、TeleNexus 容器為獨立資料),皆屬 **git 抓不到的環境事實**。工程決策不手寫,由 `repo sync` 促升。**(c) 這個 bug 正是實際使用十分鐘後才浮現的——fixture 測不出來,因為它沒有「一則筆記 + 對它回報過 outcome」的組合。**
 - **語意召回也已實際接上**(2026-08-09):`skills/memoria-vector` 裝了 devDeps(723MB)、真模型 e2e(`MEMORIA_VECTOR_E2E_REAL=1`)通過、67 個實體 ingest 進 `~/.memoria/.memory/vectors.db`、`~/.bashrc` 設好四個變數。**實測語意勝過字面的案例**:查「停止伺服器行程要注意什麼」對記憶「停 Memoria server 一律用 PID 精準停」——keyword 0 hits、vector 命中且排前二。另**確認 libSQL 原生向量是真的在運作**(獨立探針:`vector_distance_cos` 與手算餘弦一致、`vector_top_k` 走 ANN 索引排序正確)——當初 §13.2 證偽的是 `mcp-memory-libsql` 那個 MCP server,不是 libSQL 本身。
-- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量;(b) **[issue-7](issues/issue-7/README.md) 待評估**:promotion 不建 `memory_node`,使 bridge payload 與 `tree` 模式都看不到 git 促升的記憶(四個修法選項、三個待確認,傾向 A 但需先量測成本);(c) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。**無待拍板事項**——issue-7 是待評估,不是待拍板。
+- **issue-7 已修**(2026-08-09,未發版):促升後自動建 tree 索引,`tree` 模式終於看得到 git 記憶,bridge payload 也不再靜默縮水;`stats` 新增 `memoryIndex` 覆蓋率(缺口才出聲)。**既有資料庫仍需跑一次 `memoria index build` 回填**——`stats` 會提醒。
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量;(b) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。**無待拍板、無待評估事項**。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -169,7 +170,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | D4 | `time_window` parser 只支援 `P<n>D` | `idea` | 只解析天;可擴 ISO duration |
 | C4 | opencode adapter e2e 測試 | `idea` | 測試覆蓋缺口(其餘三個 adapter 已有 e2e) |
 | — | **vector helper 不入 npm 包** | **`done`**(v1.23.1) | helper 的 `.mjs` + package.json 納入 `files`(node_modules 不入,包 1.20→1.22MB)→ 全域安裝的 `resolveHelperScript()` 解析得到,不再需要 `MEMORIA_VECTOR_RECALL_CMD`;helper 依賴仍為明示 opt-in(`cd .../skills/memoria-vector && npm install`)。`test-npm-install.sh` 釘住路徑與「不含 node_modules」 |
-| — | **promotion 不建 memory_node** | `planned` | 已展開為 `docs/issues/issue-7/`(**待評估**,未拍板)。`promoteSummary()` 不呼叫 `buildMemoryIndex`,而 bridge payload 範圍由 `memory_nodes` 驅動 → 以 `repo sync` 為主的資料庫,ingest **靜默**漏掉絕大多數記憶(實測 10 個 session 只涵蓋 3 個;先跑 `index build` 後 payload 從 17 → 104 個實體)。同一成因也讓 `tree` 模式召不到 git 促升記憶。四個修法選項與三個待確認見該 issue |
+| — | **promotion 不建 memory_node** | **`done`**(issue-7) | 促升後於呼叫端建索引(不進 `promoteSummary` 的 transaction,best-effort)。實測成本 ~3ms/session 且不隨語料成長。同一成因的 `tree` 缺口一併修復。覆蓋率改由 `stats.memoryIndex` 呈現——**不放 `verify`**:`VerifyStatus` 無 `warn`、`ok` 要求全 pass,而 `health()` 也呼叫它,索引落後會讓 `/v1/health` 變不健康(見 issue-7 R1) |
 
 ---
 

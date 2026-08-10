@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 7（本地文件編號） |
 | 複雜度級別 | Medium（兩個呼叫點各加一次索引建置 + 一項 verify 檢查，無 schema 變更） |
-| 狀態 | **待實作**（2026-08-09 三項待確認全數查證完畢，方案已收斂） |
+| 狀態 | **實作完成**（2026-08-09） |
 | 需求來源 | 2026-08-09 實際把語意召回接上本機 `~/.memoria` 時發現 |
 | 建立日期 | 2026-08-09 |
 | 相關 | [issue-1](../issue-1/README.md)（promotion 管線）；同批發現的另一項（helper 不入 npm 包）已於 v1.23.1 修復 |
@@ -90,10 +90,25 @@ issue-1 的技術分析已經寫明意圖（`docs/issues/issue-1/technical-analy
 ## 建議方案（依查證結果收斂）
 
 1. **主修（成因）**：促升成功後呼叫 `buildMemoryIndex(dbPath, { sessionId })`。落點在**呼叫端**——`src/core/memoria.ts:971`（`repo sync` 自動促升）與 `:1097`（`repoSubmitSummary`）——而**不是** `promoteSummary` 內部：後者是 `withDb(...)` 內的 `db.transaction(...)`，把索引建置塞進去會擴大它的職責，也可能造成巢狀交易。
-2. **回填可見化**：`verify` 新增 `memory_index_coverage` 檢查，缺 node 時 `warn` + 提示 `memoria index build`。
+2. **回填可見化**：`verify` 新增 `memory_index_coverage` 檢查，缺 node 時 `warn` + 提示 `memoria index build`。**（實作時推翻，見 R1）**
 3. **不做**：方案 B（只補 ingest 前置）已被 Q2 否決；方案 C（payload 改由 sessions 驅動）影響 cursor 增量機制，收益不及風險。
 
 驗收要點：促升後不必手動 `index build`，`tree` 模式即可召回 git 記憶；bridge payload 涵蓋全部 session；既有 DB 在 `verify` 看得到缺口。
+
+## 實作後追加
+
+### R1 · 覆蓋率檢查不能放 `verify`，改放 `stats`
+
+建議方案 2 寫「`verify` 加檢查，缺 node 時 `warn`」，實作時發現**兩個前提都不成立**：
+
+- `VerifyStatus` 只有 `'pass' | 'fail'`（`src/core/types.ts:132`），**沒有 `warn`**。要加就得改型別，牽動所有 check 的消費端與既有 e2e 契約。
+- `runVerify` 的 `ok` 是 `checks.every((c) => c.status === 'pass')`（`verify.ts:90`），而 **`MemoriaCore.health()` 也呼叫 `runVerify`**——把「索引落後」報成 `fail`，`/v1/health` 就會變成不健康。那是過度反應：索引沒跟上不是資料庫損壞，promoted 記憶透過 FTS 照樣召得回來。
+
+改放 `stats`：新增 `memoryIndex { sessions, indexed, missing }`，`missing > 0` 時人讀輸出才多印兩行（含 `memoria index build` 的修復指引），全數索引時完全不出聲。純資訊、不參與任何健康判定，也沿用 stats 既有的加法紀律。
+
+### R2 · 實測確認 `tree` 缺口同步修復
+
+修好促升路徑後，`tree` 模式即可召回 git 記憶（`test-repo-promotion.sh` 斷言 `tree` 命中 > 0）。這驗證了 Q2 的判斷——兩個症狀確實同源。
 
 ## Timeline
 
@@ -101,9 +116,10 @@ issue-1 的技術分析已經寫明意圖（`docs/issues/issue-1/technical-analy
 |---|---|
 | 2026-08-09 | 接語意召回時發現；當下以 `memoria index build` 繞過，並把步驟寫入 OPERATIONS；建立本 issue 待評估 |
 | 2026-08-09 | 三項待確認查證完畢：成本非問題（實測）、屬疏漏而非取捨（issue-1 技術分析原文）、migration 不可行（循環 import）→ 方案收斂為「呼叫端補索引 + verify 覆蓋率檢查」，狀態轉待實作 |
+| 2026-08-09 | 實作完成：兩個呼叫點補 `indexPromotedSession`；覆蓋率改放 `stats`（R1）；`test-repo-promotion.sh` 加索引覆蓋與 tree 召回斷言 |
 
 ---
 **建立日期**: 2026-08-09
 **最後更新**: 2026-08-09
-**文件版本**: 1.1
-**狀態**: **待實作**（方案已收斂，未動工）
+**文件版本**: 2.0
+**狀態**: **實作完成**

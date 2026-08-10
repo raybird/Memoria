@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Promoted git memories now reach the tree index** (issue-7). issue-1's design called for promotion to write into `events` so the memory "automatically enters FTS and `buildMemoryIndex`'s existing path" — but only half of that held: FTS is trigger-maintained, while the tree index is a batch command nobody was calling. Two consequences, both silent: `mode:'tree'` recall could not see git-promoted memories *at all*, and the MCP bridge payload (whose scope is derived from `memory_nodes`) quietly narrowed to whatever `remember` had written, so vector ingest covered a fraction of the corpus while still reporting `{"ok":true}`. On a real database that was 3 of 10 sessions — 17 payload entities instead of 104. Promotion now indexes the session it just wrote, at both call sites, deliberately *outside* `promoteSummary`'s transaction (that function stays a pure DB write) and best-effort (a promotion is never undone by an indexing failure). Measured cost: ~3ms per session, flat as the corpus grows.
+
+### Added
+- **`stats` reports tree-index coverage** as `memoryIndex { sessions, indexed, missing }`, and the human-readable output warns with a `memoria index build` hint only when `missing > 0`. Databases written before this fix keep their gap until that command runs — this makes the gap visible instead of leaving it to be discovered when `tree` recall or a vector ingest silently returns less than it should. Deliberately not a `verify` check: `VerifyStatus` has no `warn`, `runVerify`'s `ok` requires every check to pass, and `MemoriaCore.health()` calls it — a lagging index would have dragged `/v1/health` to unhealthy, which overstates a condition that FTS recall is unaffected by.
+
 ## [1.23.1] - 2026-08-09
 
 ### Fixed

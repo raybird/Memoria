@@ -968,9 +968,35 @@ export class MemoriaCore {
             if (!summary.range) continue
             if (!force && !isPromotable(summary, threshold)) continue
             if (promotionExists(this.paths.dbPath, summary.id)) continue
-            if (promoteSummary(this.paths.dbPath, summary, repositoryName).promoted) promoted += 1
+            const outcome = promoteSummary(this.paths.dbPath, summary, repositoryName)
+            if (outcome.promoted) {
+                promoted += 1
+                this.indexPromotedSession(outcome.memoryIds[0])
+            }
         }
         return promoted
+    }
+
+    /** Bring a promoted memory into the tree index (docs/issues/issue-7).
+     *
+     *  issue-1's technical analysis specified that promotion writes into `events` so the memory
+     *  "automatically enters FTS and buildMemoryIndex's existing path". Only half of that holds:
+     *  FTS is trigger-maintained, while the tree index is a batch command nobody was calling. The
+     *  consequence was silent — `tree` recall could not see git memories at all, and the MCP bridge
+     *  payload (whose scope is derived from `memory_nodes`) skipped them, so vector ingest covered
+     *  a fraction of the corpus while still reporting success.
+     *
+     *  Deliberately OUTSIDE promoteSummary: that function is a pure DB write wrapped in its own
+     *  transaction, and nesting index building inside it would widen both its responsibility and its
+     *  lock window. Best-effort by design — a promoted memory is already recallable through FTS, and
+     *  `memoria index build` recovers anything missed. */
+    private indexPromotedSession(sessionId: string | undefined): void {
+        if (!sessionId) return
+        try {
+            buildMemoryIndex(this.paths.dbPath, { sessionId })
+        } catch {
+            // Never let indexing failure undo a successful promotion.
+        }
     }
 
     private async buildPipelineInput(ref: string, force?: boolean): Promise<SummaryPipelineInput> {
@@ -1094,7 +1120,9 @@ export class MemoriaCore {
                 if (summary.range &&
                     isPromotable(summary, gitConfig.summarization.promoteImportanceThreshold) &&
                     !promotionExists(this.paths.dbPath, summary.id)) {
-                    promoted = promoteSummary(this.paths.dbPath, summary, repositoryName).promoted
+                    const outcome = promoteSummary(this.paths.dbPath, summary, repositoryName)
+                    promoted = outcome.promoted
+                    if (promoted) this.indexPromotedSession(outcome.memoryIds[0])
                 }
             } catch { /* summary stays enriched; next sync retries promotion */ }
             return { data: { summary, promoted }, evidence: [summary.id], confidence: 1 }

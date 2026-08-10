@@ -28,6 +28,11 @@ export function registerStatsCommand(program: Command, paths: MemoriaPaths, core
                         console.log(`  - ${skill.name}: uses=${skill.use_count}, success=${(skill.success_rate * 100).toFixed(1)}%`)
                     }
                 }
+                // Only speak up when the index is actually behind — a fully-indexed corpus says nothing.
+                if (s.memoryIndex && s.memoryIndex.missing > 0) {
+                    console.log(`- ⚠ memory index: ${s.memoryIndex.indexed}/${s.memoryIndex.sessions} sessions indexed (${s.memoryIndex.missing} missing)`)
+                    console.log(`  ↳ tree recall and MCP bridge payload skip unindexed sessions — run "memoria index build"`)
+                }
                 if (s.recallRouting) {
                     const rr = s.recallRouting
                     console.log(`- recall routing (${rr.window}):`)

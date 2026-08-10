@@ -332,6 +332,13 @@ export type StatsData = {
     sessions: number
     events: number
     skills: number
+    /** Tree-index coverage (issue-7). `missing > 0` means `tree` recall and the MCP bridge payload
+     *  cannot see those sessions until `memoria index build` runs. */
+    memoryIndex: {
+        sessions: number
+        indexed: number
+        missing: number
+    }
     lastSession?: {
         id: string
         timestamp: string

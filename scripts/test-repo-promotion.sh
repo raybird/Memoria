@@ -169,6 +169,25 @@ assert_eq "branch summary force-promoted" "$(json_get "$BRANCH" "d.data.memories
 assert_eq "branch checkpoint" \
     "$(db_get "SELECT COUNT(*) FROM memory_checkpoints WHERE checkpoint_type = 'branch_progress'")" "1"
 
+# issue-7: promotion must land in the tree index too. issue-1 specified that a promoted memory
+# "automatically enters FTS and buildMemoryIndex's existing path", but only FTS is trigger-driven —
+# without an explicit index build, `tree` recall cannot see git memories at all and the MCP bridge
+# payload (scope derived from memory_nodes) silently skips them.
+echo "[repo-promotion] promoted memories reach the tree index"
+PROMOTED_SESSIONS=$(db_get "SELECT COUNT(*) FROM sessions WHERE id LIKE 'gitsum-%'")
+INDEXED_SESSIONS=$(db_get "SELECT COUNT(DISTINCT session_id) FROM memory_node_sources WHERE session_id LIKE 'gitsum-%'")
+assert_eq "every promoted session has a memory_node" "$INDEXED_SESSIONS" "$PROMOTED_SESSIONS"
+[ "$PROMOTED_SESSIONS" -gt 0 ] || { echo "  ✗ fixture promoted nothing"; exit 1; }
+TREE_HITS=$(curl -sf -X POST "$URL/v1/recall" -H 'Content-Type: application/json' \
+    -d '{"query":"reports","mode":"tree"}' \
+    | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);console.log(j.data.length)})')
+[ "$TREE_HITS" -gt 0 ] || { echo "  ✗ tree recall still cannot see promoted git memories"; exit 1; }
+echo "  ✓ $INDEXED_SESSIONS/$PROMOTED_SESSIONS indexed, tree recall returns $TREE_HITS"
+
+echo "[repo-promotion] stats reports index coverage"
+COVERAGE=$(curl -sf "$URL/v1/stats" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const m=JSON.parse(d).data.memoryIndex;console.log(m.missing)})')
+assert_eq "no missing sessions after promotion" "$COVERAGE" "0"
+
 echo "[repo-promotion] invalid submit payload → 400"
 BAD_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/repos/$REPO_ID/summaries/$SUM_ID" \
     -H 'Content-Type: application/json' -d '{"title":"x"}')

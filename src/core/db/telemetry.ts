@@ -131,6 +131,20 @@ export function queryStats(dbPath: string): StatsData {
         const events = Number((db.prepare('SELECT COUNT(*) AS c FROM events').get() as { c: number }).c)
         const skills = Number((db.prepare('SELECT COUNT(*) AS c FROM skills').get() as { c: number }).c)
 
+        // Tree-index coverage (docs/issues/issue-7). Sessions written before the promotion path
+        // started indexing have no memory_node, and the gap is invisible everywhere else: `tree`
+        // recall just misses them and the MCP bridge payload silently narrows its scope. Reported
+        // here rather than in `verify` on purpose — a lagging index is not a broken database, and
+        // verify has no 'warn' status, so a check there would drag /v1/health down to unhealthy.
+        const indexedSessions = Number((db
+            .prepare('SELECT COUNT(DISTINCT session_id) AS c FROM memory_node_sources')
+            .get() as { c: number }).c)
+        const memoryIndex = {
+            sessions,
+            indexed: indexedSessions,
+            missing: Math.max(0, sessions - indexedSessions)
+        }
+
         const lastSession = db
             .prepare('SELECT id, timestamp, project FROM sessions ORDER BY timestamp DESC LIMIT 1')
             .get() as { id: string; timestamp: string; project: string } | undefined
@@ -233,7 +247,7 @@ export function queryStats(dbPath: string): StatsData {
             ...(routeUtility.scoredQueries > 0 ? { routeUtility } : {})
         }
 
-        return { sessions, events, skills, lastSession, topSkills, recallRouting }
+        return { sessions, events, skills, memoryIndex, lastSession, topSkills, recallRouting }
     })
 }
 
