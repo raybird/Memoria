@@ -52,7 +52,9 @@
     "release:docs-check": "node scripts/check-release-doc-sync.mjs",
     "release:package": "bash scripts/package-release-artifacts.sh",
     "release:bump": "node scripts/bump-version.mjs",
-    "prepublishOnly": "pnpm run check && pnpm run build"
+    "prepublishOnly": "pnpm run check && pnpm run build",
+    "release:prepare": "bash scripts/release.sh prepare",
+    "release:publish": "bash scripts/release.sh publish"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

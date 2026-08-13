@@ -50,12 +50,9 @@ await patch('docs/INSTALL.md', (s) => s
     .replaceAll(`v${oldV}`, `v${next}`)
     .replaceAll(`--version ${oldV}`, `--version ${next}`))
 
-console.log(`\nNext steps:`)
-console.log(`  1. Edit CHANGELOG.md: add ## [${next}] - $(date +%Y-%m-%d) section`)
-console.log(`  2. pnpm run build && pnpm run release:package`)
-console.log(`  3. git commit -am "Release v${next}" && git tag -a v${next} -m "Release v${next}"`)
-// Push the tag ref explicitly rather than relying on --follow-tags, which pushes ONLY annotated
-// tags: a lightweight tag is skipped in silence — the push succeeds, main advances, and the release
-// workflow never fires, with nothing in the output to say so. Naming the ref makes the tag's type
-// stop deciding whether a release happens. (This recipe used to print a bare `git tag` above.)
-console.log(`  4. git push origin main && git push origin refs/tags/v${next}  (CI will create GitHub release + npm publish)`)
+// Deliberately does NOT print a release recipe any more. It used to, and the recipe it printed was
+// broken — `git tag` (lightweight) followed by `git push --follow-tags`, a pair that cannot trigger a
+// release because that flag pushes only annotated tags. RELEASE.md had the correct `-a` the whole
+// time; the version people actually followed was the one this script printed right after they ran it.
+// The flow is now executed by scripts/release.sh, so there is nothing here left to disagree with it.
+console.log(`\nNow edit CHANGELOG.md (add the ## [${next}] section), then: pnpm run release:publish`)

@@ -2,42 +2,35 @@
 
 Standard release workflow for Memoria. Releases are **tag-driven** — push a `v*` tag and GitHub Actions handles GitHub Release creation and npm publish.
 
-## Quick SOP (recommended)
+## SOP
 
-From repo root, working tree clean:
+Two commands. Everything between them is executed, not retyped:
 
 ```bash
-# 1. Bump version (updates package.json / install.sh / DEPLOYED_SKILL.md / docs/INSTALL.md)
-pnpm run release:bump <patch|minor|major>
-
-# 2. Edit CHANGELOG.md — move [Unreleased] items into a new [X.Y.Z] - YYYY-MM-DD section
-$EDITOR CHANGELOG.md
-
-# 3. Local pre-flight (CI will run the same checks, but cheaper to catch failures here)
-pnpm run check
-pnpm run build
-pnpm run release:docs-check
-pnpm run release:package
-bash scripts/test-smoke.sh
-bash scripts/test-bootstrap.sh
-bash scripts/test-no-clone-install.sh
-bash scripts/test-installer-platform.sh
-bash scripts/test-service-manager.sh
-bash scripts/test-npm-install.sh
-
-# 4. Commit + tag + push
-git add -A
-git commit -m "Release vX.Y.Z"
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push origin main
-git push origin refs/tags/vX.Y.Z   # name the ref; see note below
+pnpm run release:prepare <patch|minor|major|X.Y.Z>
+$EDITOR CHANGELOG.md      # move [Unreleased] under the new [X.Y.Z] - YYYY-MM-DD heading
+pnpm run release:publish
 ```
 
-Push the tag **by ref**, not with `--follow-tags`. That flag pushes only *annotated* tags, so a
-lightweight tag (`git tag vX.Y.Z`, no `-a`) is skipped in silence: the push succeeds, `main` advances,
-and `release.yml` never fires — with nothing in the output to say so. Naming the ref makes the tag's
-type stop deciding whether a release happens. Keep using `-a` anyway; every tag in this repo is
-annotated (`git cat-file -t vX.Y.Z` → `tag`).
+`prepare` checks the tree is clean, on `main`, and synced with origin, then bumps the version.
+`publish` runs every guard and gate test, commits, tags (annotated), pushes, **waits for the release
+workflow to appear and finish**, and then inspects the *published* artifact. The steps live in
+`scripts/release.sh` — deliberately as code rather than as a list to copy, because a printed list is
+a second copy of the truth and this one drifted twice in a single day (see *Why this is a script*).
+
+CHANGELOG editing stays manual on purpose: release notes carry your wording. `publish` refuses to run
+without a matching `## [X.Y.Z] - …` section, since `release.yml` extracts it for the notes and a
+missing section fails *after* the tag is public.
+
+Guards `publish` enforces, each from something that actually went wrong:
+
+| Guard | Prevents |
+|---|---|
+| only version-bump files dirty | a release commit swallowing uncommitted feature work |
+| `build` before `release:docs-check` | docs-check asserting a `dist/cli.mjs` that predates the bump |
+| annotated tag, pushed **by ref** | `--follow-tags` silently skipping a lightweight tag |
+| release run must appear within 2 min | a successful push, an advanced `main`, and no release at all |
+| parity check against the **downloaded** artifact | a green workflow that shipped the wrong contents (issue-10) |
 
 After the tag lands, the `release.yml` workflow:
 
@@ -80,28 +73,47 @@ Release should stop immediately if any of these fail (they all run in CI as well
 
 ## Release Artifacts
 
-- `dist/release/memoria-linux-x64-vX.Y.Z.tar.gz`
-- `dist/release/memoria-linux-arm64-vX.Y.Z.tar.gz`
-- `dist/release/memoria-darwin-x64-vX.Y.Z.tar.gz`
-- `dist/release/memoria-darwin-arm64-vX.Y.Z.tar.gz`
-- A `.tar.gz.sha256` sidecar for every native artifact, plus standalone `install.sh`
-- `@raybird.chen/memoria` on npm — published from `dist/cli.mjs` + bundled deployed skill
+Four native tarballs plus a `.sha256` sidecar each, a standalone `install.sh`, and
+`@raybird.chen/memoria` on npm:
 
-Artifact layout (tarball):
+```
+dist/release/memoria-{linux,darwin}-{x64,arm64}-vX.Y.Z.tar.gz
+```
 
-- `bin/memoria`
-- `lib/cli.mjs`
-- `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`
-- `skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md`
-- `node_modules/`
-- `install.sh`
+**Contents are not listed here.** This document used to carry two hand-written inventories, and both
+were wrong: they still described a tarball and an npm package from before `skills/memoria-vector`
+joined them — the npm side in v1.23.1, the tarball in v1.26.0. A third copy of a file list is a third
+thing to keep in sync, which is the disease `check-delivery-parity.mjs` was written to cure. Ask the
+artifacts instead:
 
-npm tarball contents (controlled by `package.json` `files`):
+```bash
+npm pack --dry-run          # what npm ships (authoritative: package.json "files")
+tar -tf dist/release/memoria-linux-x64-vX.Y.Z.tar.gz   # what the tarball ships
+```
 
-- `dist/cli.mjs` (executable, `#!/usr/bin/env node`)
-- `skills/memoria-memory-sync/deployed/`
-- `examples/session.sample.json`
-- `README.md` / `README.zh-TW.md` / `CHANGELOG.md` / `LICENSE`
+The two are not identical by design — the tarball uses a `bin/` + `lib/` layout and carries
+`node_modules`, while npm ships `dist/cli.mjs` and the docs. What *is* guaranteed is that nothing npm
+ships is missing from the tarball unless it is declared, with a reason, in `DELIVERED_ELSEWHERE`
+inside `scripts/check-delivery-parity.mjs`. That check runs in `release:package`, which both
+`ci.yml` and `release.yml` execute, and again against the **downloaded** artifact in
+`release.sh publish`.
+
+## Why this is a script
+
+The flow used to be a list of commands to retype. On 2026-08-13 that cost two releases' worth of
+debugging, both from the same cause — a printed instruction is a second copy of the truth, free to
+disagree with the first:
+
+- `bump-version.mjs` printed `git tag vX.Y.Z` (lightweight) followed by `git push --follow-tags`, a
+  pair that **cannot** trigger a release: the flag pushes only annotated tags, so the tag is dropped
+  in silence — the push succeeds, `main` advances, the workflow never fires, and nothing in the output
+  says so. `RELEASE.md` had the correct `git tag -a` the whole time. The recipe a person follows is
+  the one the tool just printed, not the one in a file they would have to open.
+- This document's artifact inventories had been stale for three releases, as above.
+
+A step that runs cannot disagree with a step that is documented, because there is only one of it.
+Where a step genuinely cannot be executed (the CHANGELOG wording), it stays manual and `publish`
+*verifies* it instead of describing it.
 
 ## Rollback
 
