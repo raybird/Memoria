@@ -59,3 +59,15 @@ cp -R "$ROOT_DIR/skills/memoria-memory-sync" "$STAGE_DIR/skills/memoria-memory-s
 `package-release-artifacts.sh` 逐檔複製（**不用 `cp -R`**——那會把 ~850MB 的 `node_modules` 一起拖進去），並在既有的 `required_entry` 白名單加入三個 helper 檔、另加一條「tarball 不得含 `skills/memoria-vector/node_modules`」的反向斷言。兩道防線的分工：白名單擋「漏帶」，反向斷言擋「帶太多」。
 
 測試層加了兩段，刻意分開：`test-no-clone-install.sh` 先斷言檔案存在（失敗訊息精確指出缺哪個檔），再用 `doctor --json` 斷言**安裝後的 CLI 真的解析得到它**——後者才是這個 issue 真正要保證的事，前者只是讓失敗好讀。反向對照已驗證：還原打包腳本後，測試在第一段就紅。
+
+### 追加：修掉讓這件事有機會發生的結構（2026-08-13）
+
+上面修的是實例。**結構性成因是兩份獨立維護的交付清單**——npm 走 `package.json` 的 `files`，tarball 走 `package-release-artifacts.sh`，兩者之間沒有任何交叉檢查。v1.23.1 動了前者、沒動後者，於是同一個症狀在兩條路徑上以不同成因活了三個版本。
+
+而 tarball 自己的 `required_entry` 白名單擋不到，理由很簡單：**must-contain 清單只能守住「已經有人記得列進去」的項目**，而 helper 從來沒被列進去。
+
+`scripts/check-delivery-parity.mjs` 改成推導而非複製：npm 那側直接問 `npm pack --dry-run --json`（**npm 自己的答案**，而不是重寫一份它的 glob／`.npmignore` 語意——那只會多出一份可以各自漂移的替身），然後要求每個 packed 路徑要嘛出現在 tarball、要嘛在 `DELIVERED_ELSEWHERE` 裡**連同理由**被列為刻意不帶。沒被分類的路徑直接讓 build 失敗。
+
+同時把 `skills/` 那幾條從 `required_entry` 移除——留著等於把這次要取代的那份手動清單再蓋一次。
+
+守門跑在 `release:package` 內，而 `ci.yml` 與 `release.yml` 都會執行它，所以每次推送就生效，不是等到發版。反向對照重演了 issue-10 的原始狀態（移除 helper 複製）：打包失敗並列出全部六個缺檔，**其中 `vector-ingest.mjs` 從來沒進過舊的手寫清單**——這一項就是推導相對於列舉的價值。

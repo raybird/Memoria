@@ -108,15 +108,11 @@ else
   exit 1
 fi
 
+# Structural entries only. Everything under skills/ is covered by the derived parity check below —
+# listing it here as well would recreate the hand-maintained list that let issue-10 happen.
 for required_entry in \
   "$ARTIFACT_BASENAME/bin/memoria" \
   "$ARTIFACT_BASENAME/lib/cli.mjs" \
-  "$ARTIFACT_BASENAME/skills/memoria-memory-sync/SKILL.md" \
-  "$ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md" \
-  "$ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md" \
-  "$ARTIFACT_BASENAME/skills/memoria-vector/vector-recall.mjs" \
-  "$ARTIFACT_BASENAME/skills/memoria-vector/embed.mjs" \
-  "$ARTIFACT_BASENAME/skills/memoria-vector/package.json" \
   "$ARTIFACT_BASENAME/install.sh" \
   "$ARTIFACT_BASENAME/package.json" \
   "$ARTIFACT_BASENAME/node_modules/better-sqlite3"; do
@@ -131,6 +127,11 @@ if tar -tf "$ARTIFACT_PATH" | grep -q "^$ARTIFACT_BASENAME/skills/memoria-vector
   echo "release artifact must not bundle skills/memoria-vector/node_modules" >&2
   exit 1
 fi
+
+# Every file npm ships must be in here too, or be declared as delivered elsewhere. This is the guard
+# issue-10 needed and did not have: the two delivery routes were independent lists, so one could gain
+# a file the other never heard about, and nothing failed until a user installed the poorer one.
+node "$ROOT_DIR/scripts/check-delivery-parity.mjs" "$ARTIFACT_PATH" "$ARTIFACT_BASENAME"
 
 echo "release_platform=$PLATFORM"
 echo "release_stage=$STAGE_DIR"
