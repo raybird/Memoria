@@ -2,10 +2,12 @@
 // Serves the MemoriaCore API over HTTP (node:http, zero extra deps)
 // Default port: 3917 (override with MEMORIA_PORT env var)
 //
-// Routes (12 endpoints):
+// Routes (the list below IS the inventory — it previously carried a hand-maintained count that had
+// drifted to "12" while listing 19):
 //   GET  /v1/health
 //   GET  /v1/stats
 //   GET  /v1/telemetry/recall?window=P7D&limit=100
+//   GET  /v1/brief?project=&days=30&top_k=10   → BriefData + rendered markdown; never writes BRIEF.md
 //   POST /v1/remember              body: SessionData JSON
 //   POST /v1/recall                body: RecallFilter JSON
 //   POST /v1/recall/:id/outcome    body: { signal, utility_score?, used? }  (UFL write-back)
@@ -26,7 +28,7 @@
 import http from 'node:http'
 import { z } from 'zod'
 import { MemoriaCore } from './core/index.js'
-import { resolveMemoriaPaths } from './core/index.js'
+import { renderBrief, resolveMemoriaPaths } from './core/index.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const DEFAULT_PORT = 3917
@@ -275,6 +277,40 @@ export function createServer(core: MemoriaCore): http.Server {
                 }
                 const result = await core.recallTelemetry({ window, limit })
                 send(res, result.ok ? 200 : 500, result)
+                return
+            }
+
+            // GET /v1/brief  (issue-13)
+            //
+            // Returns the structured brief AND the rendered markdown in one envelope. Returning only
+            // `BriefData` would push every caller into re-implementing `renderBrief` — and the caller
+            // that needs this endpoint wants the markdown itself, to inject at session start. A second
+            // renderer living outside this repo is a replica free to drift from the one the CLI uses,
+            // which is the failure mode issue-10 and the bump-version recipe were both instances of.
+            //
+            // Deliberately does NOT write `<knowledge>/BRIEF.md` the way the CLI does: in the sidecar
+            // deployment this endpoint exists for, that path is the *server* container's filesystem,
+            // not the agent's, so writing it would produce a file nobody reads.
+            if (method === 'GET' && pathname === '/v1/brief') {
+                const project = parsedUrl.searchParams.get('project') ?? undefined
+                const daysRaw = parsedUrl.searchParams.get('days')
+                const topKRaw = parsedUrl.searchParams.get('top_k')
+                const days = daysRaw === null ? undefined : Number(daysRaw)
+                const topK = topKRaw === null ? undefined : Number(topKRaw)
+                if (days !== undefined && (!Number.isFinite(days) || days <= 0)) {
+                    sendError(res, 400, 'Invalid days query param; expected a positive number')
+                    return
+                }
+                if (topK !== undefined && (!Number.isFinite(topK) || topK <= 0)) {
+                    sendError(res, 400, 'Invalid top_k query param; expected a positive number')
+                    return
+                }
+                const result = await core.brief({ project, days, topK })
+                if (!result.ok || !result.data) {
+                    send(res, 500, result)
+                    return
+                }
+                send(res, 200, { ...result, data: { ...result.data, markdown: renderBrief(result.data) } })
                 return
             }
 

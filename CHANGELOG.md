@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`GET /v1/brief`** (issue-13, phase 1). `brief` compiles the memory-injection artifact that `CLAUDE.md` pulls in with `@knowledge/BRIEF.md`, and it was reachable only through the CLI — so a containerised deployment could not run Memoria as a sidecar and had to ship the CLI plus the data volume inside the agent container instead. Query params `project` / `days` / `top_k`; non-numeric or non-positive `days`/`top_k` return 400 rather than silently falling back to the defaults the way `queryBrief` does. The response carries the structured `BriefData` **and** the rendered `markdown` in one envelope: the caller that needs this endpoint wants the markdown to inject at session start, and returning data alone would push every consumer into re-implementing `renderBrief` — a second renderer outside this repo, free to drift from the CLI's, which is the failure shape issue-10 and the `bump-version.mjs` recipe were both instances of. Unlike the CLI it **never writes** `<knowledge>/BRIEF.md`: in the sidecar deployment this exists for, that path belongs to the server's container, not the caller's, so the file would be one nobody reads. `GET` rather than `POST`, matching the other read routes. Phase 2 (`--server` on the main commands) is deliberately still open — the downstream consumer confirmed phase 1 alone is enough to collapse their CLI-in-container into a sidecar.
+
+### Fixed
+- **`src/server.ts`'s route header no longer carries a stale count.** It read "Routes (12 endpoints)" above a list of 19 — a hand-maintained number that nobody updates, in a file whose whole job is to be the route inventory. The count is gone; the list is the inventory.
+
 ## [1.26.2] - 2026-08-13
 
 ### Added

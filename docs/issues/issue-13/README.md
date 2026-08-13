@@ -7,7 +7,7 @@
 | Issue 編號 | 13（本地文件編號） |
 | 複雜度級別 | Medium（`/v1/brief` 本身是 Small；「主命令走 server」動到每個命令的執行模型，需要先定範圍） |
 | 風險等級 | Medium（會新增公開 HTTP 契約，一旦發布就要維持） |
-| 狀態 | **未實作**（待定範圍） |
+| 狀態 | **第一階段實作完成**（2026-08-13，`GET /v1/brief`）；`--server` 仍未實作、另議 |
 | 需求來源 | 2026-08-13 另一 session 分析 Memoria 升級機制時發現，經本 session 查證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | [issue-4](../issue-4/README.md)（brief 與 CLI 記憶命令的來源）；`src/server.ts`、`src/adapter/adapter.ts` |
@@ -48,8 +48,31 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 ## 驗收標準（第一階段）
 
-- [ ] `GET /v1/brief`（或 `POST`，視參數形式而定）支援 `project` / `days` / `top_k`
-- [ ] 回傳維持 `MemoriaResult<T>` envelope（`evidence[]` / `confidence` / `latency_ms`）
-- [ ] 不寫入 `<knowledge>/BRIEF.md`
-- [ ] `scripts/test-http-api.sh` 加上契約斷言
-- [ ] AGENTS.md 的端點清單與 `src/server.ts` 檔頭註解同步更新
+- [x] `GET /v1/brief` 支援 `project` / `days` / `top_k`
+- [x] 回傳維持 `MemoriaResult<T>` envelope（`meta.evidence[]` / `meta.confidence` / `meta.latency_ms`）
+- [x] 不寫入 `<knowledge>/BRIEF.md`
+- [x] `scripts/test-http-api.sh` 加上契約斷言
+- [x] AGENTS.md / README.md 的端點清單與 `src/server.ts` 檔頭註解同步更新
+
+## 實作結果（2026-08-13，第一階段）
+
+**回傳形式定案：`BriefData` 與渲染好的 markdown 一起給，不做 `Accept` 協商。**
+
+原本列的三個選項裡，只回 JSON 是最糟的——需要這個端點的消費者要的就是 markdown（那是開場要注入的東西），只給結構化資料等於逼每個呼叫端自己重寫一份 `renderBrief`。那會是一份活在本 repo 之外、可以自由漂移的第二個渲染器，也就是 [issue-10](../issue-10/README.md) 與 `bump-version.mjs` 那次的同一種失效。`Accept` 協商則會讓 envelope 依請求頭改變形狀，多一條路徑卻沒有多解決什麼。
+
+**不寫檔定案。** CLI 的 `brief` 會覆寫 `<knowledge>/BRIEF.md`，HTTP 端刻意不做：在這個端點存在的理由（sidecar 部署）裡，那個路徑是 **server 容器**的檔案系統，不是發問的 agent 的——寫下去會產生一個沒人讀的檔案。測試直接斷言檔案不存在。
+
+用 `GET` 而非 `POST`：這是唯讀操作，與 `/v1/stats`、`/v1/telemetry/recall` 一致，參數走 query string。`days` / `top_k` 非正數或非數字回 400（`queryBrief` 自己會把非正數退回預設值，但那樣呼叫端拿到的是靜默的錯誤設定，不如明說）。
+
+順手修掉 `server.ts` 檔頭「Routes (12 endpoints)」——那個數字早就漂移，底下實際列了 19 條。改成不寫數字，清單本身就是清冊。
+
+### 實作中修正的兩個測試錯誤
+
+兩個都值得記，因為它們都是「斷言通過不代表功能正確」的反面：
+
+1. 內容斷言原本用預設 30 天窗口去找 fixture 種下的決策，但那筆日期在窗外——**測的是窗口不是端點**。改用足夠寬的 `days` 才真的驗到內容。
+2. envelope 斷言原本寫 `d.latency_ms`，實際在 `d.meta.latency_ms`。錯的斷言會恆真或恆假，這次是恆假所以立刻現形。
+
+### 尚未實作
+
+「主命令走 server」（`--server`）維持未動。下游確認過第一階段就足以讓他們從 CLI-in-container 收斂成 sidecar，所以那不是前提。

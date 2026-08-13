@@ -260,6 +260,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Stats |
 | `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration |
+| `GET`  | `/v1/brief` | Compiled brief (query: `project`, `days`, `top_k`). Returns `BriefData` **plus** the rendered `markdown`, so a caller never re-implements `renderBrief`. Unlike the CLI it **never writes** `<knowledge>/BRIEF.md` — in a sidecar deployment that path is the server's filesystem, not the caller's (issue-13) |
 | `POST` | `/v1/remember` | Write session memory |
 | `POST` | `/v1/recall` | Recall memories (`mode`: `keyword\|tree\|hybrid\|vector`) |
 | `POST` | `/v1/recall/:id/outcome` | UFL utility write-back (`{signal, utility_score?, used?, hits?}`) |

@@ -48,6 +48,38 @@ echo "[http] GET /v1/sessions/:id/summary (unknown -> 404)"
 assert_status 404 "$SERVER_URL/v1/sessions/does-not-exist-xyz/summary"
 echo "  404 ok"
 
+echo "[http] GET /v1/brief (issue-13)"
+# The endpoint exists so a sidecar deployment can read the brief without shipping the CLI. Two
+# properties carry that: the markdown must come from Memoria (a caller re-rendering BriefData would
+# be a second renderer free to drift from the CLI's), and the server must NOT write BRIEF.md — in
+# that deployment the knowledge dir belongs to the server container, not the agent asking for it.
+# days spans the seeded event deliberately: the fixture's decision is dated well outside the 30-day
+# default, so a content assertion on a plain GET would only be testing the window, not the endpoint.
+BRIEF=$(curl -sf "$SERVER_URL/v1/brief?days=3650")
+assert_ok "$BRIEF"
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(!Array.isArray(d.data.decisions)) throw new Error('structured brief missing decisions[]');
+if(typeof d.data.markdown!=='string'||!d.data.markdown.includes('# Memoria Brief')) throw new Error('rendered markdown missing');
+if(!d.data.markdown.includes('cover HTTP endpoints with tests')) throw new Error('brief did not pick up the seeded decision');
+if(!d.data.decisions.some(x=>x.decision.includes('cover HTTP endpoints with tests'))) throw new Error('structured half disagrees with the markdown half');
+if(typeof d.meta.latency_ms!=='number'||!Array.isArray(d.meta.evidence)) throw new Error('MemoriaResult envelope not preserved');
+" "$BRIEF"
+[ ! -e "$TMP_DIR/home/knowledge/BRIEF.md" ] || { echo "  ✗ GET must not write BRIEF.md"; exit 1; }
+echo "  structured + markdown agree, nothing written"
+
+echo "[http] GET /v1/brief?project= filters, bad params -> 400"
+SCOPED=$(curl -sf "$SERVER_URL/v1/brief?project=http&days=30&top_k=5")
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.data.project!=='http') throw new Error('project filter not applied');
+if(d.data.days!==30) throw new Error('days not applied');
+" "$SCOPED"
+assert_status 400 "$SERVER_URL/v1/brief?days=0"
+assert_status 400 "$SERVER_URL/v1/brief?days=abc"
+assert_status 400 "$SERVER_URL/v1/brief?top_k=-1"
+echo "  filters applied, invalid days/top_k rejected"
+
 echo "[http] POST /v1/sources"
 SRCFILE="$TMP_DIR/note.md"
 printf '# Research Note\n\nMemoria HTTP source ingest coverage.\n' > "$SRCFILE"

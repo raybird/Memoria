@@ -139,6 +139,7 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Statistics |
 | `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (query: `window`, `limit`) |
+| `GET`  | `/v1/brief` | Compiled brief — structured data **and** rendered markdown (query: `project`, `days`, `top_k`); never writes `BRIEF.md` |
 | `POST` | `/v1/remember` | Write memory (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | Recall memories (body: `{query, top_k?, project?, scope?, mode?}`; `mode:'vector'` = opt-in semantic recall, needs `LIBSQL_URL` + `skills/memoria-vector`, degrades to lexical) |
 | `POST` | `/v1/recall/:id/outcome` | Report recall utility (body: `{signal, utility_score?, used?, hits?}`; UFL write-back + per-memory attribution) |
