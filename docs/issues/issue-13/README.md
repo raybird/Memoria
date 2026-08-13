@@ -38,7 +38,11 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 有一個下游容器化部署（代稱 downstream-container，**細節不入版控文件**）已經因為這兩個缺口而被迫把 CLI 連同資料卷塞進 agent 容器。它的結論是「必須是 CLI 而不是 sidecar」，理由收斂成單一項：**`brief` 沒有端點，而那是該 host workflow 每次開場要讀的東西**。
 
-也就是說第一階段（只做 `/v1/brief`）就足以讓那邊收斂成 sidecar，`--server` 不是前提。交付時需知會該部署。
+～～也就是說第一階段（只做 `/v1/brief`）就足以讓那邊收斂成 sidecar，`--server` 不是前提。～～
+
+**⚠ 上面這句是錯的，已於 2026-08-13 第一階段發版後由該部署實接推翻。** 保留原文是因為它被寫進過 CHANGELOG 與交付通知，直接刪掉會讓讀到那些的人對不上。
+
+推翻的理由見下節——它不是端點覆蓋率的問題，所以「補齊端點」永遠不會滿足它。
 
 ## 需要先定的範圍
 
@@ -75,4 +79,31 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 ### 尚未實作
 
-「主命令走 server」（`--server`）維持未動。下游確認過第一階段就足以讓他們從 CLI-in-container 收斂成 sidecar，所以那不是前提。
+「主命令走 server」（`--server`）維持未動。
+
+## 第二階段的真正理由（2026-08-13，第一階段發版後實接才浮現）
+
+第一階段發版後，該下游實際接上去，回報**端點齊全並不足以讓他們收斂成 sidecar**。原因不在 API 覆蓋率——`recall` / `remember` / `feedback` / `brief` 現在都有端點——而在**agent 打的是 CLI 指令，不是 HTTP**。使用者的 `CLAUDE.md` 直接寫著要 agent 執行 `memoria recall "<查詢>"` 與 `memoria feedback <recall_id> --score`。
+
+所以走 sidecar 的話，agent 容器裡仍然需要一個把 CLI 翻成 HTTP 的 shim，而**那個 shim 必須重寫輸出渲染**。`memoria recall` 預設印的是 `src/cli/commands/recall.ts:55-77` 那段：`🔎 Recall: N hits (Xms, mode=…)` 標頭、每筆的 `[score] type | project | timestamp | marks` 版面、`id:` 行、以及 agent 拿去餵 `feedback` 的 `- recall_id:` 尾行。HTTP 回的是原始 `MemoriaResult`，這些全都得在 shim 裡重做。
+
+**這正是本 issue 第一階段為 `brief` 刻意避開的那件事**——「活在 Memoria repo 之外、可以自由漂移的第二實作」——只是換到 `recall` 身上，而 `recall` 是 agent 讀得最頻繁的一個。
+
+兩條路：
+
+| 方案 | 內容 | 評估 |
+|---|---|---|
+| A | 把「回傳渲染結果」延伸到 `recall`/`remember`/`feedback`（envelope 加 `data.rendered`） | 可行，但等於新增一個「給下游重組用的表示層」契約面，之後每個輸出格式變更都要同時維護兩處 |
+| B | 做第二階段的 `--server` | 渲染所有權完全留在 Memoria，下游零重寫，CLI 輸出改版也不會在下游斷掉 |
+
+**B 較優**，理由是 A 把渲染變成公開契約而 B 不用。
+
+### ⚠ 但 B 的成本效益要先修正一項前提
+
+下游預期 `--server` 之後「better-sqlite3 的 ABI 配對成本會消失」。**以目前的結構，不會。**
+
+`src/cli.ts:5` 直接 `import { MemoriaCore } from './core/index.js'`，而 `core/db/connection.ts:1` 與 `core/db/schema.ts:1` 都在模組頂層 `import Database from 'better-sqlite3'`。原生模組在**任何** CLI 啟動時就被載入，與該次執行做什麼無關。加一個 `--server` 旗標不會改變這件事——agent 容器裝了 memoria 就仍然需要能載入的原生模組。
+
+要拿到那個效益，`--server` 模式必須讓 db 層變成延遲載入（core barrel 不能急切拉進 `better-sqlite3`）。那是結構調整，不是加一個旗標。**定範圍時要先決定目標是哪一個**：只要「不必掛資料卷」，加旗標就夠；要連「不必配對原生 ABI／縮小 image」也拿到，範圍會大得多。
+
+其餘既有的待決事項不變：錯誤語意（本地失敗 vs 網路失敗）、`MemoriaResult.meta.latency_ms` 在 server 模式下代表什麼。
