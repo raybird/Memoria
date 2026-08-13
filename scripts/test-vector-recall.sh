@@ -45,6 +45,30 @@ if [ ! -d "$HELPER_DIR/node_modules/@libsql/client" ]; then
 fi
 [ -d "$HELPER_DIR/node_modules/@libsql/client" ] || { echo "  ✗ helper deps install failed"; exit 1; }
 
+# issue-11: `local` is the DEFAULT provider while its runtime is a devDependency, so the standard
+# production install recipes install cleanly and then fail at the first query. The message has to
+# name that cause — "run npm install" alone reads as a contradiction to someone who just ran it with
+# --omit=dev and watched it succeed. Copied somewhere with no node_modules above it so the import
+# genuinely fails, rather than mocking the failure.
+echo "[vector] local provider names the cause when the embedder is absent (issue-11)"
+ISO_DIR="$TMP_DIR/embed-isolated"
+mkdir -p "$ISO_DIR"
+cp "$HELPER_DIR/embed.mjs" "$ISO_DIR/embed.mjs"
+ERR_OUT=$(cd "$ISO_DIR" && MEMORIA_EMBED_PROVIDER=local node --input-type=module -e "
+const { embedTexts } = await import('./embed.mjs')
+try { await embedTexts(['x'], 'query'); console.log('NO_ERROR') }
+catch (e) { console.log(e.message) }
+" 2>&1)
+case "$ERR_OUT" in
+    *"--omit=dev"*) ;;
+    *) echo "  ✗ error message must name --omit=dev as the cause, got: $ERR_OUT"; exit 1 ;;
+esac
+case "$ERR_OUT" in
+    *"NODE_ENV=production"*) ;;
+    *) echo "  ✗ error message must name NODE_ENV=production, got: $ERR_OUT"; exit 1 ;;
+esac
+echo "  cause named, not just the cure"
+
 start_server() { # $1=port, rest: env pairs
     local port="$1"; shift
     env MEMORIA_HOME="$TMP_DIR/home" MEMORIA_PORT="$port" "$@" "$ROOT_DIR/cli" setup --serve --json >"$TMP_DIR/server-$port.log" 2>&1 &

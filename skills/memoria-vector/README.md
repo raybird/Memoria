@@ -18,6 +18,15 @@ npm install          # @libsql/client + @huggingface/transformers (local embeddi
 First `local` embedding downloads the model (~120MB, cached under `~/.cache/huggingface`).
 CI installs with `--omit=dev` and runs the deterministic `stub` provider instead.
 
+> **`--omit=dev` and `NODE_ENV=production` produce a helper that cannot embed.**
+> `@huggingface/transformers` is a **devDependency** — deliberately, because it is ~850MB and a
+> `stub`-only user should not pay for it — while `local` is the **default** provider. So the standard
+> production install recipes install cleanly and then fail at the first query. If that is the setup
+> you want, either install without `--omit=dev`, or set `MEMORIA_EMBED_PROVIDER=stub` and accept that
+> there is no semantic quality behind it. `memoria doctor` reports this state directly (v1.26.0+),
+> except when `MEMORIA_VECTOR_RECALL_CMD` points at a helper it does not own — it says so rather than
+> guessing.
+
 ## Scripts
 
 | Script | Role |

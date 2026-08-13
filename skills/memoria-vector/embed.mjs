@@ -24,8 +24,16 @@ async function embedLocal(texts, kind) {
     try {
       transformers = await import('@huggingface/transformers')
     } catch {
+      // Name the cause, not just the cure (issue-11). This dependency is a devDependency on purpose
+      // — it is ~850MB, and a stub-only user should not pay for it — but `local` is the DEFAULT
+      // provider, so the standard production install recipes are exactly the ones that break it.
+      // The previous wording said "run npm install", which reads as a contradiction to someone who
+      // just ran npm install (with --omit=dev) and watched it succeed.
       throw new Error(
-        'MEMORIA_EMBED_PROVIDER=local requires @huggingface/transformers — run `npm install` inside skills/memoria-vector, or set MEMORIA_EMBED_PROVIDER=stub.'
+        'MEMORIA_EMBED_PROVIDER=local requires @huggingface/transformers, which is a devDependency ' +
+        'of this helper — `npm install --omit=dev` and NODE_ENV=production both skip it, which is ' +
+        'the usual reason it is missing here. Run `npm install` WITHOUT --omit=dev inside ' +
+        'skills/memoria-vector, or set MEMORIA_EMBED_PROVIDER=stub (no model download, no semantic quality).'
       )
     }
     localPipeline = await transformers.pipeline('feature-extraction', MODEL, { dtype: 'q8' })
