@@ -200,6 +200,7 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 - **測試無框架**,全是 `scripts/test-*.sh`,順序照 `.github/workflows/ci.yml`。最常跑:
   `test-smoke.sh` → `test-migrations.sh` → adapter 三支 → `test-http-api.sh`。
 - **DoD**:`pnpm run check` 過 → `pnpm run build` + `node dist/cli.mjs --help` → 相關 `test-*.sh` 過 → 觸及 shell 過 `bash -n`。
-- **Release SOP**:`bump-version.mjs` → CHANGELOG 從 `[Unreleased]` 提升 → guards → tests → commit(`Release vX.Y.Z`)→ tag → `push --follow-tags` → `release.yml` 自動發 npm + GitHub Release。
+- **Release SOP**:`bump-version.mjs` → CHANGELOG 從 `[Unreleased]` 提升 → guards → tests → commit(`Release vX.Y.Z`)→ tag → `push --follow-tags` → `release.yml` 自動發 npm + GitHub Release。⚠ **tag 必須用 `git tag -a`**——`--follow-tags` 只推 annotated tag,用 `git tag` 建的 lightweight tag 會被**靜默略過**:push 成功、main 更新、release workflow 從未觸發,而輸出裡沒有任何跡象。本 repo 歷來的 tag 全是 annotated(`git cat-file -t vX.Y.Z` = `tag`),照做即可(2026-08-13 v1.25.1 踩過一次)。
+- **helper 的執行契約有版控外的下游**(2026-08-13):一個下游容器化部署(代稱 downstream-container,**細節不入版控文件**)把 `skills/memoria-vector` 打進自己的 image。動 `resolveHelperScript()` 的解析順序,或 helper 的 stdin/stdout 契約,會波及它——那些是跨 repo 的隱性介面,本 repo 的測試涵蓋不到。改動時要在 CHANGELOG 明寫。
 - **`.serena/project.yml` 隨 Serena schema 升級才提交**(2026-07-27 起);`mcp-memory-libsql.db` 等 MCP/執行期產物一律不進版控(已在 `.gitignore`)。
 - **版控文件不得含外部 repo 的名稱/路徑/tag 命名**(2026-07-28 起):實測案例一律用代稱(如 external-repo、`nightly-<date>`),量化數據(commits/bytes/score)可留。本 repo 是公開的,issue 文件與 CHANGELOG 都會被讀到。

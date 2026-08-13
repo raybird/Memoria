@@ -34,6 +34,12 @@
 
 adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 config 收 `MemoriaClient` 或 base URL 字串。所以「agent 透過 HTTP 用 Memoria」的路已經鋪好一半，斷在主命令這一段。
 
+## 下游消費者（2026-08-13 補）
+
+有一個下游容器化部署（代稱 downstream-container，**細節不入版控文件**）已經因為這兩個缺口而被迫把 CLI 連同資料卷塞進 agent 容器。它的結論是「必須是 CLI 而不是 sidecar」，理由收斂成單一項：**`brief` 沒有端點，而那是該 host workflow 每次開場要讀的東西**。
+
+也就是說第一階段（只做 `/v1/brief`）就足以讓那邊收斂成 sidecar，`--server` 不是前提。交付時需知會該部署。
+
 ## 需要先定的範圍
 
 `/v1/brief` 是直接的一段：`queryBrief` + `renderBrief` 都已是純函式，包一層 handler 即可。要決定的是**回傳什麼**——`BriefData`（JSON，讓呼叫端自己渲染）、markdown 字串，或兩者由 `Accept` 決定。另外要決定是否寫檔：CLI 的 `brief` 會覆寫 `<knowledge>/BRIEF.md`，而 HTTP 端寫本地檔案在 sidecar 情境下語意可疑（那是 memoria 容器的檔案系統，不是 agent 容器的）。傾向純回傳、不寫檔。
