@@ -36,7 +36,12 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 ## 下游消費者（2026-08-13 補）
 
-有一個下游容器化部署（代稱 downstream-container，**細節不入版控文件**）已經因為這兩個缺口而被迫把 CLI 連同資料卷塞進 agent 容器。它的結論是「必須是 CLI 而不是 sidecar」，理由收斂成單一項：**`brief` 沒有端點，而那是該 host workflow 每次開場要讀的東西**。
+有一個下游容器化部署（代稱 **downstream-cli-container**，**細節不入版控文件**）已經因為這兩個缺口而被迫把 CLI 連同資料卷塞進 agent 容器。它的結論是「必須是 CLI 而不是 sidecar」，理由收斂成單一項：**`brief` 沒有端點，而那是該 host workflow 每次開場要讀的東西**。
+
+> **代稱區分（2026-08-13 補）**：已知有兩個下游容器化部署，整合形態相反，本文件先前用同一個代稱造成無法分辨。
+>
+> - **downstream-cli-container** — agent 打 CLI 指令，並把 `skills/memoria-vector` 打進自己的 image。**本節與第二階段講的都是這一個。**
+> - **downstream-http-sidecar** — 已經是 sidecar + 純 HTTP client，只打 `/v1/recall`、`/v1/remember`、`/v1/recall/:id/outcome`，容器內不需要 `MEMORIA_HOME` 或 CLI。**它沒有本 issue 的問題**（見下方「誰會受益」）。
 
 ～～也就是說第一階段（只做 `/v1/brief`）就足以讓那邊收斂成 sidecar，`--server` 不是前提。～～
 
@@ -132,6 +137,14 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 需求的內容是：agent 執行 `memoria recall "<查詢>"`，讀的是 **CLI 渲染過的文字**，並從 `- recall_id:` 尾行取值去餵 `feedback`。沒有辦法讓 CLI 改打 server 的話，容器內就得維護一份重現那個版面的 shim——一個活在本 repo 之外、可以自由漂移的表示層實作。這與第一階段為 `brief` 回傳 `data.markdown` 而非只回 `BriefData` 的理由**一字不差**。
 
 **所以 `--server` 是形狀不是需求。** 任何能讓渲染留在 Memoria 的做法都成立，包括比旗標更小的（例如讓 `recall` 認得一個 endpoint 環境變數，CLI 仍是唯一的渲染者，只是資料來源改成 HTTP）。定範圍時應該從「渲染所有權」倒推形狀，而不是先選定 `--server` 再論證它。
+
+### 誰會受益（2026-08-13 補，由第二個下游的回報界定）
+
+**只有「agent 打 CLI 指令」的部署會受益。** downstream-http-sidecar 早就是 sidecar + 純 HTTP client——它的程式直接打 `/v1/*`，容器內既不需要 CLI 也不需要 `MEMORIA_HOME`——所以它從一開始就沒有本 issue 的問題，第二階段對它的價值是零。
+
+這件事界定了受益面，也解釋了為什麼第一階段對兩者的意義完全不同：對純 HTTP 的部署，`GET /v1/brief` 就是**唯一**缺的東西，v1.27.0 之後它們什麼都不缺；對 CLI 驅動的部署，端點齊全反而不解決問題，因為它們讀的是渲染過的文字。
+
+排優先序時要記得這是**一個**下游的需求，不是所有容器化部署的共通需求。
 
 **「縮小 image」不該成為延遲載入的理由**——better-sqlite3 只有 12M，省不到什麼。延遲載入買到的是「免掉原生模組載入失敗這個模式」，那是可靠性不是空間。而 image 的 852M 幾乎全在向量 helper，那部分只要語意召回不在 agent 容器跑就消失了，跟 `--server` 的實作方式無關。
 

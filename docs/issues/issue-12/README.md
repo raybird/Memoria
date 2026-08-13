@@ -56,7 +56,7 @@ issue-10 那條路徑尤其糟：`recall` 會 fail-open 退回字面召回並正
 
 實作中發現一個原規格沒寫到的坑：`resolveHelperScript()` 對 `MEMORIA_VECTOR_RECALL_CMD` 是**原樣回傳、不做存在性檢查**（把關的是呼叫端 `recall-vector.ts:206` 的 `existsSync`）。照抄會讓一個打錯字的 override 被報成健康的 helper——正好是這個檢查要抓的失效。`inspectVectorLayer` 因此自己補上 `existsSync`。
 
-override 存在時**不探測**它的 `node_modules`：那可能是別人打包進自己 image 的 helper（見 HANDOVER §8 的 downstream-container），探測只會無中生有一個失敗。改為把 override 印成獨立一列，讓讀的人知道診斷的是哪一個 helper。
+override 存在時**不探測**它的 `node_modules`：那可能是別人打包進自己 image 的 helper（見 HANDOVER §8 的 downstream-cli-container），探測只會無中生有一個失敗。改為把 override 印成獨立一列，讓讀的人知道診斷的是哪一個 helper。
 
 ### 追加修正：跳過探測不可以是靜默的（2026-08-13，發版後發現）
 
