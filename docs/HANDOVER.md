@@ -10,7 +10,7 @@
 
 > 2026-07-28 更新
 
-- **版本**:`v1.25.0` 已發(2026-08-10,GitHub Release + npm;同日連發 v1.24.0 → v1.25.0,前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
+- **版本**:`v1.25.1` 已發(2026-08-13,GitHub Release + npm;先前 2026-08-10 同日連發 v1.24.0 → v1.25.0,再前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
 - **v1.21.1 = issue-3 修 bug**(`docs/issues/issue-3/`):(a) 非 semver tag 的 `--tag` release 邊界不再退化成全 repo range——semver 比較優先,否則 creatordate fallback(`for-each-ref`,白名單內);(b) context 上限 `maxContextCommits`(200)/`maxContextFiles`(500),截斷永不靜默,`diffstat` 維持全範圍。實測同一 tag:context 157KB → 7.4KB。
 - **真實試用已完成**(2026-07-28):對 Memoria 自身 + 一個外部私有 repo(代稱 external-repo,**細節不入版控文件**)跑通 add → sync → `--pending` → agent 回寫 → promote → recall(hit 附 SHA 溯源)→ UFL explicit outcome 全閉環;髒工作區上受控比對 git 狀態 byte-identical。issue-2/issue-3 全部源自這次試用。
@@ -26,7 +26,9 @@
 - **⚠ 那台「被拖垮」的主機已定案,與 Memoria 無關**(2026-08-10,取得 `freeze-monitor` 原始資料 + `journalctl --list-boots` 後查明):是**兩件互不相干的事**——(a) 8/09 兩次瞬間重開是 **CPU 過熱觸發硬體 thermal shutdown**(boot id 三度更迭、間隔 84s/64s 冷開機、四個 boot 的 `-p err` 全空而 journald 早已持久化=錯誤沒機會落盤、斷電前溫度 10 秒跳 21.4°C 且 `cargo test` 吃 427% CPU、歷史高點 103.1°C);(b) 8/10 那 16 分鐘全機卡頓是 **`fstrim`**(週一 timer,`disk_busy_ms` 打滿 10000ms/取樣,而 `memory_psi_full` 全程 0.00)。Memoria 從未進 `top_processes`/`top_memory_processes`(0 次命中)、容器零 OOM。**同時修正了 issue-8 的規格前提**:該主機實測 `mem_available` 17.9–28.3GB(實體至少 32GB),不是先前臆測的 8GB/4 核——issue-8 因此從「迫在眉睫」降級為**理論缺口**。
 - **v1.25.0 = issue-9 語意信心語意化**(2026-08-10):語意路徑不再填字面 `relevance`,`confidence` 回 `null`(「無法評估」)而非 0(「評估過,很差」),並新增 `meta.confidence_basis` 說明數字的來源(`lexical_coverage` / `unavailable` / `no_hits`)。**envelope 契約變更**——`confidence: number` → `number | null`。**發 minor 而非 major 是刻意的**:契約字面上是 breaking,但實際影響面只有 opt-in 的 vector route,未設 `LIBSQL_URL` 者輸出一字不變;CHANGELOG 以 ⚠ 標明。`VectorRow.relevance` 型別設為 `never`,讓編譯器擋住日後有人再把字面分數填回這條路徑——不變式由型別保證而非註解。順手修掉 `test-vector-recall.sh` 繼承開發機 vector 環境變數的缺陷(與 v1.22.0 的 `MEMORIA_HOME` 同類:它斷言降級矩陣,卻讓「`LIBSQL_URL` unset」的案例連上開發者的真實向量庫)。原始問題描述如下:
 - **issue-9 的原始現象**:**語意召回成功時 `confidence` 反而回報 0**——vector 路徑的 `relevance` 用 `tokenCoverage()`(字面覆蓋率)填值,於是「查詢與記憶字面重疊越少 → 信心值越接近 0」,而字面不重疊正是語意召回存在的理由。helper 算了 cosine distance 但在 `recallVector` 被丟棄;`hits[0].relevance ?? hits[0].score` 的 `??` 也不會 fallback(0 是有效值)。**與 RFC §5b 明文相違**(該處寫 confidence 應為 fused score)。連鎖影響:UFL confidence×utility 校準對 vector 路徑失真——**v1.23.0 加 `routeUtility` 就是為了回答「語意是否勝過字面」,而校準那半邊目前對 vector 沒有意義**。召回本身完全正確,壞的只有元資料,所以 e2e 測不出來。
-- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量,且 issue-9 修好後 calibration 讀數才有意義;(c) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故;優先序理由見上);(d) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。
+- **v1.25.1 = `brief` 漏過濾 supersede**(2026-08-13,由另一 session 交接、本 session 查證後發版):`recall` 自 issue-5 起就會過濾 `superseded_by`,但 `queryBrief` 從未查過 `memory_attributes`——決策查詢與 UFL 區塊都沒有。結果是用 `--supersedes` 寫的更正,會與被它取代的舊說法一起出現在 `BRIEF.md`,相隔兩行且無任何標記說明何者為現行。**這在 brief 比在其他輸出面嚴重**:`BRIEF.md` 是唯一經 `@knowledge/BRIEF.md` 自動載入每個 session 的檔案,而目前沒有刪除單筆記憶的指令,所以在這裡過濾是唯一解法。決策查詢在 SQL 層過濾、UFL 在 `.slice(0, topK)` 之前過濾——**兩處都不能撈完再濾**,否則 `LIMIT topK` 會產出「topK 減去被取代數」筆。已對修正前的 build 驗證新斷言會紅。
+- **⚠ 同批交接了四個未處理的上游問題**(2026-08-13,已各自展開為 issue 文件,全部查證過):[issue-10](issues/issue-10/README.md) release tarball 不含 `skills/memoria-vector`(**npm 路徑正常、tarball 路徑壞掉**,v1.23.1 只修了前者);[issue-11](issues/issue-11/README.md) `@huggingface/transformers` 在 helper 的 devDependencies 但 local provider 執行期必需;[issue-12](issues/issue-12/README.md) `doctor` 不檢查向量層——前兩者的失效目前沒有任何指令會說出來;[issue-13](issues/issue-13/README.md) HTTP 缺 `/v1/brief` 且主命令無法改走 server,sidecar 部署不成立。**交接原文說「HTTP 缺 `/v1/brief` 與 `/v1/feedback`」,查證後 feedback 是有的**(`server.ts:343` 的 `POST /v1/recall/:id/outcome`),缺的只有 brief——是 CLI 與 HTTP 命名不一致造成的誤判。
+- **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量,且 issue-9 修好後 calibration 讀數才有意義;(b) **issue-10 → 12 建議一起處理**:三者是同一條「語意召回交付鏈」的三段(沒交付 / 交付了跑不動 / 壞了沒人說),分開修會各發一版;(c) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故;優先序理由見上);(d) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。
 - **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
 
 ---
@@ -68,6 +70,7 @@
 | v1.23.1 | vector helper 入包 | helper 的 `.mjs` + package.json 納入 npm `files`(node_modules 不入,包 1.20→1.22MB)——先前 `resolveHelperScript()` 在 npm 安裝下**永遠**解析不到 helper,`mode:'vector'` 靜默退回 `vector_unavailable`。helper 依賴仍為明示 opt-in;`test-npm-install.sh` 釘住解析路徑與「不含 node_modules」 |
 | v1.24.0 | promotion 建索引(issue-6→7 系列的最後一項) | 促升的兩個呼叫點各補一次 `buildMemoryIndex`(**刻意在 `promoteSummary` 的 transaction 之外**,best-effort——促升不因索引失敗而回滾);`stats.memoryIndex { sessions, indexed, missing }` 讓缺口可見(**不放 `verify`**:`VerifyStatus` 無 `warn` 且 `health()` 也呼叫它)。實測 ~3ms/session,不隨語料成長 |
 | v1.25.0 | 語意信心語意化(issue-9) | `confidence: number \| null` + `meta.confidence_basis`——語意命中不再套字面覆蓋率,回 `null`(無法評估)而非 0(評估過且很差);連帶讓這類召回退出 calibration 分桶,不再偽造「低信心高效用」。`VectorRow.relevance` 型別設為 `never`(不變式由編譯器保證);CLI 顯示 `n/a` 而非退回 RRF score(那是 ~0.016 的另一個尺度)。⚠ 契約變更但只影響 opt-in 的 vector route |
+| v1.25.1 | `brief` 漏過濾 supersede | `queryBrief` 從未查 `memory_attributes`,被取代的舊說法與它自己的更正並列在**唯一會自動載入每個 session** 的 `BRIEF.md` 裡,無標記可辨。決策查詢改在 SQL 層 `LEFT JOIN` + `superseded_by IS NULL`,UFL 區塊在 `.slice(0, topK)` **之前**過濾——撈完再濾會讓 `LIMIT topK` 少給筆數。不提供 brief 版的 `--include-superseded`(自動載入的衍生檢視必須只呈現一個版本);零標記與舊 DB 行為不變 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 
@@ -75,6 +78,8 @@
 
 ## 3. 當前未提交的工作(git status)
 
+> 2026-08-13:無。main 乾淨且與 `origin/main` 同步,v1.25.1 已 tag + release(npm + GitHub Release 皆已確認)。
+>
 > 2026-07-28:無。main 乾淨且與 `origin/main` 同步,所有交付均已 commit + push,v1.21.1 已 tag + release。
 >
 > 註:`.serena/project.yml` 已於 `0c0c80b` 隨 Serena 新版 schema(`languages` → `language_servers`)一併提交,不再是長期髒檔;`mcp-memory-libsql.db`(MCP 本機記憶 DB)已加入 `.gitignore`,檔案保留在磁碟但不進版控。
@@ -177,6 +182,11 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 | C4 | opencode adapter e2e 測試 | `idea` | 測試覆蓋缺口(其餘三個 adapter 已有 e2e) |
 | — | **vector helper 無並行上限** | `planned`(2026-08-10) | 已展開為 `docs/issues/issue-8/`(**待評估**)。`recallVector` 每次呼叫就 spawn 一個 helper,**無 semaphore/佇列/池化**;實測單行程峰值 **RSS 624MB、CPU 2.2s(約 1.8 核)**,對照純字面召回整個 CLI 只要 74MB/0.08s。並行時線性疊加——4 個並行召回即 ~2.4GB + 需要 7.2 核。**規格前提已於 2026-08-10 修正**(原本以 8GB/4 核推估,實測該主機至少 32GB,因此本項降級為理論缺口)。timeout 有正確 SIGKILL、整條路徑 fail-open,**缺的只有並行閘門**。傾向「閘門 + 超限降級 + telemetry」;根治方案(長駐 helper)是 RFC §14.1 當初刻意放棄的,代價需再評估 |
 | — | **vector helper 不入 npm 包** | **`done`**(v1.23.1) | helper 的 `.mjs` + package.json 納入 `files`(node_modules 不入,包 1.20→1.22MB)→ 全域安裝的 `resolveHelperScript()` 解析得到,不再需要 `MEMORIA_VECTOR_RECALL_CMD`;helper 依賴仍為明示 opt-in(`cd .../skills/memoria-vector && npm install`)。`test-npm-install.sh` 釘住路徑與「不含 node_modules」 |
+| — | **`brief` 漏過濾 supersede** | **`done`**(v1.25.1) | `queryBrief` 的決策查詢與 UFL 區塊都沒查 `memory_attributes`。嚴重度高於一般漏過濾:`BRIEF.md` 是唯一自動載入的檔案,舊說法與更正並列且無標記。**兩處都在取 topK 之前過濾**(SQL 層 / slice 之前),否則筆數會少給。`test-memory-attributes.sh` (C) 加斷言,已對修正前的 build 驗證會紅 |
+| — | **release tarball 不含 vector helper** | `planned`(2026-08-13) | 已展開為 [issue-10](issues/issue-10/README.md)。`package-release-artifacts.sh:47` 只複製 `memoria-memory-sync`——**v1.23.1 修的是 npm 那半邊,tarball 這半邊維持原狀**,症狀完全相同:`resolveHelperScript()` 回 null → `status:'unavailable'` → fail-open 退回字面召回,無錯誤無警告。`test-no-clone-install.sh` 完全沒提到 vector,補斷言是防復發的必要條件 |
+| — | **helper 的 transformers 分類錯邊** | `planned`(**待拍板**,2026-08-13) | 已展開為 [issue-11](issues/issue-11/README.md)。`@huggingface/transformers` 在 devDependencies,但 `embed.mjs` 的預設 provider 就是 `local` 且執行期動態 import 它 → `npm install --omit=dev` / `NODE_ENV=production` 裝出跑不動的 helper。**有明確錯誤訊息,不是靜默失效**,故低於 issue-10 一級。四個候選方案(移 deps / optionalDeps / 只改文件 / 只改文件+doctor 檢查)各有代價——~850MB 不是每個使用者都該付,需拍板 |
+| — | **doctor 不檢查向量層** | `planned`(2026-08-13) | 已展開為 [issue-12](issues/issue-12/README.md)。`doctor.ts:28-35` 六項全是路徑存在性,issue-10/11 兩種失效沒有任何指令會說出來。**實作時的界線**:opt-in 未啟用 ≠ 不健康——`ok` 是 `checks.every()`,把「沒設 `LIBSQL_URL`」算成失敗會讓所有沒用語意召回的人拿到紅燈,那比不檢查更糟(同 issue-7 R1 對 `verify` 的判斷) |
+| — | **HTTP 缺 `/v1/brief`** | `planned`(**待定範圍**,2026-08-13) | 已展開為 [issue-13](issues/issue-13/README.md)。sidecar 部署不成立的兩個缺口:無 brief 端點 + 主命令一律直開本地 SQLite(`src/` 內查無 `--server`)。**feedback 不缺**(`server.ts:343` 的 `/v1/recall/:id/outcome`,只是命名與 CLI 不一致)。建議拆兩段:先做 `/v1/brief`(`queryBrief`/`renderBrief` 已是純函式,包 handler 即可,但要決定回傳 JSON 或 markdown、以及**不該寫檔**),`--server` 另議——那動到每個命令的執行模型與 `latency_ms` 的意義 |
 | — | **promotion 不建 memory_node** | **`done`**(issue-7) | 促升後於呼叫端建索引(不進 `promoteSummary` 的 transaction,best-effort)。實測成本 ~3ms/session 且不隨語料成長。同一成因的 `tree` 缺口一併修復。覆蓋率改由 `stats.memoryIndex` 呈現——**不放 `verify`**:`VerifyStatus` 無 `warn`、`ok` 要求全 pass,而 `health()` 也呼叫它,索引落後會讓 `/v1/health` 變不健康(見 issue-7 R1) |
 
 ---
