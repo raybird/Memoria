@@ -104,6 +104,37 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 `src/cli.ts:5` 直接 `import { MemoriaCore } from './core/index.js'`，而 `core/db/connection.ts:1` 與 `core/db/schema.ts:1` 都在模組頂層 `import Database from 'better-sqlite3'`。原生模組在**任何** CLI 啟動時就被載入，與該次執行做什麼無關。加一個 `--server` 旗標不會改變這件事——agent 容器裝了 memoria 就仍然需要能載入的原生模組。
 
-要拿到那個效益，`--server` 模式必須讓 db 層變成延遲載入（core barrel 不能急切拉進 `better-sqlite3`）。那是結構調整，不是加一個旗標。**定範圍時要先決定目標是哪一個**：只要「不必掛資料卷」，加旗標就夠；要連「不必配對原生 ABI／縮小 image」也拿到，範圍會大得多。
+要拿到那個效益，`--server` 模式必須讓 db 層變成延遲載入（core barrel 不能急切拉進 `better-sqlite3`）。那是結構調整，不是加一個旗標。
+
+### 三個目標要分開，因為實測顯示它們互不相關（2026-08-13 量測）
+
+下游回報 image 佔用，本機獨立量測一致：
+
+| 項目 | 大小 |
+|---|---|
+| `skills/memoria-vector/node_modules` 全樹 | **852M** |
+| ├ `onnxruntime-node` | 513M |
+| ├ `@huggingface/transformers` | 146M |
+| ├ `onnxruntime-web`（Node 環境用不到的瀏覽器 WASM build） | 130M |
+| `better-sqlite3` | **12M** |
+
+先前雙方都猜「大頭是 transformers」，錯的——`onnxruntime-node` 一項就是它的三倍以上，而那是 transformers 的傳遞依賴。
+
+| 目標 | 需要什麼 | 範圍 | 是下游要的嗎 |
+|---|---|---|---|
+| **渲染的所有權留在 Memoria** | 見下 | **待定** | **是——就這一件** |
+| agent 容器不必掛資料卷 | 加 `--server` 旗標 | 小 | 附帶好處 |
+| agent 容器不必配對原生 ABI | db 層延遲載入 | 中，動到 core 的 import 結構 | 否 |
+| 縮小 image | 語意召回搬到 sidecar 那側 | 與其他項無關，不需延遲載入 | 否 |
+
+**第一列才是需求，其餘三列是被誤認成需求的成本論證。** 下游最初提 `--server` 時附帶了「免 ABI 配對」與「縮小 image」兩個理由，兩者都已被實測推翻（見上表）；但那不削弱需求本身，因為需求跟原生模組、跟 image 大小都無關。
+
+需求的內容是：agent 執行 `memoria recall "<查詢>"`，讀的是 **CLI 渲染過的文字**，並從 `- recall_id:` 尾行取值去餵 `feedback`。沒有辦法讓 CLI 改打 server 的話，容器內就得維護一份重現那個版面的 shim——一個活在本 repo 之外、可以自由漂移的表示層實作。這與第一階段為 `brief` 回傳 `data.markdown` 而非只回 `BriefData` 的理由**一字不差**。
+
+**所以 `--server` 是形狀不是需求。** 任何能讓渲染留在 Memoria 的做法都成立，包括比旗標更小的（例如讓 `recall` 認得一個 endpoint 環境變數，CLI 仍是唯一的渲染者，只是資料來源改成 HTTP）。定範圍時應該從「渲染所有權」倒推形狀，而不是先選定 `--server` 再論證它。
+
+**「縮小 image」不該成為延遲載入的理由**——better-sqlite3 只有 12M，省不到什麼。延遲載入買到的是「免掉原生模組載入失敗這個模式」，那是可靠性不是空間。而 image 的 852M 幾乎全在向量 helper，那部分只要語意召回不在 agent 容器跑就消失了，跟 `--server` 的實作方式無關。
+
+附帶觀察（未行動）：`onnxruntime-web` 那 130M 是瀏覽器 WASM build，helper 在 Node 下跑 `onnxruntime-node`，理論上用不到。它是 `@huggingface/transformers` 的硬依賴，擅自裁剪有風險，但若哪天要壓 helper 安裝體積，那是 15% 的明顯目標。
 
 其餘既有的待決事項不變：錯誤語意（本地失敗 vs 網路失敗）、`MemoriaResult.meta.latency_ms` 在 server 模式下代表什麼。
