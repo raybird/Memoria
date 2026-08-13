@@ -135,6 +135,10 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 **「縮小 image」不該成為延遲載入的理由**——better-sqlite3 只有 12M，省不到什麼。延遲載入買到的是「免掉原生模組載入失敗這個模式」，那是可靠性不是空間。而 image 的 852M 幾乎全在向量 helper，那部分只要語意召回不在 agent 容器跑就消失了，跟 `--server` 的實作方式無關。
 
-附帶觀察（未行動）：`onnxruntime-web` 那 130M 是瀏覽器 WASM build，helper 在 Node 下跑 `onnxruntime-node`，理論上用不到。它是 `@huggingface/transformers` 的硬依賴，擅自裁剪有風險，但若哪天要壓 helper 安裝體積，那是 15% 的明顯目標。
+附帶觀察（**未行動，且本 repo 不應行動**）：`onnxruntime-web` 那 130M 是瀏覽器 WASM build，helper 在 Node 下跑 `onnxruntime-node`，理論上用不到。
+
+但它在 `@huggingface/transformers` 的 **`dependencies`**（非 `optionalDependencies`），而且釘在一個 dev build（`1.26.0-dev.…`）。所以安裝期沒有任何旗標迴避得掉——唯一的做法是**裝完之後刪掉一個套件自己宣告的相依**。風險因此不是「可能少裝了什麼」，而是「transformers 哪天在 Node 下改走 web build，就會在執行期壞掉」。
+
+**這件事本 repo 不做，下游可以做，而那不是膽量差別而是位置差別**：下游有一個會真的跑 `recall --mode vector` 並檢查 `route_mode` 不是 `vector_unavailable` 的 image 測試，所以哪天真的壞掉會在他們發版前紅燈；而我們發布的是一個套件，下游環境各異，同樣的刪除沒有等價的守門。要壓體積的話，正確的位置是使用者的 image，不是我們的 `files`。
 
 其餘既有的待決事項不變：錯誤語意（本地失敗 vs 網路失敗）、`MemoriaResult.meta.latency_ms` 在 server 模式下代表什麼。
