@@ -31,7 +31,7 @@ results and still answers `ok:true`, with `route_mode` the only clue and nothing
 | enabled, helper resolves | `vector helper: <path>` plus `vector embedder` when the local provider is in use |
 | enabled, helper missing | **fails**, with a fix naming `route_mode=vector_unavailable` as the symptom to expect |
 | enabled, `@huggingface/transformers` missing | **fails**, with a fix naming `--omit=dev` / `NODE_ENV=production` as the usual cause |
-| `MEMORIA_VECTOR_RECALL_CMD` set | printed as `vector helper (overridden)` so it is clear *which* helper was diagnosed; its dependency layout is not probed, since an overridden helper may be bundled elsewhere |
+| `MEMORIA_VECTOR_RECALL_CMD` set | printed as `vector helper (overridden)` so it is clear *which* helper was diagnosed. Its dependency layout is not probed — an overridden helper may be bundled elsewhere — and the embedder line **says so** (`not checked`, passing) rather than going missing, so the skip is visible to the people most likely to be affected by it |
 
 ## Memory Quality & Pruning
 

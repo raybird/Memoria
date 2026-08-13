@@ -58,4 +58,14 @@ issue-10 那條路徑尤其糟：`recall` 會 fail-open 退回字面召回並正
 
 override 存在時**不探測**它的 `node_modules`：那可能是別人打包進自己 image 的 helper（見 HANDOVER §8 的 downstream-container），探測只會無中生有一個失敗。改為把 override 印成獨立一列，讓讀的人知道診斷的是哪一個 helper。
 
+### 追加修正：跳過探測不可以是靜默的（2026-08-13，發版後發現）
+
+拿發出去的 v1.26.0 對真實環境跑一次才看到：使用者本機設了 `MEMORIA_VECTOR_RECALL_CMD`，於是 `vector embedder` 那一列**整個消失**，畫面上完全看不出有這個檢查存在。
+
+不探測是對的，**用「不印」來表達不探測是錯的**——沒有那一列讀起來是「沒事可報」而不是「沒檢查」。而且這個缺口正好落在最不該落的人身上：會設 override 的人，正是最可能缺 embedder 的那一群，卻是唯一既得不到答案、也得不到「有個問題被跳過了」提示的人。這與本 repo 一貫的 no-silent-caps 原則（截斷永不靜默）方向相反。
+
+修法不改探測行為，只把跳過本身變成可見的一列（`vector embedder: not checked (helper overridden…)`，判定為通過——設了 override 本身不代表不健康）。`VectorLayerReport` 增加 `embedderUnknownReason`，讓「為什麼是 null」變成資料而不是渲染端各自推導；純加法，向後相容。
+
+**這條也是 issue-12 自己的教訓的實例**：一個安靜的檢查跟沒有檢查一樣沒用——本 issue 開出來就是為了這件事，第一版實作卻在自己的輸出裡犯了同一個錯。
+
 反向對照已驗證：還原 `doctor.ts` 後 `test-vector-recall.sh` 在第一段斷言就紅。`test-no-clone-install.sh:111` 既有的 `checks.every(ok)` 斷言則自動成為「未啟用不得算失敗」這條界線的守門員。

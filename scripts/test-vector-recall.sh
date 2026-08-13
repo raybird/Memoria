@@ -199,6 +199,21 @@ if(d.ok) throw new Error('an enabled-but-broken vector layer must fail doctor');
 " "$DOC_GONE"
 echo "  enabled + missing helper -> fails, names the override"
 
+# The people most likely to be missing the embedder are the ones running an override, and that is
+# precisely the case the probe cannot judge. Skipping it is right; skipping it SILENTLY is not —
+# an absent line reads as "nothing to report" rather than "not checked".
+DOC_OVERRIDE=$(env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" \
+  MEMORIA_VECTOR_RECALL_CMD="$ROOT_DIR/skills/memoria-vector/vector-recall.mjs" "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const e=d.checks.find(c=>c.name==='vector embedder');
+if(!e) throw new Error('a skipped embedder probe must still be reported, not omitted');
+if(!e.ok) throw new Error('an unprobeable embedder must not be reported as broken');
+if(!e.value.includes('not checked')) throw new Error('the line must say it was skipped, got '+e.value);
+if(!d.ok) throw new Error('an overridden helper is not by itself an unhealthy install');
+" "$DOC_OVERRIDE"
+echo "  enabled + overridden helper -> embedder reported as skipped, not omitted"
+
 DOC_OK=$(env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" doctor --json)
 node -e "
 const d=JSON.parse(process.argv[1]);

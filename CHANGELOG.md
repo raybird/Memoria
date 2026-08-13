@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`doctor` now says when it *skipped* the embedder probe instead of omitting the line** (issue-12 follow-up). v1.26.0 declined to probe an overridden helper's `node_modules` — correctly, since a helper bundled into someone else's image has a dependency layout we cannot assume, and guessing would manufacture a failure out of a working setup. But it expressed that by printing nothing, and an absent line reads as "nothing to report" rather than "not checked". The gap lands on exactly the wrong people: whoever sets `MEMORIA_VECTOR_RECALL_CMD` is the most likely to be missing the embedder, and they were the one group getting no answer and no hint that a question had been skipped. Found by running the shipped v1.26.0 against a real environment, where the whole check silently vanished. The probe still does not run — the fix is to report the skip (`vector embedder: not checked (helper overridden…)`, passing, since an override is not by itself unhealthy), which is the same no-silent-caps rule the context-truncation paths follow. `VectorLayerReport` gains `embedderUnknownReason` (`overridden_helper` | `provider_needs_no_embedder` | `helper_unresolved`) so the reason for a `null` is data rather than something the renderer re-derives; the addition is backward-compatible.
+
 ## [1.26.0] - 2026-08-13
 
 ### Added

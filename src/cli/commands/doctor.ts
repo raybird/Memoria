@@ -51,6 +51,15 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
         })
     } else if (report.embedderInstalled === true) {
         checks.push({ name: 'vector embedder', ok: true, value: '@huggingface/transformers installed' })
+    } else if (report.embedderUnknownReason === 'overridden_helper') {
+        // Say the check was skipped instead of omitting the line. Whoever set an override is the most
+        // likely person to be missing the embedder, and an absent line reads as "nothing to report"
+        // rather than "not checked" — the failure mode this whole section exists to prevent.
+        checks.push({
+            name: 'vector embedder',
+            ok: true,
+            value: 'not checked (helper overridden; its dependency layout is not ours to assume)'
+        })
     }
 
     return checks

@@ -80,10 +80,12 @@ export type VectorLayerReport = {
     /** MEMORIA_VECTOR_RECALL_CMD, when the caller points us at their own helper. */
     override: string | null
     provider: string
-    /** null = not applicable: the stub provider needs no embedder, and an overridden helper's
-     *  dependency layout is not ours to assume. */
+    /** null = not probed; `embedderUnknownReason` says why. */
     embedderInstalled: boolean | null
     embedderDir: string | null
+    /** Why the embedder was not probed, so a renderer can say the check was SKIPPED rather than
+     *  quietly omitting a line — the same no-silent-caps rule the truncation paths follow. */
+    embedderUnknownReason: 'overridden_helper' | 'provider_needs_no_embedder' | 'helper_unresolved' | null
 }
 
 export function inspectVectorLayer(): VectorLayerReport {
@@ -100,12 +102,26 @@ export function inspectVectorLayer(): VectorLayerReport {
         override,
         provider,
         embedderInstalled: null,
-        embedderDir: null
+        embedderDir: null,
+        embedderUnknownReason: null
     }
     // Only the helper we ship has a dependency layout we can reason about. An override may name a
     // bare command, or a copy bundled into someone else's image — probing a sibling node_modules
-    // there would manufacture a failure out of a working setup.
-    if (override !== null || helperPath === null || provider !== 'local') return report
+    // there would manufacture a failure out of a working setup. Each skip names itself, because the
+    // people most likely to hit the missing-embedder failure are exactly the ones running an
+    // override, and a check that silently does not run is worse for them than no check at all.
+    if (helperPath === null) {
+        report.embedderUnknownReason = 'helper_unresolved'
+        return report
+    }
+    if (override !== null) {
+        report.embedderUnknownReason = 'overridden_helper'
+        return report
+    }
+    if (provider !== 'local') {
+        report.embedderUnknownReason = 'provider_needs_no_embedder'
+        return report
+    }
     const dir = dirname(helperPath)
     report.embedderDir = dir
     report.embedderInstalled = existsSync(resolve(dir, 'node_modules', '@huggingface', 'transformers'))
