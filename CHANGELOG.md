@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.26.2] - 2026-08-13
+
 ### Added
 - **Packaging now checks delivery parity between the two install routes** (issue-10 follow-up). The fix for issue-10 put the semantic-recall helper back in the tarball; this addresses why it could go missing for three releases without anything noticing. Memoria ships through two independently maintained lists — `package.json` `"files"` for npm and `scripts/package-release-artifacts.sh` for the tarball — and nothing connected them, so v1.23.1 could add the helper to one while the other never heard about it. The tarball's own required-entry list was no defense: a must-contain list only guards entries someone remembered to add, and nobody had added the helper there either. `scripts/check-delivery-parity.mjs` now derives the npm side from `npm pack --dry-run --json` — npm's own answer, rather than a re-implementation of its glob/`.npmignore` semantics that would be one more replica free to drift — and requires every packed path to appear in the tarball or be declared in `DELIVERED_ELSEWHERE` **with a reason**. An unclassified path fails the build. The hand-written `skills/` entries were removed from the required-entry list, since keeping them would rebuild the very list this replaces. Runs inside `release:package`, which both `ci.yml` and `release.yml` already execute, so it fires on every push rather than only at release time. Verified by re-staging the exact issue-10 condition: with the helper copy removed, packaging fails and names all six missing files — including `vector-ingest.mjs`, which was never in the old hand-written list at all.
 
