@@ -46,6 +46,18 @@ cp "$ROOT_DIR/package.json" "$STAGE_DIR/package.json"
 cp "$ROOT_DIR/pnpm-lock.yaml" "$STAGE_DIR/pnpm-lock.yaml"
 cp -R "$ROOT_DIR/skills/memoria-memory-sync" "$STAGE_DIR/skills/memoria-memory-sync"
 
+# The semantic-recall helper (issue-10). Without it `resolveHelperScript()` finds nothing and recall
+# fails open to lexical results — silently, since that degradation is by design. npm installs have
+# shipped it since v1.23.1 via package.json "files"; this path was left behind, so the two install
+# routes had the same symptom for different reasons. Copied file-by-file to mirror that "files" list:
+# `cp -R` would drag in node_modules (~850MB of devDependencies), which must stay opt-in.
+mkdir -p "$STAGE_DIR/skills/memoria-vector"
+cp "$ROOT_DIR"/skills/memoria-vector/*.mjs "$STAGE_DIR/skills/memoria-vector/"
+cp "$ROOT_DIR/skills/memoria-vector/package.json" \
+   "$ROOT_DIR/skills/memoria-vector/package-lock.json" \
+   "$ROOT_DIR/skills/memoria-vector/README.md" \
+   "$STAGE_DIR/skills/memoria-vector/"
+
 cat <<'EOF' > "$INSTALL_DIR/memoria"
 #!/usr/bin/env bash
 
@@ -102,6 +114,9 @@ for required_entry in \
   "$ARTIFACT_BASENAME/skills/memoria-memory-sync/SKILL.md" \
   "$ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md" \
   "$ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md" \
+  "$ARTIFACT_BASENAME/skills/memoria-vector/vector-recall.mjs" \
+  "$ARTIFACT_BASENAME/skills/memoria-vector/embed.mjs" \
+  "$ARTIFACT_BASENAME/skills/memoria-vector/package.json" \
   "$ARTIFACT_BASENAME/install.sh" \
   "$ARTIFACT_BASENAME/package.json" \
   "$ARTIFACT_BASENAME/node_modules/better-sqlite3"; do
@@ -110,6 +125,12 @@ for required_entry in \
     exit 1
   fi
 done
+
+# The helper's own dependencies stay opt-in — shipping them would add ~850MB to every artifact.
+if tar -tf "$ARTIFACT_PATH" | grep -q "^$ARTIFACT_BASENAME/skills/memoria-vector/node_modules/"; then
+  echo "release artifact must not bundle skills/memoria-vector/node_modules" >&2
+  exit 1
+fi
 
 echo "release_platform=$PLATFORM"
 echo "release_stage=$STAGE_DIR"
@@ -122,6 +143,8 @@ echo "  $ARTIFACT_BASENAME/lib/cli.mjs"
 echo "  $ARTIFACT_BASENAME/skills/memoria-memory-sync/SKILL.md"
 echo "  $ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md"
 echo "  $ARTIFACT_BASENAME/skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md"
+echo "  $ARTIFACT_BASENAME/skills/memoria-vector/vector-recall.mjs"
+echo "  $ARTIFACT_BASENAME/skills/memoria-vector/embed.mjs"
 echo "  $ARTIFACT_BASENAME/install.sh"
 echo "  $ARTIFACT_BASENAME/package.json"
 echo "  $ARTIFACT_BASENAME/node_modules/better-sqlite3"

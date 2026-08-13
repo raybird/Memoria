@@ -7,7 +7,7 @@
 | Issue 編號 | 10（本地文件編號） |
 | 複雜度級別 | Small（打包腳本多複製一個目錄 + 一項安裝測試斷言，無程式碼變更） |
 | 風險等級 | Medium（失效是靜默的：fail-open 退回字面召回，使用者以為語意召回在跑） |
-| 狀態 | **未實作**（待排程） |
+| 狀態 | **實作完成**（2026-08-13，v1.26.0） |
 | 需求來源 | 2026-08-13 另一 session 分析 Memoria 升級機制時發現，經本 session 查證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | [issue-11](../issue-11/README.md)（helper 裝得起來但跑不動，同一條交付鏈的下一段）、[issue-12](../issue-12/README.md)（兩者都沒有任何診斷會說出來）、[issue-7](../issue-7/README.md)（v1.23.1 修的是 npm 包不含 helper，本 issue 是 tarball 路徑的同型缺口） |
@@ -49,7 +49,13 @@ cp -R "$ROOT_DIR/skills/memoria-memory-sync" "$STAGE_DIR/skills/memoria-memory-s
 
 ## 驗收標準
 
-- [ ] `pnpm run release:package` 產出的 tarball 內含 `skills/memoria-vector/vector-recall.mjs` 與 `embed.mjs`
-- [ ] tarball **不含** `skills/memoria-vector/node_modules`
-- [ ] `scripts/test-no-clone-install.sh` 斷言 helper 檔案存在，且該斷言在修正前的打包腳本上會失敗
-- [ ] npm 路徑的既有行為不變
+- [x] `pnpm run release:package` 產出的 tarball 內含 `skills/memoria-vector/vector-recall.mjs` 與 `embed.mjs`
+- [x] tarball **不含** `skills/memoria-vector/node_modules`
+- [x] `scripts/test-no-clone-install.sh` 斷言 helper 檔案存在，且該斷言在修正前的打包腳本上會失敗
+- [x] npm 路徑的既有行為不變
+
+## 實作結果（2026-08-13）
+
+`package-release-artifacts.sh` 逐檔複製（**不用 `cp -R`**——那會把 ~850MB 的 `node_modules` 一起拖進去），並在既有的 `required_entry` 白名單加入三個 helper 檔、另加一條「tarball 不得含 `skills/memoria-vector/node_modules`」的反向斷言。兩道防線的分工：白名單擋「漏帶」，反向斷言擋「帶太多」。
+
+測試層加了兩段，刻意分開：`test-no-clone-install.sh` 先斷言檔案存在（失敗訊息精確指出缺哪個檔），再用 `doctor --json` 斷言**安裝後的 CLI 真的解析得到它**——後者才是這個 issue 真正要保證的事，前者只是讓失敗好讀。反向對照已驗證：還原打包腳本後，測試在第一段就紅。

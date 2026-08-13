@@ -18,6 +18,21 @@
 ./cli export --type all --format json
 ```
 
+### `doctor` and the semantic layer
+
+`doctor` reports the optional vector layer alongside the path checks (since v1.26.0, issue-12). It is
+the only command that says which state semantic recall is actually in, because every failure on that
+path is **fail-open by design**: a missing helper or a missing embedding backend degrades to lexical
+results and still answers `ok:true`, with `route_mode` the only clue and nothing raised to the user.
+
+| state | reported as |
+|---|---|
+| `LIBSQL_URL` unset | `vector recall: not enabled` — **passing**. An opt-in feature that is switched off is not an unhealthy install |
+| enabled, helper resolves | `vector helper: <path>` plus `vector embedder` when the local provider is in use |
+| enabled, helper missing | **fails**, with a fix naming `route_mode=vector_unavailable` as the symptom to expect |
+| enabled, `@huggingface/transformers` missing | **fails**, with a fix naming `--omit=dev` / `NODE_ENV=production` as the usual cause |
+| `MEMORIA_VECTOR_RECALL_CMD` set | printed as `vector helper (overridden)` so it is clear *which* helper was diagnosed; its dependency layout is not probed, since an overridden helper may be bundled elsewhere |
+
 ## Memory Quality & Pruning
 
 Memoria applies time-decay scoring to recall results: newer memories rank higher when token relevance is equal. The decay follows `1 / (1 + ageDays / 90)` — a 90-day-old memory scores at 50% of an equivalent new one, but never reaches zero.

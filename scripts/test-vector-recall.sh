@@ -170,6 +170,44 @@ if(!d.data.map(h=>h.id).includes('$SID_A')) throw new Error('lexical floor missi
 " "$RES"
 echo "  vector_timeout ok"
 
+echo "[vector] doctor reports the vector layer without punishing an install that opted out (issue-12)"
+# The degradation matrix above is silent by design — every one of those routes still answers ok:true.
+# doctor is the only place that says which of them the operator is actually in, so it gets the same
+# three states asserted here.
+DOC_OFF=$(env MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const v=d.checks.find(c=>c.name==='vector recall');
+if(!v) throw new Error('vector recall check missing');
+if(!v.ok||!v.value.includes('not enabled')) throw new Error('opt-out must read as not enabled, got '+JSON.stringify(v));
+if(d.checks.some(c=>c.name.startsWith('vector')&&!c.ok)) throw new Error('an opt-out install must not fail any vector check');
+if(!d.ok) throw new Error('doctor overall ok must survive an unset LIBSQL_URL');
+" "$DOC_OFF"
+echo "  LIBSQL_URL unset -> not enabled, still healthy"
+
+DOC_GONE=$(env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" \
+  MEMORIA_VECTOR_RECALL_CMD="$TMP_DIR/does-not-exist.mjs" "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const h=d.checks.find(c=>c.name==='vector helper');
+if(!h) throw new Error('vector helper check missing');
+if(h.ok) throw new Error('a helper path that does not exist must not report healthy');
+if(!h.fix||!h.fix.includes('vector_unavailable')) throw new Error('fix must name the silent degradation');
+const o=d.checks.find(c=>c.name==='vector helper (overridden)');
+if(!o||!o.value.includes('does-not-exist.mjs')) throw new Error('override must be surfaced so the reader knows which helper was diagnosed');
+if(d.ok) throw new Error('an enabled-but-broken vector layer must fail doctor');
+" "$DOC_GONE"
+echo "  enabled + missing helper -> fails, names the override"
+
+DOC_OK=$(env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const h=d.checks.find(c=>c.name==='vector helper');
+if(!h||!h.ok||!h.value.endsWith('vector-recall.mjs')) throw new Error('shipped helper should resolve, got '+JSON.stringify(h));
+if(d.checks.some(c=>c.name==='vector embedder')) throw new Error('stub provider needs no embedder check');
+" "$DOC_OK"
+echo "  enabled + stub provider -> helper resolves, embedder not applicable"
+
 echo "[vector] stats exposes vector route counters"
 STATS=$(env MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" stats --json)
 node -e "

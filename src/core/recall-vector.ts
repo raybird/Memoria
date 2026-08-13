@@ -63,6 +63,55 @@ function resolveHelperScript(): string | null {
     return null
 }
 
+/** What `doctor` needs to say something true about the optional semantic layer (issue-12).
+ *
+ * Lives beside `resolveHelperScript` rather than in the doctor command on purpose: a diagnostic that
+ * re-implements the search order drifts from it, and then confidently reports on a helper that
+ * recall never loads. Reusing the resolution is the whole point of the check.
+ *
+ * Every field describes an OPT-IN layer. `enabled:false` is a healthy state, not a failure — the
+ * renderer must not turn it into one (`scripts/test-no-clone-install.sh` asserts every doctor check
+ * passes on an install that has no vector layer at all).
+ */
+export type VectorLayerReport = {
+    /** LIBSQL_URL is what gates the whole path; without it recall never reaches the helper. */
+    enabled: boolean
+    helperPath: string | null
+    /** MEMORIA_VECTOR_RECALL_CMD, when the caller points us at their own helper. */
+    override: string | null
+    provider: string
+    /** null = not applicable: the stub provider needs no embedder, and an overridden helper's
+     *  dependency layout is not ours to assume. */
+    embedderInstalled: boolean | null
+    embedderDir: string | null
+}
+
+export function inspectVectorLayer(): VectorLayerReport {
+    const override = process.env.MEMORIA_VECTOR_RECALL_CMD?.trim() || null
+    // `resolveHelperScript` hands back an override verbatim without probing it — recallVector is the
+    // one that applies `existsSync` (:206). Repeat that here, or a typo'd override would be reported
+    // as a healthy helper while recall quietly degrades, which is the exact failure being diagnosed.
+    const resolved = resolveHelperScript()
+    const helperPath = resolved !== null && existsSync(resolved) ? resolved : null
+    const provider = (process.env.MEMORIA_EMBED_PROVIDER ?? 'local').trim()
+    const report: VectorLayerReport = {
+        enabled: Boolean(process.env.LIBSQL_URL?.trim()),
+        helperPath,
+        override,
+        provider,
+        embedderInstalled: null,
+        embedderDir: null
+    }
+    // Only the helper we ship has a dependency layout we can reason about. An override may name a
+    // bare command, or a copy bundled into someone else's image — probing a sibling node_modules
+    // there would manufacture a failure out of a working setup.
+    if (override !== null || helperPath === null || provider !== 'local') return report
+    const dir = dirname(helperPath)
+    report.embedderDir = dir
+    report.embedderInstalled = existsSync(resolve(dir, 'node_modules', '@huggingface', 'transformers'))
+    return report
+}
+
 function runHelper(
     script: string,
     query: string,

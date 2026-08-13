@@ -80,6 +80,23 @@ echo "[no-clone] malformed --version rejected"
 echo "[no-clone] verify installed launcher"
 (cd "$WORK_DIR" && "$INSTALL_DIR/bin/memoria" --help >/dev/null)
 
+echo "[no-clone] semantic recall helper is installed (issue-10)"
+# Until v1.26.0 this route shipped without the helper at all, so `recall --mode vector` degraded to
+# lexical results in silence. File presence is asserted first because it names the failure precisely;
+# the doctor probe below is what proves the installed CLI can actually resolve it.
+[ -f "$INSTALL_DIR/skills/memoria-vector/vector-recall.mjs" ] || { echo "Expected vector helper at $INSTALL_DIR/skills/memoria-vector/vector-recall.mjs"; exit 1; }
+[ -f "$INSTALL_DIR/skills/memoria-vector/embed.mjs" ] || { echo "Expected embed helper at $INSTALL_DIR/skills/memoria-vector/embed.mjs"; exit 1; }
+[ ! -e "$INSTALL_DIR/skills/memoria-vector/node_modules" ] || { echo "Helper dependencies must stay opt-in, not bundled"; exit 1; }
+
+echo "[no-clone] doctor resolves the helper once LIBSQL_URL is set (issue-12)"
+VECTOR_DOCTOR="$(cd "$WORK_DIR" && LIBSQL_URL="file:$WORK_DIR/vectors.db" "$INSTALL_DIR/bin/memoria" doctor --json)"
+echo "$VECTOR_DOCTOR" | node -e "
+const data = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
+const helper = data.checks.find((c) => c.name === 'vector helper')
+if (!helper || !helper.ok) { console.error('vector helper unresolved in installed layout'); process.exit(1) }
+if (!helper.value.endsWith('vector-recall.mjs')) { console.error('unexpected helper path: ' + helper.value); process.exit(1) }
+"
+
 echo "[no-clone] preflight"
 PREFLIGHT_OUTPUT="$(cd "$WORK_DIR" && "$INSTALL_DIR/bin/memoria" preflight --json)"
 echo "$PREFLIGHT_OUTPUT"
@@ -107,6 +124,8 @@ if [ "$READY" -ne 1 ]; then
 fi
 
 echo "[no-clone] verify separated data root"
+# This also pins issue-12's boundary: no LIBSQL_URL here, and `every(check.ok)` must still hold —
+# an opt-in layer that is switched off is not an unhealthy install.
 DOCTOR_OUTPUT="$(cd "$WORK_DIR" && "$INSTALL_DIR/bin/memoria" doctor --json)"
 echo "$DOCTOR_OUTPUT" | node -e "const fs=require('node:fs');const data=JSON.parse(fs.readFileSync(0,'utf8'));if(data.paths.memoriaHome!==process.argv[1]) process.exit(1);if(!data.checks.every((check)=>check.ok)) process.exit(1)" "$DATA_DIR"
 [ -f "$DATA_DIR/.agents/skills/memoria/SKILL.md" ] || { echo "Expected deployed skill at $DATA_DIR/.agents/skills/memoria/SKILL.md"; exit 1; }
