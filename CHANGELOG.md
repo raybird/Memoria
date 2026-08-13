@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **The release recipe printed by `scripts/bump-version.mjs` could not trigger a release.** Its next-steps output paired `git tag vX.Y.Z` (lightweight, no `-a`) with `git push --follow-tags` — and that flag pushes *only annotated* tags. The lightweight tag was skipped in silence: the push reported success, `main` advanced, and `release.yml` never fired, with nothing in git's output to indicate a tag had been withheld. Hit while releasing v1.25.1. `RELEASE.md` had the correct `git tag -a` all along, which is precisely why this survived — the recipe a person actually follows is the one the script just printed, not the one in a file they would have to go open. Fixed at both ends: the script now prints `-a`, and both it and `RELEASE.md` push the tag **by ref** (`git push origin refs/tags/vX.Y.Z`) instead of relying on `--follow-tags`, so a tag's type no longer decides whether a release happens. Docs-and-tooling only; no runtime or packaged output changes.
+
 ## [1.25.1] - 2026-08-13
 
 ### Fixed

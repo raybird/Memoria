@@ -53,5 +53,9 @@ await patch('docs/INSTALL.md', (s) => s
 console.log(`\nNext steps:`)
 console.log(`  1. Edit CHANGELOG.md: add ## [${next}] - $(date +%Y-%m-%d) section`)
 console.log(`  2. pnpm run build && pnpm run release:package`)
-console.log(`  3. git commit -am "Release v${next}" && git tag v${next}`)
-console.log(`  4. git push --follow-tags  (CI will create GitHub release + npm publish)`)
+console.log(`  3. git commit -am "Release v${next}" && git tag -a v${next} -m "Release v${next}"`)
+// Push the tag ref explicitly rather than relying on --follow-tags, which pushes ONLY annotated
+// tags: a lightweight tag is skipped in silence — the push succeeds, main advances, and the release
+// workflow never fires, with nothing in the output to say so. Naming the ref makes the tag's type
+// stop deciding whether a release happens. (This recipe used to print a bare `git tag` above.)
+console.log(`  4. git push origin main && git push origin refs/tags/v${next}  (CI will create GitHub release + npm publish)`)

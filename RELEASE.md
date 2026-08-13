@@ -29,10 +29,17 @@ bash scripts/test-npm-install.sh
 git add -A
 git commit -m "Release vX.Y.Z"
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
-git push --follow-tags
+git push origin main
+git push origin refs/tags/vX.Y.Z   # name the ref; see note below
 ```
 
-After `git push --follow-tags`, the `release.yml` workflow:
+Push the tag **by ref**, not with `--follow-tags`. That flag pushes only *annotated* tags, so a
+lightweight tag (`git tag vX.Y.Z`, no `-a`) is skipped in silence: the push succeeds, `main` advances,
+and `release.yml` never fires — with nothing in the output to say so. Naming the ref makes the tag's
+type stop deciding whether a release happens. Keep using `-a` anyway; every tag in this repo is
+annotated (`git cat-file -t vX.Y.Z` → `tag`).
+
+After the tag lands, the `release.yml` workflow:
 
 1. Verifies the tag matches `package.json` version.
 2. Re-runs docs-check / check / build plus smoke, bootstrap, installer, service, and packed npm tests.
