@@ -179,7 +179,7 @@ Before opening PRs, mirror CI locally in this order:
 - `scripts/test-wiki-query-fileback.sh`: query filing test.
 - `scripts/test-wiki-lint.sh`: wiki governance/lint test.
 - `skills/memoria-memory-sync/SKILL.md`: Agent Skill entrypoint.
-- `skills/memoria-vector/`: optional semantic-recall helper (embedding + libSQL native vectors; own npm deps, spawned by core — never imported).
+- `skills/memoria-vector/`: optional semantic-recall helper (embedding + libSQL native vectors; own npm deps, spawned by core — never imported). **Not an Agent Skill** despite living under `skills/` — no `SKILL.md`, not deployed by `setup`; `memoria-memory-sync` is the only skill here.
 - `examples/session.sample.json`: sample input for sync flow.
 - `.github/workflows/ci.yml`: canonical validation pipeline.
 

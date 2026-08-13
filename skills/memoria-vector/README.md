@@ -1,5 +1,11 @@
 # memoria-vector — optional semantic-recall helper
 
+> **This is not an Agent Skill.** It sits under `skills/` next to one (`memoria-memory-sync`, which
+> has a `SKILL.md` and is deployed by `memoria setup`), but it is a plain Node package with its own
+> `package.json` and dependencies, spawned as a subprocess and never read by an agent. There is no
+> `SKILL.md` here and there should not be one. The directory holds two different kinds of thing;
+> only the other one is a skill.
+
 Gives Memoria's `recall({ mode: 'vector' })` a real semantic index: memories are embedded locally
 and stored as libSQL **native vectors** (`F32_BLOB` + `vector_top_k`), then queried at recall time.
 See `docs/RFC-semantic-recall.md` for the full design and the Phase 0'/spike evidence.
