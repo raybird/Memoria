@@ -128,7 +128,7 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 | marker | set by | effect |
 |---|---|---|
 | `retention='durable'` | `remember --durable` | time-decay is undone at recall (score ÷ its own decay factor) **and** the memory is spared by `prune --stale-days` |
-| `superseded_by` | `remember --supersedes <ref>` | dropped from recall by default; `--include-superseded` (HTTP `include_superseded`) brings it back with the field attached. Data is never deleted and `export` never applies the filter |
+| `superseded_by` | `remember --supersedes <ref>` | dropped from recall **and from `brief`** by default; `--include-superseded` (HTTP `include_superseded`) brings it back with the field attached (no such flag on `brief` — a derived view that gets auto-loaded must show one version). Data is never deleted and `export` never applies the filter |
 | `sensitivity='private'` | `remember --sensitivity private` | `export --redact` replaces known entities (repository names, project tags) with deterministic code names |
 
 Two rules to preserve when touching this: **(1) zero markers must stay byte-identical** — every reader probes the table first and returns input untouched when nothing is marked (the discipline `applyUtilityWeighting` set); **(2) `applyMemoryAttributes` runs BEFORE `applyUtilityWeighting`** so utility stays the final arbiter and a mis-marked durable memory can still be pushed down by poor observed utility. Re-running `remember` with identical text applies markers without rewriting — that is also how an *existing* memory gets marked (there is no separate `mark` command).

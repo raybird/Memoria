@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`brief` no longer prints superseded memories** (issue-5 follow-up). `recall` has excluded them since markers shipped, but `queryBrief` never consulted `memory_attributes` — neither the decision query nor the UFL section — so a correction written with `--supersedes` produced the worst possible output: the replaced claim and its own correction listed in the same file, two lines apart, with nothing marking which one is current. That matters more here than anywhere else because `BRIEF.md` is the one artifact loaded into *every* session via `@knowledge/BRIEF.md`, and there is no command to delete a single memory (`prune` handles runtime artifacts and duplicate skills), so filtering here was the only remedy. Reproduced on a real 1.25.0 database: `recall` returned only the current note while `BRIEF.md` listed both. Filtered **in SQL** for decisions (a post-hoc filter would have made `LIMIT topK` yield topK *minus* however many were replaced) and **before `.slice(0, topK)`** for the UFL block, for the same reason. Matching on the event id is sufficient — `remember --supersedes` marks both halves of a CLI note. Both paths are guarded by the existing `memory_attributes` table probe, so a DB predating migration 14 is untouched. No `--include-superseded` counterpart is offered: an auto-loaded derived view must show exactly one version. `scripts/test-memory-attributes.sh` (C) now asserts the brief lists the replacement and not the replaced one — verified failing against the pre-fix build.
+
 ## [1.25.0] - 2026-08-10
 
 ### Changed

@@ -35,10 +35,26 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
         const projectClause = project ? 'AND s.project = ?' : ''
         const projectParams = project ? [project] : []
 
+        // Superseded memories must not reach the brief. `recall` has excluded them
+        // since memory attributes shipped, but the brief did not — so a correction
+        // written with `--supersedes` left the replaced claim sitting in the one
+        // artifact that gets loaded into every session, next to its own correction.
+        // The marker is written against both halves of a CLI note (its session and
+        // its event), so matching on the event id here is enough.
+        const hasAttributes = tableExists(db, 'memory_attributes')
+        const supersededJoin = hasAttributes
+            ? 'LEFT JOIN memory_attributes ma ON ma.ref_id = e.id'
+            : ''
+        // Filtered in SQL rather than after the fact so LIMIT still yields topK
+        // live decisions instead of topK minus however many were replaced.
+        const supersededClause = hasAttributes ? 'AND ma.superseded_by IS NULL' : ''
+
         const decisionRows = db.prepare(`
           SELECT e.id, e.timestamp, e.content, s.project
           FROM events e JOIN sessions s ON s.id = e.session_id
+          ${supersededJoin}
           WHERE e.event_type = 'DecisionMade' AND e.timestamp >= ? ${projectClause}
+          ${supersededClause}
           ORDER BY e.timestamp DESC LIMIT ?
         `).all(since, ...projectParams, topK) as Array<{ id: string; timestamp: string; content: string; project: string }>
 
@@ -61,9 +77,20 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
               FROM memory_utility
             `).all() as Array<{ ref_id: string; observations: number; utility_sum: number; explicit_observations: number; explicit_sum: number }>
 
+            // Same exclusion as the decision list: a memory that earned utility
+            // before being replaced must not come back through this section.
+            // Filtered before the slice so a replaced entry does not consume a
+            // topK slot.
+            const supersededRefs = hasAttributes
+                ? new Set((db.prepare(
+                    `SELECT ref_id FROM memory_attributes WHERE superseded_by IS NOT NULL`
+                  ).all() as Array<{ ref_id: string }>).map((r) => r.ref_id))
+                : new Set<string>()
+
             const scored = rows
                 .map((row) => ({ ref_id: row.ref_id, utility: effectiveUtility(row), row }))
                 .filter((entry): entry is { ref_id: string; utility: number; row: typeof rows[number] } => entry.utility !== null)
+                .filter((entry) => !supersededRefs.has(entry.ref_id))
                 .sort((a, b) => b.utility - a.utility)
                 .slice(0, topK)
 

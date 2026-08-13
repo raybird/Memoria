@@ -94,6 +94,15 @@ MARK=$("$CLI" recall "資料庫 改用" --project demo --include-superseded --js
 grep -q "PostgreSQL" "$MEMORIA_HOME"/.memory/exports/*.json || { echo "  ✗ superseded memory missing from export"; exit 1; }
 echo "  hidden by default, recoverable via flag, still in export"
 
+# The brief is the only artifact loaded into every session, so a replaced claim
+# surviving there is worse than one surviving in recall: it sits next to its own
+# correction with nothing marking which one is current.
+"$CLI" brief --project demo >/dev/null
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+grep -q "SQLite" "$BRIEF" || { echo "  ✗ superseding memory missing from brief"; exit 1; }
+grep -q "PostgreSQL" "$BRIEF" && { echo "  ✗ superseded memory still listed in brief"; exit 1; }
+echo "  brief lists the replacement and drops the replaced one"
+
 echo "[attributes] (D) --supersedes with an unknown target is rejected"
 if "$CLI" remember "某個新決策" --project demo --supersedes note-does-not-exist >/dev/null 2>&1; then
     echo "  ✗ expected non-zero exit"; exit 1

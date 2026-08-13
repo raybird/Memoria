@@ -418,7 +418,7 @@ Long-term markers (issue-5) ride on the same command:
 
 ```bash
 ./cli remember "使用者一律用 pnpm" --durable                    # evergreen: no decay, survives prune
-./cli remember "資料庫改用 SQLite" --supersedes <old_ref_id>    # old memory drops out of recall
+./cli remember "資料庫改用 SQLite" --supersedes <old_ref_id>    # old memory drops out of recall + brief
 ./cli remember "內部部署細節" --sensitivity private             # export --redact will code-name it
 ./cli recall "..." --include-superseded                        # see replaced versions too
 ./cli export --redact                                          # code-name private memories
@@ -436,7 +436,9 @@ full envelope. `feedback` on an unknown/pruned `recall_id` exits 0 with `updated
 `<knowledge>/BRIEF.md`. Import it from `CLAUDE.md` with `@knowledge/BRIEF.md` and memory loads at the
 start of every session with nothing to execute — the practical substitute for hook-based injection.
 It is a derived view: whole-file overwrite each run, never edit it by hand, and re-run it after a
-batch of writes because nothing regenerates it automatically.
+batch of writes because nothing regenerates it automatically. Superseded memories are excluded from
+both of its memory sections — being the one artifact that loads automatically, it must never print a
+replaced claim next to its own correction with nothing to tell them apart.
 
 Optional enhancement (not required):
 
