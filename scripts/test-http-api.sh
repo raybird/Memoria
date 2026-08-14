@@ -188,4 +188,28 @@ BIG=$(node -e "process.stdout.write('{\"query\":\"'+'x'.repeat(4096)+'\"}')")
 assert_status 413 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d "$BIG"
 echo "  413 ok"
 
+echo "[http] health survives a write from another process (issue-14)"
+# The regression this pins: better-sqlite3 caches connection-level state that a cross-process write
+# should invalidate and does not, so the long-lived server handle begins reporting the FTS5 index as
+# malformed for a database that is fine — permanently, until restart. Routine maintenance (one CLI
+# write into the same home) was enough to make /v1/health claim corruption forever.
+#
+# It also guards the fix from being "optimised" away: runVerify's integrity check must keep opening
+# its own connection and closing it. Pool that connection and this test goes red again, which is the
+# only thing standing between a future reader and a very reasonable-looking performance tidy-up.
+HEALTH_BEFORE=$(curl -sf "$SERVER_URL/v1/health")
+assert_ok "$HEALTH_BEFORE"
+MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" remember "外部行程寫入，用來觸發 issue-14" --project http >/dev/null 2>&1
+HEALTH_AFTER=$(curl -sf "$SERVER_URL/v1/health")
+node -e "
+const d = JSON.parse(process.argv[1])
+const integrity = d.data.checks.find((c) => c.id === 'db_integrity')
+if (!integrity) throw new Error('db_integrity check missing entirely')
+if (integrity.status !== 'pass') {
+  throw new Error('db_integrity turned to ' + integrity.status + ' after an external write: ' + integrity.detail)
+}
+if (!d.ok) throw new Error('health went unhealthy after an external write: ' + JSON.stringify(d.data.checks.filter(c => c.status !== 'pass')))
+" "$HEALTH_AFTER"
+echo "  db_integrity still passes after an external writer touched the same DB"
+
 echo "[http] ok"

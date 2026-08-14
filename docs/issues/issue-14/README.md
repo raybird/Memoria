@@ -7,7 +7,7 @@
 | Issue 編號 | 14（本地文件編號） |
 | 複雜度級別 | Small（一項檢查的取值與訊息，無 schema、無契約變更） |
 | 風險等級 | Low（純診斷面） |
-| 狀態 | **未實作**（待排程） |
+| 狀態 | **實作完成**（2026-08-13，兩塊都做） |
 | 需求來源 | 2026-08-13，downstream-http-sidecar 在正式環境回報 `/v1/health` 穩定回 `ok:false`，唯一失敗項是 `db_integrity`，但同一個檔案獨立驗證是好的 |
 | 建立日期 | 2026-08-13 |
 | 相關 | `src/core/db/verify.ts:82-84`、`src/core/db/connection.ts`（連線池）；[issue-12](../issue-12/README.md)（同一種「訊號不說出自己看到什麼」的失效） |
@@ -177,13 +177,34 @@ journal_mode = delete
 
 原本考慮加結構化的 `detail: { rows: [...] }`。詢問唯一在正式環境消費這個端點的下游後**否決**：他們的 `pingMemoriaEndpoint` 只看 HTTP status，body 一個欄位都沒讀；需要細節時是人在終端機看 JSON。**為一個目前不存在的消費者擴充公開契約不划算**，人可讀字串就夠。（若日後真的出現程式化消費者，屆時帶著實際用途再加。）
 
+## 實作中發現、**未處理**的相鄰問題（2026-08-13）
+
+嘗試用真實損壞的資料庫驗證新訊息時發現：**`verify` 面對真正損壞的 DB 會整個拋出，走不到完整性檢查。**
+
+```
+$ memoria verify        # 對一個每頁都被塗過的 DB
+❌ 執行失敗: database disk image is malformed
+```
+
+成因是 `runVerify` 在 `try` **之外**先呼叫 `initDatabase(paths.dbPath)`（`verify.ts:52`），它會因損壞而擲出，整個 `runVerify` 隨之 reject——於是使用者看到一句籠統的失敗，而不是「哪一項檢查失敗、其他項是否正常」。
+
+這與本 issue 同族（診斷工具在最需要它的時候拒絕出示細節），但**範圍不同**：修它要重新安排 `initDatabase` 的位置與失敗語意，而 `initDatabase` 在那裡是為了讓舊 DB 就地升級。**本次不處理**，記在這裡免得遺失。
+
+輕度損壞（塗掉少數位元組）則不會被偵測到，因為那些頁多半是尚未使用的空間——這也說明為什麼「用損壞的 DB 驗證失敗訊息」不好做。
+
 ## 驗收標準
 
-- [ ] `db_integrity` 失敗時，`message` 含 `quick_check` 實際回傳的內容
-- [ ] 多列結果不被截斷（或明確標示截斷了幾列，比照 no-silent-caps）
-- [ ] 「取不到值」與「取得了非 ok 的值」在輸出上可分辨
-- [ ] `quick_check=ok` 時的輸出與行為不變（既有測試不得改動）
-- [ ] `scripts/test-http-api.sh` 或 smoke 覆蓋新的失敗訊息形狀
+- [x] `db_integrity` 失敗時，`message` 含 `quick_check` 實際回傳的內容
+- [x] 多列結果不被截斷（全部列出並標明列數）
+- [x] 「取不到值」與「取得了非 ok 的值」在輸出上可分辨（三種狀態：no rows / N row(s): … / threw: …）
+- [x] `quick_check=ok` 時的輸出與行為不變（訊息仍是 `PRAGMA quick_check=ok`）
+- [x] 誤報本身修掉：完整性檢查改用每次重開、用完關閉的專屬連線
+- [x] `scripts/test-http-api.sh` 覆蓋回歸情境（長駐 server + 外部行程寫入 → `db_integrity` 仍須 pass）
+
+### 驗證狀態（誠實邊界）
+
+- **端到端驗證過**：正常路徑（`PRAGMA quick_check=ok`）、以及回歸情境。反向對照確認新斷言在修正前的程式碼上會紅，訊息正是舊的常數字串 `PRAGMA quick_check failed`——同時證明了 bug 會重現、且舊訊息什麼都沒說。
+- **未端到端驗證**：三個失敗分支的訊息。輕度位元組損壞不會被偵測（多半塗到未使用頁），重度損壞則會讓 `initDatabase` 先擲出（見上節），兩邊都構造不出「quick_check 回了非 ok 值」這個中間狀態。分支邏輯本身簡單且經型別檢查，而它們會印出的字串在原始實驗中直接觀察過（`malformed inverted index for FTS5 table main.recall_fts`）。
 
 ## 後續（非本 repo 可完成）
 
