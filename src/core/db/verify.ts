@@ -98,11 +98,21 @@ export async function runVerify(paths: MemoriaPaths): Promise<{ ok: boolean; che
         return { ok: false, checks }
     }
 
-    initDatabase(paths.dbPath)
+    // A diagnostic must not die on the thing it was asked to diagnose (issue-14). `initDatabase`
+    // runs DDL and migrations, so a genuinely damaged file throws right here — and until this was
+    // wrapped, that threw straight out of `runVerify`, so the caller got one opaque line
+    // ("database disk image is malformed") instead of which check failed and whether the rest were
+    // fine. Record it and keep going: the integrity check further down is precisely the one that can
+    // name the damage, and it opens its own connection so it still runs when this one failed.
+    try {
+        initDatabase(paths.dbPath)
+        add('db_migrate', 'pass', 'schema initialised/migrated')
+    } catch (error) {
+        add('db_migrate', 'fail', `schema init/migration failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
 
     try {
         withDb(paths.dbPath, { readonly: true, fileMustExist: true }, (db) => {
-            add('db_connect', 'pass', `connected: ${paths.dbPath}`)
 
             const tableRows = db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as { name: string }[]
             const tableSet = new Set(tableRows.map((r) => r.name))
@@ -128,6 +138,12 @@ export async function runVerify(paths: MemoriaPaths): Promise<{ ok: boolean; che
                 )
             }
 
+            // Recorded LAST, not on entry. It used to be added the moment the handle opened, so a
+            // failure in any statement below appended a second `db_connect` — one pass, one fail, for
+            // the same id. `health()` resolves it with `.find()`, which takes the first, so a damaged
+            // database still reported `db: 'ok'`. Adding it here means the id says what it claims:
+            // the database opened AND its schema was readable.
+            add('db_connect', 'pass', `connected: ${paths.dbPath}`)
         })
     } catch (error) {
         add('db_connect', 'fail', `connect error: ${error instanceof Error ? error.message : String(error)}`)

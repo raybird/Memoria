@@ -117,4 +117,39 @@ if (fts !== src) { console.error('  ✗ index out of sync with source: fts=' + f
 console.log('  rebuilt: fts=' + fts + ' matches source rows, no duplicates');
 "
 
+echo "[migrations] verify reports a damaged DB instead of dying on it (issue-14)"
+# A diagnostic that crashes on the thing it was asked to diagnose gives the operator one opaque line
+# and no way to tell which part is broken. `initDatabase` runs migrations, so a damaged file threw
+# straight out of runVerify before this was wrapped. Corrupt a throwaway copy hard enough that SQLite
+# genuinely rejects it, then require that verify still ENUMERATES its checks.
+CORRUPT_HOME="$TMP_DIR/corrupt"
+mkdir -p "$CORRUPT_HOME"
+MEMORIA_HOME="$CORRUPT_HOME" "$ROOT_DIR/cli" init >/dev/null 2>&1
+MEMORIA_HOME="$CORRUPT_HOME" "$ROOT_DIR/cli" remember "會被弄壞的記憶" --project corrupt >/dev/null 2>&1
+node -e "
+const fs = require('node:fs')
+const fd = fs.openSync('$CORRUPT_HOME/.memory/sessions.db', 'r+')
+const size = fs.fstatSync(fd).size
+for (let off = 4096 + 24; off < size; off += 4096) fs.writeSync(fd, Buffer.alloc(300, 0x5A), 0, 300, off)
+fs.closeSync(fd)
+"
+set +e
+CORRUPT_OUT=$(MEMORIA_HOME="$CORRUPT_HOME" "$ROOT_DIR/cli" verify --json 2>&1)
+CORRUPT_CODE=$?
+set -e
+[ "$CORRUPT_CODE" = "1" ] || { echo "  ✗ expected exit 1 on a damaged DB, got $CORRUPT_CODE"; exit 1; }
+node -e "
+const d = JSON.parse(process.argv[1])
+if (d.ok !== false) throw new Error('a damaged DB must not verify ok')
+const byId = (id) => d.checks.filter((c) => c.id === id)
+for (const id of ['db_migrate', 'db_connect', 'db_integrity']) {
+  const found = byId(id)
+  if (found.length === 0) throw new Error(id + ' missing — verify died before reporting it')
+  if (found.length > 1) throw new Error(id + ' reported ' + found.length + ' times; health() resolves it with find() and would read the wrong one')
+  if (found[0].status !== 'fail') throw new Error(id + ' should have failed on a damaged DB')
+  if (!/malformed|corrupt|disk image/i.test(found[0].detail)) throw new Error(id + ' does not name the cause: ' + found[0].detail)
+}
+" "$CORRUPT_OUT"
+echo "  enumerated its checks, each naming the actual cause, exit 1"
+
 echo "[migrations] ok"

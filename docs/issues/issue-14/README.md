@@ -177,7 +177,7 @@ journal_mode = delete
 
 原本考慮加結構化的 `detail: { rows: [...] }`。詢問唯一在正式環境消費這個端點的下游後**否決**：他們的 `pingMemoriaEndpoint` 只看 HTTP status，body 一個欄位都沒讀；需要細節時是人在終端機看 JSON。**為一個目前不存在的消費者擴充公開契約不划算**，人可讀字串就夠。（若日後真的出現程式化消費者，屆時帶著實際用途再加。）
 
-## 實作中發現、**未處理**的相鄰問題（2026-08-13）
+## 實作中發現的相鄰問題（2026-08-13，**已一併修復**）
 
 嘗試用真實損壞的資料庫驗證新訊息時發現：**`verify` 面對真正損壞的 DB 會整個拋出，走不到完整性檢查。**
 
@@ -188,9 +188,32 @@ $ memoria verify        # 對一個每頁都被塗過的 DB
 
 成因是 `runVerify` 在 `try` **之外**先呼叫 `initDatabase(paths.dbPath)`（`verify.ts:52`），它會因損壞而擲出，整個 `runVerify` 隨之 reject——於是使用者看到一句籠統的失敗，而不是「哪一項檢查失敗、其他項是否正常」。
 
-這與本 issue 同族（診斷工具在最需要它的時候拒絕出示細節），但**範圍不同**：修它要重新安排 `initDatabase` 的位置與失敗語意，而 `initDatabase` 在那裡是為了讓舊 DB 就地升級。**本次不處理**，記在這裡免得遺失。
+這與本 issue 同族（診斷工具在最需要它的時候拒絕出示細節），使用者裁示一併修復。
 
-輕度損壞（塗掉少數位元組）則不會被偵測到，因為那些頁多半是尚未使用的空間——這也說明為什麼「用損壞的 DB 驗證失敗訊息」不好做。
+**修法**：把 `initDatabase` 包進 try，失敗記成 `db_migrate` 檢查後**繼續執行**——完整性檢查有自己的連線，所以這一條壞了它照樣跑得動，而它正是最能指出損壞的那一項。exit code 不變（本來就由失敗檢查設成 1）。
+
+### 修這個之後才浮現的第二個瑕疵：`db_connect` 會出現兩次
+
+原本 `db_connect` 在**開啟連線的當下**就記成 pass，所以後面任何一句失敗時，catch 會再補一筆 fail——同一個 id、兩筆、狀態相反。
+
+**而 `MemoriaCore.health()` 是用 `.find()` 取它**，`.find()` 回傳第一筆，於是**一個讀不動的資料庫仍然回報 `db: 'ok'`**。這是實質的錯誤回報，不只是輸出難看。
+
+改成在 schema 讀取全部成功之後才記，於是這個 id 名副其實（開得起來**且** schema 讀得到），而且永遠只有一筆。
+
+### 實測（修正後）
+
+```
+損壞的 DB   exit=1  ✗ db_migrate: schema init/migration failed: database disk image is malformed
+                    ✗ db_connect: connect error: database disk image is malformed
+                    ✗ db_integrity: PRAGMA quick_check threw: database disk image is malformed
+正常的 DB   exit=0  ✓ db_migrate / ✓ db_connect（僅一筆）/ ✓ db_integrity
+```
+
+順帶：這也補上了原本驗證不到的一個失敗分支——`threw` 那一支現在有端到端的證據。
+
+`scripts/test-migrations.sh` 新增案例釘住兩者（弄壞一份拋棄式 DB，要求 `verify` 仍**列舉**它的檢查、每一項都指出實際成因、且同一 id 不得出現多次）。反向對照：修正前該測試在解析 `verify --json` 時就爆掉，因為輸出根本不是 JSON 而是 `❌ 執行失敗: database disk image is malformed`。
+
+**輕度損壞（塗掉少數位元組）不會被偵測到**，因為那些頁多半是尚未使用的空間——這也說明為什麼「用損壞的 DB 驗證失敗訊息」不好做，以及為什麼測試要塗掉每一頁。
 
 ## 驗收標準
 
@@ -204,7 +227,8 @@ $ memoria verify        # 對一個每頁都被塗過的 DB
 ### 驗證狀態（誠實邊界）
 
 - **端到端驗證過**：正常路徑（`PRAGMA quick_check=ok`）、以及回歸情境。反向對照確認新斷言在修正前的程式碼上會紅，訊息正是舊的常數字串 `PRAGMA quick_check failed`——同時證明了 bug 會重現、且舊訊息什麼都沒說。
-- **未端到端驗證**：三個失敗分支的訊息。輕度位元組損壞不會被偵測（多半塗到未使用頁），重度損壞則會讓 `initDatabase` 先擲出（見上節），兩邊都構造不出「quick_check 回了非 ok 值」這個中間狀態。分支邏輯本身簡單且經型別檢查，而它們會印出的字串在原始實驗中直接觀察過（`malformed inverted index for FTS5 table main.recall_fts`）。
+- **端到端驗證過（追加）**：`threw` 分支——損壞的 DB 現在會走到完整性檢查並印出 `PRAGMA quick_check threw: database disk image is malformed`。這是修掉相鄰問題之後才拿得到的證據。
+- **仍未端到端驗證**：`no rows` 與 `N row(s)` 兩個分支。它們需要「quick_check 成功執行但回了非 ok 值」這個中間狀態，而輕度損壞不會被偵測、重度損壞會讓連線直接擲出——構造不出來。分支邏輯簡單且經型別檢查，且 `N row(s)` 會印出的字串在原始實驗中直接觀察過（`malformed inverted index for FTS5 table main.recall_fts`）。
 
 ## 後續（非本 repo 可完成）
 
