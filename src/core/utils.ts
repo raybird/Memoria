@@ -20,13 +20,57 @@ export function safeDate(raw?: string): Date {
 // docs/HANDOVER-improvements.md P5. Kept behaviour-preserving for now.
 export const TOKEN_SPLIT_PATTERN = /[^a-z0-9一-鿿]+/
 
-// Lowercase, split on non-token chars, trim, keep tokens >= minLength, dedupe.
+const CJK_RUN_PATTERN = /[一-鿿]+/g
+
+/** Split a token into overlapping n-grams across its CJK runs, leaving latin/digit runs whole
+ *  (issue-15).
+ *
+ * Chinese is written without spaces, so `TOKEN_SPLIT_PATTERN` — which treats every CJK character as
+ * a token character — collapses a whole question into ONE token, and every consumer then demands
+ * that entire sentence appear verbatim. Measured on a real corpus, natural-language Chinese queries
+ * returned nothing at all while the answer sat in the index.
+ *
+ * **n is the caller's `minLength`, and that is the point.** Each consumer asks for the shortest term
+ * it can use, and for CJK that is exactly the right window size:
+ *   - `buildFtsMatch` asks for 3, and `recall_fts` is a **trigram** index — 3-grams are precisely
+ *     what it stores, so they match as substrings.
+ *   - `tokenCoverage` and the tree route ask for 2 and compare with `includes`, where shorter
+ *     windows match more of the paraphrases this is meant to find.
+ * Producing 2-grams for the FTS path instead would be actively worse than doing nothing: they fall
+ * below its length filter, the MATCH string comes out empty, and recall drops to a verbatim LIKE.
+ *
+ * A CJK run shorter than n is kept whole; the length filter downstream decides whether it survives.
+ */
+function expandCjkRuns(token: string, n: number): string[] {
+    if (!CJK_RUN_PATTERN.test(token)) return [token]
+    CJK_RUN_PATTERN.lastIndex = 0
+
+    const out: string[] = []
+    let cursor = 0
+    for (const match of token.matchAll(CJK_RUN_PATTERN)) {
+        const start = match.index ?? 0
+        if (start > cursor) out.push(token.slice(cursor, start))   // latin/digit run, kept whole
+        const run = match[0]
+        if (run.length <= n) {
+            out.push(run)
+        } else {
+            for (let i = 0; i + n <= run.length; i += 1) out.push(run.slice(i, i + n))
+        }
+        cursor = start + run.length
+    }
+    if (cursor < token.length) out.push(token.slice(cursor))
+    return out
+}
+
+// Lowercase, split on non-token chars, expand CJK runs into minLength-sized windows, trim, keep
+// tokens >= minLength, dedupe.
 export function tokenizeQuery(query: string, minLength = 2): string[] {
     return Array.from(
         new Set(
             query
                 .toLowerCase()
                 .split(TOKEN_SPLIT_PATTERN)
+                .flatMap((t) => expandCjkRuns(t, minLength))
                 .map((t) => t.trim())
                 .filter((t) => t.length >= minLength)
         )

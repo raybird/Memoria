@@ -11,6 +11,7 @@
 
 import {
     tokenCoverage,
+    tokenizeQuery,
     effectiveUtility,
     buildCalibration,
     buildRouteUtility,
@@ -96,6 +97,47 @@ near('half the tokens present → 0.5', tokenCoverage('pnpm yarn', 'we use pnpm'
 near('matching ignores case', tokenCoverage('PNPM', 'we use pnpm'), 1)
 near('CJK terms are tokenized, not dropped', tokenCoverage('套件管理器', '改用 pnpm 作為套件管理器'), 1)
 near('a CJK term that is absent scores 0', tokenCoverage('資料庫', '改用 pnpm 作為套件管理器'), 0)
+
+// ── tokenizeQuery: CJK windowing (issue-15) ──────────────────────────────────────────────────────
+//
+// Chinese has no spaces, so TOKEN_SPLIT_PATTERN — which counts every CJK character as a token
+// character — used to collapse a whole question into ONE token that had to appear verbatim. These
+// assertions pin the window rule, because it is subtle enough to look like an accident: **n is the
+// caller's minLength**, so the FTS path (which asks for 3, against a trigram index) gets 3-grams and
+// the coverage/tree path (which asks for 2 and compares with `includes`) gets 2-grams. Handing the
+// FTS path 2-grams instead would be worse than doing nothing — they fall below its own length
+// filter, the MATCH string comes out empty, and recall drops to a verbatim LIKE.
+console.log('[pure] tokenizeQuery (CJK)')
+
+const eqList = (label: string, actual: string[], expected: string[]): void => {
+    if (JSON.stringify(actual) === JSON.stringify(expected)) ok(label)
+    else fail(label, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
+}
+
+eqList('a CJK run becomes overlapping n-grams sized by minLength (n=2)',
+    tokenizeQuery('伺服器行程', 2), ['伺服', '服器', '器行', '行程'])
+eqList('the same run at minLength 3 yields 3-grams, matching the trigram index',
+    tokenizeQuery('伺服器行程', 3), ['伺服器', '服器行', '器行程'])
+eqList('latin runs stay whole while CJK around them is windowed',
+    tokenizeQuery('停掉 memoria 的伺服器', 3), ['memoria', '的伺服', '伺服器'])
+eqList('a CJK run shorter than n is kept whole, then judged by the length filter',
+    tokenizeQuery('停掉', 3), [])
+eqList('latin-only queries are untouched by the windowing',
+    tokenizeQuery('pnpm lockfile wins', 2), ['pnpm', 'lockfile', 'wins'])
+
+// The user-visible consequence, taken from the real corpus this was measured on: the question and
+// the memory share plenty of Chinese, but not as one contiguous string — so the whole query being a
+// single token scored exactly 0 and the memory was never returned.
+//
+// Note what this case is NOT: a query whose Chinese simply does not appear in the memory (asking
+// about 伺服器 when the memory says "server") still scores 0, correctly. That is vocabulary, not
+// tokenization, and conflating the two is easy enough that the first draft of this very assertion
+// did it.
+if (tokenCoverage('版控文件可以寫真實名稱嗎', '隱私採兩層區隔：版控文件用代稱，本機記憶用真實名稱') > 0) {
+    ok('a CJK paraphrase now scores above 0 instead of collapsing to a single token')
+} else {
+    fail('a CJK paraphrase now scores above 0', 'coverage was still 0')
+}
 
 // ── buildCalibration: confidence×utility honesty check (UFL Phase 2) ─────────────────────────────
 console.log('[pure] buildCalibration')
