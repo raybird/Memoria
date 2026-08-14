@@ -53,13 +53,49 @@ fresh connection, same instant             ok
 1. **不是 readonly 專屬**——`withDb` 的 rw 池同樣會腐化。修法不能只針對唯讀那條。
 2. **重新 prepare 不會清掉陳舊狀態，只有重開連線會。** 所以「完整性檢查改用專屬連線」必須是**每次檢查重開一條、用完關掉**，不能只是另外建一個長生命週期的池——那只是把同一個 bug 搬到另一個池裡，而且下次觸發時更難聯想到這裡。（此提醒由 downstream-http-sidecar 提出，本機實測確認。）
 
+### 決定性證據：同一條連線一邊說索引壞了，一邊成功查詢那個索引
+
+在**同一條**已經回報 `malformed inverted index` 的陳舊連線上：
+
+| 操作 | 結果 |
+|---|---|
+| `prepare('PRAGMA quick_check').all()` | FAIL |
+| `db.pragma('quick_check')` | FAIL |
+| `db.pragma('integrity_check')` | FAIL |
+| 先 `db.pragma('schema_version')` 再測 | FAIL |
+| 一般查詢（`SELECT COUNT(*) FROM sessions`） | **正常** |
+| **FTS MATCH 查詢（`recall_fts MATCH …`）** | **正常** |
+
+最後一列是關鍵：**它宣稱損壞的那張索引，它自己查得好好的。** 這比「新連線說 ok」更強——不必比較兩條連線，單一條連線內部就自相矛盾。
+
+同時這也確認了**沒有更便宜的解法**：不是 `.get()` 的問題、不是 better-sqlite3 pragma API 的問題、也不能靠強制讀 `schema_version` 觸發 schema 重載來清掉。只有關閉重開。
+
 ### 一個不重現的對照，以及它的限制
 
 downstream-cli-container 的部署三個條件全中（FTS5 外部內容表、`SqlitePool` 長生命週期連線、三個容器同時開同一個 DB），但**在 Rust 的 sqlx（底層 libsqlite3）上不重現**——外部寫入前後 `quick_check` 皆 `ok`，FTS5 `'integrity-check'` 也 `ok`，且可見性正常（跨 pool 寫入立刻讀得到，沒有陳舊視圖）。
 
 這把嫌疑從「SQLite 對 FTS5 + 長連線 + 跨行程寫入的固有行為」往**特定 binding 的連線狀態管理**推。
 
-**但該對照有兩個限制，回報者自己標註了**：他們的 pool 是可寫的（不過本機實測顯示 rw 一樣會壞，所以這一項已不構成差異），而且兩個 pool 在**同一個行程**內、不是真正的跨行程。如果真正的跨行程是決定性變因，那個「不重現」就不構成反證。採信時要記得這一點。
+他們隨後把自己標註的兩個限制都補測掉了：
+
+- **真正的跨行程**：sqlx 開長生命週期 pool 並暖機，再用 `std::process::Command` 生一個真的 OS 行程（node + better-sqlite3）做同一個 no-op UPDATE → 寫入後 `quick_check` 與 FTS5 `integrity-check` 皆 `ok`。
+- **真正的 Memoria schema**：用 `memoria init` 建全新 DB（temp `MEMORIA_HOME`），reader 換 sqlx 指著它，外部行程仍用 better-sqlite3 寫 → `recall_fts` 的 integrity-check 仍 `ok`。
+
+### 變因收斂結果
+
+| 變因 | 狀態 |
+|---|---|
+| readonly vs read-write | 排除（本 repo 實測，rw 一樣壞） |
+| 同行程 vs 真跨行程 | 排除（下游測試二） |
+| 陽春 schema vs Memoria schema | 排除（下游測試三） |
+| 寫入端 binding | 排除（下游用的就是 better-sqlite3 寫） |
+| **讀取端 binding** | **唯一剩下的** |
+
+同樣的 FTS5 表、同樣的外部寫入、同樣的長生命週期連線——**只有把讀的那一端換成 sqlx/libsqlite3 就不壞**。配上「重新 prepare 無效、只有重開連線有效」，指向 better-sqlite3 在**連線層**快取了某種本應在跨行程寫入後失效卻沒有失效的狀態；那不是 statement cache，因為重新 prepare 救不回來。
+
+**回報者未測的部分（照抄，避免高估）**：沒有複製長駐 HTTP server 的連線生命週期與連線池行為，也沒測「連線閒置時長」是否為變因。若本 repo 的重現需要閒置或跨多個請求，那個一次性暖機可能還不夠像。
+
+**對本 repo 的意義**：根因在相依套件，我們無法從這裡修掉它；但迴避方式明確且成本可忽略。修法不因此改變。
 
 正常運作下只有 server 自己寫，不觸發。要觸發得有**另一個行程**碰過那個 DB——例如有人在容器內用 CLI 跑一次 `remember`、`sync` 或直接開 DB 看一眼。也就是說：**「你維運過這個部署」這件事本身，會讓健康檢查從此謊報損壞，直到行程重啟。**
 
@@ -133,6 +169,8 @@ journal_mode = delete
 2. 用 `.all()` 取代 `.get()`，保留多列（quick_check 最多 100 列錯誤）。
 3. **區分三種狀態**：`ok` / 明確的非 ok 結果 / 取不到值（`undefined` 或擲出）。第三種目前與第二種無法分辨，但代表的意義完全不同。
 4. **修掉誤報本身**（見上「兩塊」）：完整性檢查改用專屬的新連線，不走 `withDb` 的池。成本是每次 `verify` 多開一次連線——對一個本來就要掃全庫的檢查，那是可忽略的。
+
+   ⚠ **那段程式的註解必須寫明「為什麼不能 pool」**，而不只是寫它在做什麼。因為「每次開一條新連線、用完關掉」**恰好違反「連線很貴、應該 pool 起來」的直覺**，看起來就像一個沒被優化到的地方——後來的人很容易順手把它 pool 起來，而那會讓誤報無聲無息地回來，且下次觸發時更難聯想到這裡。這是本 issue 唯一一個「修好之後仍可能被退回去」的環節。
 5. 待評估：一個可能是暫時性的完整性檢查，值不值得把整個 `/v1/health` 拖成 unhealthy。這與 issue-7 R1 對 `verify` 的判斷、issue-12 對 opt-in 的判斷是同一族問題。
 
 ### 訊息格式：不擴充 `VerifyCheck` 契約
