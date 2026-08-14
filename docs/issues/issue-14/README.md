@@ -64,6 +64,15 @@ journal_mode = delete
 
 差異只存在於 server 那條從啟動起沿用的 readonly 連線裡（`connection.ts` 的 `withDb` 依 `<mode>:<path>` 快取），而那條連線從容器外觀察不到。
 
+**第三個環境的對照（2026-08-13，downstream-cli-container）**：host 直跑（非容器）、v1.27.0、單一行程、無並發、DB 在本機檔案系統、走 CLI 的 `memoria verify` 而非 HTTP：
+
+```
+✓ db_integrity: PRAGMA quick_check=ok
+- ok: yes
+```
+
+**沒有誤報。** 這把嫌疑面收窄到「容器內 + 長生命週期 pooled server 連線」這個組合，也就是唯一觀察到誤報的那個形態——與本機重現失敗的結果並不衝突，因為本機實驗雖然模擬了 pooled 連線，卻是單行程、短時間、非容器檔案系統。
+
 ## 修正方向
 
 1. `db_integrity` 失敗時，訊息帶上**實際取得的值**。

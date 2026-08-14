@@ -53,8 +53,44 @@ CJK 字元全部被視為 token 內字元，而中文沒有空白分隔，所以
 
 ## 影響面
 
-- **本 repo 使用者的日常路徑**：`CLAUDE.md` 要 agent 執行 `memoria recall "<查詢>"`，而 agent 問的是自然語言中文。目前只有 `mode:'vector'` 救得回來，而那需要 `LIBSQL_URL` + helper（opt-in）。純字面路徑基本上召不到。
+- **本 repo 使用者的日常路徑，而且沒有東西在遮它**：`CLAUDE.md` 要 agent 執行 `memoria recall "<查詢>"`，而 **`recall` 的預設模式就是 keyword**（`memoria.ts:470`，`filter.mode ?? 'keyword'`）——`vector` 只在明確下 `--mode vector` 時才跑。所以「反正有語意召回頂著」是錯的：預設路徑的落空是完全暴露的。（此點由 downstream-cli-container 更正，本 session 已於程式碼查證。原先誤以為已啟用語意召回的部署會被 vector 遮掉。）
 - **每個下游都得各補一次**：下游已在呼叫端自行切詞解決，但那是一份活在 Memoria 之外的實作。這與 issue-13 決定讓 `/v1/brief` 回傳 `data.markdown`、而非讓每個呼叫端自己重寫 `renderBrief` 是**同一個論證**。
+
+## 下游回饋（2026-08-13，兩個獨立部署）
+
+### 只改查詢端就夠——理由比「不用重建索引」更強
+
+downstream-cli-container 今天在**自己的 repo** 修掉同一類 CJK tokenize 缺陷，而他們**兩側都得改**。差別在索引的 tokenizer：
+
+| | 索引 tokenizer | 只改查詢端夠嗎 | 為什麼 |
+|---|---|---|---|
+| Memoria `recall_fts` | `trigram` | **夠** | 索引的是每個 3 字元視窗，查詢端切出的短 token 只要 ≥3 字元就以子字串命中，文件側不必動 |
+| 那個下游的 FTS | `unicode61` | **不夠** | 比對的是 **token 等值**，文件側那顆大 token 與任何短查詢 token 都不相等，必須加欄位存展開形式並重建索引 |
+
+這是一個獨立來源的架構對照，結論與本 issue 的傾向一致，但把理由講得更準：**不是「不用重建比較省事」，而是這個索引本來就有能力，是查詢把它退化掉的。** 動工時不要把這個結論當成通則帶去別處——它成立的前提是 trigram。
+
+（參考量級：該下游的遷移是回填 + FTS rebuild，5,000 列 232 ms。Memoria 不需要重建，此數字僅供日後真要重建時估算。）
+
+### 沒有下游依賴目前的 tokenize 或 confidence 數值
+
+downstream-cli-container 確認：agent 讀的是 CLI 的文字輸出，`feedback --score` 由 agent 自行判斷而非從 `confidence` 推導，也沒有任何程式解析 tokenize 行為。純查詢端改動碰不到他們自帶的 helper。**這降低了改動的外部風險**，但不改變與 issue-9 的內部耦合（`confidence` 數值分佈仍會變，那仍需明示決定）。
+
+### ⚠ 想量測影響面的話，`token_count` 是錯的代理指標
+
+該下游試著用既有 telemetry 的 `token_count` 當「整句中文」的代理，**失敗了**：
+
+```
+token_count=1   12 次，落空 4 次 → 33%
+token_count>1   14 次，落空 5 次 → 36%
+```
+
+沒有差異甚至反向。原因是這個代理把兩種相反的情況混在同一格：`token_count=1` 同時包含**短中文詞**（trigram 撈得到，會命中）與**長中文句**（撈不到），訊號互相抵銷。本 issue 針對的只有後者。
+
+要量到真正的東西，需要的是查詢的**最長 token 字元數**——它能區分 `記憶` 與 `停止伺服器行程要注意什麼`，而且不洩漏查詢內容（`recall_telemetry` 目前只存 `query_hash`，事後補算不出來）。
+
+**若要在修正前後做量化對照，得先加這一欄。** 那是本 issue 的前置作業，也是它值得單獨評估的一小塊——加了之後才有辦法回答「這個缺陷實際吃掉多少召回」。
+
+（該下游同時提供了自己的 `recall_telemetry` 分佈：keyword 26 次落空 9 次（35%）。但他們主動聲明**該樣本被當日診斷查詢嚴重汙染**，只能當量級參考，不能當使用者影響評估。這個自我限縮是對的，照抄進來以免日後被當成證據引用。）
 
 ## 待設計（動工前要先決定）
 
