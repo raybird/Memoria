@@ -12,9 +12,43 @@
 | 建立日期 | 2026-08-13 |
 | 相關 | `src/core/db/verify.ts:82-84`、`src/core/db/connection.ts`（連線池）；[issue-12](../issue-12/README.md)（同一種「訊號不說出自己看到什麼」的失效） |
 
-## ⚠ 範圍界線：這個 issue 修的是「可診斷性」，不是那個誤報
+## 根因已定位（2026-08-13 更新，本 session 完整重現）
 
-根因**尚未定位**，而且雙方都卡住了（見下）。本 issue 要做的是讓下次發生時，訊息本身就能說出證據，而不是要人從外部重新驗證去反推。這一點必須寫在最前面，免得有人以為修完誤報就消失了。
+> 本節取代原本的「根因未定位、修的只是可診斷性」。原判斷成立於當時的資訊，但下游提出跨行程這個變因後，本機重現成功了。
+
+**長生命週期的 pooled readonly 連線，在**任何**其他行程寫過這個 DB 之後，`PRAGMA quick_check` 會誤報 FTS5 索引損壞，且不會恢復。**
+
+```
+before external write                      rows=1 ok?=true   [{"quick_check":"ok"}]
+after external no-op UPDATE                rows=1 ok?=false  [{"quick_check":"malformed inverted index for FTS5 table main.recall_fts"}]
+after external INSERT (fires FTS trigger)  rows=1 ok?=false  （同上）
+3s later                                   rows=1 ok?=false  （不恢復）
+fresh connection, same instant             ok
+```
+
+外部寫入是 `UPDATE sessions SET summary = summary`——**一列、值沒變**。連真正改到東西都不需要。
+
+### 決定性的對照：FTS5 才是變因
+
+先前本機重現失敗，是因為 fixture 是一張陽春表。**同樣的跨行程寫入，沒有 FTS5 就不會壞、有就會壞**：
+
+| fixture | 跨行程寫入後 |
+|---|---|
+| 單一普通表 | `ok` |
+| 真實 Memoria schema（`recall_fts`，trigram + triggers） | `malformed inverted index for FTS5 table main.recall_fts` |
+
+機制是 SQLite 在完整性檢查時會呼叫 FTS5 的 integrity 檢查，而長生命週期連線上的 FTS5 快取狀態在外部寫入後失效——它拿陳舊的快取去比對，於是報出根本不存在的損壞。資料完全正常（新連線永遠是 `ok`）。
+
+### 為什麼它一直沒被當成普遍 bug
+
+正常運作下只有 server 自己寫，不觸發。要觸發得有**另一個行程**碰過那個 DB——例如有人在容器內用 CLI 跑一次 `remember`、`sync` 或直接開 DB 看一眼。也就是說：**「你維運過這個部署」這件事本身，會讓健康檢查從此謊報損壞，直到行程重啟。**
+
+下游已在正式環境排除其他變因：不是版本（1.25.0 與 1.27.0 皆會）、不是連線年齡（掛 17 分鐘無外部寫入仍 `ok`）、不是資料損壞（同一時刻新連線乾淨）。
+
+## ⚠ 這個 issue 現在有兩塊，可以分開做
+
+1. **可診斷性**（原範圍）——失敗訊息帶出實際值。**這塊的價值已被上面的重現證明**：那句 `malformed inverted index for FTS5 table main.recall_fts` **一直都在**，是 `verify.ts:84` 用常數字串把它蓋掉的。如果它一開始就被印出來，方向在幾分鐘內就會清楚，而不是耗掉兩個 session 各自重現。
+2. **誤報本身**——不要用 pooled 連線跑完整性檢查（或檢查前重開一條）。這塊是行為修正，可獨立成 issue。
 
 ## 摘要
 
@@ -78,7 +112,12 @@ journal_mode = delete
 1. `db_integrity` 失敗時，訊息帶上**實際取得的值**。
 2. 用 `.all()` 取代 `.get()`，保留多列（quick_check 最多 100 列錯誤）。
 3. **區分三種狀態**：`ok` / 明確的非 ok 結果 / 取不到值（`undefined` 或擲出）。第三種目前與第二種無法分辨，但代表的意義完全不同。
-4. 待評估（**不在本 issue 預設範圍**）：一個可能是暫時性的完整性檢查，值不值得把整個 `/v1/health` 拖成 unhealthy。這與 issue-7 R1 對 `verify` 的判斷、issue-12 對 opt-in 的判斷是同一族問題，但那是行為變更，應該分開決定。
+4. **修掉誤報本身**（見上「兩塊」）：完整性檢查改用專屬的新連線，不走 `withDb` 的池。成本是每次 `verify` 多開一次連線——對一個本來就要掃全庫的檢查，那是可忽略的。
+5. 待評估：一個可能是暫時性的完整性檢查，值不值得把整個 `/v1/health` 拖成 unhealthy。這與 issue-7 R1 對 `verify` 的判斷、issue-12 對 opt-in 的判斷是同一族問題。
+
+### 訊息格式：不擴充 `VerifyCheck` 契約
+
+原本考慮加結構化的 `detail: { rows: [...] }`。詢問唯一在正式環境消費這個端點的下游後**否決**：他們的 `pingMemoriaEndpoint` 只看 HTTP status，body 一個欄位都沒讀；需要細節時是人在終端機看 JSON。**為一個目前不存在的消費者擴充公開契約不划算**，人可讀字串就夠。（若日後真的出現程式化消費者，屆時帶著實際用途再加。）
 
 ## 驗收標準
 
