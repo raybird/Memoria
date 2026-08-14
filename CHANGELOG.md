@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-08-14
+
 ### Fixed
 - **Natural-language Chinese queries can find things again** (issue-15). `TOKEN_SPLIT_PATTERN` counts every CJK character as a token character, and Chinese is written without spaces, so a whole question collapsed into **one token** that then had to appear verbatim for anything to match. On the maintainer's own corpus, 12 questions whose answers demonstrably sat in the index returned the right memory 5 times; after this change, 7 — with total hits rising only from 21 to 24, so recall improved without precision collapsing. This is the default path, not a corner: `recall` defaults to `keyword`, and `vector` only runs when explicitly asked for, so nothing was masking it. The failure was invisible by construction — zero hits reads as "no relevant memory", which is indistinguishable from the truth.
   CJK runs are now expanded into overlapping n-grams, **where n is the caller's own `minLength`**. That rule is the substance of the fix, not a detail: `buildFtsMatch` asks for 3 against a **trigram** index, so 3-grams are exactly what it can match as substrings, while `tokenCoverage` and the tree route ask for 2 and compare with `includes`, where shorter windows catch more paraphrases. Simply emitting 2-grams everywhere — the shape that worked for a downstream on its own hybrid/tree route — would have made the `keyword` path **worse than before**: they fall below its length filter, the MATCH string comes out empty, FTS is skipped entirely, and recall drops to a `LIKE %whole query%` that is verbatim by definition. Latin and digit runs are left whole.
