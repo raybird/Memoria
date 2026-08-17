@@ -77,6 +77,7 @@
 | v1.27.0 | HTTP 取得 brief(issue-13 第一階段) | `GET /v1/brief?project=&days=&top_k=`,回傳 `BriefData` **與**渲染好的 `markdown`(只回 JSON 會逼每個呼叫端自己重寫一份 `renderBrief`——repo 外的第二個渲染器);刻意**不寫** `<knowledge>/BRIEF.md`(sidecar 情境下那是 server 容器的檔案系統);非法 `days`/`top_k` 回 400 而非靜默退回預設。順手拿掉 `server.ts` 檔頭「Routes (12 endpoints)」那個漂移到 19 條的手動計數 |
 | v1.27.1 | 健康檢查誤報 + 三項相鄰修正(issue-14) | `db_integrity` 在**任何其他行程**寫過同一檔案後謊報 FTS5 索引損壞且不重啟不恢復(根因在 better-sqlite3 的連線層快取,經 Rust sqlx 對照收斂到讀取端 binding);完整性檢查改用**每次重開、用完關閉**的專屬連線,**絕不可 pool**(重新 prepare 清不掉,只有重開有效),`test-http-api.sh` 會為此紅燈。失敗訊息改為帶出實際值(三態:no rows / N row(s) / threw)。另修:`verify` 面對真損壞會在 `initDatabase` 整個拋出而列舉不出檢查;`db_connect` 重複回報導致 `health()` 用 `.find()` 對讀不動的 DB 回報 `db: 'ok'` |
 | v1.28.0 | 中文查詢召不回(issue-15) | CJK 連續段切成重疊 n-gram,**n 由呼叫端的 `minLength` 決定**(FTS 要 3、正好對上 trigram 索引;覆蓋率/tree 要 2)。**固定 2-gram 會讓 `keyword` 路徑比不改更糟**——低於 FTS 長度門檻被濾光、MATCH 變空、退回逐字 LIKE。實測真實語料期望答案命中 5/12 → 7/12,總回傳僅 21 → 24。`confidence` 跟著新切分走(拍板;不跟著走會讓正確命中回報 0,即 issue-9 修掉的形態),代價是中文分數被無法命中的窗格稀釋、跨語言不可比 |
+| v1.28.1 | 中文片語 vs 英文同構查詢(issue-16) | v1.28.0 之後中文**單詞**召得回、中文**片語**兩半都在語料裡仍回 0,而 `memory recall` 可以——英文拿 OR 語意、中文拿「整串連續」語意。兩機制疊加:4 字查詢只產出跨詞邊界的 3-gram(語料中永不存在),而承載語意的 2 字詞在 trigram 索引上結構性不可達;且 `queryRecallLike` 比對 `%整個原始查詢%` 所以救援網也接不住。修法:LIKE fallback 對 token 做 OR(整句保留為其中一項),候選 **over-fetch ×4** 才評分——不放寬取回量的話放寬 WHERE 是自我抵銷的。實測期望答案 5/12 → 10/12。⚠ **精確度代價刻意接受**:總回傳 11 → 38,集中在常見詞組成的短中文查詢(`發版流程` 0 → 5 筆而僅 1 筆相關);沒有便宜的分離法(雜訊 relevance 0.33,但正確命中最低到 0.18),需詞頻加權才治得了 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
