@@ -403,6 +403,11 @@ type KeywordRow = { type: string; id: string; session_id: string; timestamp: str
 
 const FTS_MIN_TERM_LEN = 3
 
+// How many candidate rows the LIKE fallback pulls per category before scoring (issue-16). The SQL
+// side can only order by recency, so it must hand the scorer more than it needs or relevance never
+// gets a say — the same reason recall-vector.ts over-fetches before fusion.
+const LIKE_OVERFETCH_FACTOR = 4
+
 // Compact a raw event/session `content` field into a display snippet: pretty JSON if it parses as
 // an object, else the raw text, both capped at 200 chars. Shared by the FTS and LIKE recall paths.
 function buildSnippet(content: string): string {
@@ -520,7 +525,32 @@ function queryRecallLike(
     afterDate?: Date
 ): KeywordRow[] {
     type Row = { id: string; session_id: string; timestamp: string; content: string; project: string }
-    const q = `%${query.toLowerCase()}%`
+
+    // Match ANY token, not the whole query string (issue-16).
+    //
+    // Comparing `%<entire query>%` gave English and Chinese different retrieval semantics for the
+    // same shape of question: `memory recall` reaches FTS, which ORs its terms, so either word can
+    // match — while `記憶召回` produces only boundary-spanning 3-grams that exist nowhere, falls
+    // through to here, and then has to appear *verbatim*. Both halves sat in the corpus and neither
+    // path could see them. Single CJK words worked only by accident: they are filtered out of the
+    // FTS match entirely, so they arrived here as a one-token query where `%記憶%` happens to be
+    // exactly right.
+    //
+    // The whole query stays in the OR as its own term: an exact phrase is the strongest signal
+    // available on this path, and keeping it preserves today's behaviour for queries that already
+    // matched.
+    const whole = `%${query.toLowerCase()}%`
+    const tokens = tokenizeQuery(query)
+    const likeTerms = tokens.length > 0
+        ? [whole, ...tokens.map((t) => `%${t}%`)]
+        : [whole]
+
+    // Widening the WHERE without widening the fetch would be self-defeating: the SQL side orders by
+    // recency, so a bigger candidate set would just mean more recent rows crowding out older ones
+    // BEFORE the scorer below ever sees them. Over-fetch and let scoring decide, the same reason
+    // recall-vector.ts over-fetches by 3 before fusion.
+    const candidateLimit = topK * LIKE_OVERFETCH_FACTOR
+    const orClause = (column: string): string => likeTerms.map(() => `${column} LIKE ?`).join(' OR ')
 
     // Decision and skill rows share one query, parameterized by event_type.
     const eventFilter = buildScopeClause({ project: 's.project', scope: 's.scope', time: 'e.timestamp' }, { projectFilter, scopeFilter, afterDate })
@@ -528,23 +558,23 @@ function queryRecallLike(
       SELECT e.id, e.session_id, e.timestamp, e.content, s.project
       FROM events e JOIN sessions s ON s.id = e.session_id
       WHERE e.event_type = ?
-        AND LOWER(e.content) LIKE ?
+        AND (${orClause('LOWER(e.content)')})
         ${eventFilter.sql}
       ORDER BY e.timestamp DESC
       LIMIT ?
     `)
-    const decisionRows = eventStmt.all('DecisionMade', q, ...eventFilter.params, topK) as Row[]
-    const skillRows = eventStmt.all('SkillLearned', q, ...eventFilter.params, topK) as Row[]
+    const decisionRows = eventStmt.all('DecisionMade', ...likeTerms, ...eventFilter.params, candidateLimit) as Row[]
+    const skillRows = eventStmt.all('SkillLearned', ...likeTerms, ...eventFilter.params, candidateLimit) as Row[]
 
     const sessionFilter = buildScopeClause({ project: 'project', scope: 'scope', time: 'timestamp' }, { projectFilter, scopeFilter, afterDate })
     const sessionRows = db.prepare(`
       SELECT id, id AS session_id, timestamp, COALESCE(summary, '') AS content, project
       FROM sessions
-      WHERE (LOWER(summary) LIKE ? OR LOWER(project) LIKE ?)
+      WHERE ((${orClause('LOWER(summary)')}) OR (${orClause('LOWER(project)')}))
         ${sessionFilter.sql}
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(q, q, ...sessionFilter.params, topK) as Row[]
+    `).all(...likeTerms, ...likeTerms, ...sessionFilter.params, candidateLimit) as Row[]
 
     const all = [
         ...decisionRows.map((r) => ({ type: 'decision' as const, ...r })),
@@ -552,8 +582,8 @@ function queryRecallLike(
         ...sessionRows.map((r) => ({ type: 'session' as const, ...r }))
     ]
 
-    const tokens = tokenizeQuery(query)
-
+    // `tokens` is the same list the WHERE was built from — scoring must judge candidates by the
+    // terms that admitted them, not by a second, differently-derived list.
     return all
         .map((r) => {
             const snippet = buildSnippet(r.content)

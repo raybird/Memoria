@@ -47,6 +47,18 @@ echo "  recall hits: $HITS"
 SKILL_HITS=$("$CLI" recall "relevance 顯示" --project demo --json | jq_field '.data.length')
 [ "$SKILL_HITS" -ge 1 ] || { echo "  ✗ skill note not recallable"; exit 1; }
 
+echo "[cli-memory] (A2) a CJK phrase recalls like its English counterpart (issue-16)"
+# Chinese multi-character queries used to get "the whole string must appear contiguously" semantics
+# while English multi-word queries got OR semantics, for the same shape of question. The phrase below
+# never appears as one string in the corpus, but both of its halves do — and its English analogue
+# already worked, which is what made this an asymmetry rather than a vocabulary gap.
+"$CLI" remember "向量索引建置流程" --project demo --rationale "先 index build 再 ingest" >/dev/null
+"$CLI" remember "語意召回的降級行為" --project demo --rationale "fail-open 退回字面" >/dev/null
+PHRASE_HITS=$("$CLI" recall "索引召回" --project demo --json | jq_field '.data.length')
+[ "$PHRASE_HITS" -ge 1 ] || {
+    echo "  ✗ a CJK phrase whose halves are both in the corpus recalled nothing"; exit 1; }
+echo "  CJK phrase hits: $PHRASE_HITS (halves present, phrase itself never contiguous)"
+
 echo "[cli-memory] (B) identical remember is idempotent (session count AND fts rows)"
 SESSIONS_BEFORE=$(q "SELECT COUNT(*) c FROM sessions")
 "$CLI" remember "改用 pnpm 作為套件管理器" --project demo --rationale "lockfile 是權威" >/dev/null
