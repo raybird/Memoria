@@ -8,7 +8,7 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-07-28 更新
+> 2026-08-14 更新（本節內容含 07-28 起累積的條目;最舊者仍標原日期）
 
 - **版本**:`v1.26.0` 已發(2026-08-13,GitHub Release + npm;同日先發 v1.25.1。先前 2026-08-10 同日連發 v1.24.0 → v1.25.0,再前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
@@ -74,8 +74,13 @@
 | v1.25.0 | 語意信心語意化(issue-9) | `confidence: number \| null` + `meta.confidence_basis`——語意命中不再套字面覆蓋率,回 `null`(無法評估)而非 0(評估過且很差);連帶讓這類召回退出 calibration 分桶,不再偽造「低信心高效用」。`VectorRow.relevance` 型別設為 `never`(不變式由編譯器保證);CLI 顯示 `n/a` 而非退回 RRF score(那是 ~0.016 的另一個尺度)。⚠ 契約變更但只影響 opt-in 的 vector route |
 | v1.25.1 | `brief` 漏過濾 supersede | `queryBrief` 從未查 `memory_attributes`,被取代的舊說法與它自己的更正並列在**唯一會自動載入每個 session** 的 `BRIEF.md` 裡,無標記可辨。決策查詢改在 SQL 層 `LEFT JOIN` + `superseded_by IS NULL`,UFL 區塊在 `.slice(0, topK)` **之前**過濾——撈完再濾會讓 `LIMIT topK` 少給筆數。不提供 brief 版的 `--include-superseded`(自動載入的衍生檢視必須只呈現一個版本);零標記與舊 DB 行為不變 |
 | v1.26.0 | 語意召回交付鏈(issue-10 + 12) | tarball 補上 `skills/memoria-vector`(逐檔複製,`node_modules` 維持 opt-in;打包腳本雙向斷言「該有的要在、不該有的不准在」)——先前 `install.sh` 路徑**不可能**跑語意召回且完全靜默;`doctor` 新增向量層檢查(`inspectVectorLayer()` 與解析邏輯同檔,未啟用算通過,`--json` 契約不變) |
+| v1.27.0 | HTTP 取得 brief(issue-13 第一階段) | `GET /v1/brief?project=&days=&top_k=`,回傳 `BriefData` **與**渲染好的 `markdown`(只回 JSON 會逼每個呼叫端自己重寫一份 `renderBrief`——repo 外的第二個渲染器);刻意**不寫** `<knowledge>/BRIEF.md`(sidecar 情境下那是 server 容器的檔案系統);非法 `days`/`top_k` 回 400 而非靜默退回預設。順手拿掉 `server.ts` 檔頭「Routes (12 endpoints)」那個漂移到 19 條的手動計數 |
+| v1.27.1 | 健康檢查誤報 + 三項相鄰修正(issue-14) | `db_integrity` 在**任何其他行程**寫過同一檔案後謊報 FTS5 索引損壞且不重啟不恢復(根因在 better-sqlite3 的連線層快取,經 Rust sqlx 對照收斂到讀取端 binding);完整性檢查改用**每次重開、用完關閉**的專屬連線,**絕不可 pool**(重新 prepare 清不掉,只有重開有效),`test-http-api.sh` 會為此紅燈。失敗訊息改為帶出實際值(三態:no rows / N row(s) / threw)。另修:`verify` 面對真損壞會在 `initDatabase` 整個拋出而列舉不出檢查;`db_connect` 重複回報導致 `health()` 用 `.find()` 對讀不動的 DB 回報 `db: 'ok'` |
+| v1.28.0 | 中文查詢召不回(issue-15) | CJK 連續段切成重疊 n-gram,**n 由呼叫端的 `minLength` 決定**(FTS 要 3、正好對上 trigram 索引;覆蓋率/tree 要 2)。**固定 2-gram 會讓 `keyword` 路徑比不改更糟**——低於 FTS 長度門檻被濾光、MATCH 變空、退回逐字 LIKE。實測真實語料期望答案命中 5/12 → 7/12,總回傳僅 21 → 24。`confidence` 跟著新切分走(拍板;不跟著走會讓正確命中回報 0,即 issue-9 修掉的形態),代價是中文分數被無法命中的窗格稀釋、跨語言不可比 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
+>
+> ⚠ **這張表是手動維護的,而它曾經漂移**:v1.27.0 / v1.27.1 / v1.28.0 三版都發完了才被下游指出沒進表(§7 backlog 有標 done,表格沒補)。`release.sh publish` 現在會檢查本表是否已有該版本的列,沒有就擋下發版——與 CHANGELOG 區段同樣的守門。
 
 ---
 

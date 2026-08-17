@@ -27,6 +27,7 @@ Guards `publish` enforces, each from something that actually went wrong:
 | Guard | Prevents |
 |---|---|
 | only version-bump files dirty | a release commit swallowing uncommitted feature work |
+| `docs/HANDOVER.md` §2 has a row for the version | the shipping log falling silently behind — it was three releases stale before a downstream noticed |
 | `build` before `release:docs-check` | docs-check asserting a `dist/cli.mjs` that predates the bump |
 | annotated tag, pushed **by ref** | `--follow-tags` silently skipping a lightweight tag |
 | release run must appear within 2 min | a successful push, an advanced `main`, and no release at all |

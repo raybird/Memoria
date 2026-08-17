@@ -208,6 +208,28 @@ queryRecallLike(db, query, …)   ← 用的是「原始查詢字串」的 %quer
 
 **已知代價**：分數被無意義的窗格稀釋（`器行`、`程要` 這類永遠不會命中），所以中文查詢的 confidence 結構性低於英文，**跨語言不可比**。`confidence_basis` 已載明尺度來源是 `lexical_coverage`，本來就沒有宣稱跨語言可比性；但判讀時要記得。
 
+### ⚠ 給下游的重要更正：`hybrid` 兩條路都跑，所以預切詞的下游現在就在付代價
+
+本 issue 發版後，通知下游時我判斷「用 `hybrid` 的下游因為 `minLength=2`，自己預切 2 字詞大致沒事」。**那是錯的**，由 downstream-http-sidecar 讀碼更正、本 session 查證確認（`memoria.ts:483-488`、`:539`）：
+
+```ts
+const treeRaw    = mode !== 'keyword' && mode !== 'vector' ? recallTree(...)    : []
+const keywordRaw = mode === 'tree'                         ? []                 : recallKeyword(...)
+```
+
+`hybrid` 下**兩者都無條件執行**，然後 merge。`fallbackUsed` 是事後從「有沒有 keyword 專有結果存活」判斷的，**不控制 keyword 跑不跑**。
+
+所以一個把中文預切成空白分隔 2 字詞的 hybrid 呼叫端是「一邊活一邊死」：
+
+| hybrid 的一半 | minLength | 送 2 字詞的結果 |
+|---|---|---|
+| tree（`scoreNode` + `includes`） | 2 | 存活，正常命中 |
+| keyword（`buildFtsMatch` → trigram） | **3** | 被長度過濾 → MATCH 空 → 退回帶著插入空白的 `%…%` LIKE |
+
+**結論比原本更強**：不是「未來改用 keyword 才會變差」，而是**現在已經在損失 keyword 那半邊的貢獻**，只是被 tree 撐住所以看不出來。預切詞的下游應該拿掉自己那層，不是維持現狀。
+
+順帶修掉一個同型的文件缺陷：`memoria.ts:539` 的註解原本寫 `prefer tree route, then merge keyword fallback if needed`——那個 `if needed` 描述的是程式沒有實作的意圖，而它正是我判斷錯誤的來源。註解已改成陳述實際行為，並寫明沒有「if needed」。
+
 ### 仍然召不回的 4 題，以及為什麼不是這個 issue 能解的
 
 `容器裡那份記憶跟本機有關係嗎` / `這次發版號要怎麼選` / `截斷資料的時候要不要提示` / `骨架的促升要怎麼擋` 仍是 0 筆。

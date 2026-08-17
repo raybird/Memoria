@@ -70,6 +70,17 @@ assert_changelog_section() {
         || die "CHANGELOG.md has no '## [$version] - YYYY-MM-DD' section. release.yml extracts that section as the release notes, so a missing one fails AFTER the tag is public."
 }
 
+# HANDOVER §2 is the hand-maintained shipping log, and it drifted: v1.27.0, v1.27.1 and v1.28.0 were
+# all released before a downstream pointed out that none of them had a row, while §7's backlog had
+# already been marked done. A document whose opening line promises "read this and you can take over"
+# is worse than useless when it is three releases stale, so the reminder is a guard rather than a
+# habit — the same treatment the CHANGELOG section already gets.
+assert_handover_row() {
+    local version="$1"
+    grep -Fq "| v$version |" docs/HANDOVER.md \
+        || die "docs/HANDOVER.md §2 has no row for v$version. That table is the shipping log a future session reads to learn what changed when; it has silently fallen three releases behind before. Add the row, then re-run."
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # prepare
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +124,7 @@ cmd_publish() {
     step "Preconditions for $tag"
     assert_on_branch_and_synced
     assert_changelog_section "$version"
+    assert_handover_row "$version"
 
     # Only the files `release:bump` touches, plus CHANGELOG, may be dirty. Anything else means feature
     # work is riding along uncommitted — the release commit would swallow it and the history would

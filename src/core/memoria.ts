@@ -535,7 +535,13 @@ export class MemoriaCore {
                     return rrfFuse<RawRecallRow>([keywordRaw as RawRecallRow[], v.rows as RawRecallRow[]], topK)
                 }
 
-                // hybrid mode: prefer tree route, then merge keyword fallback if needed
+                // hybrid mode: BOTH routes have already run — see the unconditional `treeRaw` /
+                // `keywordRaw` above — and both always merge here, tree first so it wins on ties.
+                // There is no "if needed": `fallbackUsed` below is decided after the fact, from
+                // whether anything keyword-only survived the merge, and does not gate the query.
+                // (This comment used to say "merge keyword fallback if needed", which described an
+                // intent the code does not implement; a hybrid caller that degrades the keyword half
+                // is losing that half's contribution right now, not hypothetically.)
                 const merged = [...treeRaw, ...keywordRaw].filter((item, index, arr) =>
                     arr.findIndex((x) => x.id === item.id && x.session_id === item.session_id) === index
                 ) as RawRecallRow[]
