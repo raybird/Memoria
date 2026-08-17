@@ -62,6 +62,33 @@ function expandCjkRuns(token: string, n: number): string[] {
     return out
 }
 
+/** Did the keyword half actually change what the caller received? (issue-16 follow-up)
+ *
+ * `returned` must be the rows AFTER `slice(0, topK)`, not the merged candidate set. The distinction
+ * is the whole point: when the tree half fills topK on its own, keyword's extra candidates are cut
+ * before anyone sees them, so calling that a fallback describes work that never reached the caller.
+ *
+ * It is not cosmetic — `routeUtility` groups observed utility by route, so a mislabelled query moves
+ * tree's good results into the fallback bucket and inflates it, corrupting the one comparison that
+ * metric exists to make. v1.28.1 turned this from rare to common: widening the LIKE fallback gave the
+ * keyword half far more to find, nearly all of it then discarded by the slice.
+ *
+ * Extracted as a pure function because the corpus conditions that trigger it (a tree half that
+ * returns at least topK distinct sessions) cannot be built through this repo's own indexing path —
+ * `buildMemoryIndex` creates one topic node per session, so the node→session mapping always collapses
+ * below topK. The invariant is asserted directly instead.
+ */
+export function hybridUsedKeyword(
+    treeKeys: Iterable<string>,
+    returnedKeys: Iterable<string>
+): boolean {
+    const fromTree = new Set(treeKeys)
+    for (const key of returnedKeys) {
+        if (!fromTree.has(key)) return true
+    }
+    return false
+}
+
 // Lowercase, split on non-token chars, expand CJK runs into minLength-sized windows, trim, keep
 // tokens >= minLength, dedupe.
 export function tokenizeQuery(query: string, minLength = 2): string[] {

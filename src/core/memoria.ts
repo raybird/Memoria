@@ -53,6 +53,7 @@ import {
     memoryRefExists,
     type BriefOptions
 } from './db/index.js'
+import { hybridUsedKeyword } from './utils.js'
 import { importSourceFile } from './source-import.js'
 import { loadMemoriaConfig } from './config.js'
 import { resolveRepositoryIdentity } from './git/identity.js'
@@ -546,12 +547,28 @@ export class MemoriaCore {
                     arr.findIndex((x) => x.id === item.id && x.session_id === item.session_id) === index
                 ) as RawRecallRow[]
 
-                const treeIds = new Set((treeRaw as RawRecallRow[]).map((r) => `${r.id}:${r.session_id}`))
-                const usedKeyword = merged.some((r) => !treeIds.has(`${r.id}:${r.session_id}`))
+                // Decide the route label from what is RETURNED, not from what was merged.
+                //
+                // `usedKeyword` used to be computed on the pre-slice set, so a keyword-only row that
+                // existed in `merged` but was cut by `slice(0, topK)` still flipped the label. When
+                // tree fills topK on its own, that means the answer is 100% tree while the route
+                // reads `hybrid_fallback` — a label describing work that never reached the caller.
+                //
+                // It matters because `routeUtility` groups observed utility BY route: mislabelled
+                // rows move tree's good results into the fallback bucket and make it look more useful
+                // than it is, which is the one question that metric exists to answer. v1.28.1 made
+                // this fire often rather than rarely — widening the LIKE fallback gave the keyword
+                // half far more to find, most of it then discarded by the slice.
+                const finalRows = merged.slice(0, topK)
+                const rowKey = (r: RawRecallRow): string => `${r.id}:${r.session_id}`
+                const usedKeyword = hybridUsedKeyword(
+                    (treeRaw as RawRecallRow[]).map(rowKey),
+                    finalRows.map(rowKey)
+                )
 
                 fallbackUsed = treeRaw.length === 0 || usedKeyword
                 routeMode = fallbackUsed ? 'hybrid_fallback' : 'hybrid_tree'
-                return merged.slice(0, topK)
+                return finalRows
             })()
 
             const rawHits: RecallHit[] = raw.map((r, i) => ({

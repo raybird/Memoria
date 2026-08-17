@@ -12,6 +12,7 @@
 import {
     tokenCoverage,
     tokenizeQuery,
+    hybridUsedKeyword,
     effectiveUtility,
     buildCalibration,
     buildRouteUtility,
@@ -138,6 +139,35 @@ if (tokenCoverage('版控文件可以寫真實名稱嗎', '隱私採兩層區隔
 } else {
     fail('a CJK paraphrase now scores above 0', 'coverage was still 0')
 }
+
+// ── hybridUsedKeyword: the route label must describe what was RETURNED ───────────────────────────
+//
+// `route_mode` is the grouping key for `routeUtility`, so mislabelling it corrupts the one comparison
+// that metric exists to make. The bug this pins: the flag used to be computed on the merged candidate
+// set, so a keyword-only row that `slice(0, topK)` discarded still flipped the label to
+// `hybrid_fallback` — announcing a fallback whose results nobody received.
+//
+// Asserted here rather than end-to-end because the corpus shape that triggers it — a tree half that
+// yields at least topK distinct sessions — cannot be produced through this repo's own indexing path
+// (`buildMemoryIndex` writes one topic node per session, so the node→session mapping collapses below
+// topK; measured while trying to build exactly such a fixture).
+console.log('[pure] hybridUsedKeyword')
+
+eq('pure tree result is not a fallback', hybridUsedKeyword(['a:1', 'b:2'], ['a:1', 'b:2']), false)
+eq('a keyword-only row that SURVIVED counts as fallback', hybridUsedKeyword(['a:1'], ['a:1', 'z:9']), true)
+eq('tree returning nothing leaves the decision to the caller', hybridUsedKeyword([], []), false)
+eq('every returned row keyword-only → fallback', hybridUsedKeyword(['a:1'], ['y:8', 'z:9']), true)
+
+// The regression itself, with both inputs shown side by side — feeding the merged candidate set is
+// what the code used to do, and it is why a pure-tree answer got announced as a fallback. Asserting
+// only the fixed value would leave the label "sliced off" describing a case the test never builds.
+const treeKeys = ['a:1', 'b:2']
+const mergedKeys = [...treeKeys, 'z:9']        // keyword found one extra candidate
+const returnedKeys = mergedKeys.slice(0, 2)    // …and topK=2 cut it before anyone saw it
+eq('feeding the PRE-SLICE merged set reports a fallback (the old bug)',
+    hybridUsedKeyword(treeKeys, mergedKeys), true)
+eq('feeding the RETURNED rows does not (the fix)',
+    hybridUsedKeyword(treeKeys, returnedKeys), false)
 
 // ── buildCalibration: confidence×utility honesty check (UFL Phase 2) ─────────────────────────────
 console.log('[pure] buildCalibration')

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`route_mode` no longer reports `hybrid_fallback` for an answer that came entirely from the tree route.** The flag was computed on the merged candidate set, before `slice(0, topK)`, so a keyword-only row that the slice discarded still flipped the label — announcing a fallback whose results nobody received. It only fires when the tree half fills `topK` on its own, which is why it never showed on this repo's own corpus (measured: `recallTree` yields at most 3 there, because `buildMemoryIndex` writes one topic node per session and the node→session mapping collapses); a downstream whose corpus is homogeneous enough for tree to fill every query saw it on every affected query, with **identical returned ids** either side of the label change. v1.28.1 turned it from rare into common — widening the LIKE fallback gave the keyword half far more to find, nearly all of it then cut by the slice.
+  **This matters because `routeUtility` groups observed utility by `route_mode`**: mislabelled queries move tree's good results into the fallback bucket, inflating exactly the comparison that metric exists to make, and `docs/HANDOVER.md` §5 lists accumulating that data as the next priority. ⚠ **Telemetry written before this fix is not comparable across the boundary** — `hybrid_fallback` rows recorded under v1.28.0/v1.28.1 include an unknown share that were pure-tree answers. The decision now uses the rows actually returned, extracted as `hybridUsedKeyword()` so the invariant can be asserted directly: the corpus conditions that trigger it cannot be built through this repo's own indexing path, so an end-to-end test would have had no failing case to pin.
+
 ## [1.28.1] - 2026-08-17
 
 ### Fixed
