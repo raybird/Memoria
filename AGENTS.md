@@ -203,6 +203,11 @@ src/core/
     verify.ts      – runVerify
     prune-export.ts – runPrune (utility-weighted retention), exportMemory
     recall.ts      – buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting (UFL re-rank)
+                     ⚠ memory_nodes is a COPY of session title/summary/scope, not a view, and
+                     buildMemoryIndex only indexes sessions never indexed before (--session-id does
+                     not override that). Rewriting sessions.summary in place is invisible to tree
+                     recall and `index build` will NOT repair it. See docs/OPERATIONS.md →
+                     Tree Index Notes.
     git-repo.ts    – repository registry (registerRepository, findRepository, relocate/remove)
     git-scan.ts    – incremental scan persistence (commits/refs/scan runs/events)
     git-summary.ts – summary ranges + summaries (idempotent upserts, agent write-back)

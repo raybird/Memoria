@@ -60,6 +60,56 @@ Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `s
 - Disable auto-build by setting `MEMORIA_INDEX_AUTOBUILD=0`.
 - Manual incremental rebuild remains available via `./cli index build`.
 
+### ⚠ `memory_nodes` holds its own copy of the text, and `index build` will not refresh it
+
+`memory_nodes` is not a view over `sessions`. It carries **independent `title` / `summary` / `scope` /
+`project` columns**, populated once from the session at index time. `recallTree` (and therefore
+`mode: 'tree'`, the tree half of `hybrid`, and the MCP bridge payload, whose scope is derived from
+`memory_nodes`) reads that copy — never `sessions`.
+
+That matters because `buildMemoryIndex` selects sessions with
+
+```sql
+AND id NOT IN (SELECT DISTINCT session_id FROM memory_node_sources)
+```
+
+**unconditionally** — it indexes sessions that have *never* been indexed, not sessions that have
+*changed*. Three consequences, in the order they bite:
+
+1. **Editing `sessions.summary` in place never reaches tree recall.** The keyword path picks the change
+   up immediately (FTS is trigger-maintained), so recall appears to work — while `tree` keeps serving
+   the old text indefinitely.
+2. **Re-running `index build` does not fix it**, because the session is already listed in
+   `memory_node_sources` and is therefore skipped. `--session-id` does **not** override this; the
+   `NOT IN` clause applies to it too.
+3. **The output looks like success.** A skipped session leaves `sessionsConsidered: 0`, which is
+   indistinguishable from "everything is already up to date".
+
+A real instance: a downstream backfilled ~900 memories by rewriting `sessions`, re-ran the index
+build, and got **0 recall hits** — the nodes still held the pre-backfill text and nothing said so.
+
+**Recovery: delete the link rows only, then re-index.** `buildMemoryIndex` upserts with
+`INSERT OR REPLACE`, so the node itself does not need removing — the only thing holding the refresh
+back is the `NOT IN` check against `memory_node_sources`:
+
+```bash
+sqlite3 "$MEMORIA_HOME/.memory/sessions.db" \
+  "DELETE FROM memory_node_sources WHERE session_id = '<id>';"
+./cli index build --session-id '<id>'
+# → sessionsConsidered: 1, sessionsIndexed: 1, nodesUpserted: 3
+```
+
+**Do not try to delete the nodes as well.** `memory_nodes.parent_id` is self-referencing (a session
+node hangs off a topic node), so deleting a node while its children — or its `memory_node_sources`
+rows — still exist fails with `FOREIGN KEY constraint failed`. Deleting them in the right order is
+possible but pointless: the upsert already overwrites the row. (Both facts here were measured; the
+first draft of this section prescribed the node deletion and got the constraint error.)
+
+**Not yet addressed**: `index build` has no `--rebuild` / `--force`, and no change detection (there is
+no content hash on the node to compare against). Adding either would remove the need for the manual
+delete above; it has not been scoped. Until then, any tool that rewrites `sessions` — a backfill, a
+migration, a repair script — has to treat node invalidation as part of its own job.
+
 ## Import Guardrails
 
 - Memoria suppresses exact duplicate events within the same imported session.
