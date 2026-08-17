@@ -126,11 +126,14 @@ cmd_publish() {
     assert_changelog_section "$version"
     assert_handover_row "$version"
 
-    # Only the files `release:bump` touches, plus CHANGELOG, may be dirty. Anything else means feature
-    # work is riding along uncommitted — the release commit would swallow it and the history would
-    # stop saying what shipped when.
+    # Only the files `release:bump` touches, plus the two documents written AT release time
+    # (CHANGELOG's section and HANDOVER §2's row — `assert_handover_row` above requires the latter, so
+    # forbidding it here would make the two guards contradict each other; that is exactly what
+    # happened the first time both existed). Anything else means feature work is riding along
+    # uncommitted — the release commit would swallow it and the history would stop saying what shipped
+    # when.
     local unexpected
-    unexpected="$(git status --porcelain | awk '{print $2}' | grep -vE '^(package\.json|install\.sh|CHANGELOG\.md|docs/INSTALL\.md|skills/memoria-memory-sync/deployed/DEPLOYED_SKILL\.md)$' || true)"
+    unexpected="$(git status --porcelain | awk '{print $2}' | grep -vE '^(package\.json|install\.sh|CHANGELOG\.md|docs/HANDOVER\.md|docs/INSTALL\.md|skills/memoria-memory-sync/deployed/DEPLOYED_SKILL\.md)$' || true)"
     [ -z "$unexpected" ] || die "these files are dirty but are not part of a version bump — commit them first:
 $unexpected"
 
