@@ -167,16 +167,34 @@ jobs:
             exit 1
           fi
 
-      - name: Create GitHub Release
+      # Idempotent on purpose. `gh release create` fails when the release already exists, which made
+      # every step AFTER it unrecoverable: the workflow could not be re-run. Hit for real on v1.29.0
+      # — npm publish failed on an expired token, and the obvious remedy (fix the token, re-run the
+      # job) died here instead of retrying the publish, forcing a choice between deleting a published
+      # release and burning a version number. Assets are re-uploaded with --clobber so a re-run also
+      # repairs a partial upload rather than leaving stale files next to fresh ones.
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            dist/release/*.tar.gz \
-            dist/release/*.tar.gz.sha256 \
-            install.sh \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file release-notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists — updating it (re-run)."
+            gh release upload "$GITHUB_REF_NAME" \
+              dist/release/*.tar.gz \
+              dist/release/*.tar.gz.sha256 \
+              install.sh \
+              --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              dist/release/*.tar.gz \
+              dist/release/*.tar.gz.sha256 \
+              install.sh \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          fi
 
       - name: Publish to npm
         env:
