@@ -204,7 +204,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | # | 狀態 | 產出 | 完成判準 |
 | --- | --- | --- | --- |
 | 1 | **已完成**（2026-08-24） | `memoria mark <refId>` 命令，含 `--durable` / `--episodic` / `--sensitivity`，ref 存在性檢查 | SCN-001、SCN-002 通過（`scripts/test-memory-attributes.sh` 的 (H)/(I) 段，exit 0）；`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help` 均通過；`test-smoke.sh`／`test-cli-memory.sh` 無回歸 |
-| 2 | 未開始 | `queryBrief` 新增 pinned 查詢（`retention='durable'` 且 `superseded_by IS NULL`），`renderBrief` 新增區塊，零標記時整區不輸出 | SCN-003、SCN-004、SCN-005、SCN-006 通過 |
+| 2 | **已完成**（2026-08-24） | `queryBrief` 新增 pinned 查詢（`retention='durable'` 且 `superseded_by IS NULL`），`renderBrief` 新增區塊，零標記時整區不輸出 | SCN-003～006 通過（`test-memory-attributes.sh` 的 (J)～(M) 段，exit 0）；SCN-005 以實作前產出的 golden（`scripts/fixtures/brief-zero-marker.golden.md`）逐位元組比對；`check`／`build` 通過；`test-smoke`／`test-cli-memory`／`test-pure-functions`／`test-http-api` 無回歸 |
 | 3 | 未開始 | cwd → `repository_instances.path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過 |
 | 4 | 未開始 | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過 |
 | 5 | 未開始 | `--global` 還原旗標 | SCN-010 通過 |
@@ -215,7 +215,9 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 
 **SCN-005（零標記 byte-identical）優先於其他所有項目。** 理由：它是 issue-5 為 `memory_attributes` 立下的不變式，也是本 issue 唯一會回溯影響既有使用者的地方——pinned 區是新增能力，出錯只是少了東西；但若零標記時 BRIEF 產出改變，每個沒用到本功能的使用者都會被動受影響。其次是 SCN-010，因為它是破壞性變更的逃生口，必須在 SCN-007 之前可用。
 
-完成證據：`scripts/test-*.sh` 的紅綠燈輸出，加上在真實 `~/.memoria`（15 sessions／39 decisions／8 筆 durable）上跑一次 `memoria brief` 前後的 diff。
+完成證據（2026-08-24 實際觀察）：SCN-005 對應 `test-memory-attributes.sh` 的 (J) 段，以步驟 2 實作**之前**（HEAD=967a82d）產出的 golden 逐位元組比對，實作前後皆綠——它是不變式守門，紅轉綠不是它的證據形式，「改動後仍綠」才是。
+
+真實資料驗證在 `~/.memoria` 的**副本**上執行（未動使用者檔案）：15 sessions／8 個 durable ref 收斂為 4 則 pinned 記憶，3 則已被 supersede 者正確排除；再以 `mark gitdec-sum_2dda8ccc141e45bb-0 --durable` 標記該決策後，它如期進入 pinned 區——那正是本 issue 要解決的那一筆。
 
 ## 待確認事項
 
@@ -224,7 +226,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | U-1 | D3 的環境類判定是衍生的：若未來把 `memoria-ops` 註冊成 repo，那 8 筆操作紀律會不再常駐於每個專案 | **已解決**（2026-08-24） | 處置：不靠偵測邏輯，改由 SCN-011 在輸出報出環境類筆數、SCN-012 保證該數字下降時看得見。漂移仍可能發生，但不再靜默 |
 | U-2 | per-project BRIEF 要各專案 CLAUDE.md 自行加 `@` 才會生效；`external-repo` 的 CLAUDE.md 不在本 repo 管轄範圍 | **已解決**（2026-08-24） | 處置：由 SCN-013 在 brief 產出時直接印出該加的那行，不另寫第二份說明文件——避免重蹈 v1.25.1 那次「腳本輸出與文件互相矛盾」的雷 |
 | U-3 | `--days` / `topK` 對 per-project 檔案是否應有不同預設 | **已決**（2026-08-24） | 沿用現有預設（30 天／topK 10），不另立數字。理由：目前沒有資料能支持任何別的值，拍一個只是換一個猜。實際使用後若 per-project 窗口經常為空，再依 issue-16 的量測紀律重新評估 |
-| U-4 | `mark` 目前只標記傳入的那一個 ref，不會自動連帶標記 `note-*` ↔ `noteev-*` 的另一半；`remember --durable` 則兩半都標（`memoria.ts:405-412`）。對 SCN-001 的 `gitdec-*` 無影響（它沒有配對半），但 `mark note-xxx --durable` 會只標到一半 | **未決**（2026-08-24 實作步驟 1 時浮現） | 不阻塞步驟 1——SCN-001／SCN-002 都不涉及配對。刻意未實作：配對屬未經核准的行為，依規範不得擅自寫入。步驟 2 的 pinned 查詢若以 `hit.id` 比對，需先決定要補一個 Scenario 還是接受不對稱 |
+| U-4 | `mark` 只標記傳入的那一個 ref，不連帶標記 `note-*` ↔ `noteev-*` 的另一半；`remember --durable` 則兩半都標 | **影響已縮小**（2026-08-24 步驟 2） | 對 pinned 顯示無影響——步驟 2 的 `collapseNotePairs()` 已收斂配對，只標一半也只會顯示一行。殘留影響在 recall：`applyMemoryAttributes` 的 decay 豁免逐 ref 生效，只標一半時另一半不受惠。仍未有對應 Scenario，維持不擅自實作 |
 
 ## Gate 豁免紀錄
 

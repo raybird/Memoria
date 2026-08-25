@@ -13,6 +13,10 @@
 #
 #   (H) SCN-001 mark reaches a ref `remember` cannot construct (gitdec-*), and leaves the event alone
 #   (I) SCN-002 mark on an unknown ref fails loudly and writes nothing
+#   (J) SCN-005 zero markers leave the brief byte-identical to its pre-issue-17 output
+#   (K) SCN-003 the pinned block ignores the --days window and topK, and collapses note pairs
+#   (L) SCN-004 a pinned memory is not repeated in the recent-decisions block
+#   (M) SCN-006 durable + superseded stays out of the pinned block
 #
 # Time is manipulated by rewriting timestamps directly, the same trick test-migrations.sh uses.
 
@@ -38,6 +42,10 @@ reset_home() {
 
 q() { node -e "const D=require('$BSQ');const db=new D('$DB',{readonly:true});const r=db.prepare(process.argv[1]).get();console.log(r?Object.values(r)[0]:'')" "$1"; }
 sql() { node -e "const D=require('$BSQ');const db=new D('$DB');db.prepare(process.argv[1]).run()" "$1"; }
+# 取出某個 ## 標題底下、到下一個 ## 之前的內容。
+section() { awk -v h="$1" 'index($0,h)==1{f=1;next} /^## /{f=0} f' "$2"; }
+# BRIEF 帶生成時間戳,逐位元組比對前先正規化掉所有 ISO 時間。
+normalize_brief() { sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z/<TS>/g' "$1"; }
 field() { node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);console.log(eval("j"+process.argv[1]))})' "$1"; }
 
 echo "[attributes] (G) baseline: nothing marked yet"
@@ -197,5 +205,71 @@ esac
 AFTER_ROWS=$(q "SELECT COUNT(*) FROM memory_attributes")
 [ "$BEFORE_ROWS" = "$AFTER_ROWS" ] || { echo "  ✗ dangling marker was written anyway ($BEFORE_ROWS→$AFTER_ROWS)"; exit 1; }
 echo "  rejected with the ref named, no dangling row"
+
+echo "[attributes] (J/SCN-005) 零標記時 brief 與實作前的產出 byte-identical"
+reset_home home-j
+"$CLI" remember "改用 pnpm 作為套件管理器" --project demo >/dev/null
+"$CLI" remember "停 server 一律用 PID 精準停" --project demo >/dev/null
+"$CLI" brief >/dev/null
+# golden 由 issue-17 步驟 2 實作「之前」的程式碼產出（HEAD=967a82d),提交在 repo 內。
+# 這支斷言唯一會紅的情況,就是零標記路徑的產出真的變了——那正是 issue-5 立下的不變式。
+normalize_brief "$MEMORIA_HOME/knowledge/BRIEF.md" > "$TMP_DIR/brief-actual.md"
+diff -u "$ROOT_DIR/scripts/fixtures/brief-zero-marker.golden.md" "$TMP_DIR/brief-actual.md" \
+    || { echo "  ✗ 零標記的 brief 產出已改變（上方為 golden,下方為實際）"; exit 1; }
+echo "  zero-marker brief unchanged"
+
+echo "[attributes] (K/SCN-003) pinned 區無視時間窗口與 topK,且收斂 note 配對"
+reset_home home-k
+"$CLI" remember "停 server 一律用 PID 精準停" --project demo --durable >/dev/null
+# 推到 30 天窗口之外:近期決策撈不到它,pinned 區仍必須有。
+sql "UPDATE sessions SET timestamp='2025-01-01T00:00:00.000Z'"
+sql "UPDATE events SET timestamp='2025-01-01T00:00:00.000Z'"
+"$CLI" brief >/dev/null
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+PINNED=$(section "## 常駐約束（pinned）" "$BRIEF")
+case "$PINNED" in
+    *"PID 精準停"*) ;;
+    *) echo "  ✗ 窗口外的 durable 記憶不在 pinned 區: $PINNED"; exit 1 ;;
+esac
+# remember --durable 會標記 note-* 與 noteev-* 兩半,同一則記憶只能出現一次。
+PINNED_LINES=$(echo "$PINNED" | grep -c '^- ' || true)
+[ "$PINNED_LINES" = "1" ] || { echo "  ✗ 期望 pinned 區 1 行,實得 $PINNED_LINES 行"; exit 1; }
+echo "  出現在 pinned 區,配對收斂為 1 行"
+
+echo "[attributes] (L/SCN-004) pinned 的記憶不在近期決策重複出現"
+reset_home home-l
+"$CLI" remember "停 server 一律用 PID 精準停" --project demo --durable >/dev/null
+"$CLI" remember "改用 pnpm 作為套件管理器" --project demo >/dev/null
+"$CLI" brief >/dev/null
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+case "$(section "## 常駐約束（pinned）" "$BRIEF")" in
+    *"PID 精準停"*) ;;
+    *) echo "  ✗ durable 記憶不在 pinned 區"; exit 1 ;;
+esac
+RECENT=$(section "## 近期決策" "$BRIEF")
+case "$RECENT" in
+    *"PID 精準停"*) echo "  ✗ pinned 的記憶在近期決策重複出現"; exit 1 ;;
+esac
+case "$RECENT" in
+    *"pnpm"*) ;;
+    *) echo "  ✗ 未標記的記憶反而從近期決策消失了: $RECENT"; exit 1 ;;
+esac
+echo "  pinned 不重複,未標記者仍在近期決策"
+
+echo "[attributes] (M/SCN-006) durable 但已被取代者不進 pinned 區"
+reset_home home-m
+"$CLI" remember "改用 PostgreSQL" --project demo --durable >/dev/null
+OLD_ID=$(q "SELECT id FROM sessions WHERE id LIKE 'note-%' LIMIT 1")
+"$CLI" remember "改用 SQLite" --project demo --durable --supersedes "$OLD_ID" >/dev/null
+"$CLI" brief >/dev/null
+PINNED=$(section "## 常駐約束（pinned）" "$MEMORIA_HOME/knowledge/BRIEF.md")
+case "$PINNED" in
+    *PostgreSQL*) echo "  ✗ 已被取代的 durable 記憶仍在 pinned 區: $PINNED"; exit 1 ;;
+esac
+case "$PINNED" in
+    *SQLite*) ;;
+    *) echo "  ✗ 取代者不在 pinned 區: $PINNED"; exit 1 ;;
+esac
+echo "  取代者留下,被取代者移除"
 
 echo "[attributes] ✓ all checks passed"

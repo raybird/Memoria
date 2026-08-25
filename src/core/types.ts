@@ -463,6 +463,12 @@ export type BriefMemory = {
     snippet: string
 }
 
+export type BriefPinned = {
+    ref_id: string
+    project: string
+    snippet: string
+}
+
 export type BriefRepository = {
     repository: string
     default_branch: string | null
@@ -474,6 +480,7 @@ export type BriefData = {
     generated_at: string
     project: string | null
     days: number
+    pinned: BriefPinned[]
     decisions: BriefDecision[]
     high_utility: BriefMemory[]
     repositories: BriefRepository[]

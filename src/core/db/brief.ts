@@ -13,7 +13,7 @@ import { withDb } from './connection.js'
 import { effectiveUtility, maybeParseJson } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { truncateText } from './mappers.js'
-import type { BriefData, BriefDecision, BriefMemory, BriefRepository } from '../types.js'
+import type { BriefData, BriefDecision, BriefMemory, BriefPinned, BriefRepository } from '../types.js'
 
 function tableExists(db: Database.Database, name: string): boolean {
     return Boolean(db.prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`).get(name))
@@ -23,6 +23,61 @@ export type BriefOptions = {
     project?: string
     days?: number
     topK?: number
+}
+
+/** A CLI note occupies two refs — its session and its event — and both get marked or attributed.
+ *  The shared content fingerprint is what identifies the note itself. */
+function noteFingerprintOf(ref: string): string | null {
+    return ref.startsWith('note-') ? ref.slice('note-'.length)
+        : ref.startsWith('noteev-') ? ref.slice('noteev-'.length)
+            : null
+}
+
+/** Human-readable text + project for a mixed batch of session and event refs. Event content is a
+ *  JSON string, so the readable field is surfaced rather than the raw blob. */
+function resolveRefTexts(
+    db: Database.Database,
+    ids: string[]
+): Map<string, { text: string; project: string }> {
+    const texts = new Map<string, { text: string; project: string }>()
+    if (ids.length === 0) return texts
+    const placeholders = ids.map(() => '?').join(',')
+    for (const row of db.prepare(`
+      SELECT id, summary AS text, project FROM sessions WHERE id IN (${placeholders})
+    `).all(...ids) as Array<{ id: string; text: string; project: string }>) {
+        texts.set(row.id, { text: row.text ?? '', project: row.project })
+    }
+    for (const row of db.prepare(`
+      SELECT e.id, e.content AS text, e.event_type, s.project
+      FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.id IN (${placeholders})
+    `).all(...ids) as Array<{ id: string; text: string; event_type: string; project: string }>) {
+        const parsed = maybeParseJson(row.text ?? '')
+        const readable = row.event_type === 'DecisionMade'
+            ? parseDecisionEvent(parsed).decision
+            : row.event_type === 'SkillLearned'
+                ? parseSkillEvent(parsed).skill_name
+                : String(row.text ?? '')
+        texts.set(row.id, { text: readable || String(row.text ?? ''), project: row.project })
+    }
+    return texts
+}
+
+/** Keep one entry per note (preferring the session half, whose text is plain rather than JSON) and
+ *  every non-note ref as-is. Without this the same note is listed twice. */
+function collapseNotePairs(refs: string[]): string[] {
+    const sessionRefs = new Set(refs.filter((ref) => ref.startsWith('note-')))
+    const seen = new Set<string>()
+    const kept: string[] = []
+    for (const ref of refs) {
+        const fingerprint = noteFingerprintOf(ref)
+        if (fingerprint !== null) {
+            if (ref.startsWith('noteev-') && sessionRefs.has(`note-${fingerprint}`)) continue
+            if (seen.has(fingerprint)) continue
+            seen.add(fingerprint)
+        }
+        kept.push(ref)
+    }
+    return kept
 }
 
 export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefData {
@@ -49,14 +104,31 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
         // live decisions instead of topK minus however many were replaced.
         const supersededClause = hasAttributes ? 'AND ma.superseded_by IS NULL' : ''
 
+        // issue-17: memories marked durable are pinned — they leave the recency rotation entirely.
+        // Ordered by created_at so the block is stable across runs; no LIMIT, by design (SCN-003).
+        const durableRefs = hasAttributes
+            ? (db.prepare(`
+                SELECT ref_id FROM memory_attributes
+                WHERE retention = 'durable' AND superseded_by IS NULL
+                ORDER BY created_at ASC, ref_id ASC
+              `).all() as Array<{ ref_id: string }>).map((row) => row.ref_id)
+            : []
+
+        // A pinned memory must not also consume a recent-decisions slot (SCN-004). Filtered in SQL
+        // for the same reason the superseded filter is: LIMIT must still yield topK live rows.
+        const pinnedClause = durableRefs.length > 0
+            ? `AND e.id NOT IN (${durableRefs.map(() => '?').join(',')})`
+            : ''
+
         const decisionRows = db.prepare(`
           SELECT e.id, e.timestamp, e.content, s.project
           FROM events e JOIN sessions s ON s.id = e.session_id
           ${supersededJoin}
           WHERE e.event_type = 'DecisionMade' AND e.timestamp >= ? ${projectClause}
           ${supersededClause}
+          ${pinnedClause}
           ORDER BY e.timestamp DESC LIMIT ?
-        `).all(since, ...projectParams, topK) as Array<{ id: string; timestamp: string; content: string; project: string }>
+        `).all(since, ...projectParams, ...durableRefs, topK) as Array<{ id: string; timestamp: string; content: string; project: string }>
 
         const decisions: BriefDecision[] = decisionRows.map((row) => {
             const parsed = parseDecisionEvent(maybeParseJson(row.content))
@@ -68,6 +140,17 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                 rationale: truncateText(parsed.rationale, 120)
             }
         })
+
+        const pinned: BriefPinned[] = []
+        if (durableRefs.length > 0) {
+            const texts = resolveRefTexts(db, durableRefs)
+            for (const ref of collapseNotePairs(durableRefs)) {
+                const found = texts.get(ref)
+                if (!found) continue
+                if (project && found.project !== project) continue
+                pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text) })
+            }
+        }
 
         // Memories with an accrued utility signal — what actually earned its keep (UFL Phase 3).
         const high_utility: BriefMemory[] = []
@@ -95,51 +178,15 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                 .slice(0, topK)
 
             if (scored.length > 0) {
-                const placeholders = scored.map(() => '?').join(',')
-                const ids = scored.map((entry) => entry.ref_id)
-                const texts = new Map<string, { text: string; project: string }>()
-                for (const row of db.prepare(`
-                  SELECT id, summary AS text, project FROM sessions WHERE id IN (${placeholders})
-                `).all(...ids) as Array<{ id: string; text: string; project: string }>) {
-                    texts.set(row.id, { text: row.text ?? '', project: row.project })
-                }
-                // Event content is a JSON string; surface the human-readable field rather than the raw blob.
-                for (const row of db.prepare(`
-                  SELECT e.id, e.content AS text, e.event_type, s.project
-                  FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.id IN (${placeholders})
-                `).all(...ids) as Array<{ id: string; text: string; event_type: string; project: string }>) {
-                    const parsed = maybeParseJson(row.text ?? '')
-                    const readable = row.event_type === 'DecisionMade'
-                        ? parseDecisionEvent(parsed).decision
-                        : row.event_type === 'SkillLearned'
-                            ? parseSkillEvent(parsed).skill_name
-                            : String(row.text ?? '')
-                    texts.set(row.id, { text: readable || String(row.text ?? ''), project: row.project })
-                }
-
-                // A CLI note occupies two refs (its session and its event) and an outcome attributes
-                // utility to both, so without this the same note is listed twice. Collapse the pair
-                // on its shared content fingerprint, keeping the session (whose snippet is the plain
-                // text rather than the event's JSON payload).
-                const noteFingerprintOf = (ref: string): string | null =>
-                    ref.startsWith('note-') ? ref.slice('note-'.length)
-                        : ref.startsWith('noteev-') ? ref.slice('noteev-'.length)
-                            : null
-                const sessionRefs = new Set(scored.map((e) => e.ref_id).filter((ref) => ref.startsWith('note-')))
-                const seenNotes = new Set<string>()
+                const texts = resolveRefTexts(db, scored.map((entry) => entry.ref_id))
+                const keptRefs = new Set(collapseNotePairs(scored.map((entry) => entry.ref_id)))
 
                 for (const entry of scored) {
                     const found = texts.get(entry.ref_id)
                     if (!found) continue
                     if (project && found.project !== project) continue
 
-                    const fingerprint = noteFingerprintOf(entry.ref_id)
-                    if (fingerprint !== null) {
-                        // Prefer the session half when both are present.
-                        if (entry.ref_id.startsWith('noteev-') && sessionRefs.has(`note-${fingerprint}`)) continue
-                        if (seenNotes.has(fingerprint)) continue
-                        seenNotes.add(fingerprint)
-                    }
+                    if (!keptRefs.has(entry.ref_id)) continue
                     high_utility.push({
                         ref_id: entry.ref_id,
                         project: found.project,
@@ -186,6 +233,7 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
             generated_at: new Date().toISOString(),
             project,
             days,
+            pinned,
             decisions,
             high_utility,
             repositories,
@@ -210,6 +258,18 @@ export function renderBrief(data: BriefData): string {
     lines.push(`- 範圍: ${data.project ?? '(all projects)'} ｜ 近 ${data.days} 天`)
     lines.push(`- sessions: ${data.totals.sessions} ｜ 期間決策: ${data.totals.decisions_in_window} ｜ 待增強摘要: ${data.totals.pending_summaries}`)
     lines.push('')
+
+    // Pinned first: these are the constraints that must survive rotation, so they must also survive
+    // a reader who stops early. Emitted only when non-empty — a zero-marker database must render
+    // byte-identically to its pre-issue-17 output (SCN-005), the discipline issue-5 set.
+    if (data.pinned.length > 0) {
+        lines.push('## 常駐約束（pinned）')
+        lines.push('')
+        for (const item of data.pinned) {
+            lines.push(`- ${item.snippet} ｜ ${item.project}`)
+        }
+        lines.push('')
+    }
 
     lines.push('## 近期決策')
     lines.push('')
