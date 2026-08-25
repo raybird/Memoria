@@ -79,7 +79,7 @@ stock `sqlite3` 把 libSQL 的向量索引當成 covering index 拿來算 `COUNT
 
 - 核准日期：2026-08-25
 - 核准來源：使用者於對話中明示「全部核准」（AC-1～AC-3）；AC-4 由同日「pinned 行下加一行 note」的選擇確立
-- 核准 commit：`d4c6006`（issue 文件首次提交）
+- 核准 commit：`184f3d2`（issue 文件首次提交）
 - 全部四條均已核准，無待核准項目
 
 ## 邊界
