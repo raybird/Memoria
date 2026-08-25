@@ -135,7 +135,7 @@ stock `sqlite3` 把 libSQL 的向量索引當成 covering index 拿來算 `COUNT
 | --- | --- | --- | --- |
 | U-1 | `expected` 的分母是否要扣掉 superseded 的記憶 | **已決**（2026-08-25） | 含。ingest 會嵌入它們，扣掉會讓覆蓋率永遠到不了 100%，那是製造永久假警報 |
 | U-2 | 覆蓋率要沿用 spawn 還是直接連 libSQL | **已決**（2026-08-25） | 直接讀 `file:` URL。不動 helper 的 stdin 契約——它有版控外的下游 |
-| U-3 | 本機 `~/.bashrc` 設了 `MEMORIA_VECTOR_RECALL_CMD`，因此維護者自己的機器上覆蓋率永遠是「具名跳過」 | **未決**（2026-08-25 實作時發現） | 不阻塞。該 override 依既有記憶「不是必要設定」（在全域包的 helper 目錄跑一次 npm install 即可脫鉤）。要嘛取消 override，要嘛後續細化跳過條件（override 指向的就是我們出貨的那支時仍視為自己人）——後者會動到 issue-12 的既有行為，需另行拍板 |
+| U-3 | 本機 `~/.bashrc` 設了 `MEMORIA_VECTOR_RECALL_CMD`，因此維護者自己的機器上覆蓋率永遠是「具名跳過」 | **已解決**（2026-08-25） | 成因已排除，非改碼：在全域 npm 包的 `skills/memoria-vector` 跑 `npm install`（723MB，含 `@huggingface/transformers` 與 `@libsql/client`）後移除該 override。全域 `memoria` 的 `resolveHelperScript()` 自己就找得到 helper，覆蓋率因此由「具名跳過」轉為實際量測（實測 `embedded=92 expected=92 missing=0`）。跳過條件本身**不變**——override 仍代表那個索引可能不是我們的 ingest 在填的，D-skip 的理由與 issue-12 同源。順帶消除既有風險：搬走或刪掉 Memoria repo 不再讓語意召回靜默退回 `vector_unavailable` |
 
 ## Gate 豁免紀錄
 
