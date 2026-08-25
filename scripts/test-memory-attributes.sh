@@ -18,6 +18,11 @@
 #   (L) SCN-004 a pinned memory is not repeated in the recent-decisions block
 #   (M) SCN-006 durable + superseded stays out of the pinned block
 #
+# issue-18 — mark marks both halves of a note (docs/issues/issue-18 AC-3).
+#
+#   (N) AC-3 marking either half of a note marks both; a ref with no pair gets no orphan row
+#   (O) AC-4 a pinned memory with a note gets one extra line; one without stays a single line
+#
 # Time is manipulated by rewriting timestamps directly, the same trick test-migrations.sh uses.
 
 set -euo pipefail
@@ -271,5 +276,53 @@ case "$PINNED" in
     *) echo "  ✗ 取代者不在 pinned 區: $PINNED"; exit 1 ;;
 esac
 echo "  取代者留下,被取代者移除"
+
+echo "[attributes] (N/AC-3) mark 對 note 的兩半一致，且不為無配對的 ref 建孤兒列"
+reset_home home-n
+"$CLI" remember "停 server 一律用 PID 精準停" --project demo >/dev/null
+SID=$(q "SELECT id FROM sessions WHERE id LIKE 'note-%' LIMIT 1")
+EID="noteev-${SID#note-}"
+"$CLI" mark "$SID" --durable >/dev/null
+# remember --durable 本來就兩半都標,mark 不該比它弱——否則 recall 的 decay 豁免只對半邊生效。
+A=$(q "SELECT retention FROM memory_attributes WHERE ref_id='$SID'")
+B=$(q "SELECT retention FROM memory_attributes WHERE ref_id='$EID'")
+[ "$A" = "durable" ] || { echo "  ✗ session 半未標記: '$A'"; exit 1; }
+[ "$B" = "durable" ] || { echo "  ✗ event 半未標記: '$B'"; exit 1; }
+# 反向:從 event 半標記也要涵蓋 session 半。
+reset_home home-n2
+"$CLI" remember "改用 pnpm 作為套件管理器" --project demo >/dev/null
+SID2=$(q "SELECT id FROM sessions WHERE id LIKE 'note-%' LIMIT 1")
+EID2="noteev-${SID2#note-}"
+"$CLI" mark "$EID2" --durable >/dev/null
+[ "$(q "SELECT retention FROM memory_attributes WHERE ref_id='$SID2'")" = "durable" ] || {
+    echo "  ✗ 從 event 半標記時 session 半未涵蓋"; exit 1; }
+# gitdec-* 沒有配對半,不得因此憑空生出第二列指向不存在的記憶。
+sql "INSERT INTO events (id, session_id, timestamp, event_type, content, metadata) VALUES ('gitdec-sum_n-0', '$SID2', '2026-01-01T00:00:00.000Z', 'DecisionMade', json_object('decision','x','rationale','y','impact_level','high'), '{}')"
+BEFORE=$(q "SELECT COUNT(*) FROM memory_attributes")
+"$CLI" mark gitdec-sum_n-0 --durable >/dev/null
+AFTER=$(q "SELECT COUNT(*) FROM memory_attributes")
+[ "$AFTER" = "$((BEFORE + 1))" ] || { echo "  ✗ 無配對的 ref 應只增 1 列，實得 $BEFORE→$AFTER"; exit 1; }
+echo "  兩半一致（雙向），無配對者只增一列"
+
+echo "[attributes] (O/AC-4) pinned 有 note 時多印一行，沒有的維持一行"
+reset_home home-o
+"$CLI" remember "停 server 一律用 PID 精準停" --project demo --durable >/dev/null
+WITH_NOTE=$(q "SELECT id FROM sessions WHERE id LIKE 'note-%' LIMIT 1")
+"$CLI" mark "$WITH_NOTE" --note "範圍：停止本機 server。症狀：pkill 樣式比對會誤殺容器行程。自檢：先跑 pgrep -af memoria" >/dev/null
+"$CLI" remember "改用 pnpm 作為套件管理器" --project demo --durable >/dev/null
+"$CLI" brief >/dev/null
+PINNED=$(section "## 常駐約束（pinned）" "$MEMORIA_HOME/knowledge/BRIEF.md")
+# 有 note 的那則:主行 + 一行縮排的 note。
+case "$PINNED" in
+    *"自檢：先跑 pgrep -af memoria"*) ;;
+    *) echo "  ✗ note 沒有被印出來:"; echo "$PINNED"; exit 1 ;;
+esac
+# 沒有 note 的那則不得多出空行或佔位:縮排行的總數必須剛好等於「有 note 的則數」= 1。
+NOTE_LINES=$(echo "$PINNED" | grep -c '^  - ' || true)
+[ "$NOTE_LINES" = "1" ] || {
+    echo "  ✗ 期望剛好 1 行縮排 note，實得 $NOTE_LINES:"; echo "$PINNED"; exit 1; }
+[ "$(echo "$PINNED" | grep -c '^- ')" = "2" ] || {
+    echo "  ✗ 期望兩則 pinned 主行，實得 $(echo "$PINNED" | grep -c '^- ')"; exit 1; }
+echo "  有 note 者多一行，無 note 者維持一行"
 
 echo "[attributes] ✓ all checks passed"

@@ -86,9 +86,63 @@ export type VectorLayerReport = {
     /** Why the embedder was not probed, so a renderer can say the check was SKIPPED rather than
      *  quietly omitting a line — the same no-silent-caps rule the truncation paths follow. */
     embedderUnknownReason: 'overridden_helper' | 'provider_needs_no_embedder' | 'helper_unresolved' | null
+    /** issue-18: how much of the corpus actually reached the vector index. null = not measured;
+     *  `coverageUnknownReason` says why, so a missing line never reads as "nothing to report". */
+    coverage: { embedded: number; expected: number; missing: number } | null
+    coverageUnknownReason: 'not_enabled' | 'overridden_helper' | 'remote_libsql' | 'no_local_db' | 'read_failed' | null
 }
 
-export function inspectVectorLayer(): VectorLayerReport {
+/** How many entities `vector-ingest.mjs` would embed for this corpus.
+ *
+ *  Must stay aligned with the helper's EMBEDDABLE_TYPES (`session` / `decision` / `skill` /
+ *  `memory_node`); a denominator that counts anything else can never reach 100%, and a coverage
+ *  number that is permanently short is a standing false alarm — worse than no number at all.
+ *  Superseded memories are counted because ingest embeds them too: the filter is applied at recall,
+ *  not at index time. */
+function countEmbeddableEntities(dbPath: string): number {
+    return withDb(dbPath, { readonly: true }, (db) => {
+        const one = (sql: string): number => {
+            try {
+                return Number((db.prepare(sql).get() as { c: number } | undefined)?.c ?? 0)
+            } catch {
+                return 0
+            }
+        }
+        return one('SELECT COUNT(*) AS c FROM sessions')
+            + one(`SELECT COUNT(*) AS c FROM events WHERE event_type IN ('DecisionMade', 'SkillLearned')`)
+            + one('SELECT COUNT(*) AS c FROM memory_nodes')
+    })
+}
+
+/** Rows actually in the vector index.
+ *
+ *  Read directly rather than through the helper: the helper's stdin/stdout contract has consumers
+ *  outside this repository (docs/HANDOVER.md §8), and widening it for a diagnostic would put a
+ *  cross-repo interface at risk for a number. The cost is that only `file:` URLs can be measured —
+ *  a remote libSQL reports `remote_libsql` rather than guessing.
+ *
+ *  ⚠ `NOT INDEXED` is load-bearing. better-sqlite3 is stock SQLite, which happily uses libSQL's
+ *  vector index as a covering index for COUNT(*) — and that b-tree looks empty to it, so a plain
+ *  COUNT(*) returns 0 on a fully populated store. That artifact was once read as "the vector store
+ *  is empty" and turned into a bug report (docs/issues/issue-18). */
+function countEmbeddedRows(libsqlUrl: string): { embedded: number } | { reason: 'remote_libsql' | 'read_failed' } {
+    if (!libsqlUrl.startsWith('file:')) return { reason: 'remote_libsql' }
+    const filePath = libsqlUrl.slice('file:'.length)
+    // A store file that does not exist yet is not "unmeasurable" — it is a measured zero. Someone
+    // who set LIBSQL_URL and never ingested is exactly the person whose semantic recall silently
+    // returns nothing, and calling that "not measured" would hide the state the check exists for.
+    if (!existsSync(filePath)) return { embedded: 0 }
+    try {
+        return withDb(filePath, { readonly: true }, (db) => {
+            const row = db.prepare(`SELECT COUNT(*) AS c FROM memoria_vectors NOT INDEXED`).get() as { c: number } | undefined
+            return { embedded: Number(row?.c ?? 0) }
+        })
+    } catch {
+        return { reason: 'read_failed' }
+    }
+}
+
+export function inspectVectorLayer(dbPath?: string): VectorLayerReport {
     const override = process.env.MEMORIA_VECTOR_RECALL_CMD?.trim() || null
     // `resolveHelperScript` hands back an override verbatim without probing it — recallVector is the
     // one that applies `existsSync` (:206). Repeat that here, or a typo'd override would be reported
@@ -103,7 +157,35 @@ export function inspectVectorLayer(): VectorLayerReport {
         provider,
         embedderInstalled: null,
         embedderDir: null,
-        embedderUnknownReason: null
+        embedderUnknownReason: null,
+        coverage: null,
+        coverageUnknownReason: null
+    }
+
+    const libsqlUrl = process.env.LIBSQL_URL?.trim()
+    if (!libsqlUrl) {
+        report.coverageUnknownReason = 'not_enabled'
+    } else if (override !== null) {
+        // Same judgement as the embedder probe: with an override we cannot assume the store at
+        // LIBSQL_URL is filled by OUR ingest pipeline, so a short count would not mean what the
+        // number claims — and the fix we would print names a two-step that may not be theirs.
+        // Reporting a red light plus an inapplicable remedy is how a working setup gets turned into
+        // a manufactured failure (issue-12).
+        report.coverageUnknownReason = 'overridden_helper'
+    } else if (!dbPath || !existsSync(dbPath)) {
+        report.coverageUnknownReason = 'no_local_db'
+    } else {
+        const counted = countEmbeddedRows(libsqlUrl)
+        if ('reason' in counted) {
+            report.coverageUnknownReason = counted.reason
+        } else {
+            const expected = countEmbeddableEntities(dbPath)
+            report.coverage = {
+                embedded: counted.embedded,
+                expected,
+                missing: Math.max(0, expected - counted.embedded)
+            }
+        }
     }
     // Only the helper we ship has a dependency layout we can reason about. An override may name a
     // bare command, or a copy bundled into someone else's image — probing a sibling node_modules

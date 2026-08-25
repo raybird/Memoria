@@ -14,6 +14,8 @@
 #   4. LIBSQL_URL unset  -> route_mode=vector_unavailable, lexical floor still served, ok:true
 #   5. helper timeout    -> route_mode=vector_timeout, lexical floor still served
 #   6. stats gains vector route counters (and hides them at zero usage)
+#   7. issue-18 AC-2: LIBSQL_URL unset -> doctor stays ok (an opt-in feature that is OFF is not unhealthy)
+#   8. issue-18 AC-1: doctor reports vector coverage (embedded/expected/missing) + the ingest fix
 
 set -euo pipefail
 
@@ -280,5 +282,63 @@ if(!['vector','hybrid_vector'].includes(d.meta.route_mode)) throw new Error('une
     echo "  real-model semantic hit ok"
     stop_server
 fi
+
+echo "[vector] (AC-2/issue-18) 向量層未啟用時 doctor 不得變紅"
+# 這是 characterization 守門:它現在就該是綠的,價值在「加了覆蓋率之後仍然綠」。
+# issue-12 明文立過這條——讓沒開這個選用功能的人看到紅燈,會訓練所有人忽略 doctor。
+DOC_OFF=$(env -u LIBSQL_URL MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.ok !== true) throw new Error('doctor 在未啟用向量層時變紅了: '+JSON.stringify(d.checks.filter(c=>!c.ok)));
+const cov=d.checks.find(c=>/coverage|覆蓋/.test(c.name));
+if(cov && cov.ok !== true) throw new Error('未啟用時覆蓋率檢查不得為 false: '+JSON.stringify(cov));
+" "$DOC_OFF"
+echo "  ok=true，未啟用不算不健康"
+
+echo "[vector] (AC-1/issue-18) doctor 報出向量覆蓋率與補救指令"
+# 此時 $VECDB 只 ingest 了少數實體,而 home 裡的 sessions/decisions/nodes 更多——天然的缺口。
+DOC_ON=$(env LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP_DIR/home" \
+    "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const cov=d.checks.find(c=>c.name==='vector coverage');
+if(!cov) throw new Error('沒有 vector coverage 這一項: '+d.checks.map(c=>c.name).join(', '));
+const m=/embedded=(\\d+).*expected=(\\d+).*missing=(\\d+)/.exec(cov.value);
+if(!m) throw new Error('coverage 的 value 沒有三個數字: '+cov.value);
+const [,e,x,ms]=m.map(Number);
+if(x <= 0) throw new Error('expected 必須 > 0,實得 '+x);
+if(e + ms !== x) throw new Error('embedded + missing 應等於 expected: '+cov.value);
+if(ms > 0 && cov.ok !== false) throw new Error('missing>0 時應為 not ok');
+if(ms > 0 && !/vector-ingest/.test(cov.fix||'')) throw new Error('fix 未指出 ingest 步驟: '+cov.fix);
+" "$DOC_ON"
+echo "  embedded/expected/missing 齊備，缺口時附上 ingest 指令"
+
+# 設了 LIBSQL_URL 但從未 ingest——向量庫檔案根本不存在。那不是「量不到」,那是量到 0,
+# 而且正是語意召回會安靜回空的那個狀態,必須亮紅燈並給出補救。
+DOC_NEVER=$(env LIBSQL_URL="file:$TMP_DIR/never-ingested.db" MEMORIA_HOME="$TMP_DIR/home" \
+    MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const cov=d.checks.find(c=>c.name==='vector coverage');
+if(!cov) throw new Error('未 ingest 時仍須報出覆蓋率');
+if(!/embedded=0 /.test(cov.value)) throw new Error('應為量到 0，而非 not measured: '+cov.value);
+if(cov.ok !== false) throw new Error('從未 ingest 是紅燈狀態');
+if(!/vector-ingest/.test(cov.fix||'')) throw new Error('未給出補救指令');
+" "$DOC_NEVER"
+echo "  從未 ingest -> 量到 0 並亮紅燈，非 not measured"
+
+# override 時該向量庫可能根本不是我們的 ingest 在填的,量了也不代表什麼,而印出的補救指令
+# 更可能不適用——跳過是對的,但要具名說「沒量」,不能靜默省略那一行。
+DOC_OVR=$(env LIBSQL_URL="file:$VECDB" MEMORIA_HOME="$TMP_DIR/home" \
+    MEMORIA_VECTOR_RECALL_CMD="$ROOT_DIR/skills/memoria-vector/vector-recall.mjs" \
+    "$ROOT_DIR/cli" doctor --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const cov=d.checks.find(c=>c.name==='vector coverage');
+if(!cov) throw new Error('override 時仍須報出這一行（具名跳過，不得省略）');
+if(cov.ok !== true) throw new Error('無法量測不等於不健康');
+if(!/not measured/.test(cov.value)) throw new Error('必須說明是沒量，而非量到 0: '+cov.value);
+" "$DOC_OVR"
+echo "  override -> 具名跳過，未誤報為不健康"
 
 echo "[vector] ok"

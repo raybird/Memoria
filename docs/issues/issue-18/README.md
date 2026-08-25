@@ -7,7 +7,7 @@
 | Issue 編號 | 18（本地文件編號） |
 | 複雜度級別 | Small（`doctor` 既有 `checks[]` 加一項 + `mark` 的配對寫入 + `renderBrief` 多印一行；零 schema 變更、零新依賴） |
 | 風險等級 | Medium（動到 `doctor` 的 `ok` 判定——弄錯會讓沒用語意召回的人每次都看到紅燈；並改變 `mark` 實際寫入的列數） |
-| 狀態 | 驗收條件已核准，未實作 |
+| 狀態 | **實作完成**（2026-08-25），AC-1～AC-4 全數通過 |
 | 需求來源 | 2026-08-24 另一個 session 的消費端實測（原 P0(b)）；本 session 驗證後大幅縮小範圍，並併入 issue-17 遺留的 U-4 與 P4 實驗所需的顯示面 |
 | 建立日期 | 2026-08-25 |
 | 相關 | [issue-17](../issue-17/README.md)（`mark`／pinned 區／U-4 的來源）、[issue-12](../issue-12/README.md)（`doctor` 的向量層檢查與「選用功能不得讓 doctor 變紅」的判準）、[issue-7](../issue-7/README.md)（同型的靜默覆蓋不足：10 個 session 只涵蓋 3 個）、`src/core/recall-vector.ts`（`inspectVectorLayer()`）、`src/core/db/brief.ts`（`renderBrief` 的 pinned 區） |
@@ -107,12 +107,35 @@ stock `sqlite3` 把 libSQL 的向量索引當成 covering index 拿來算 `COUNT
 
 完成證據：無 `LIBSQL_URL` 環境的 `doctor --json` 輸出，以及 `scripts/test-no-clone-install.sh` 的綠燈。
 
+## 實作紀錄（2026-08-25）
+
+| AC | 狀態 | 證據 |
+| --- | --- | --- |
+| AC-1 | **已完成** | `test-vector-recall.sh` 新增三段：覆蓋率三數字齊備且 `embedded+missing=expected`、缺口時 `ok:false` 並附 ingest 指令、**從未 ingest 時量到 0 而非 not measured** |
+| AC-2 | **已完成** | 未設 `LIBSQL_URL` 時 `doctor --json` 的 `ok` 仍為 true。實作中途真的踩到這個風險——issue-12 的既有斷言擋下來了（見下） |
+| AC-3 | **已完成** | `test-memory-attributes.sh` (N) 段：雙向配對標記，`gitdec-*` 只增一列 |
+| AC-4 | **已完成** | `test-memory-attributes.sh` (O) 段：縮排 note 行數剛好等於有 note 的則數 |
+
+回歸：`test-memory-attributes`／`test-brief-scope`／`test-vector-recall`／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-pure-functions`／`test-prune`／`test-migrations` 全數 PASS。
+
+### AC-2 的風險真的發生了
+
+加上覆蓋率檢查後，issue-12 既有的「an overridden helper is not by itself an unhealthy install」斷言立刻轉紅：那個 fixture 設了 `LIBSQL_URL` 且向量庫是短的，於是我的檢查把整個 `doctor` 拉紅。
+
+**沒有修改該測試的契約**，改為在偵測到 `MEMORIA_VECTOR_RECALL_CMD` 時跳過覆蓋率量測，與 issue-12 對 embedder 探測的處置同源：override 表示那個向量庫可能不是我們的 ingest 管線在填的，量出來的短缺不代表它宣稱的意思，而印出的補救指令更可能不適用——那正是 issue-12 說的「manufacture a failure out of a working setup」。跳過但**具名**，不靜默省略。
+
+### U-1 / U-2 的實作結論
+
+- **U-1（已決）**：分母**含** superseded 的記憶。ingest 會嵌入它們（過濾發生在召回，不在索引時），分母若扣掉就永遠到不了 100%。真實資料驗算 88 = 88。
+- **U-2（已決）**：**直接讀 `file:` 形式的 libSQL，不動 helper 的 stdin 契約**。理由是 `docs/HANDOVER.md` §8 明載該契約有版控外的下游（`downstream-cli-container` 把 helper 打進自己的 image），為一個診斷數字去動跨 repo 的隱性介面不划算。非 `file:` 的 URL 回報 `remote_libsql`。
+
 ## 待確認事項
 
 | 編號 | 事項 | 狀態 | 影響 |
 | --- | --- | --- | --- |
-| U-1 | `expected` 的分母是否要扣掉 superseded 的記憶（它們仍會被 ingest，但召回時會被濾掉） | 未決 | 不阻塞。先與 `EMBEDDABLE_TYPES` 對齊（AC-1 的失敗路徑要求），superseded 的處理待實作時看實際數字是否造成困惑 |
-| U-2 | 覆蓋率需要讀 libSQL，而 `doctor` 目前對 helper 是 spawn 探測。要沿用 spawn 還是直接連 libSQL | 未決 | 不阻塞。兩者都能滿足 AC，選擇影響的是 `doctor` 的執行時間與依賴面 |
+| U-1 | `expected` 的分母是否要扣掉 superseded 的記憶 | **已決**（2026-08-25） | 含。ingest 會嵌入它們，扣掉會讓覆蓋率永遠到不了 100%，那是製造永久假警報 |
+| U-2 | 覆蓋率要沿用 spawn 還是直接連 libSQL | **已決**（2026-08-25） | 直接讀 `file:` URL。不動 helper 的 stdin 契約——它有版控外的下游 |
+| U-3 | 本機 `~/.bashrc` 設了 `MEMORIA_VECTOR_RECALL_CMD`，因此維護者自己的機器上覆蓋率永遠是「具名跳過」 | **未決**（2026-08-25 實作時發現） | 不阻塞。該 override 依既有記憶「不是必要設定」（在全域包的 helper 目錄跑一次 npm install 即可脫鉤）。要嘛取消 override，要嘛後續細化跳過條件（override 指向的就是我們出貨的那支時仍視為自己人）——後者會動到 issue-12 的既有行為，需另行拍板 |
 
 ## Gate 豁免紀錄
 

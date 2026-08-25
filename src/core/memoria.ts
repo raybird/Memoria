@@ -195,6 +195,15 @@ async function withResult<T>(
     }
 }
 
+/** The other half of a CLI note's ref pair, if this ref is one half of one. A note id is a content
+ *  fingerprint shared by its session (`note-`) and its event (`noteev-`); everything else — a
+ *  git-promoted `gitdec-`, a synthetic session — stands alone. */
+function notePairOf(refId: string): string[] {
+    if (refId.startsWith('note-')) return [`noteev-${refId.slice('note-'.length)}`]
+    if (refId.startsWith('noteev-')) return [`note-${refId.slice('noteev-'.length)}`]
+    return []
+}
+
 export class MemoriaCore {
     readonly paths: MemoriaPaths
 
@@ -344,10 +353,9 @@ export class MemoriaCore {
                     throw new Error(`--supersedes target not found: ${target}`)
                 }
                 supersedeTargets.push(target)
-                const pair = target.startsWith('note-') ? `noteev-${target.slice('note-'.length)}`
-                    : target.startsWith('noteev-') ? `note-${target.slice('noteev-'.length)}`
-                        : null
-                if (pair && memoryRefExists(this.paths.dbPath, pair)) supersedeTargets.push(pair)
+                for (const pair of notePairOf(target)) {
+                    if (memoryRefExists(this.paths.dbPath, pair)) supersedeTargets.push(pair)
+                }
             }
 
             // Idempotent re-run: an identical note already exists, so skip the write entirely.
@@ -455,8 +463,14 @@ export class MemoriaCore {
             if (!memoryRefExists(this.paths.dbPath, target)) {
                 throw new Error(`memory not found: ${target}`)
             }
-            upsertMemoryAttributes(this.paths.dbPath, target, patch)
-            return { data: { refId: target, applied: patch }, evidence: [target], confidence: 1 }
+            // A CLI note occupies two refs and `remember --durable` marks both, so marking only the
+            // one that was named would leave the halves disagreeing — recall's decay exemption is
+            // looked up per `hit.id`, so the unmarked half would silently keep decaying (issue-17
+            // U-4). Refs with no counterpart (a git-promoted `gitdec-*`) get exactly one row: the
+            // pair is written only when it actually names an existing memory.
+            const refs = [target, ...notePairOf(target).filter((pair) => memoryRefExists(this.paths.dbPath, pair))]
+            for (const ref of refs) upsertMemoryAttributes(this.paths.dbPath, ref, patch)
+            return { data: { refId: target, applied: patch }, evidence: refs, confidence: 1 }
         })
     }
 

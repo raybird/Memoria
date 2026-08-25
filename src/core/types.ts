@@ -467,6 +467,9 @@ export type BriefPinned = {
     ref_id: string
     project: string
     snippet: string
+    /** issue-18: the marker's own note — the "scope / symptom / self-check" text, when one was
+     *  recorded. null keeps the entry a single line: a pinned block earns its place by being cheap. */
+    note: string | null
 }
 
 export type BriefRepository = {

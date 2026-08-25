@@ -127,13 +127,16 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
 
         // issue-17: memories marked durable are pinned — they leave the recency rotation entirely.
         // Ordered by created_at so the block is stable across runs; no LIMIT, by design (SCN-003).
-        const durableRefs = hasAttributes
+        const durableRows = hasAttributes
             ? (db.prepare(`
-                SELECT ref_id FROM memory_attributes
+                SELECT ref_id, note FROM memory_attributes
                 WHERE retention = 'durable' AND superseded_by IS NULL
                 ORDER BY created_at ASC, ref_id ASC
-              `).all() as Array<{ ref_id: string }>).map((row) => row.ref_id)
+              `).all() as Array<{ ref_id: string; note: string | null }>)
             : []
+
+        const durableRefs = durableRows.map((row) => row.ref_id)
+        const noteByRef = new Map(durableRows.map((row) => [row.ref_id, row.note]))
 
         // A pinned memory must not also consume a recent-decisions slot (SCN-004). Filtered in SQL
         // for the same reason the superseded filter is: LIMIT must still yield topK live rows.
@@ -195,7 +198,7 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                 const found = texts.get(ref)
                 if (!found) continue
                 if (project && found.project !== project && !isEnvironmentProject(found.project)) continue
-                pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text) })
+                pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text), note: noteByRef.get(ref) ?? null })
             }
         }
 
@@ -316,6 +319,9 @@ export function renderBrief(data: BriefData): string {
         lines.push('')
         for (const item of data.pinned) {
             lines.push(`- ${item.snippet} ｜ ${item.project}`)
+            // Only when a note exists: an empty placeholder would spend context on nothing and
+            // break the one-line-each economy the block depends on.
+            if (item.note) lines.push(`  - ${item.note}`)
         }
         lines.push('')
     }

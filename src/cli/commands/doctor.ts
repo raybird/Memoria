@@ -62,6 +62,44 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
         })
     }
 
+    // issue-18: the failure that actually happened twice is not an empty store, it is a store that
+    // is SHORT — and nothing reported it. Once (before issue-7) the bridge payload narrowed to 3 of
+    // 10 sessions while ingest still answered {"ok":true}; again in 2026-08 when one new memory's
+    // node existed but was never embedded, leaving semantic recall blind to it for 11 days with no
+    // signal anywhere. A coverage number turns both into something a person can see.
+    if (report.coverage) {
+        const { embedded, expected, missing } = report.coverage
+        checks.push({
+            name: 'vector coverage',
+            ok: missing === 0,
+            value: `embedded=${embedded} expected=${expected} missing=${missing}`,
+            fix: missing === 0 ? undefined :
+                `${missing} memories are not in the vector index, so semantic recall cannot see them — ` +
+                'and that degrades silently (the helper answers "ok" with zero rows). Re-run the ingest ' +
+                'two-step: "node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs --memoria-home <home>" ' +
+                'then "node skills/memoria-vector/vector-ingest.mjs <payload.json>".'
+        })
+    } else if (report.coverageUnknownReason === 'remote_libsql') {
+        // Named rather than omitted, for the same reason the overridden-helper skip is named.
+        checks.push({
+            name: 'vector coverage',
+            ok: true,
+            value: 'not measured (remote libSQL; only file: URLs can be counted locally)'
+        })
+    } else if (report.coverageUnknownReason === 'overridden_helper') {
+        checks.push({
+            name: 'vector coverage',
+            ok: true,
+            value: 'not measured (helper overridden; the index may not be filled by our ingest path)'
+        })
+    } else if (report.coverageUnknownReason === 'read_failed' || report.coverageUnknownReason === 'no_local_db') {
+        checks.push({
+            name: 'vector coverage',
+            ok: true,
+            value: `not measured (${report.coverageUnknownReason})`
+        })
+    }
+
     return checks
 }
 
@@ -93,7 +131,7 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
                 { name: 'sessions path', ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
                 { name: 'config path', ok: existsSync(paths.configPath), value: paths.configPath },
                 { name: 'sessions.db', ok: existsSync(paths.dbPath), value: paths.dbPath },
-                ...vectorChecks(inspectVectorLayer())
+                ...vectorChecks(inspectVectorLayer(paths.dbPath))
             ]
 
             if (opts.json) {
