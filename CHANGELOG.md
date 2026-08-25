@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.29.0] - 2026-08-25
 
 ### Added
 - **`memoria mark <refId>`** applies long-term memory markers to a memory that already exists (issue-17). issue-5 made `remember` the only way to mark — re-running a note with identical text applies markers without rewriting, because a note id is a content fingerprint of that text. That mechanism structurally cannot reach a git-promoted decision, whose id is `gitdec-<summary>-<n>` and which no note text produces, so **the memories most worth pinning were exactly the ones no CLI could mark**. `upsertMemoryAttributes` was already ref-agnostic; this is the missing surface, not new capability, and it adds no schema. Flags mirror `remember` (`--durable` / `--episodic` / `--sensitivity`) so the two cannot drift. The ref is verified before writing, for the same reason `--supersedes` verifies it: a marker on a ref that names nothing is a silent no-op that still reads as success. This deliberately reverses the "there is no separate `mark` command" note in `AGENTS.md`/`CLAUDE.md`, both updated.
