@@ -64,6 +64,10 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                     console.log('- 未偵測到已註冊 repo，退回全域範圍（未任意挑選 repo）')
                 }
                 console.log(`- 決策: ${data.decisions.length} ｜ 高效用記憶: ${data.high_utility.length} ｜ repository: ${data.repositories.length}`)
+                // Reported every run, not only when scoped: this class is derived from what is
+                // registered, so the number moving is the only signal that a project was
+                // reclassified out of it (SCN-011 / SCN-012).
+                console.log(`- 環境類記憶: ${data.totals.environment_memories} 筆（不屬任何已註冊 repo，每個專案的 brief 都會帶上）`)
                 console.log(`- 提示: 在 CLAUDE.md 以 @${path.relative(paths.memoriaHome, outPath)} 引入即可每次 session 自動載入`)
             }
         })

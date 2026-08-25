@@ -482,12 +482,14 @@ export type BriefData = {
     days: number
     pinned: BriefPinned[]
     decisions: BriefDecision[]
+    environment: BriefDecision[]
     high_utility: BriefMemory[]
     repositories: BriefRepository[]
     totals: {
         sessions: number
         decisions_in_window: number
         pending_summaries: number
+        environment_memories: number
     }
 }
 

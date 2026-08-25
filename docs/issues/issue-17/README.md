@@ -211,7 +211,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | 1 | **已完成**（2026-08-24） | `memoria mark <refId>` 命令，含 `--durable` / `--episodic` / `--sensitivity`，ref 存在性檢查 | SCN-001、SCN-002 通過（`scripts/test-memory-attributes.sh` 的 (H)/(I) 段，exit 0）；`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help` 均通過；`test-smoke.sh`／`test-cli-memory.sh` 無回歸 |
 | 2 | **已完成**（2026-08-24） | `queryBrief` 新增 pinned 查詢（`retention='durable'` 且 `superseded_by IS NULL`），`renderBrief` 新增區塊，零標記時整區不輸出 | SCN-003～006 通過（`test-memory-attributes.sh` 的 (J)～(M) 段，exit 0）；SCN-005 以實作前產出的 golden（`scripts/fixtures/brief-zero-marker.golden.md`）逐位元組比對；`check`／`build` 通過；`test-smoke`／`test-cli-memory`／`test-pure-functions`／`test-http-api` 無回歸 |
 | 3 | **已完成**（2026-08-24） | cwd → `repository_instances.local_path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過（新增 `scripts/test-brief-scope.sh`，已接進 `ci.yml` 與 CLAUDE.md 測試清單，exit 0）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-repo-registry`／`test-repo-promotion` 無回歸。**刻意留給步驟 4**：專案範圍下環境類記憶（`memoria-ops`）目前被一併濾掉 |
-| 4 | 未開始 | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過 |
+| 4 | **已完成**（2026-08-24） | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過（`test-brief-scope.sh` 的 (C)～(E) 段，exit 0；漂移實測 3 → 0）；`check`／`build` 通過；`test-memory-attributes`（含 SCN-005 golden）／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-repo-promotion` 無回歸 |
 | 5 | 未開始 | `--global` 還原旗標 | SCN-010 通過 |
 | 6 | 未開始 | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過 |
 | 7 | 未開始 | `CLAUDE.md` 該句修正、`CHANGELOG.md` 記入 Added（`mark`、pinned 區）與 Changed（brief 預設輸出佈局，`--global` 可還原） | 文件與實際行為一致；`docs-check` 通過 |
@@ -228,7 +228,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 
 | 編號 | 事項 | 狀態 | 影響 |
 | --- | --- | --- | --- |
-| U-1 | D3 的環境類判定是衍生的：若未來把 `memoria-ops` 註冊成 repo，那 8 筆操作紀律會不再常駐於每個專案 | **已解決**（2026-08-24） | 處置：不靠偵測邏輯，改由 SCN-011 在輸出報出環境類筆數、SCN-012 保證該數字下降時看得見。漂移仍可能發生，但不再靜默 |
+| U-1 | D3 的環境類判定是衍生的：若未來把 `memoria-ops` 註冊成 repo，那些操作紀律會不再常駐於每個專案 | **已解決並實作**（2026-08-24 步驟 4） | `brief` 每次執行都報出環境類筆數（人類輸出與 `--json` 皆有），(E) 段實測註冊後 3 → 0。漂移仍會發生，但不再靜默 |
 | U-2 | per-project BRIEF 要各專案 CLAUDE.md 自行加 `@` 才會生效；`external-repo` 的 CLAUDE.md 不在本 repo 管轄範圍 | **已解決**（2026-08-24） | 處置：由 SCN-013 在 brief 產出時直接印出該加的那行，不另寫第二份說明文件——避免重蹈 v1.25.1 那次「腳本輸出與文件互相矛盾」的雷 |
 | U-3 | `--days` / `topK` 對 per-project 檔案是否應有不同預設 | **已決**（2026-08-24） | 沿用現有預設（30 天／topK 10），不另立數字。理由：目前沒有資料能支持任何別的值，拍一個只是換一個猜。實際使用後若 per-project 窗口經常為空，再依 issue-16 的量測紀律重新評估 |
 | U-4 | `mark` 只標記傳入的那一個 ref，不連帶標記 `note-*` ↔ `noteev-*` 的另一半；`remember --durable` 則兩半都標 | **影響已縮小**（2026-08-24 步驟 2） | 對 pinned 顯示無影響——步驟 2 的 `collapseNotePairs()` 已收斂配對，只標一半也只會顯示一行。殘留影響在 recall：`applyMemoryAttributes` 的 decay 豁免逐 ref 生效，只標一半時另一半不受惠。仍未有對應 Scenario，維持不擅自實作 |

@@ -104,6 +104,27 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
         // live decisions instead of topK minus however many were replaced.
         const supersededClause = hasAttributes ? 'AND ma.superseded_by IS NULL' : ''
 
+        // issue-17: a memory whose project is not a registered repository is environment-class —
+        // operational discipline that applies wherever you are working, so it rides along into every
+        // project's brief. Derived rather than declared: no new column, no migration, and the
+        // existing 15-row corpus separates cleanly. The cost of deriving it is that registering such
+        // a project as a repo silently reclassifies its memories, which is why the count below is
+        // reported on every run (SCN-011/SCN-012) — the drift stays visible instead of silent.
+        const registeredNames = tableExists(db, 'repositories')
+            ? (db.prepare(`SELECT name FROM repositories`).all() as Array<{ name: string }>).map((r) => r.name)
+            : []
+        const registeredSet = new Set(registeredNames)
+        const isEnvironmentProject = (name: string): boolean => !registeredSet.has(name)
+
+        const envCountClause = registeredNames.length > 0
+            ? `AND s.project NOT IN (${registeredNames.map(() => '?').join(',')})`
+            : ''
+        const environment_memories = (db.prepare(`
+          SELECT COUNT(*) AS n FROM sessions s
+          ${hasAttributes ? 'LEFT JOIN memory_attributes ma ON ma.ref_id = s.id' : ''}
+          WHERE 1 = 1 ${hasAttributes ? 'AND ma.superseded_by IS NULL' : ''} ${envCountClause}
+        `).get(...registeredNames) as { n: number }).n
+
         // issue-17: memories marked durable are pinned — they leave the recency rotation entirely.
         // Ordered by created_at so the block is stable across runs; no LIMIT, by design (SCN-003).
         const durableRefs = hasAttributes
@@ -141,13 +162,39 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
             }
         })
 
+        // Only when scoped: in global mode these memories are already in the recent-decisions block,
+        // and repeating them would just spend context twice.
+        const environment: BriefDecision[] = []
+        if (project && registeredNames.length > 0) {
+            const envRows = db.prepare(`
+              SELECT e.id, e.timestamp, e.content, s.project
+              FROM events e JOIN sessions s ON s.id = e.session_id
+              ${supersededJoin}
+              WHERE e.event_type = 'DecisionMade' AND e.timestamp >= ?
+                AND s.project NOT IN (${registeredNames.map(() => '?').join(',')})
+              ${supersededClause}
+              ${pinnedClause}
+              ORDER BY e.timestamp DESC LIMIT ?
+            `).all(since, ...registeredNames, ...durableRefs, topK) as Array<{ id: string; timestamp: string; content: string; project: string }>
+            for (const row of envRows) {
+                const parsed = parseDecisionEvent(maybeParseJson(row.content))
+                environment.push({
+                    id: row.id,
+                    timestamp: row.timestamp,
+                    project: row.project,
+                    decision: truncateText(parsed.decision || parsed.title),
+                    rationale: truncateText(parsed.rationale, 120)
+                })
+            }
+        }
+
         const pinned: BriefPinned[] = []
         if (durableRefs.length > 0) {
             const texts = resolveRefTexts(db, durableRefs)
             for (const ref of collapseNotePairs(durableRefs)) {
                 const found = texts.get(ref)
                 if (!found) continue
-                if (project && found.project !== project) continue
+                if (project && found.project !== project && !isEnvironmentProject(found.project)) continue
                 pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text) })
             }
         }
@@ -235,11 +282,13 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
             days,
             pinned,
             decisions,
+            environment,
             high_utility,
             repositories,
             totals: {
                 sessions: sessionsTotal,
                 decisions_in_window: decisions.length,
+                environment_memories,
                 pending_summaries: repositories.reduce((sum, repo) => sum + repo.pending_summaries, 0)
             }
         }
@@ -282,6 +331,17 @@ export function renderBrief(data: BriefData): string {
         }
     }
     lines.push('')
+
+    // Scoped briefs only (see queryBrief): global mode already lists these under recent decisions.
+    if (data.environment.length > 0) {
+        lines.push('## 環境紀律（跨專案）')
+        lines.push('')
+        for (const item of data.environment) {
+            lines.push(`- **${item.decision}** — ${item.project} ｜ ${item.timestamp}`)
+            if (item.rationale) lines.push(`  - why: ${item.rationale}`)
+        }
+        lines.push('')
+    }
 
     lines.push('## 高效用記憶（UFL）')
     lines.push('')

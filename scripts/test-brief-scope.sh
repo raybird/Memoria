@@ -3,6 +3,9 @@
 #
 #   (A) SCN-009 cwd outside every registered repo → global BRIEF.md, and the output SAYS so
 #   (B) SCN-007 cwd inside a registered repo → BRIEF-<project>.md scoped to that repo
+#   (C) SCN-008 a memory whose project is not a registered repo rides along into EVERY project
+#   (D) SCN-011 that class is counted in both human and --json output
+#   (E) SCN-012 registering the project as a repo drops the count — the drift is visible
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -13,6 +16,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP_DIR="$(mktemp -d)"
 CLI="$ROOT_DIR/cli"
+field() { node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);console.log(eval("j"+process.argv[1]))})' "$1"; }
 MEMORIA_HOME=""
 
 cleanup() { rm -rf "$TMP_DIR"; }
@@ -64,5 +68,48 @@ mkdir -p "$TMP_DIR/alpha/src/deep"
 ( cd "$TMP_DIR/alpha/src/deep" && "$CLI" brief >/dev/null )
 [ -f "$SCOPED" ] || { echo "  ✗ 從子目錄執行時偵測失敗"; exit 1; }
 echo "  產出 BRIEF-alpha.md,只含本專案決策,子目錄亦可偵測"
+
+echo "[brief-scope] (C/SCN-008) 環境類記憶出現在每一個專案的 BRIEF"
+reset_home home-c
+make_repo "$TMP_DIR/alpha"
+make_repo "$TMP_DIR/beta"
+"$CLI" repo add "$TMP_DIR/alpha" >/dev/null
+"$CLI" repo add "$TMP_DIR/beta" >/dev/null
+# project=ops 不對應任何已註冊 repo,所以它是環境類——跨專案的操作紀律。
+"$CLI" remember "環境紀律：停 server 一律用 PID 精準停" --project ops >/dev/null
+"$CLI" remember "alpha 專屬：改用 pnpm 作為套件管理器" --project alpha >/dev/null
+( cd "$TMP_DIR/alpha" && "$CLI" brief >/dev/null )
+( cd "$TMP_DIR/beta" && "$CLI" brief >/dev/null )
+for repo in alpha beta; do
+    grep -q "PID 精準停" "$MEMORIA_HOME/knowledge/BRIEF-$repo.md" \
+        || { echo "  ✗ 環境類記憶不在 BRIEF-$repo.md"; exit 1; }
+done
+# 但 alpha 專屬的決策不該出現在 beta。
+grep -q "改用 pnpm" "$MEMORIA_HOME/knowledge/BRIEF-beta.md" \
+    && { echo "  ✗ alpha 的專案決策洩漏到 BRIEF-beta.md"; exit 1; }
+echo "  兩邊都帶上環境類,專案決策未互相洩漏"
+
+echo "[brief-scope] (D/SCN-011) 環境類筆數在人類輸出與 --json 都看得見"
+reset_home home-d
+"$CLI" remember "環境紀律一：停 server 用 PID" --project ops >/dev/null
+"$CLI" remember "環境紀律二：操作前先確認 MEMORIA_HOME" --project ops >/dev/null
+"$CLI" remember "環境紀律三：向量 ingest 要手動跑" --project ops >/dev/null
+"$CLI" brief > "$TMP_DIR/out-d.txt"
+grep -q "環境類記憶: 3" "$TMP_DIR/out-d.txt" \
+    || { echo "  ✗ 人類輸出沒報出環境類筆數 3:"; cat "$TMP_DIR/out-d.txt"; exit 1; }
+JSON_N=$("$CLI" brief --json | field '.data.totals.environment_memories')
+[ "$JSON_N" = "3" ] || { echo "  ✗ --json 的 environment_memories 期望 3,實得 '$JSON_N'"; exit 1; }
+echo "  人類輸出與 --json 都是 3"
+
+echo "[brief-scope] (E/SCN-012) 該 project 被註冊成 repo 後筆數下降且看得見"
+# 沿用 home-d 的資料:把 ops 註冊成真正的 repo,那 3 筆就不再是環境類。
+make_repo "$TMP_DIR/ops"
+"$CLI" repo add "$TMP_DIR/ops" >/dev/null
+"$CLI" brief > "$TMP_DIR/out-e.txt"
+AFTER=$("$CLI" brief --json | field '.data.totals.environment_memories')
+[ "$AFTER" -lt 3 ] || { echo "  ✗ 註冊後筆數未下降,仍是 '$AFTER'"; exit 1; }
+grep -q "環境類記憶: $AFTER" "$TMP_DIR/out-e.txt" \
+    || { echo "  ✗ 下降後的筆數沒有反映在人類輸出:"; cat "$TMP_DIR/out-e.txt"; exit 1; }
+echo "  3 → $AFTER，且人類輸出即可察覺"
 
 echo "[brief-scope] ✓ all checks passed"
