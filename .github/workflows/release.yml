@@ -196,6 +196,21 @@ jobs:
               --notes-file release-notes.md
           fi
 
+      # npm's trusted publishing (OIDC) requires npm >= 11.5.1 and Node 22 ships 10.9.x, so the
+      # runner cannot use it as-is. Upgraded here rather than at job start: everything above builds
+      # with pnpm and was tested against the stock toolchain, and this step exists only for the
+      # publish call below. Pinned to a major line instead of `latest` — a release pipeline should
+      # not change behaviour because something upstream shipped this morning.
+      - name: Upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@12
+          npm --version
+
+      # NODE_AUTH_TOKEN is deliberately still here. Trusted publishing also needs the npmjs.com side
+      # configured (the package's trusted publisher bound to this repo + workflow), which is not
+      # something a commit can do; until that is in place the token remains the only working path.
+      # Once a release publishes via OIDC, this env block should go — a token that no longer needs to
+      # exist is just another thing that expires silently, which is exactly how v1.29.0 failed.
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -41,7 +41,16 @@ After the tag lands, the `release.yml` workflow:
 4. Builds and tests native Linux/macOS x64/arm64 artifacts on matching runners, then uploads all tarballs, checksums, and `install.sh`.
 5. Publishes `@raybird.chen/memoria` to npm with provenance.
 
-**Required GitHub secret**: `NPM_TOKEN` (automation token from npmjs.com).
+**npm authentication**: currently `NPM_TOKEN` (a GitHub secret — an automation or granular token
+from npmjs.com). The publish job upgrades npm to 12 first, because npm's **trusted publishing**
+(OIDC) needs >= 11.5.1 and Node 22 ships 10.9.x; the job already has `id-token: write`. The remaining
+step is on npmjs.com — bind the package's trusted publisher to this repo and `release.yml` — after
+which `NODE_AUTH_TOKEN` can be dropped from the publish step entirely.
+
+That migration is worth finishing. v1.29.0 failed at exactly this point: the token had been
+invalidated with no notice, and npm reported it as `E404 Not Found` on the `PUT` — an error about
+the package not existing, for a problem that was purely authentication. A credential that expires
+silently and fails misleadingly is the thing trusted publishing removes.
 
 ## Release Types
 
