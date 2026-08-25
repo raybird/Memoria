@@ -75,7 +75,17 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                 // registered, so the number moving is the only signal that a project was
                 // reclassified out of it (SCN-011 / SCN-012).
                 console.log(`- 環境類記憶: ${data.totals.environment_memories} 筆（不屬任何已註冊 repo，每個專案的 brief 都會帶上）`)
-                console.log(`- 提示: 在 CLAUDE.md 以 @${path.relative(paths.memoriaHome, outPath)} 引入即可每次 session 自動載入`)
+                if (detected) {
+                    // The project's CLAUDE.md lives in the repo, not under MEMORIA_HOME, so the
+                    // relative form used for the global brief does not resolve from there — this
+                    // line has to be absolute and copy-pasteable as-is. Printed rather than written
+                    // into a doc: the recipe someone follows is the one the command just printed
+                    // (docs/HANDOVER.md §8, the v1.25.1 lesson), and a second copy would drift.
+                    console.log(`- 接線: 在 ${path.join(detected.root, 'CLAUDE.md')} 加上這一行即可每次 session 自動載入`)
+                    console.log(`  @${outPath}`)
+                } else {
+                    console.log(`- 提示: 在 CLAUDE.md 以 @${path.relative(paths.memoriaHome, outPath)} 引入即可每次 session 自動載入`)
+                }
             }
         })
 }

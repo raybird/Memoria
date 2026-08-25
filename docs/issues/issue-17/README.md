@@ -213,7 +213,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | 3 | **已完成**（2026-08-24） | cwd → `repository_instances.local_path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過（新增 `scripts/test-brief-scope.sh`，已接進 `ci.yml` 與 CLAUDE.md 測試清單，exit 0）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-repo-registry`／`test-repo-promotion` 無回歸。**刻意留給步驟 4**：專案範圍下環境類記憶（`memoria-ops`）目前被一併濾掉 |
 | 4 | **已完成**（2026-08-24） | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過（`test-brief-scope.sh` 的 (C)～(E) 段，exit 0；漂移實測 3 → 0）；`check`／`build` 通過；`test-memory-attributes`（含 SCN-005 golden）／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-repo-promotion` 無回歸 |
 | 5 | **已完成**（2026-08-24） | `--global` 還原旗標 | SCN-010 通過（`test-brief-scope.sh` 的 (F) 段，exit 0）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api` 無回歸 |
-| 6 | 未開始 | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過 |
+| 6 | **已完成**（2026-08-24） | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過（`test-brief-scope.sh` 的 (G) 段，exit 0，含全域模式提示不受影響的反向斷言）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api` 無回歸 |
 | 7 | 未開始 | `CLAUDE.md` 該句修正、`CHANGELOG.md` 記入 Added（`mark`、pinned 區）與 Changed（brief 預設輸出佈局，`--global` 可還原） | 文件與實際行為一致；`docs-check` 通過 |
 
 ## 首要驗證

@@ -7,6 +7,7 @@
 #   (D) SCN-011 that class is counted in both human and --json output
 #   (E) SCN-012 registering the project as a repo drops the count — the drift is visible
 #   (F) SCN-010 --global restores the pre-issue-17 single-file, all-projects behaviour
+#   (G) SCN-013 a per-project run prints the exact @-line to paste into THAT repo's CLAUDE.md
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -134,5 +135,25 @@ grep -q "PID 精準停" "$BRIEF" || { echo "  ✗ 環境類決策不在全域 br
 grep -q "退回全域" "$TMP_DIR/out-f.txt" && {
     echo "  ✗ 明示 --global 卻報成退回:"; cat "$TMP_DIR/out-f.txt"; exit 1; }
 echo "  單檔全域,兩個專案的決策都在,且未誤報為退回"
+
+echo "[brief-scope] (G/SCN-013) per-project 產出後印出可直接複製的接線指引"
+reset_home home-g
+make_repo "$TMP_DIR/alpha"
+"$CLI" repo add "$TMP_DIR/alpha" >/dev/null
+"$CLI" remember "alpha 專屬：改用 pnpm 作為套件管理器" --project alpha >/dev/null
+( cd "$TMP_DIR/alpha" && "$CLI" brief > "$TMP_DIR/out-g.txt" )
+SCOPED="$MEMORIA_HOME/knowledge/BRIEF-alpha.md"
+[ -f "$SCOPED" ] || { echo "  ✗ 未產出 BRIEF-alpha.md"; exit 1; }
+# 必須是絕對路徑：專案的 CLAUDE.md 不在 MEMORIA_HOME 底下,相對路徑在那裡解不開。
+grep -qF "@$SCOPED" "$TMP_DIR/out-g.txt" || {
+    echo "  ✗ 輸出沒有可直接複製的絕對路徑 @$SCOPED:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
+# 且要點名是「該專案的」CLAUDE.md,而不是泛稱。
+grep -qF "$TMP_DIR/alpha/CLAUDE.md" "$TMP_DIR/out-g.txt" || {
+    echo "  ✗ 沒有點名該專案的 CLAUDE.md:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
+# 全域模式維持原本的相對路徑提示,不受影響。
+"$CLI" brief --global > "$TMP_DIR/out-g2.txt"
+grep -qF "@knowledge/BRIEF.md" "$TMP_DIR/out-g2.txt" || {
+    echo "  ✗ 全域模式的提示被改壞了:"; cat "$TMP_DIR/out-g2.txt"; exit 1; }
+echo "  印出絕對路徑並點名該專案的 CLAUDE.md,全域模式不受影響"
 
 echo "[brief-scope] ✓ all checks passed"
