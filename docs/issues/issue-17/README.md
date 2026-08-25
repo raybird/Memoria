@@ -201,15 +201,15 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 
 ## 實作步驟
 
-| # | 產出 | 完成判準 |
-| --- | --- | --- |
-| 1 | `memoria mark <refId>` 命令，含 `--durable` / `--episodic` / `--sensitivity`，ref 存在性檢查 | SCN-001、SCN-002 通過；`pnpm run check` 通過 |
-| 2 | `queryBrief` 新增 pinned 查詢（`retention='durable'` 且 `superseded_by IS NULL`），`renderBrief` 新增區塊，零標記時整區不輸出 | SCN-003、SCN-004、SCN-005、SCN-006 通過 |
-| 3 | cwd → `repository_instances.path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過 |
-| 4 | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過 |
-| 5 | `--global` 還原旗標 | SCN-010 通過 |
-| 6 | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過 |
-| 7 | `CLAUDE.md` 該句修正、`CHANGELOG.md` 記入 Added（`mark`、pinned 區）與 Changed（brief 預設輸出佈局，`--global` 可還原） | 文件與實際行為一致；`docs-check` 通過 |
+| # | 狀態 | 產出 | 完成判準 |
+| --- | --- | --- | --- |
+| 1 | **已完成**（2026-08-24） | `memoria mark <refId>` 命令，含 `--durable` / `--episodic` / `--sensitivity`，ref 存在性檢查 | SCN-001、SCN-002 通過（`scripts/test-memory-attributes.sh` 的 (H)/(I) 段，exit 0）；`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help` 均通過；`test-smoke.sh`／`test-cli-memory.sh` 無回歸 |
+| 2 | 未開始 | `queryBrief` 新增 pinned 查詢（`retention='durable'` 且 `superseded_by IS NULL`），`renderBrief` 新增區塊，零標記時整區不輸出 | SCN-003、SCN-004、SCN-005、SCN-006 通過 |
+| 3 | 未開始 | cwd → `repository_instances.path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過 |
+| 4 | 未開始 | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過 |
+| 5 | 未開始 | `--global` 還原旗標 | SCN-010 通過 |
+| 6 | 未開始 | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過 |
+| 7 | 未開始 | `CLAUDE.md` 該句修正、`CHANGELOG.md` 記入 Added（`mark`、pinned 區）與 Changed（brief 預設輸出佈局，`--global` 可還原） | 文件與實際行為一致；`docs-check` 通過 |
 
 ## 首要驗證
 
@@ -224,6 +224,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | U-1 | D3 的環境類判定是衍生的：若未來把 `memoria-ops` 註冊成 repo，那 8 筆操作紀律會不再常駐於每個專案 | **已解決**（2026-08-24） | 處置：不靠偵測邏輯，改由 SCN-011 在輸出報出環境類筆數、SCN-012 保證該數字下降時看得見。漂移仍可能發生，但不再靜默 |
 | U-2 | per-project BRIEF 要各專案 CLAUDE.md 自行加 `@` 才會生效；`external-repo` 的 CLAUDE.md 不在本 repo 管轄範圍 | **已解決**（2026-08-24） | 處置：由 SCN-013 在 brief 產出時直接印出該加的那行，不另寫第二份說明文件——避免重蹈 v1.25.1 那次「腳本輸出與文件互相矛盾」的雷 |
 | U-3 | `--days` / `topK` 對 per-project 檔案是否應有不同預設 | **已決**（2026-08-24） | 沿用現有預設（30 天／topK 10），不另立數字。理由：目前沒有資料能支持任何別的值，拍一個只是換一個猜。實際使用後若 per-project 窗口經常為空，再依 issue-16 的量測紀律重新評估 |
+| U-4 | `mark` 目前只標記傳入的那一個 ref，不會自動連帶標記 `note-*` ↔ `noteev-*` 的另一半；`remember --durable` 則兩半都標（`memoria.ts:405-412`）。對 SCN-001 的 `gitdec-*` 無影響（它沒有配對半），但 `mark note-xxx --durable` 會只標到一半 | **未決**（2026-08-24 實作步驟 1 時浮現） | 不阻塞步驟 1——SCN-001／SCN-002 都不涉及配對。刻意未實作：配對屬未經核准的行為，依規範不得擅自寫入。步驟 2 的 pinned 查詢若以 `hit.id` 比對，需先決定要補一個 Scenario 還是接受不對稱 |
 
 ## Gate 豁免紀錄
 

@@ -8,6 +8,7 @@ import { registerInitCommand } from './cli/commands/init.js'
 import { registerSyncCommand } from './cli/commands/sync.js'
 import { registerRecallCommand } from './cli/commands/recall.js'
 import { registerRememberCommand } from './cli/commands/remember.js'
+import { registerMarkCommand } from './cli/commands/mark.js'
 import { registerFeedbackCommand } from './cli/commands/feedback.js'
 import { registerBriefCommand } from './cli/commands/brief.js'
 import { registerSourceCommand } from './cli/commands/source.js'
@@ -54,6 +55,7 @@ async function run(): Promise<void> {
   registerSyncCommand(program, paths, core)
   registerRecallCommand(program, core)
   registerRememberCommand(program, core)
+  registerMarkCommand(program, core)
   registerFeedbackCommand(program, core)
   registerBriefCommand(program, paths, core)
   registerSourceCommand(program, core)

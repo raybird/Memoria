@@ -9,6 +9,11 @@
 #   (F) export --redact code-names known entities in private memories, and REPORTS what it skipped
 #   (G) zero-marker behaviour: marking nothing leaves recall ordering untouched
 #
+# issue-17 — the `mark` command (docs/issues/issue-17).
+#
+#   (H) SCN-001 mark reaches a ref `remember` cannot construct (gitdec-*), and leaves the event alone
+#   (I) SCN-002 mark on an unknown ref fails loudly and writes nothing
+#
 # Time is manipulated by rewriting timestamps directly, the same trick test-migrations.sh uses.
 
 set -euo pipefail
@@ -159,5 +164,38 @@ EXPORTED2="$(ls "$MEMORIA_HOME"/.memory/exports/*.json | head -1)"
 SECOND=$(node -pe "JSON.parse(require('fs').readFileSync('$EXPORTED2','utf8')).decisions.find(d=>d.decision.includes('內網')).decision")
 [ "$PRIVATE_LINE" = "$SECOND" ] || { echo "  ✗ code name not deterministic: '$PRIVATE_LINE' vs '$SECOND'"; exit 1; }
 echo "  redacted=1 unclassified=1, code name stable across runs"
+
+echo "[attributes] (H/SCN-001) mark 可標記 remember 構造不出的 ref（gitdec-*）"
+reset_home home-h
+"$CLI" remember "選品線用具名 agent，未設即該線未開放" --project demo >/dev/null
+SID=$(q "SELECT id FROM sessions LIMIT 1")
+# git 促升的事件 id 形如 gitdec-<summary>-<n>。note id 是內容指紋，remember 構造不出這個 id 空間,
+# 所以「重跑 remember 即可標記既有記憶」對它結構上無效——這正是本命令存在的理由。
+sql "INSERT INTO events (id, session_id, timestamp, event_type, content, metadata) VALUES ('gitdec-sum_test-0', '$SID', '2026-01-01T00:00:00.000Z', 'DecisionMade', json_object('decision','履約過濾抽成後端純函式','rationale','前端用不到這個判斷','impact_level','high'), '{}')"
+BEFORE_CONTENT=$(q "SELECT content FROM events WHERE id='gitdec-sum_test-0'")
+BEFORE_TS=$(q "SELECT timestamp FROM events WHERE id='gitdec-sum_test-0'")
+"$CLI" mark gitdec-sum_test-0 --durable >/dev/null
+RETENTION=$(q "SELECT retention FROM memory_attributes WHERE ref_id='gitdec-sum_test-0'")
+[ "$RETENTION" = "durable" ] || { echo "  ✗ expected retention=durable, got '$RETENTION'"; exit 1; }
+AFTER_CONTENT=$(q "SELECT content FROM events WHERE id='gitdec-sum_test-0'")
+AFTER_TS=$(q "SELECT timestamp FROM events WHERE id='gitdec-sum_test-0'")
+[ "$BEFORE_CONTENT" = "$AFTER_CONTENT" ] || { echo "  ✗ event content was rewritten"; exit 1; }
+[ "$BEFORE_TS" = "$AFTER_TS" ] || { echo "  ✗ event timestamp was rewritten"; exit 1; }
+echo "  gitdec ref marked durable, event content and timestamp untouched"
+
+echo "[attributes] (I/SCN-002) mark 指向不存在的記憶時明確失敗且不寫入"
+BEFORE_ROWS=$(q "SELECT COUNT(*) FROM memory_attributes")
+if "$CLI" mark gitdec-does-not-exist-0 --durable >/dev/null 2>&1; then
+    echo "  ✗ expected non-zero exit"; exit 1
+fi
+# 只斷言錯誤訊息「點名了那個 ref」,不綁定確切措辭——措辭會改,契約不會。
+ERR=$("$CLI" mark gitdec-does-not-exist-0 --durable 2>&1 || true)
+case "$ERR" in
+    *gitdec-does-not-exist-0*) ;;
+    *) echo "  ✗ error does not name the rejected ref: $ERR"; exit 1 ;;
+esac
+AFTER_ROWS=$(q "SELECT COUNT(*) FROM memory_attributes")
+[ "$BEFORE_ROWS" = "$AFTER_ROWS" ] || { echo "  ✗ dangling marker was written anyway ($BEFORE_ROWS→$AFTER_ROWS)"; exit 1; }
+echo "  rejected with the ref named, no dangling row"
 
 echo "[attributes] ✓ all checks passed"

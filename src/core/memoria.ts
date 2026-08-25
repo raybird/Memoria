@@ -51,7 +51,8 @@ import {
     applyMemoryAttributes,
     upsertMemoryAttributes,
     memoryRefExists,
-    type BriefOptions
+    type BriefOptions,
+    type MemoryAttributePatch
 } from './db/index.js'
 import { hybridUsedKeyword } from './utils.js'
 import { importSourceFile } from './source-import.js'
@@ -417,6 +418,37 @@ export class MemoriaCore {
                 note: input.supersedeNote
             })
         }
+    }
+
+    // ─── markMemory() — mark an EXISTING memory (docs/issues/issue-17) ───────
+    //
+    // issue-5 made `remember` the only way to mark: re-running a note with identical text applies
+    // markers without rewriting, because a note id is a content fingerprint of that text. That
+    // mechanism cannot reach a git-promoted decision — its id is `gitdec-<summary>-<n>`, which no
+    // note text produces — so the memories most worth pinning were exactly the ones no CLI could
+    // mark. `upsertMemoryAttributes` was already ref-agnostic; this is the missing surface, not
+    // new capability, and it adds no schema.
+    //
+    // The ref is verified before writing for the same reason `--supersedes` verifies it: a marker
+    // on a ref that names nothing is a silent no-op that still reads as success.
+
+    async markMemory(
+        refId: string,
+        patch: MemoryAttributePatch
+    ): Promise<MemoriaResult<{ refId: string; applied: MemoryAttributePatch }>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const target = refId.trim()
+            if (!target) throw new Error('ref id is required')
+            if (Object.keys(patch).length === 0) {
+                throw new Error('nothing to mark: pass at least one of --durable / --episodic / --sensitivity')
+            }
+            if (!memoryRefExists(this.paths.dbPath, target)) {
+                throw new Error(`memory not found: ${target}`)
+            }
+            upsertMemoryAttributes(this.paths.dbPath, target, patch)
+            return { data: { refId: target, applied: patch }, evidence: [target], confidence: 1 }
+        })
     }
 
     // ─── brief() — derived context view (docs/issues/issue-4 Phase 2) ────────
