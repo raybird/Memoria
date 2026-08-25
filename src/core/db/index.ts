@@ -23,7 +23,8 @@ export {
     listRepositories,
     findRepository,
     relocateRepositoryInstance,
-    removeRepository
+    removeRepository,
+    resolveProjectForPath
 } from './git-repo.js'
 export {
     getCurrentRefObservations,

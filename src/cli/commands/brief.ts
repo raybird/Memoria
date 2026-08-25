@@ -31,7 +31,12 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
             const topK = Number(options.topK ?? '10')
             if (!Number.isFinite(topK) || topK <= 0) throw new Error(`Invalid --top-k '${options.topK}'. Use a positive number`)
 
-            const result = await core.brief({ project: options.project, days, topK })
+            // cwd scoping (docs/issues/issue-17). An explicit --project keeps writing BRIEF.md —
+            // only DETECTED scope changes the filename, so existing callers are untouched.
+            const detected = options.project ? null : await core.resolveProjectForCwd(process.cwd())
+            const scope = options.project ?? detected?.project
+
+            const result = await core.brief({ project: scope, days, topK })
             if (!result.ok || !result.data) throw new Error(result.error ?? 'brief failed')
 
             const markdown = renderBrief(result.data)
@@ -40,7 +45,10 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                 return
             }
 
-            const outPath = options.out ? path.resolve(options.out) : path.join(paths.knowledgeDir, 'BRIEF.md')
+            // One global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
+            // `@`-imports a fixed path, so whoever ran it last would decide what every project sees.
+            const fileName = detected ? `BRIEF-${detected.project}.md` : 'BRIEF.md'
+            const outPath = options.out ? path.resolve(options.out) : path.join(paths.knowledgeDir, fileName)
             await fs.mkdir(path.dirname(outPath), { recursive: true })
             await fs.writeFile(outPath, markdown, 'utf8')
 
@@ -50,6 +58,11 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                 const data = result.data
                 console.log(`📝 Brief written: ${outPath}`)
                 console.log(`- 範圍: ${data.project ?? '(all projects)'} ｜ 近 ${data.days} 天`)
+                if (detected) {
+                    console.log(`- 偵測到工作目錄屬於 ${detected.project}（${detected.root}）`)
+                } else if (!options.project) {
+                    console.log('- 未偵測到已註冊 repo，退回全域範圍（未任意挑選 repo）')
+                }
                 console.log(`- 決策: ${data.decisions.length} ｜ 高效用記憶: ${data.high_utility.length} ｜ repository: ${data.repositories.length}`)
                 console.log(`- 提示: 在 CLAUDE.md 以 @${path.relative(paths.memoriaHome, outPath)} 引入即可每次 session 自動載入`)
             }

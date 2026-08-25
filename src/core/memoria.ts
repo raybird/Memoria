@@ -51,6 +51,7 @@ import {
     applyMemoryAttributes,
     upsertMemoryAttributes,
     memoryRefExists,
+    resolveProjectForPath,
     type BriefOptions,
     type MemoryAttributePatch
 } from './db/index.js'
@@ -418,6 +419,14 @@ export class MemoriaCore {
                 note: input.supersedeNote
             })
         }
+    }
+
+    /** Which registered repository is `cwd` inside (docs/issues/issue-17)? null when none — the
+     *  caller must say so rather than defaulting to some repo. */
+    async resolveProjectForCwd(cwd: string): Promise<{ project: string; root: string } | null> {
+        await this.init()
+        const hostId = await getHostId(this.paths.memoryDir)
+        return resolveProjectForPath(this.paths.dbPath, hostId, cwd)
     }
 
     // ─── markMemory() — mark an EXISTING memory (docs/issues/issue-17) ───────

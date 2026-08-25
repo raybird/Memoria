@@ -396,3 +396,35 @@ export function removeRepository(dbPath: string, repositoryId: string, options: 
         return { repository_id: repositoryId, status: 'disabled' as RepositoryStatus, deleted }
     })())
 }
+
+/** Which registered repository contains `absPath`, if any (docs/issues/issue-17)?
+ *
+ *  Longest match wins so a repo nested inside another resolves to the inner one, and matching is
+ *  boundary-aware — `/x/alpha-old` must not be treated as living inside `/x/alpha`. Scoped to this
+ *  host: the same DB can hold instances registered on other machines, whose paths may collide.
+ *
+ *  Returns null rather than guessing. `brief` turns that null into an explicit "fell back to global"
+ *  line, because silently picking one of several repos would scope the whole file to the wrong one. */
+export function resolveProjectForPath(
+    dbPath: string,
+    hostId: string,
+    absPath: string
+): { project: string; root: string } | null {
+    const target = path.resolve(absPath)
+    return withDb(dbPath, { readonly: true }, (db) => {
+        const rows = db.prepare(`
+          SELECT r.name AS name, i.local_path AS local_path
+          FROM repository_instances i
+          JOIN repositories r ON r.id = i.repository_id
+          WHERE i.host_id = ? AND i.is_available = 1 AND r.status = 'active'
+        `).all(hostId) as Array<{ name: string; local_path: string }>
+
+        let best: { project: string; root: string } | null = null
+        for (const row of rows) {
+            const root = path.resolve(row.local_path)
+            if (target !== root && !target.startsWith(root + path.sep)) continue
+            if (!best || root.length > best.root.length) best = { project: row.name, root }
+        }
+        return best
+    })
+}

@@ -34,6 +34,7 @@ There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts
 bash scripts/test-smoke.sh                  # CLI full flow (most common)
 bash scripts/test-cli-memory.sh             # issue-4: recall/remember/feedback CLI loop (no server), note idempotency, UFL write-back, brief rendering
 bash scripts/test-memory-attributes.sh      # issue-5: durable decay/prune exemption, supersedes filtering, export --redact
+bash scripts/test-brief-scope.sh            # issue-17: brief 依 cwd 決定範圍與 per-project 輸出
 bash scripts/test-pure-functions.sh         # direct assertions on the pure ranking/retention/calibration helpers (tsx driver)
 bash scripts/test-migrations.sh             # schema migration upgrade on a populated old DB
 bash scripts/test-prune.sh                  # destructive prune paths (consolidate/stale/dedupe/utility-retention) delete exactly the right rows

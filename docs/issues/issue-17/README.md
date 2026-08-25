@@ -174,6 +174,11 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 - 核准來源：使用者於 2026-08-24 對話中明示核准，分兩輪：第一輪 SCN-001～SCN-010，第二輪 SCN-011～SCN-013（由 U-1、U-2 的處置決定後追加）
 - 核准範圍：SCN-001 至 SCN-013 全部已核准，無待核准、無待重新核准（未分批且同日全部核准，依規範採單行省略形式）
 
+> [!NOTE]
+> 2026-08-24（步驟 3）：SCN-007 的「近期決策**只**包含 project 等於該 repo 名的決策」與 SCN-008 的「環境類記憶出現在每一個專案的 BRIEF」只有在環境類記憶**放在自己的區塊、不混進近期決策**時才同時成立。實作照此讀法進行——SCN-007 約束的是「近期決策」這一區，SCN-008 未指定區塊。兩者無衝突，不構成規格修訂，核准狀態不變。
+> 
+> 同日補充：只有**偵測到**的範圍會改變輸出檔名；明示 `--project X` 仍寫入 `BRIEF.md`，既有呼叫端不受影響。
+
 ## 邊界
 
 ### 可修改
@@ -205,7 +210,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | --- | --- | --- | --- |
 | 1 | **已完成**（2026-08-24） | `memoria mark <refId>` 命令，含 `--durable` / `--episodic` / `--sensitivity`，ref 存在性檢查 | SCN-001、SCN-002 通過（`scripts/test-memory-attributes.sh` 的 (H)/(I) 段，exit 0）；`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help` 均通過；`test-smoke.sh`／`test-cli-memory.sh` 無回歸 |
 | 2 | **已完成**（2026-08-24） | `queryBrief` 新增 pinned 查詢（`retention='durable'` 且 `superseded_by IS NULL`），`renderBrief` 新增區塊，零標記時整區不輸出 | SCN-003～006 通過（`test-memory-attributes.sh` 的 (J)～(M) 段，exit 0）；SCN-005 以實作前產出的 golden（`scripts/fixtures/brief-zero-marker.golden.md`）逐位元組比對；`check`／`build` 通過；`test-smoke`／`test-cli-memory`／`test-pure-functions`／`test-http-api` 無回歸 |
-| 3 | 未開始 | cwd → `repository_instances.path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過 |
+| 3 | **已完成**（2026-08-24） | cwd → `repository_instances.local_path` → project 的解析，與 per-project 檔案輸出 | SCN-007、SCN-009 通過（新增 `scripts/test-brief-scope.sh`，已接進 `ci.yml` 與 CLAUDE.md 測試清單，exit 0）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-repo-registry`／`test-repo-promotion` 無回歸。**刻意留給步驟 4**：專案範圍下環境類記憶（`memoria-ops`）目前被一併濾掉 |
 | 4 | 未開始 | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過 |
 | 5 | 未開始 | `--global` 還原旗標 | SCN-010 通過 |
 | 6 | 未開始 | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過 |
