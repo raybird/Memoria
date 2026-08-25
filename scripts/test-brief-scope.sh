@@ -6,6 +6,7 @@
 #   (C) SCN-008 a memory whose project is not a registered repo rides along into EVERY project
 #   (D) SCN-011 that class is counted in both human and --json output
 #   (E) SCN-012 registering the project as a repo drops the count — the drift is visible
+#   (F) SCN-010 --global restores the pre-issue-17 single-file, all-projects behaviour
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -111,5 +112,27 @@ AFTER=$("$CLI" brief --json | field '.data.totals.environment_memories')
 grep -q "環境類記憶: $AFTER" "$TMP_DIR/out-e.txt" \
     || { echo "  ✗ 下降後的筆數沒有反映在人類輸出:"; cat "$TMP_DIR/out-e.txt"; exit 1; }
 echo "  3 → $AFTER，且人類輸出即可察覺"
+
+echo "[brief-scope] (F/SCN-010) --global 還原成實作前的單檔全域行為"
+reset_home home-f
+make_repo "$TMP_DIR/alpha"
+"$CLI" repo add "$TMP_DIR/alpha" >/dev/null
+"$CLI" remember "alpha 專屬：改用 pnpm 作為套件管理器" --project alpha >/dev/null
+"$CLI" remember "環境紀律：停 server 一律用 PID 精準停" --project ops >/dev/null
+# 在已註冊 repo 內執行——沒有旗標時這裡會走 per-project 路徑（見 B 段）。
+( cd "$TMP_DIR/alpha" && "$CLI" brief --global > "$TMP_DIR/out-f.txt" )
+[ -f "$MEMORIA_HOME/knowledge/BRIEF.md" ] || { echo "  ✗ --global 未產出全域 BRIEF.md"; exit 1; }
+if ls "$MEMORIA_HOME/knowledge/" | grep -q '^BRIEF-'; then
+    echo "  ✗ --global 仍產出了 per-project 檔: $(ls "$MEMORIA_HOME/knowledge/")"; exit 1
+fi
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+grep -q "^- 範圍: (all projects)" "$BRIEF" || { echo "  ✗ 範圍不是 (all projects)"; exit 1; }
+# 實作前的行為是「所有專案混在同一份近期決策」——兩筆都要在。
+grep -q "改用 pnpm" "$BRIEF" || { echo "  ✗ 專案決策不在全域 brief"; exit 1; }
+grep -q "PID 精準停" "$BRIEF" || { echo "  ✗ 環境類決策不在全域 brief"; exit 1; }
+# 明示要全域時,不該再說「未偵測到已註冊 repo」——那是退回,不是使用者的選擇。
+grep -q "退回全域" "$TMP_DIR/out-f.txt" && {
+    echo "  ✗ 明示 --global 卻報成退回:"; cat "$TMP_DIR/out-f.txt"; exit 1; }
+echo "  單檔全域,兩個專案的決策都在,且未誤報為退回"
 
 echo "[brief-scope] ✓ all checks passed"

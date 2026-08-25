@@ -9,6 +9,7 @@ type BriefCommandOptions = {
     days?: string
     topK?: string
     out?: string
+    global?: boolean
     stdout?: boolean
     json?: boolean
 }
@@ -23,6 +24,7 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
         .option('--days <n>', 'Decision window in days', '30')
         .option('--top-k <n>', 'Max decisions and high-utility memories to list', '10')
         .option('--out <path>', 'Output file (default: <knowledge>/BRIEF.md)')
+        .option('--global', 'Ignore the working directory: one all-projects BRIEF.md (pre-issue-17 behaviour)')
         .option('--stdout', 'Print markdown instead of writing a file')
         .option('--json', 'Machine-readable JSON output')
         .action(async (options: BriefCommandOptions) => {
@@ -33,7 +35,10 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
 
             // cwd scoping (docs/issues/issue-17). An explicit --project keeps writing BRIEF.md —
             // only DETECTED scope changes the filename, so existing callers are untouched.
-            const detected = options.project ? null : await core.resolveProjectForCwd(process.cwd())
+            // `--global` is the one-flag escape hatch back to the pre-issue-17 behaviour, which the
+            // repo requires of any breaking default change; it simply skips detection.
+            const detectionAttempted = !options.project && !options.global
+            const detected = detectionAttempted ? await core.resolveProjectForCwd(process.cwd()) : null
             const scope = options.project ?? detected?.project
 
             const result = await core.brief({ project: scope, days, topK })
@@ -60,7 +65,9 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                 console.log(`- 範圍: ${data.project ?? '(all projects)'} ｜ 近 ${data.days} 天`)
                 if (detected) {
                     console.log(`- 偵測到工作目錄屬於 ${detected.project}（${detected.root}）`)
-                } else if (!options.project) {
+                } else if (detectionAttempted) {
+                    // Only when detection actually ran and found nothing. Asking for --global is a
+                    // choice, not a fallback, and reporting it as one would be misleading.
                     console.log('- 未偵測到已註冊 repo，退回全域範圍（未任意挑選 repo）')
                 }
                 console.log(`- 決策: ${data.decisions.length} ｜ 高效用記憶: ${data.high_utility.length} ｜ repository: ${data.repositories.length}`)
