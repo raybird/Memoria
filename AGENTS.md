@@ -428,10 +428,14 @@ Long-term markers (issue-5) ride on the same command:
 ./cli remember "內部部署細節" --sensitivity private             # export --redact will code-name it
 ./cli recall "..." --include-superseded                        # see replaced versions too
 ./cli export --redact                                          # code-name private memories
+./cli mark gitdec-sum_abc-0 --durable                          # pin an EXISTING memory (issue-17)
 ```
 
-Re-running `remember` with identical text applies markers without rewriting the memory — that is
-how an existing memory gets marked; there is no separate `mark` command.
+Re-running `remember` with identical text applies markers without rewriting the memory — that is how
+a note marks **itself**. It cannot reach a git-promoted decision, whose id is `gitdec-<summary>-<n>`
+and which no note text produces, so `mark` is the surface for marking any existing memory (issue-17).
+It verifies the ref names something first: a marker on a ref that names nothing is a silent no-op
+that still reads as success.
 
 `remember` writes ONE atomic note (synthetic session + a single `DecisionMade`/`SkillLearned` event),
 not a whole session — no session JSON file needed. Its ids are content fingerprints, so re-running the
@@ -441,6 +445,14 @@ full envelope. `feedback` on an unknown/pruned `recall_id` exits 0 with `updated
 `brief` compiles recent decisions, high-utility memories and repository state into
 `<knowledge>/BRIEF.md`. Import it from `CLAUDE.md` with `@knowledge/BRIEF.md` and memory loads at the
 start of every session with nothing to execute — the practical substitute for hook-based injection.
+
+Since issue-17 it also emits a **pinned block** for `retention='durable'` memories, which is exempt
+from the `--days` window and `topK` — the recent-decisions block is ordered by time alone, so without
+this a memory whose value is "knowing it prevents an outage" loses its slot to routine ones. Run
+inside a registered repository, `brief` scopes to it and writes `<knowledge>/BRIEF-<project>.md`
+instead; memories whose `project` is not a registered repository name are environment-class and ride
+along into every project's file, with their count reported on every run so that classification does
+not shift silently. `--global` restores the single-file, all-projects behaviour.
 It is a derived view: whole-file overwrite each run, never edit it by hand, and re-run it after a
 batch of writes because nothing regenerates it automatically. Superseded memories are excluded from
 both of its memory sections — being the one artifact that loads automatically, it must never print a

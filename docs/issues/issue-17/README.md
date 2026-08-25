@@ -7,7 +7,7 @@
 | Issue 編號 | 17（本地文件編號） |
 | 複雜度級別 | Medium（三個交付面：新增 1 個 CLI 命令 + BRIEF 新增 pinned 區 + per-project 輸出佈局；**零 schema 變更**、零新依賴） |
 | 風險等級 | Medium（輸出佈局變更會改變 `@` 注入看到的內容，屬破壞性預設值變更；新增頂層命令屬 agent 契約變更，且推翻 `CLAUDE.md` 既有的一條明文立場） |
-| 狀態 | 驗收標準已核准，未實作 |
+| 狀態 | **實作完成**（2026-08-24），7 個步驟全數交付，SCN-001～013 全數通過 |
 | 需求來源 | 2026-08-24，另一個 session 從「記憶消費端」做黑箱實測後交辦；本 session 對著程式碼與本機 `~/.memoria` 重跑證據後修正了其中的診斷 |
 | 建立日期 | 2026-08-24 |
 | 相關 | [issue-4](../issue-4/README.md)（`brief` 的來源，Phase 2 context injection）、[issue-5](../issue-5/README.md)（`memory_attributes`／`retention='durable'`／零標記 byte-identical 紀律）、[issue-7](../issue-7/README.md)（促升後自動建索引）、[docs/memory-mechanism-assessment.md](../../memory-mechanism-assessment.md)（缺點 #7「衍生視圖漂移」仍為開放項）、`src/core/db/brief.ts:52`（近期決策查詢）、`src/core/db/git-promote.ts:90`（硬寫 `impact_level`） |
@@ -214,7 +214,7 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 | 4 | **已完成**（2026-08-24） | 環境類記憶判定（`project NOT IN (SELECT name FROM repositories)`）併入每個 per-project BRIEF，並在人類可讀輸出與 `--json` 報出其筆數 | SCN-008、SCN-011、SCN-012 通過（`test-brief-scope.sh` 的 (C)～(E) 段，exit 0；漂移實測 3 → 0）；`check`／`build` 通過；`test-memory-attributes`（含 SCN-005 golden）／`test-cli-memory`／`test-smoke`／`test-http-api`／`test-repo-promotion` 無回歸 |
 | 5 | **已完成**（2026-08-24） | `--global` 還原旗標 | SCN-010 通過（`test-brief-scope.sh` 的 (F) 段，exit 0）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api` 無回歸 |
 | 6 | **已完成**（2026-08-24） | 產出 per-project 檔後印出可直接複製的 `@<絕對路徑>` 接線指引 | SCN-013 通過（`test-brief-scope.sh` 的 (G) 段，exit 0，含全域模式提示不受影響的反向斷言）；`check`／`build` 通過；`test-memory-attributes`／`test-cli-memory`／`test-smoke`／`test-http-api` 無回歸 |
-| 7 | 未開始 | `CLAUDE.md` 該句修正、`CHANGELOG.md` 記入 Added（`mark`、pinned 區）與 Changed（brief 預設輸出佈局，`--global` 可還原） | 文件與實際行為一致；`docs-check` 通過 |
+| 7 | **已完成**（2026-08-24） | `CLAUDE.md` 該句修正、`CHANGELOG.md` 記入 Added（`mark`、pinned 區）與 Changed（brief 預設輸出佈局，`--global` 可還原） | 純文件，無可觀察行為變更，改記等價證據：`pnpm run check`／`pnpm run build`／`node dist/cli.mjs --help`／`pnpm run release:docs-check` 全通過；八支測試（memory-attributes／brief-scope／cli-memory／smoke／http-api／pure-functions／migrations／prune）全 PASS，證明 diff 不含行為變更。文件宣稱逐項核對：`git-promote.ts:90` 與 `memoria.ts:371` 行號實查、31/39 分佈實查、`mark --sensitivity` 與 `--durable/--episodic` 互斥實跑 |
 
 ## 首要驗證
 
