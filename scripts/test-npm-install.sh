@@ -2,6 +2,19 @@
 
 set -euo pipefail
 
+# This script asserts what a PACKED npm install can do, and the package deliberately ships the vector
+# helper as source with no node_modules — the ~700MB embedding runtime stays opt-in. So a developer
+# who has semantic recall wired into their shell profile exports MEMORIA_EMBED_PROVIDER=local, the
+# final `doctor --json` inherits it, and the embedder check correctly reports "@huggingface/
+# transformers missing" against a package that is not supposed to carry it. The assertion below is
+# `checks.every(ok)`, so the whole gate goes red on a correct diagnosis of the wrong subject.
+# LIBSQL_URL leaks the same way and was already measuring the developer's REAL vector store against
+# this temp DB (embedded=92 expected=0) — benign only by luck of the denominator. CI sets none of
+# these, so it only bites locally, and it blocked a release. Same failure mode, same remedy, and the
+# same two lines as scripts/test-vector-recall.sh.
+unset LIBSQL_URL MEMORIA_EMBED_PROVIDER MEMORIA_VECTOR_RECALL_CMD MEMORIA_VECTOR_TIMEOUT_MS
+unset MEMORIA_HOME MEMORIA_DB_PATH MEMORIA_SESSIONS_PATH MEMORIA_CONFIG_PATH
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(node -e "const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).version)" "$ROOT_DIR/package.json")"
 TMP_DIR="$(mktemp -d)"
