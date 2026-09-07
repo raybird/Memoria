@@ -8,6 +8,16 @@ set -euo pipefail
 # the hazard only shows up locally (a shell whose profile exports MEMORIA_HOME). Drop it up front.
 unset MEMORIA_HOME
 
+# Same hazard, one layer up: this script asserts issue-12's boundary — with the vector layer switched
+# OFF, `every(check.ok)` must still hold, because an opt-in layer nobody enabled is not an unhealthy
+# install. An inherited LIBSQL_URL switches it ON, and an inherited MEMORIA_EMBED_PROVIDER=local then
+# demands @huggingface/transformers from a no-clone artifact that deliberately ships the helper
+# without its ~700MB runtime. The check is right and the subject is wrong, and the assertion cannot
+# tell those apart. The probe at "doctor resolves the helper once LIBSQL_URL is set" sets the variable
+# per-command, so it is unaffected by dropping the ambient one here.
+unset LIBSQL_URL MEMORIA_EMBED_PROVIDER MEMORIA_VECTOR_RECALL_CMD MEMORIA_VECTOR_TIMEOUT_MS
+unset MEMORIA_DB_PATH MEMORIA_SESSIONS_PATH MEMORIA_CONFIG_PATH
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(node -e "const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).version);" "$ROOT_DIR/package.json")"
 PLATFORM="$(node -p "process.platform + '-' + process.arch")"
