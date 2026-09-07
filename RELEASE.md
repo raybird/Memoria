@@ -41,16 +41,30 @@ After the tag lands, the `release.yml` workflow:
 4. Builds and tests native Linux/macOS x64/arm64 artifacts on matching runners, then uploads all tarballs, checksums, and `install.sh`.
 5. Publishes `@raybird.chen/memoria` to npm with provenance.
 
-**npm authentication**: currently `NPM_TOKEN` (a GitHub secret — an automation or granular token
-from npmjs.com). The publish job upgrades npm to 12 first, because npm's **trusted publishing**
-(OIDC) needs >= 11.5.1 and Node 22 ships 10.9.x; the job already has `id-token: write`. The remaining
-step is on npmjs.com — bind the package's trusted publisher to this repo and `release.yml` — after
-which `NODE_AUTH_TOKEN` can be dropped from the publish step entirely.
+**npm authentication**: **trusted publishing (OIDC)** since v1.29.1 — there is no token. The
+package's trusted publisher on npmjs.com is bound to this repository and `release.yml`, the publish
+job carries `id-token: write`, and npm is upgraded to 12 in the step immediately before publish
+(OIDC needs >= 11.5.1 and Node 22 ships 10.9.x). A publish is verifiable from the registry side: the
+version's `_npmUser` reads `GitHub Actions <npm-oidc-no-reply@github.com>` and carries
+`trustedPublisher.id = "github"`. Nothing in this path expires.
 
-That migration is worth finishing. v1.29.0 failed at exactly this point: the token had been
+**`NODE_AUTH_TOKEN` must be absent, not empty.** `${{ secrets.NPM_TOKEN }}` expands to an empty
+string once the secret is gone, and npm authenticates with that empty token rather than falling back
+to OIDC — so leaving the env block behind turns a deleted secret into a failure that reads like a
+misconfigured trusted publisher, sending the next person to debug the wrong side. `actions/setup-node`
+with `registry-url` still places a placeholder `XXXXX-XXXXX-XXXXX-XXXXX` in the step environment;
+that is its normal behaviour and not a leftover.
+
+This migration was worth finishing. v1.29.0 failed at exactly this point: the token had been
 invalidated with no notice, and npm reported it as `E404 Not Found` on the `PUT` — an error about
 the package not existing, for a problem that was purely authentication. A credential that expires
 silently and fails misleadingly is the thing trusted publishing removes.
+
+**Optional hardening, still open**: npmjs.com → the package → Settings → Publishing access →
+*Require two-factor authentication and disallow tokens*. That closes the token path at the registry
+rather than merely not using it, and npm documents it as the recommended companion to trusted
+publishing — OIDC publishes are unaffected. It needs an interactive npmjs.com login, which is why it
+is not done yet.
 
 ## Release Types
 
