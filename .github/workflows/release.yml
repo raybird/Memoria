@@ -206,12 +206,12 @@ jobs:
           npm install -g npm@12
           npm --version
 
-      # NODE_AUTH_TOKEN is deliberately still here. Trusted publishing also needs the npmjs.com side
-      # configured (the package's trusted publisher bound to this repo + workflow), which is not
-      # something a commit can do; until that is in place the token remains the only working path.
-      # Once a release publishes via OIDC, this env block should go — a token that no longer needs to
-      # exist is just another thing that expires silently, which is exactly how v1.29.0 failed.
+      # No NODE_AUTH_TOKEN, on purpose. The npmjs.com side is now configured — the package's trusted
+      # publisher is bound to this repo + release.yml — so OIDC is the authentication path and the
+      # token is not merely redundant, it is actively harmful: `${{ secrets.NPM_TOKEN }}` expands to
+      # an EMPTY STRING once the secret is deleted, and npm authenticates with that empty token
+      # rather than falling back to OIDC. Deleting the secret would then present as a broken
+      # trusted-publisher config. v1.29.0 died on an expired token; the remedy is to stop having one,
+      # not to rotate it. Requires npm >= 11.5.1 (installed by the step above) and `id-token: write`.
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public
