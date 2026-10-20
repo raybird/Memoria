@@ -266,8 +266,10 @@ eq('dismissed release is not', isPromotable(milestone('dismissed', 'release'), 0
 // ── embedLocal batching: memory must not scale with the corpus (issue-19 AC-1) ──────────────────
 console.log('[pure] embedLocal batching')
 const pipelineCalls: number[] = []
+const pipelineInputs: string[][] = []
 setLocalPipelineForTest(async (inputs: string[]) => {
     pipelineCalls.push(inputs.length)
+    pipelineInputs.push(inputs)
     // Each output row carries its input's number in slot 0, so order can be checked row by row.
     const data = new Float32Array(inputs.length * DIM)
     inputs.forEach((text, i) => { data[i * DIM] = Number(text.replace('passage: t', '')) })
@@ -294,6 +296,20 @@ process.env.MEMORIA_EMBED_BATCH = '0'
 let rejected = ''
 try { await embedTexts(seventy, 'passage') } catch (error) { rejected = String(error) }
 eq('a non-positive MEMORIA_EMBED_BATCH is rejected by name', rejected.includes('MEMORIA_EMBED_BATCH'), true)
+
+// The query path (vector-recall) embeds one text; it must reach the model exactly as before batching,
+// and an ingest-only knob must not be able to break it (review b968c23 S-1/S-2).
+pipelineCalls.length = 0
+pipelineInputs.length = 0
+delete process.env.MEMORIA_EMBED_BATCH
+await embedTexts(['q'], 'query')
+eq('a query is one pipeline call', pipelineCalls.length, 1)
+eq('the query reaches the model as the literal ["query: q"]', JSON.stringify(pipelineInputs[0]), '["query: q"]')
+process.env.MEMORIA_EMBED_BATCH = 'abc'
+let queryError = ''
+const queryVectors = await embedTexts(['q'], 'query').catch((error) => { queryError = String(error); return [] })
+eq('an invalid MEMORIA_EMBED_BATCH does not break a single query', queryError, '')
+eq('the query still yields one vector', queryVectors.length, 1)
 
 if (savedProvider === undefined) delete process.env.MEMORIA_EMBED_PROVIDER
 else process.env.MEMORIA_EMBED_PROVIDER = savedProvider

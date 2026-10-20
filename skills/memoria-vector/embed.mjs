@@ -47,8 +47,10 @@ async function embedLocal(texts, kind) {
   const prefix = kind === 'query' ? 'query: ' : 'passage: '
   // One pipeline call per batch (issue-19). Every row in a call is padded to the longest one and the
   // intermediate tensors scale with rows × length, so handing the whole corpus over at once grew a
-  // single process to 21.9GB at 771 entities and got it OOM-killed; batches of 32 peaked at 1.4GB.
-  const batchSize = resolveBatchSize()
+  // single process to 21.9GB at 771 entities and got it OOM-killed; batches of 32 in one process
+  // peaked at ~2.5GB whether the corpus was 400 or 1600 entities. A single text (every recall query)
+  // never reads MEMORIA_EMBED_BATCH, so a bad ingest-only setting cannot break semantic recall.
+  const batchSize = texts.length > 1 ? resolveBatchSize() : 1
   const vectors = []
   for (let start = 0; start < texts.length; start += batchSize) {
     const batch = texts.slice(start, start + batchSize)
