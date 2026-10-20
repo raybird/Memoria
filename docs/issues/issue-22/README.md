@@ -83,7 +83,7 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: a79d3be
 - **核准來源**: 使用者 2026-10-20 的兩項選擇——「資料根模型要怎麼處理？」選「保留每資料夾，補觸發時機」；「setup 是否要負責讓 Claude Code 讀得到 skill？」選「setup 直接寫入」。各 Scenario 的具體行為（含 SCN-005／006 的覆蓋保護）由規劃推導，使用者 2026-10-20 回覆「照建議」全部核准（建議內容：以 frontmatter 的 `deployment_mode: installed` 加 `repository: Memoria` 作為部署標記，有標記才覆蓋，無標記拒絕並非 0 結束）
 
 | Scenario | 核准日期 | 狀態 |

@@ -92,7 +92,7 @@ Feature: 略過不寫進記憶的 git 摘要
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: a79d3be
 - **核准來源**: 介面範圍——使用者 2026-10-20 對「dismissed 要提供哪種介面？」選擇「單筆加批次」（建議內容：`--dismiss <id>` 單筆、`--dismiss-pending --type merge,release` 批次，dismissed 之後仍可再 `--submit` 回到 enriched）。各 Scenario 的具體行為由規劃推導，使用者 2026-10-20 回覆「照建議」全部核准（建議內容：對 enriched 摘要 dismiss 報錯、批次必須給 `--type`、brief 另列「已略過 N」、HTTP 兩個端點）
 
 | Scenario | 核准日期 | 狀態 |
