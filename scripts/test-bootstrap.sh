@@ -105,6 +105,11 @@ if HOME="$H3" MEMORIA_HOME="$TMP/data-scn3" "$CLI" setup --agent nope >"$TMP/scn
   echo "✗ SCN-003: unknown --agent value accepted"; exit 1
 fi
 grep -q 'claude-code' "$TMP/scn3.out" || { echo "✗ SCN-003: unknown --agent error does not list the valid values"; exit 1; }
+# Review 81bb75d S-2: an inherited property name is not a host agent either.
+if (cd "$H3" && HOME="$H3" MEMORIA_HOME="$TMP/data-scn3-proto" "$CLI" setup --agent toString >"$TMP/scn3-proto.out" 2>&1); then
+  echo "✗ SCN-003: --agent toString accepted"; exit 1
+fi
+[ ! -e "$H3/[object Object]" ] && [ ! -e "$TMP/data-scn3-proto" ] || { echo "✗ SCN-003: --agent toString wrote something"; exit 1; }
 [ ! -e "$H3/.claude" ] || { echo "✗ SCN-003: rejected --agent still wrote ~/.claude"; exit 1; }
 echo "✓ SCN-003: no --agent → ~/.claude untouched; unknown value rejected"
 
@@ -121,6 +126,43 @@ printf '\nstale line from an older deploy\n' >> "$H4/$HOST_SKILL_REL"
 HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code --json >/dev/null
 cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: marked copy not refreshed"; exit 1; }
 echo "✓ SCN-005: marked copy refreshed to the current template"
+
+# Review 81bb75d M-1: the marks also sit in every copy someone cp'd from a deployed skill and then
+# edited, so a marked target may hold the user's own work. It is backed up — outside the skills
+# directory, where Claude Code would load it as a second "memoria" skill — before being replaced.
+printf '\nmy own trigger notes\n' >> "$H4/$HOST_SKILL_REL"
+echo "keep me" > "$H4/.claude/skills/memoria/NOTES.md"
+cp "$H4/$HOST_SKILL_REL" "$TMP/edited-marked.md"
+HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code >"$TMP/scn5b.out" 2>&1
+BACKUP=$(find "$TMP/data-scn4/.agents/skill-backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1 || true)
+[ -n "$BACKUP" ] && [ -f "$BACKUP/NOTES.md" ] || { echo "✗ SCN-005: replaced copy was not backed up"; cat "$TMP/scn5b.out"; exit 1; }
+cmp -s "$TMP/edited-marked.md" "$BACKUP/SKILL.md" || { echo "✗ SCN-005: backup SKILL.md differs from what was replaced"; exit 1; }
+grep -qF "$BACKUP" "$TMP/scn5b.out" || { echo "✗ SCN-005: output does not name the backup path"; cat "$TMP/scn5b.out"; exit 1; }
+[ ! -e "$H4/.claude/skills/memoria/NOTES.md" ] && cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: target not replaced after backup"; exit 1; }
+echo "✓ SCN-005: an edited marked copy is backed up outside ~/.claude/skills, then replaced"
+
+# Review 81bb75d S-4: anything short of both marks in the frontmatter of a SKILL.md in a directory is refused.
+refuse_case() {
+  local label="$1" home="$TMP/home-refuse-$2"
+  if HOME="$home" MEMORIA_HOME="$TMP/data-refuse-$2" "$CLI" setup --agent claude-code >"$TMP/refuse-$2.out" 2>&1; then
+    echo "✗ SCN-006: $label was overwritten (exit 0)"; exit 1
+  fi
+  [ ! -e "$TMP/data-refuse-$2" ] || { echo "✗ SCN-006: $label refusal still created the data root"; exit 1; }
+}
+mkdir -p "$TMP/home-refuse-one/.claude/skills/memoria"
+printf -- '---\nname: memoria\ndeployment_mode: installed\n---\n' > "$TMP/home-refuse-one/$HOST_SKILL_REL"
+refuse_case "a SKILL.md with only one mark" one
+mkdir -p "$TMP/home-refuse-body/.claude/skills/memoria"
+printf -- '---\nname: memoria\n---\n\ndeployment_mode: installed\nrepository: Memoria\n' > "$TMP/home-refuse-body/$HOST_SKILL_REL"
+refuse_case "a SKILL.md with the marks only in its body" body
+mkdir -p "$TMP/home-refuse-file/.claude/skills"
+echo "not a dir" > "$TMP/home-refuse-file/.claude/skills/memoria"
+refuse_case "a plain file at the target" file
+mkdir -p "$TMP/home-refuse-link/.claude/skills" "$TMP/link-target"
+cp "$TEMPLATE" "$TMP/link-target/SKILL.md"
+ln -s "$TMP/link-target" "$TMP/home-refuse-link/.claude/skills/memoria"
+refuse_case "a symlink at the target" link
+echo "✓ SCN-006: one mark, marks in the body, a file, a symlink — all refused before any write"
 
 # SCN-001: the deployed skill states WHEN to use it, with a command and a done criterion per moment.
 DEPLOYED="$TMP/.agents/skills/memoria/SKILL.md"

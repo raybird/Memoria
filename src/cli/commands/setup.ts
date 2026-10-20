@@ -126,9 +126,10 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             if (hostSkillDir) {
                 stepStart = Date.now()
                 try {
-                    const hostPath = await deployHostAgentSkill(runtimeLayout, setupPaths.memoriaHome, hostSkillDir)
-                    if (!hostPath) throw new Error('bundled skill source not found (incomplete package?)')
-                    stepLog('agent-skill', true, { agent: opts.agent, path: hostPath })
+                    const deployed = await deployHostAgentSkill(runtimeLayout, setupPaths.memoriaHome, opts.agent!, hostSkillDir)
+                    if (!deployed) throw new Error('bundled skill source not found (incomplete package?)')
+                    stepLog('agent-skill', true, { agent: opts.agent, ...deployed })
+                    if (deployed.backup && !jsonOut) console.log(`  previous copy backed up to ${deployed.backup}`)
                 } catch (error) {
                     stepLog('agent-skill', false, { error: error instanceof Error ? error.message : String(error), path: hostSkillDir })
                     process.exitCode = 1

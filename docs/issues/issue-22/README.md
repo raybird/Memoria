@@ -108,6 +108,7 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 - **首要驗證**：先寫 SCN-006（拒絕覆蓋、原檔逐位元組不變）的測試（紅），再實作寫入
 - **選擇理由**：覆蓋保護是唯一不可逆的失敗；先釘住它，後續寫入邏輯都在它的約束內
 - **完成證據**：SCN-006 紅→綠，`cmp` 比對原檔不變
+- **阻擋性相依**：模板的 merge 步驟用 `repo summarize --merge` 取既有摘要（issue-20），他人骨架用 `--dismiss-pending`（issue-21）。本分支單獨合進 main 時，前者會再建一筆重複的 pending 摘要（地雷 M-2），後者報 `unknown option`。**必須在 issue-20、issue-21 合進 main 之後才合併**（見 TBD-3）
 
 ## 待確認事項
 
@@ -115,6 +116,8 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 |------|------|------|------|
 | TBD-1 | SCN-001～SCN-006 需使用者核准；其中 SCN-005／006 是覆蓋保護提案（以 frontmatter 的 `deployment_mode: installed` 與 `repository: Memoria` 作為部署標記） | 已解決 | 2026-10-20 使用者回覆「照建議」，全部核准，部署標記照提案 |
 | TBD-2 | 其他宿主（Codex、OpenCode）的 skill 目錄：本次只做 Claude Code，旗標值設計成可擴充 | 待確認 | 不影響已列 Scenario |
+| TBD-3 | 合併順序：本分支相依 issue-20、issue-21 的行為（審查 81bb75d S-1，`需決策`） | 已解決 | 2026-10-20 使用者「一律都照建議」：採 reviewer 建議，列為阻擋性相依（見「風險與首要驗證」），合併前 issue-20、issue-21 須已在 main；若之後 rebase，HEAD 改變須重新審查 |
+| TBD-4 | 部署標記分不出「setup 寫的」與「手動複製後改過的」（審查 81bb75d M-1，`需決策`） | 已解決 | 2026-10-20 使用者「一律都照建議」：採 reviewer 建議 (A)＋(C)——覆蓋前把整個目錄備份到 `<memoria-home>/.agents/skill-backups/` 並印出路徑，文件改為如實描述；SCN-005「檔案更新為目前模板」不變，不需重新核准 |
 
 ## Timeline
 
@@ -123,6 +126,7 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 | 2026-10-20 | 建立；資料根模型與部署方式兩項決策 | - |
 | 2026-10-20 | SCN-001～SCN-006 核准（「照建議」） | - |
 | 2026-10-20 | 實作完成；設計修訂：data root 改由 `DATA_ROOT` 檔提供（見 implementation-plan），覆蓋保護收緊為「非空且無 SKILL.md 也拒絕」；相依 issue-20（`--merge` 回傳既有摘要）與 issue-21（`--dismiss-pending`），須在兩者之後合併 | - |
+| 2026-10-20 | 獨立審查 RETURN TO execute-task（`81bb75d`，[報告](./review-81bb75d.md)）：M-1 帶標記的副本可能是使用者改過的；依 TBD-3、TBD-4 修正 | - |
 
 ---
 **建立日期**: 2026-10-20  

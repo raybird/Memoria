@@ -35,6 +35,17 @@ README 的 Gherkin 為驗收來源。風險與首要驗證見 README「風險與
    完成證據（2026-10-20）：`README.md`、`README.zh-TW.md` 的 setup 段與 `docs/INSTALL.md` 第一節加入 `--agent claude-code`、觸發時機、`MEMORIA_HOME` 優先順序與覆蓋規則；`setup --help` 顯示 `--agent <name>  Also deploy the skill into a host agent's own skill directory (claude-code)`，與文件一致。
    回歸：`pnpm run check` 無錯；CI 全套（依 `ci.yml` 順序 34 支，清除開發者環境變數，`pnpm run build` 後執行）全數 PASS、exit 0，被測為 `ac76109` 加上本次提交內容的工作區，2026-10-20T21:16。精煉：拒絕訊息原本在 setup 與 runtime 各組一次，收斂為 `assertHostSkillTarget` 單一來源，重跑 `test-bootstrap.sh` 仍全綠。
 
+6. ✅ **審查退回修正**（[review-81bb75d](./review-81bb75d.md)）— SCN-003、005、006
+   完成證據（2026-10-20）：
+   - M-1（依 TBD-4，(A)＋(C)）：紅燈 `bash scripts/test-bootstrap.sh` → `✗ SCN-005: replaced copy was not backed up`（fixture：帶標記、正文被改過、另有 `NOTES.md` 的副本）。實作 `deployHostAgentSkill` 在目標非空時先把整個目錄複製到 `<memoria-home>/.agents/skill-backups/claude-code-<時間戳>/` 再覆蓋，step log 帶 `backup`，文字模式另印 `previous copy backed up to <path>`。備份刻意不放在 `~/.claude/skills/` 旁：放在那裡 Claude Code 會把它當成第二個 memoria skill 載入。綠燈：`✓ SCN-005: an edited marked copy is backed up outside ~/.claude/skills, then replaced`（備份含 `NOTES.md`、SKILL.md 與被替換前 `cmp` 相同、輸出含備份路徑、目標已換成模板）。README、README.zh-TW、INSTALL、`DEPLOYED_REFERENCE.md` 與模板的「只覆蓋 setup 自己部署的版本」改為如實描述標記與備份。
+   - S-2：紅燈 `✗ SCN-003: --agent toString accepted`；`resolveHostAgentSkillDir` 改用 `Object.hasOwn`；綠燈，且未建立 `[object Object]/` 或 data root。
+   - S-3：模板與 REFERENCE 的 `--submit` 範例加 `--json`，完成判準寫明看 `--json` 輸出；英文模板中的「待增強」改為 "the brief's pending count"。
+   - S-4：新增四個拒絕 fixture（只有一個標記、標記只在正文、目標是檔案、目標是 symlink），斷言非 0 結束且 data root 未建立，全綠。變異檢查：把兩個標記的 `&&` 改成 `||` → `✗ SCN-006: a SKILL.md with only one mark was overwritten (exit 0)`，還原後綠。
+   - S-1（依 TBD-3）：README「風險與首要驗證」新增阻擋性相依，合併前 issue-20、issue-21 須已在 main。
+   - GitNexus：`deployHostAgentSkill` 為本 issue 新增、尚未進索引（impact 回 not found）；grep 確認唯一呼叫者為 `registerSetupCommand`。
+   - 未處理（NICE）：frontmatter 沒有結尾 `---` 而正文另有 `---` 分隔線時，正文會被當成 frontmatter 判讀；權限錯誤訊息格式與其他拒絕不一致；SCN-001 的完成判準只檢查總數。
+   - 回歸：CI 全套（依 `ci.yml` 順序 34 支）全數 PASS、exit 0，被測為 `8c87bfb` 加上本次提交內容的工作區，2026-10-20。
+
 ## 使用方式對照
 
 | 情境 | 變更前 | 變更後 |

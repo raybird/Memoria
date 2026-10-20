@@ -17,7 +17,7 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
   resources/mcp/INGEST_PLAYBOOK.md
 ```
 
-`setup --agent claude-code` replaces an existing `~/.claude/skills/memoria/` only when its `SKILL.md` frontmatter carries `deployment_mode: installed` and `repository: Memoria` — the marks of a copy `setup` wrote. A hand-written skill there is left byte-for-byte untouched and `setup` exits non-zero naming the path; move it aside first if you want the deployed one.
+`setup --agent claude-code` replaces an existing `~/.claude/skills/memoria/` only when its `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria` — marks every deployed template carries, so a copy made from one by hand and edited since carries them too. The existing directory is therefore copied to `<memoria-home>/.agents/skill-backups/claude-code-<timestamp>/` first, and `setup` prints that path. Anything without both marks (a hand-written skill, a file, a symlink) is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
 
 ## Summary payload (`repo summarize --submit`)
 
@@ -54,7 +54,7 @@ MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" feedback <recall_id> --score <0..1>
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" remember "<fact>" --project <repo> --rationale "<why>"
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" repo sync <repo>
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" repo summarize <repo> --merge <sha> --json
-MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" repo summarize <repo> --submit <summary id> --file <payload.json>
+MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" repo summarize <repo> --submit <summary id> --file <payload.json> --json
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" brief --global
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" sync /absolute/path/to/session.json
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" verify

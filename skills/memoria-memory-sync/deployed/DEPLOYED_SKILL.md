@@ -77,12 +77,12 @@ Done when: the text makes sense on its own outside this conversation and include
 2. `MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo summarize <repo> --merge <merge sha> --json` returns the summary sync created for that merge (`data.summaries[0].id`). Status already `enriched` means someone wrote it; you are done.
 3. Write the payload described in `REFERENCE.md` from the work you just did, then:
    ```bash
-   MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo summarize <repo> --submit <summary id> --file <payload.json>
+   MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo summarize <repo> --submit <summary id> --file <payload.json> --json
    ```
 
-Sync also creates pending skeletons for other people's merges and releases. Write back only your own; after that, `repo summarize <repo> --dismiss-pending --type merge,release` clears the rest from the 待增強 count without putting them into recall.
+Sync also creates pending skeletons for other people's merges and releases. Write back only your own; after that, `repo summarize <repo> --dismiss-pending --type merge,release` clears the rest from the brief's pending count without putting them into recall.
 
-Done when: the submit result shows `status: enriched` and `promoted: true`.
+Done when: the `--json` submit result shows `status: enriched` and `promoted: true`.
 
 ### Wrap-up — once per session that ran remember or repo sync
 
@@ -99,7 +99,7 @@ When the current folder has no memory yet, give it its own data root:
 "$MEMORIA_BIN" setup --memoria-home "$(pwd)/memoria"
 ```
 
-Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent claude-code` additionally installs this skill into `~/.claude/skills/memoria`, bound to that data root.
+Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent claude-code` additionally installs this skill into `~/.claude/skills/memoria`, bound to that data root; a copy already there is backed up under `<data root>/.agents/skill-backups/` first.
 
 ## Path & Safety Rules
 

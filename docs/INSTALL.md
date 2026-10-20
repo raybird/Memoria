@@ -32,7 +32,7 @@ memoria setup --serve --json
 memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
 ```
 
-目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria`（也就是 `setup` 自己部署的版本）才會被覆蓋；手寫的 skill 會原封不動，`setup` 以非 0 結束並印出路徑與原因，在寫入任何資料前就停下。要改用部署版，先把手寫的移走再重跑。
+目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 才會被覆蓋。每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/claude-code-<時間戳>/` 並印出路徑；手寫的 skill 會原封不動，`setup` 以非 0 結束並印出路徑與原因，在寫入任何資料前就停下。要改用部署版，先把手寫的移走再重跑。
 
 ### Background service (macOS / Ubuntu)
 

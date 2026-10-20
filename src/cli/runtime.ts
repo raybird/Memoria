@@ -104,7 +104,8 @@ const HOST_AGENT_SKILL_DIRS: Record<string, () => string> = {
 export const HOST_AGENTS = Object.keys(HOST_AGENT_SKILL_DIRS)
 
 export function resolveHostAgentSkillDir(agent: string): string | undefined {
-    return HOST_AGENT_SKILL_DIRS[agent]?.()
+    // Own keys only: `toString`, `constructor`… are on every object and are not host agents.
+    return Object.hasOwn(HOST_AGENT_SKILL_DIRS, agent) ? HOST_AGENT_SKILL_DIRS[agent]() : undefined
 }
 
 /**
@@ -133,13 +134,30 @@ async function checkHostSkillTarget(targetDir: string): Promise<{ ok: true } | {
         : { ok: false, reason: 'its SKILL.md lacks the deployment marks (deployment_mode: installed, repository: Memoria), so it was not written by memoria setup' }
 }
 
-export async function deployHostAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome: string, targetDir: string): Promise<string | undefined> {
+/**
+ * The marks prove a copy descends from a deployed template, not that nobody edited it since — copying a
+ * deployed skill by hand and adding to it was the documented workaround before `--agent`. So a non-empty
+ * target is moved into `<memoriaHome>/.agents/skill-backups/` first: outside the host's skills directory,
+ * where it would otherwise load as a second "memoria" skill (review 81bb75d M-1).
+ */
+export async function deployHostAgentSkill(
+    runtimeLayout: RuntimeLayout,
+    memoriaHome: string,
+    agent: string,
+    targetDir: string
+): Promise<{ path: string; backup?: string } | undefined> {
     const skillSourcePath = getBundledSkillSourcePath(runtimeLayout)
     if (!skillSourcePath) return undefined
 
     await assertHostSkillTarget(targetDir)
+    let backup: string | undefined
+    if ((await fs.readdir(targetDir).catch(() => [])).length > 0) {
+        backup = path.join(memoriaHome, '.agents', 'skill-backups', `${agent}-${new Date().toISOString().replace(/[:.]/g, '-')}`)
+        await fs.mkdir(path.dirname(backup), { recursive: true })
+        await fs.cp(targetDir, backup, { recursive: true, verbatimSymlinks: true })
+    }
     await writeSkillCopy(runtimeLayout, skillSourcePath, targetDir, memoriaHome)
-    return targetDir
+    return { path: targetDir, ...(backup ? { backup } : {}) }
 }
 
 async function writeSkillCopy(runtimeLayout: RuntimeLayout, skillSourcePath: string, targetDir: string, memoriaHome: string): Promise<void> {
