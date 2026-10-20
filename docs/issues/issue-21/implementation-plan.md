@@ -22,8 +22,8 @@ README 的 Gherkin 為驗收來源。風險與首要驗證見 README「風險與
    |------|------|------------------|------|
    | `git-promote.ts:40` `isPromotable` | `status === 'pending'` → false | **dismissed 會漏過，merge／release 直接走到下一行回 true** | 改成 `status !== 'enriched'` → false（S2） |
    | `memoria.ts` `promoteEligible` 的補促升池 | `listSummaries({status:'enriched'})` | 不含 dismissed，正確 | 不改 |
-   | `memoria.ts` `promoteEligible` 的 candidates | 經 `isPromotable` | `sync --from/--to` 可能回傳既有的 dismissed 摘要當 candidate，修好 `isPromotable` 後即被擋 | 隨 `isPromotable` 修正 |
-   | `memoria.ts` `repoSummarize --promote` | force，不經 `isPromotable` | 使用者明確指定，可促升 dismissed | 不改（設計的唯一逃生口） |
+   | `memoria.ts` `promoteEligible` 的 candidates | 經 `isPromotable` | `sync --from/--to` 一律建 commit_range，可回傳既有的 dismissed **commit_range** 當 candidate（fingerprint 含型別，帶不回 merge／release）；修好 `isPromotable` 後即被擋 | 隨 `isPromotable` 修正（審查 N-3 更正本列） |
+   | `memoria.ts` `repoSummarize --promote` | force，不經 `isPromotable` | 使用者明確指定，可促升 dismissed；反向也可能先強制促升再 dismiss（審查 S-1） | 強制路徑不改（唯一逃生口）；dismiss 改為拒絕已在 recall 的摘要（SCN-008） |
    | `memoria.ts` `repoPendingSummaries` | `listSummaries({status:'pending'})` | 不含 dismissed，正確 | 不改 |
    | `memoria.ts` `repoSubmitSummary` | 先改 enriched 再 `isPromotable` | dismissed 可被覆寫成 enriched（SCN-006） | 不改，以測試釘住 |
    | `git-summary.ts` `insertSummaryIfMissing` | 既有列直接回傳，不改 status | 重跑 sync 不會把 dismissed 改回 pending | 不改 |
@@ -70,7 +70,16 @@ README 的 Gherkin 為驗收來源。風險與首要驗證見 README「風險與
    完成證據（2026-10-20）：
    - 精煉：code-simplify no-op。新函式沿用 `submitAgentSummary` 既有的讀回列＋range→`mapSummary` 寫法，CLI 兩個分支與既有 `--pending`／`--submit` 分支同形，沒有可再收斂的重複，沿用上述綠燈。
    - GitNexus impact：`isPromotable` 是 CRITICAL（sync 與 submit 的促升閘門），已向使用者揭露；改動只把 dismissed 也擋下，pending／enriched 行為不變。`queryBrief`、`renderBrief`、`registerRepoCommand`、`createServer` 都是 LOW。
+   - 提交前 `detect_changes`（staged）：20 檔，命中的符號除本次改動外另有 `docs/issues/issue-4/5/9`、`isEmojiOnlyQuery`、`readBody` 等未修改項，判定為索引過期與 hunk 相鄰的誤報。
    - `pnpm run check` 無錯；CI 全套（依 `ci.yml` 順序逐支執行 34 支，清除 `LIBSQL_URL`／`MEMORIA_HOME` 等開發者環境變數）全數 PASS、exit 0，被測為 `ac76109` 加上本次提交內容的工作區，2026-10-20。
+
+8. ✅ **審查退回修正**（[review-3764a9f](./review-3764a9f.md)）— SCN-003、SCN-008、SCN-005
+   完成證據（2026-10-20）：
+   - M-1（SCN-003 未驗到 merge）：SCN-003 前另造一筆 pending merge，斷言字面值 3（1 merge＋2 release）並逐一確認該 merge 與一筆 release 的 id 變成 dismissed。這是補強測試、不改程式；變異檢查：讓 `dismissPendingSummaries` 只處理型別清單最後一項 → `✗ reports how many were dismissed: expected '3', got '2'`，還原後綠。
+   - S-1 → SCN-008：紅燈 `bash scripts/test-repo-summary.sh` → `✗ dismissing a promoted summary succeeded`；實作 `dismissSummary` 遇 `memory_sources` 已有該摘要時丟 `summary_already_promoted`（HTTP 409），批次以同一條件跳過並回報 `skipped_promoted`；綠燈 SCN-008 五條 ✓。CLI help、CLAUDE.md、AGENTS.md、兩份 README 的「never promoted／不促升」改為「not auto-promoted／不自動促升」，並寫明 `--promote` 是唯一可越過閘門的路徑。
+   - S-2（端到端測不出 `isPromotable` 修正）：`test-repo-promotion.sh` 新增一段——門檻設 0 讓 commit_range 必過重要度閘門，以 `repo summarize --range` 建 pending 範圍、dismiss，再用 `repo sync --from/--to` 帶回同一範圍；斷言 `memory_sources` 為 0。變異檢查：把 `isPromotable` 改回 `status === 'pending'` → `✗ dismissed range not promoted: expected '0', got '1'`，還原後綠。
+   - S-3：本計畫第 7 步補記 detect_changes 結果，檢查清單勾選。
+   - 回歸：`test-repo-summary`、`test-repo-promotion`、`test-pure-functions`、`test-brief-scope`、`test-http-api` 全部 exit 0；CI 全套（依 `ci.yml` 順序 34 支，清除開發者環境變數）全數 PASS、exit 0，被測為 `7f47d18` 加上本次提交內容的工作區，2026-10-20。
 
 ## 使用方式對照
 
@@ -94,4 +103,4 @@ README 的 Gherkin 為驗收來源。風險與首要驗證見 README「風險與
 - [x] 所有 Scenario 已核准（2026-10-20）
 - [x] 步驟 1 盤點完成並記錄
 - [x] S1～S5 完成判準全部達成
-- [ ] 改 symbol 前已跑 GitNexus impact，commit 前已跑 detect_changes
+- [x] 改 symbol 前已跑 GitNexus impact，commit 前已跑 detect_changes

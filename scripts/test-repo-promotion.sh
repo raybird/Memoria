@@ -238,6 +238,26 @@ BATCH=$(curl -s -X POST "$URL/v1/repos/$REPO_ID/summaries/dismiss" -H 'Content-T
 assert_eq "batch dismiss envelope ok" "$(json_get "$BATCH" "d.ok")" "true"
 assert_eq "batch reports the count" "$(json_get "$BATCH" "d.data.dismissed")" "$RANGES_LEFT"
 
+echo "[repo-promotion] a dismissed range brought back by sync --from/--to is not promoted (issue-21, review S-2)"
+# With the threshold at 0 every commit_range clears the importance gate, so only the status check
+# can keep this one out — the pre-issue-21 gate (`status === 'pending'`) let dismissed through.
+mkdir -p "$MEMORIA_HOME/configs"
+echo '{"git":{"summarization":{"promoteImportanceThreshold":0}}}' > "$MEMORIA_HOME/configs/config.json"
+# `repo summarize --range` and `repo sync --from/--to` build the same explicit range, so the second
+# hands sync the existing (dismissed) summary as a promotion candidate.
+RANGE_BASE=$(git -C "$REPO" rev-parse HEAD)
+seq 1 40 > "$REPO/src/audit.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c6: audit trail"
+RANGE_HEAD=$(git -C "$REPO" rev-parse HEAD)
+RANGE_ID=$(json_get "$("$CLI" repo summarize "$REPO_ID" --range "$RANGE_BASE..$RANGE_HEAD" --json)" "d.data.summaries[0].id")
+assert_eq "range skeleton exists" "$(test -n "$RANGE_ID" && echo yes)" "yes"
+"$CLI" repo summarize "$REPO_ID" --dismiss "$RANGE_ID" --json >/dev/null
+"$CLI" repo sync "$REPO_ID" --from "$RANGE_BASE" --to "$RANGE_HEAD" --json >/dev/null
+assert_eq "explicit range returned the same summary" \
+    "$(db_get "SELECT COUNT(*) FROM git_summary_ranges WHERE summary_type = 'commit_range' AND head_sha = '$RANGE_HEAD'")" "1"
+assert_eq "dismissed range not promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$RANGE_ID'")" "0"
+rm "$MEMORIA_HOME/configs/config.json"
+
 echo "[repo-promotion] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"
 if [ -n "$STATUS_OUT" ]; then echo "  ✗ repo has unexpected changes"; echo "$STATUS_OUT"; exit 1; fi

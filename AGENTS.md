@@ -282,8 +282,8 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag or pending events |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summary requests awaiting agent enrichment (`?with_diff=true&limit=20`; diff omitted by default) |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent write-back of a structured summary payload |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Mark a pending summary `dismissed` (never promoted; `409` if already enriched) |
-| `POST` | `/v1/repos/:ref/summaries/dismiss` | Dismiss every pending summary of `{types: [...]}` (required, non-empty; `400` otherwise) |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Mark a pending summary `dismissed` (not auto-promoted; `409` if enriched or already in recall) |
+| `POST` | `/v1/repos/:ref/summaries/dismiss` | Dismiss every pending summary of `{types: [...]}` (required, non-empty; `400` otherwise); ones already in recall are skipped and counted in `skipped_promoted` |
 
 All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
 Recall hits promoted from git summaries additionally carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`).

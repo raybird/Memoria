@@ -169,7 +169,7 @@ export class MemoriaClient {
         return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/${encodeURIComponent(summaryId)}`, payload)
     }
 
-    /** issue-21: keep a pending skeleton out of recall and 待增強 (rejected if already enriched) */
+    /** issue-21: keep a pending skeleton out of auto-promotion and 待增強 (rejected if enriched or already in recall) */
     async repoDismissSummary(ref: string, summaryId: string): Promise<MemoriaResult<{ summary: GitSummaryRecord }>> {
         return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/${encodeURIComponent(summaryId)}/dismiss`, {})
     }

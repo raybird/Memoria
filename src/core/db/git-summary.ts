@@ -316,13 +316,17 @@ export type AgentSummarySubmission = {
     generatorVersion?: string
 }
 
-/** issue-21: only a pending skeleton can be dismissed. An enriched summary may already be in recall,
- *  so dismissing it would hide nothing and misreport its state; re-dismissing is a no-op. */
+/** issue-21: only a pending skeleton that is not in recall can be dismissed. An enriched summary, or a
+ *  pending one force-promoted with `--promote`, is already a memory — dismissing it would hide nothing
+ *  and misreport its state. Re-dismissing is a no-op. */
 export function dismissSummary(dbPath: string, summaryId: string): GitSummaryRecord {
     return withDb(dbPath, (db) => db.transaction(() => {
         const existing = db.prepare('SELECT * FROM git_summaries WHERE id = ?').get(summaryId) as SummaryRow | undefined
         if (!existing) throw new Error(`summary_not_found: ${summaryId}`)
         if (existing.status === 'enriched') throw new Error(`summary_not_pending: ${summaryId} is enriched`)
+        if (db.prepare('SELECT 1 FROM memory_sources WHERE source_id = ? LIMIT 1').get(summaryId)) {
+            throw new Error(`summary_already_promoted: ${summaryId} is already in recall (force-promoted)`)
+        }
         if (existing.status === 'pending') {
             db.prepare(`UPDATE git_summaries SET status = 'dismissed', updated_at = ? WHERE id = ?`).run(nowIso(), summaryId)
         }
@@ -332,17 +336,24 @@ export function dismissSummary(dbPath: string, summaryId: string): GitSummaryRec
     })())
 }
 
-export function dismissPendingSummaries(dbPath: string, repositoryId: string, types: GitSummaryType[]): string[] {
+/** Batch form of dismissSummary; pending summaries already in recall are skipped, not failed. */
+export function dismissPendingSummaries(
+    dbPath: string,
+    repositoryId: string,
+    types: GitSummaryType[]
+): { dismissed: string[]; skippedPromoted: string[] } {
     return withDb(dbPath, (db) => db.transaction(() => {
         const placeholders = types.map(() => '?').join(', ')
-        const ids = (db.prepare(`
-          SELECT id FROM git_summaries
-          WHERE repository_id = ? AND status = 'pending' AND summary_type IN (${placeholders})
-        `).all(repositoryId, ...types) as Array<{ id: string }>).map((row) => row.id)
+        const rows = db.prepare(`
+          SELECT s.id, EXISTS(SELECT 1 FROM memory_sources m WHERE m.source_id = s.id) AS promoted
+          FROM git_summaries s
+          WHERE s.repository_id = ? AND s.status = 'pending' AND s.summary_type IN (${placeholders})
+        `).all(repositoryId, ...types) as Array<{ id: string; promoted: number }>
+        const dismissed = rows.filter((row) => !row.promoted).map((row) => row.id)
         const update = db.prepare(`UPDATE git_summaries SET status = 'dismissed', updated_at = ? WHERE id = ?`)
         const now = nowIso()
-        for (const id of ids) update.run(now, id)
-        return ids
+        for (const id of dismissed) update.run(now, id)
+        return { dismissed, skippedPromoted: rows.filter((row) => row.promoted).map((row) => row.id) }
     })())
 }
 

@@ -156,7 +156,7 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summaries awaiting agent enrichment |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Skip a pending summary (never promoted) |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Skip a pending summary (not auto-promoted) |
 | `POST` | `/v1/repos/:ref/summaries/dismiss` | Skip pending summaries by `{types}` |
 
 All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `latency_ms`).

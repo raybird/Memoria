@@ -259,12 +259,25 @@ assert_eq "enriched summary untouched" "$(status_of "$ENRICHED_ID")" "enriched"
 assert_eq "its promoted memory untouched" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$ENRICHED_ID'")" "$PROMOTED_BEFORE"
 
 echo "[repo-summary] dismiss-pending by type (issue-21 SCN-003)"
+# SCN-001 used up the only pending merge, so make a fresh one: the batch must be seen turning a
+# pending MERGE into dismissed, not just releases (review 3764a9f M-1).
+git -C "$REPO" switch -q -c feature/batch
+seq 1 30 > "$REPO/src/batch.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c10: batch export"
+git -C "$REPO" switch -q main
+git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/batch'" feature/batch
+"$CLI" repo sync "$REPO_ID" --json >/dev/null
+BATCH_MERGE_ID=$(db_get "SELECT s.id FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id WHERE r.source_ref = 'feature/batch'")
+BATCH_RELEASE_ID=$(db_get "SELECT id FROM git_summaries WHERE status = 'pending' AND summary_type = 'release' LIMIT 1")
 MILESTONES_PENDING=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type IN ('merge','release')")
 RANGES_PENDING=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'commit_range'")
 ENRICHED_COUNT=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'enriched'")
-[ "$MILESTONES_PENDING" -gt 0 ] && [ "$RANGES_PENDING" -gt 0 ] || { echo "  ✗ fixture lacks pending milestones or ranges"; exit 1; }
+assert_eq "fixture: 1 pending merge + 2 pending releases" "$MILESTONES_PENDING" "3"
+[ "$RANGES_PENDING" -gt 0 ] || { echo "  ✗ fixture lacks pending ranges"; exit 1; }
 BATCH=$("$CLI" repo summarize "$REPO_ID" --dismiss-pending --type merge,release --json)
-assert_eq "reports how many were dismissed" "$(json_get "$BATCH" "d.data.dismissed")" "$MILESTONES_PENDING"
+assert_eq "reports how many were dismissed" "$(json_get "$BATCH" "d.data.dismissed")" "3"
+assert_eq "the pending merge is dismissed" "$(status_of "$BATCH_MERGE_ID")" "dismissed"
+assert_eq "a pending release is dismissed" "$(status_of "$BATCH_RELEASE_ID")" "dismissed"
 assert_eq "no pending merge/release left" \
     "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type IN ('merge','release')")" "0"
 assert_eq "commit_range skeletons untouched" \
@@ -279,6 +292,23 @@ fi
 echo "  ✓ --dismiss-pending without --type rejected"
 assert_eq "nothing dismissed by the rejected call" \
     "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'dismissed'")" "$DISMISSED_BEFORE"
+
+echo "[repo-summary] dismiss refuses a summary already in recall (issue-21 SCN-008)"
+git -C "$REPO" switch -q -c feature/forced
+seq 1 45 > "$REPO/src/forced.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c11: forced keep"
+git -C "$REPO" switch -q main
+FORCED_ID=$(json_get "$("$CLI" repo summarize "$REPO_ID" --branch feature/forced --promote --json)" "d.data.summaries[0].id")
+assert_eq "force-promoted summary is still pending" "$(status_of "$FORCED_ID")" "pending"
+if "$CLI" repo summarize "$REPO_ID" --dismiss "$FORCED_ID" --json >"$TMP_DIR/dismiss-promoted.out" 2>&1; then
+    echo "  ✗ dismissing a promoted summary succeeded"; exit 1
+fi
+assert_eq "error says it is already in recall" "$(grep -c 'already_promoted' "$TMP_DIR/dismiss-promoted.out" | sed 's/^[1-9][0-9]*$/yes/')" "yes"
+OTHER_BRANCHES=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'branch' AND id <> '$FORCED_ID'")
+FORCED_BATCH=$("$CLI" repo summarize "$REPO_ID" --dismiss-pending --type branch --json)
+assert_eq "batch skips the promoted one" "$(json_get "$FORCED_BATCH" "d.data.skipped_promoted")" "1"
+assert_eq "batch still dismisses the others" "$(json_get "$FORCED_BATCH" "d.data.dismissed")" "$OTHER_BRANCHES"
+assert_eq "promoted summary stays pending" "$(status_of "$FORCED_ID")" "pending"
 
 echo "[repo-summary] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"

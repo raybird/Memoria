@@ -89,11 +89,19 @@ Feature: 略過不寫進記憶的 git 摘要
   Scenario: HTTP 介面提供相同能力
     When 呼叫單筆與批次的 dismiss 端點
     Then 回應為 MemoriaResult 封包，結果與對應 CLI 相同
+
+  @SCN-008
+  Scenario: 拒絕略過已被強制促升的摘要
+    Given 一筆 pending 摘要已用 --promote 強制促升進 recall
+    When 對它執行 repo summarize --dismiss <id>，以及涵蓋其型別的 --dismiss-pending
+    Then 單筆以非 0 結束並說明它已在記憶中
+    And 批次跳過它、照常略過其他筆，並回報跳過筆數
+    And 該摘要維持 pending
 ```
 
 ## Gherkin 核准紀錄
 - **核准 commit**: a79d3be
-- **核准來源**: 介面範圍——使用者 2026-10-20 對「dismissed 要提供哪種介面？」選擇「單筆加批次」（建議內容：`--dismiss <id>` 單筆、`--dismiss-pending --type merge,release` 批次，dismissed 之後仍可再 `--submit` 回到 enriched）。各 Scenario 的具體行為由規劃推導，使用者 2026-10-20 回覆「照建議」全部核准（建議內容：對 enriched 摘要 dismiss 報錯、批次必須給 `--type`、brief 另列「已略過 N」、HTTP 兩個端點）
+- **核准來源**: 介面範圍——使用者 2026-10-20 對「dismissed 要提供哪種介面？」選擇「單筆加批次」（建議內容：`--dismiss <id>` 單筆、`--dismiss-pending --type merge,release` 批次，dismissed 之後仍可再 `--submit` 回到 enriched）。各 Scenario 的具體行為由規劃推導，使用者 2026-10-20 回覆「照建議」全部核准（建議內容：對 enriched 摘要 dismiss 報錯、批次必須給 `--type`、brief 另列「已略過 N」、HTTP 兩個端點）。SCN-008 來自獨立審查 S-1（`需決策`）的建議 (A)，使用者 2026-10-20 指示「一律都照建議」，依 acceptance.md 視為接受建議答案（見 TBD-3）
 
 | Scenario | 核准日期 | 狀態 |
 |----------|---------|------|
@@ -104,6 +112,7 @@ Feature: 略過不寫進記憶的 git 摘要
 | SCN-005 | 2026-10-20 | 已核准 |
 | SCN-006 | 2026-10-20 | 已核准 |
 | SCN-007 | 2026-10-20 | 已核准 |
+| SCN-008 | 2026-10-20 | 已核准 |
 
 ## 重構步驟概要
 1. ✅ **S1 狀態與 db 層** - 完成
@@ -126,6 +135,7 @@ Feature: 略過不寫進記憶的 git 摘要
 |------|------|------|------|
 | TBD-1 | SCN-001～SCN-007 需使用者核准 | 已解決 | 2026-10-20 使用者回覆「照建議」，全部核准 |
 | TBD-2 | 批次是否加作者過濾（只略過非本人 commit）：需要 git 身分對應，本次不做 | 待確認 | 不影響已列 Scenario |
+| TBD-3 | 審查 S-1（`需決策`）：`--promote` 與 dismiss 會產生「dismissed 但已在 recall」。(A) dismiss 以是否已促升守門；(B) 只改文件 | 已解決 | 2026-10-20 使用者「一律都照建議」，採 reviewer 建議：dismiss 用 (A)，新增 SCN-008；`--promote` 強制路徑用 (B)，維持唯一逃生口，文件改為「不自動促升」 |
 
 ## Timeline
 
@@ -133,6 +143,8 @@ Feature: 略過不寫進記憶的 git 摘要
 |------|------|--------|
 | 2026-10-20 | 建立；介面範圍決策「單筆加批次」 | - |
 | 2026-10-20 | SCN-001～SCN-007 核准（「照建議」） | - |
+| 2026-10-20 | 獨立審查 RETURN TO execute-task（`3764a9f`，[報告](./review-3764a9f.md)）：M-1 SCN-003 未驗到 merge；S-1 需決策 | - |
+| 2026-10-20 | 規格修訂：依 TBD-3 新增 SCN-008 並核准 | - |
 
 ---
 **建立日期**: 2026-10-20  

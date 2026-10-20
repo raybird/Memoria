@@ -841,6 +841,8 @@ export type RepoSummarizeData = {
 export type DismissPendingData = {
     dismissed: number
     summary_ids: string[]
+    /** pending summaries left alone because `--promote` already put them in recall */
+    skipped_promoted: number
 }
 
 export type PendingSummaryRequest = {

@@ -1227,7 +1227,7 @@ export class MemoriaCore {
         })
     }
 
-    /** issue-21: mark a pending skeleton as reviewed-and-skipped — out of 待增強, never promoted. */
+    /** issue-21: mark a pending skeleton as reviewed-and-skipped — out of 待增強, never auto-promoted. */
     async repoDismissSummary(ref: string, summaryId: string): Promise<MemoriaResult<{ summary: GitSummaryRecord }>> {
         return withResult('sqlite', async () => {
             await this.init()
@@ -1246,8 +1246,12 @@ export class MemoriaCore {
             await this.init()
             const parsed = parseDismissTypes(types)
             const { repositoryId } = await this.resolveManagedRepo(ref)
-            const ids = dismissPendingSummaries(this.paths.dbPath, repositoryId, parsed)
-            return { data: { dismissed: ids.length, summary_ids: ids }, evidence: ids, confidence: 1 }
+            const { dismissed, skippedPromoted } = dismissPendingSummaries(this.paths.dbPath, repositoryId, parsed)
+            return {
+                data: { dismissed: dismissed.length, summary_ids: dismissed, skipped_promoted: skippedPromoted.length },
+                evidence: dismissed,
+                confidence: 1
+            }
         })
     }
 
