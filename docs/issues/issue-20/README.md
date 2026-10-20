@@ -34,6 +34,8 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
 
 **風險**: Low — 只影響 `--merge` 新建範圍的 fingerprint，既有資料不改寫。唯一前置條件是讀 commit message 時沿用 git-exec 白名單內的命令（或既有的 `loadCommitFacts`），`test-repo-noninvasive.sh` 須維持通過。
 
+升級情境（審查 S-2）：舊版 `--merge` 建立、但 sync 從未處理過的範圍（`sourceRef` 為空），升級後再跑 `--merge` 會建出第二筆帶 `sourceRef` 的範圍。這不是回歸——舊版下一次 sync 本來也會建出同一筆，最後列數相同；多出的空 `sourceRef` 那筆以 [issue-21](../issue-21/README.md) 的 `--dismiss` 清除。
+
 ## 待確認事項
 
 | 編號 | 事項 | 狀態 | 影響 |
@@ -54,9 +56,9 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
      - 最小實作：`summarizeMergeCommit` 以白名單內的 `git log -1 --format=%B` 讀 message 並呼叫 `parseMergeSourceRef`。
      - 綠燈（`pnpm run build` 之後；`./cli` 在 `dist/` 存在時優先跑 bundle，紅燈期間的 bundle 是改動前的同一份原始碼）：`test-repo-summary.sh` 新增 6 條 ✓、exit 0；`test-repo-promotion`／`noninvasive`／`sync`／`events`／`edge` 皆 exit 0；`pnpm run check` 無錯。
      - 精煉：code-simplify 檢查 no-op——改動只有一個 4 行函式加兩處呼叫，沒有可再收斂的重複，沿用上述綠燈。
+     - GitNexus：改動前 `summarizeMergeCommit`、`runSummaryPipeline` 的 impact 為 CRITICAL（位於 `repo sync`／`repo summarize` 的 CLI 與 HTTP 入口），已向使用者揭露並以既有 sync 路徑斷言作防護；提交前 `detect_changes` 只列出這兩個函式（`summarizeTag`、`ok` 為 hunk 相鄰誤報）。
      - 回歸：CI 全套（依 `ci.yml` 順序逐支執行 34 支，清除 `LIBSQL_URL`／`MEMORIA_HOME` 等開發者環境變數）全數 PASS、exit 0，被測為 `ac76109` 加上本次提交內容的工作區，2026-10-20T20:47。
 3. 📝 **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`，project.md 地雷 M-2 標註失效日期
-3. 📝 **新版發布後移除本機繞道** — 驗證方式：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`，project.md 地雷 M-2 標註失效日期
    - 完成證據：（發布後回寫）
 
 ## Timeline
@@ -65,6 +67,7 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
 | --- | --- | --- |
 | 2026-10-20 | 建立；以實測資料定位根因 | - |
 | 2026-10-20 | AC-1～AC-3 核准（「照建議」） | - |
+| 2026-10-20 | 獨立審查 PASS（`bebc5b4`，[報告](./review-bebc5b4.md)）；依 S-1、S-2、N-1 修訂文件與註解，重新審查 | - |
 
 ---
 **建立日期**: 2026-10-20  

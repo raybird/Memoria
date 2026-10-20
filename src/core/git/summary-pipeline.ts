@@ -30,7 +30,9 @@ export const RELEASE_TAG_PATTERN = /^(?:v|release-)?\d+\.\d+\.\d+$/
 
 // sourceRef is part of range_fingerprint, so sync and `repo summarize --merge` must derive it the
 // same way or the same merge gets two summaries (issue-20). Only `Merge branch '<x>'` names a branch;
-// remote-tracking and custom messages yield null.
+// remote-tracking and custom messages yield null. Deliberately unanchored: it matches anywhere in the
+// message, as sync always did — anchoring it would change sourceRef, and so the fingerprint, of
+// ranges already stored.
 export function parseMergeSourceRef(message: string): string | null {
     return /Merge branch '([^']+)'/.exec(message)?.[1] ?? null
 }
