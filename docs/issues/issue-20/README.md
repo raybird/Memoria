@@ -42,12 +42,22 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
 
 ## 實作與驗證步驟
 
-1. 📝 **AC-3：共用的 sourceRef 解析** — 驗證方式：純函式斷言三種格式；sync 改呼叫它之後，`test-repo-summary.sh` 既有案例不變
-   - 完成證據：（實作時回寫）
-2. 📝 **AC-1、AC-2：`summarizeMergeCommit` 帶入 sourceRef** — 驗證方式：兩種執行順序的測試都斷言列數不變、id 相同；`test-repo-noninvasive.sh` 通過
-   - 完成證據：（實作時回寫）
+1. ✅ **AC-3：共用的 sourceRef 解析** — 驗證方式：純函式斷言三種格式；sync 改呼叫它之後，`test-repo-summary.sh` 既有案例不變
+   - 完成證據（2026-10-20）：
+     - 外迴圈紅燈：`bash scripts/test-repo-summary.sh`（暫存副本去掉 AC-1 段，正式檔不動）→ exit 1，`✗ --merge parses source_ref from a GitLab-style message: expected 'feature/coupons', got 'null'`——`--merge` 沒有解析 message。
+     - 內迴圈：`parseMergeSourceRef` 是把 sync 既有的 regex 原樣抽出，函式不存在時的載入錯誤不算目標行為紅燈，因此內層不另取紅燈。`Merge branch 'x' into 'dev'` 的解析由上面的外迴圈紅燈覆蓋；remote-tracking 與自訂訊息回 null 屬於既有 regex 的特性測試（characterization）。sync 路徑的「merge source_ref recovered」改動前後都綠。
+     - 綠燈：`bash scripts/test-pure-functions.sh` → exit 0，`[pure] parseMergeSourceRef` 四條 ✓。
+2. ✅ **AC-1、AC-2：`summarizeMergeCommit` 帶入 sourceRef** — 驗證方式：兩種執行順序的測試都斷言列數不變、id 相同；`test-repo-noninvasive.sh` 通過
+   - 完成證據（2026-10-20）：
+     - 紅燈 AC-1：`bash scripts/test-repo-summary.sh` → exit 1，`✗ --merge after sync creates nothing: expected '0', got '1'`。
+     - 紅燈 AC-2（暫存副本只留計數斷言）→ `✗ sync after --merge adds no second summary for that merge: expected '1', got '2'`。
+     - 最小實作：`summarizeMergeCommit` 以白名單內的 `git log -1 --format=%B` 讀 message 並呼叫 `parseMergeSourceRef`。
+     - 綠燈（`pnpm run build` 之後；`./cli` 在 `dist/` 存在時優先跑 bundle，紅燈期間的 bundle 是改動前的同一份原始碼）：`test-repo-summary.sh` 新增 6 條 ✓、exit 0；`test-repo-promotion`／`noninvasive`／`sync`／`events`／`edge` 皆 exit 0；`pnpm run check` 無錯。
+     - 精煉：code-simplify 檢查 no-op——改動只有一個 4 行函式加兩處呼叫，沒有可再收斂的重複，沿用上述綠燈。
+     - 回歸：CI 全套（依 `ci.yml` 順序逐支執行 34 支，清除 `LIBSQL_URL`／`MEMORIA_HOME` 等開發者環境變數）全數 PASS、exit 0，被測為 `ac76109` 加上本次提交內容的工作區，2026-10-20T20:47。
+3. 📝 **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`，project.md 地雷 M-2 標註失效日期
 3. 📝 **新版發布後移除本機繞道** — 驗證方式：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`，project.md 地雷 M-2 標註失效日期
-   - 完成證據：（回寫）
+   - 完成證據：（發布後回寫）
 
 ## Timeline
 
@@ -60,4 +70,4 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
 **建立日期**: 2026-10-20  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待實作
+**狀態**: 待審查

@@ -20,6 +20,7 @@ import {
     EXPLICIT_UTILITY_MIN_OBS
 } from '../src/core/utils.js'
 import { computeDecayFactor } from '../src/core/db/recall.js'
+import { parseMergeSourceRef } from '../src/core/git/summary-pipeline.js'
 
 let failures = 0
 
@@ -242,6 +243,13 @@ eq('a missing route_mode is bucketed as unknown rather than dropped', missingRou
 const clampedRoute = buildRouteUtility([{ route: 'keyword', confidence: 9, utility: 9 }])
 eq('utility is clamped into [0,1]', clampedRoute.routes[0].meanUtility, 1)
 eq('confidence is clamped too', clampedRoute.routes[0].meanConfidence, 1)
+
+// ── parseMergeSourceRef: sync and --merge share one fingerprint input (issue-20 AC-3) ────────────
+console.log('[pure] parseMergeSourceRef')
+eq('git default message names the branch', parseMergeSourceRef("Merge branch 'feature/x'"), 'feature/x')
+eq('GitLab message with target names the source branch', parseMergeSourceRef("Merge branch 'issue-7-fix' into 'dev'\n\nCloses #7"), 'issue-7-fix')
+eq('remote-tracking merge yields null', parseMergeSourceRef("Merge remote-tracking branch 'origin/main'"), null)
+eq('custom message yields null', parseMergeSourceRef('integrate pricing work'), null)
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

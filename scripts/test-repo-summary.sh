@@ -87,6 +87,30 @@ assert_eq "merge summary exists" "$(db_get "SELECT COUNT(*) FROM git_summaries W
 assert_eq "merge source_ref recovered" \
     "$(db_get "SELECT source_ref FROM git_summary_ranges WHERE summary_type = 'merge'")" "feature/pricing"
 
+echo "[repo-summary] --merge after sync returns the sync-created summary (issue-20 AC-1)"
+MERGE_SHA=$(git -C "$REPO" rev-parse HEAD)
+SYNC_MERGE_ID=$(db_get "SELECT s.id FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id WHERE r.summary_type = 'merge' AND r.head_sha = '$MERGE_SHA'")
+TOTAL_BEFORE_MERGE=$(db_get "SELECT COUNT(*) FROM git_summaries")
+MERGE_AFTER=$("$CLI" repo summarize "$REPO_ID" --merge "$MERGE_SHA" --json)
+assert_eq "--merge after sync creates nothing" "$(json_get "$MERGE_AFTER" "d.data.created")" "0"
+assert_eq "--merge returns the sync summary" "$(json_get "$MERGE_AFTER" "d.data.summaries[0].id")" "$SYNC_MERGE_ID"
+assert_eq "no duplicate merge row" "$(db_get "SELECT COUNT(*) FROM git_summaries")" "$TOTAL_BEFORE_MERGE"
+
+echo "[repo-summary] --merge before sync: sync adds no second summary (issue-20 AC-2/AC-3)"
+git -C "$REPO" switch -q -c feature/coupons
+seq 1 30 > "$REPO/src/coupons.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c5b: coupons"
+git -C "$REPO" switch -q main
+git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/coupons' into 'main'" feature/coupons
+MERGE2_SHA=$(git -C "$REPO" rev-parse HEAD)
+MERGE_FIRST=$("$CLI" repo summarize "$REPO_ID" --merge "$MERGE2_SHA" --json)
+assert_eq "--merge first creates the summary" "$(json_get "$MERGE_FIRST" "d.data.created")" "1"
+assert_eq "--merge parses source_ref from a GitLab-style message" \
+    "$(db_get "SELECT source_ref FROM git_summary_ranges WHERE summary_type = 'merge' AND head_sha = '$MERGE2_SHA'")" "feature/coupons"
+"$CLI" repo sync "$REPO_ID" --json >/dev/null
+assert_eq "sync after --merge adds no second summary for that merge" \
+    "$(db_get "SELECT COUNT(*) FROM git_summary_ranges WHERE summary_type = 'merge' AND head_sha = '$MERGE2_SHA'")" "1"
+
 echo "[repo-summary] release summaries: first from root, second from previous tag"
 git -C "$REPO" "${GIT_ID[@]}" tag -a v1.0.0 -m "v1"
 "$CLI" repo sync "$REPO_ID" --json >/dev/null

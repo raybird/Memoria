@@ -28,6 +28,13 @@ import type { GitSummaryRecord, GitSummaryType } from '../types.js'
 
 export const RELEASE_TAG_PATTERN = /^(?:v|release-)?\d+\.\d+\.\d+$/
 
+// sourceRef is part of range_fingerprint, so sync and `repo summarize --merge` must derive it the
+// same way or the same merge gets two summaries (issue-20). Only `Merge branch '<x>'` names a branch;
+// remote-tracking and custom messages yield null.
+export function parseMergeSourceRef(message: string): string | null {
+    return /Merge branch '([^']+)'/.exec(message)?.[1] ?? null
+}
+
 export type SummaryPipelineInput = {
     dbPath: string
     repositoryRoot: string
@@ -199,13 +206,12 @@ export async function runSummaryPipeline(input: SummaryPipelineInput): Promise<S
             const [fact] = loadCommitFacts(input.dbPath, input.repositoryId, [mergeSha])
             const parents = fact?.parents ?? []
             const base = parents.length >= 2 ? await mergeBase(input.repositoryRoot, parents[0], parents[1]) : null
-            const branchMatch = fact ? /Merge branch '([^']+)'/.exec(fact.message) : null
             const result = await createRangeSummary({
                 input,
                 summaryType: 'merge',
                 baseSha: base ?? parents[0] ?? null,
                 headSha: mergeSha,
-                sourceRef: branchMatch?.[1] ?? null,
+                sourceRef: fact ? parseMergeSourceRef(fact.message) : null,
                 targetRef: input.defaultBranch,
                 plannerNotes: [`merge parents: ${parents.join(', ')}`]
             })
@@ -287,11 +293,13 @@ export async function summarizeMergeCommit(input: SummaryPipelineInput, mergeRef
     const parents = parentsOut.stdout.trim().split(/\s+/).slice(1)
     if (parents.length < 2) throw new Error(`not a merge commit: ${mergeRef}`)
     const base = await mergeBase(input.repositoryRoot, parents[0], parents[1])
+    const message = (await runGit(input.repositoryRoot, ['log', '-1', '--format=%B', mergeSha])).stdout
     return createRangeSummary({
         input,
         summaryType: 'merge',
         baseSha: base ?? parents[0],
         headSha: mergeSha,
+        sourceRef: parseMergeSourceRef(message),
         targetRef: input.defaultBranch,
         plannerNotes: [`merge parents: ${parents.join(', ')}`]
     })
