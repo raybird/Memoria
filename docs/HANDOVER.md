@@ -49,7 +49,7 @@
 
 ---
 
-## 2. 出貨紀錄（v1.13.0 → v1.29.0）
+## 2. 出貨紀錄（v1.13.0 → v1.30.0）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -80,6 +80,7 @@
 | v1.28.1 | 中文片語 vs 英文同構查詢(issue-16) | v1.28.0 之後中文**單詞**召得回、中文**片語**兩半都在語料裡仍回 0,而 `memory recall` 可以——英文拿 OR 語意、中文拿「整串連續」語意。兩機制疊加:4 字查詢只產出跨詞邊界的 3-gram(語料中永不存在),而承載語意的 2 字詞在 trigram 索引上結構性不可達;且 `queryRecallLike` 比對 `%整個原始查詢%` 所以救援網也接不住。修法:LIKE fallback 對 token 做 OR(整句保留為其中一項),候選 **over-fetch ×4** 才評分——不放寬取回量的話放寬 WHERE 是自我抵銷的。實測期望答案 5/12 → 10/12。⚠ **精確度代價刻意接受**:總回傳 11 → 38,集中在常見詞組成的短中文查詢(`發版流程` 0 → 5 筆而僅 1 筆相關);沒有便宜的分離法(雜訊 relevance 0.33,但正確命中最低到 0.18),需詞頻加權才治得了 |
 | v1.29.0 | 記憶的嚴重度與範圍 | `brief` 新增 pinned 區（`retention='durable'` 免輪替）、依 cwd 產出 per-project BRIEF（`--global` 可還原）；新增 `mark` 讓既有記憶（含 git 促升的決策）可被標記；`doctor` 報向量索引覆蓋率 |
 | v1.29.1 | 發布路徑改走 OIDC | npm publish 改用 trusted publishing（OIDC），移除 `NODE_AUTH_TOKEN`——**移除是修復的一部分，不是事後整理**：secret 一旦刪掉，`${{ secrets.NPM_TOKEN }}` 會展開成**空字串**，npm 拿那個空 token 去認證而不是退回 OIDC，半套遷移的失敗長得跟 trusted publisher 設錯一模一樣，會把下一個人送去 debug 錯的那一邊。npm 在 publish 前一步升到 12（Node 22 內建 10.9.x，OIDC 需 >= 11.5.1），不在 job 開頭升是為了讓上面所有步驟維持在受測過的工具鏈上。另修：`gh release create` 在 release 已存在時失敗，使其後步驟全部不可重跑（v1.29.0 實際踩到，只剩「刪掉已發布的 release」或「燒掉一個版號」兩條路），改為冪等的 create ／ `upload --clobber` + `edit`。⚠ **套件內容與 v1.29.0 完全相同**，此版存在只是因為發布路徑不發一次就驗不了。另修**兩支安裝 gate 測試**（`test-npm-install.sh`、`test-no-clone-install.sh`，全 repo 只有這兩支做 `checks.every(ok)`）繼承開發者的向量環境變數：`MEMORIA_EMBED_PROVIDER=local` 讓收尾的 `doctor --json` 對「刻意不帶 embedding runtime」的打包產物報缺套件，`checks.every(ok)` 就把**正確的診斷**變成紅燈；`LIBSQL_URL` 同樣外洩，一直拿維護者的真實向量庫去量測試的暫存 DB（embedded=92 expected=0），只因分母碰巧是 0 才沒爆。no-clone 那支更諷刺——該斷言正是為了釘住 issue-12 的邊界「向量層關閉時 `every(ok)` 仍須成立」，而繼承來的變數把它要觀察的『關閉』給打開了。CI 兩個都沒設所以看不到，是連續卡住兩次發布才浮現；補上 `test-vector-recall.sh` 自 v1.22.0 起就有的同組 unset |
+| v1.30.0 | dismissed 摘要、setup --agent、embed 分批、--merge 去重 | **issue-21** 摘要新增 `dismissed` 狀態與 `repo summarize --dismiss`／`--dismiss-pending --type`（HTTP 兩個端點）：團隊 repo 的他人 merge／release 骨架原本只能補成 enriched 才能清掉，而那必然促升；`isPromotable` 改為只放行 enriched，已在 recall 的摘要拒絕 dismiss（409）。**issue-22** `setup --agent claude-code` 另部署到 `~/.claude/skills/memoria`（Claude Code 只掃這裡），以 `DATA_ROOT` 檔綁定 data root；只覆蓋 frontmatter 同時帶兩個部署標記的副本，且先備份到 `<memoria-home>/.agents/skill-backups/`——標記存在每份模板裡，手動複製再改過的副本也帶；手寫 skill 在任何寫入前拒絕。部署模板改寫為觸發時機導向。**issue-20** `repo summarize --merge` 與 sync 共用 `parseMergeSourceRef`，不再對同一 merge 建兩筆摘要（地雷 M-2）。**issue-19** `embedLocal` 依 `MEMORIA_EMBED_BATCH`（預設 32）分批，771 筆 21.9GB OOM → 約 2.5GB 持平（地雷 M-1）；單筆查詢不讀此變數。⚠ 疊合 rebase 時 `test-repo-summary.sh` 文字合併乾淨卻語意衝突（fixture 累積狀態），每個 tip 都需完整 CI |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
