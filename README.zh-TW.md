@@ -52,6 +52,14 @@ npx @raybird.chen/memoria setup --json
 <memoria-home>/.agents/skills/memoria/REFERENCE.md
 ```
 
+Claude Code 只掃描 `~/.claude/skills/` 底下的 skill，加上 `--agent claude-code` 就會另外部署一份到那裡，並綁定這個 data root：
+
+```bash
+memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
+```
+
+部署出的 skill 寫明使用記憶的時機：開始處理 issue 或功能前（`recall --mode vector`）、做出有理由的決策或踩坑後（`remember`）、合併進主線或發版後（`repo sync` 與 merge 摘要），每個時機都附命令與完成判準。環境已 export `MEMORIA_HOME` 時，以它為準，不用部署時綁定的 data root。`setup` 只會覆蓋自己部署過的 `~/.claude/skills/memoria/`（`SKILL.md` 的 frontmatter 帶 `deployment_mode: installed` 與 `repository: Memoria`）；那裡若是使用者手寫的 skill，原封不動並以非 0 結束、印出路徑。沒加 `--agent` 時，`setup` 完全不碰 `~/.claude`。
+
 輸出 JSON lines，每步一行：
 
 ```json

@@ -2,7 +2,7 @@ import path from 'node:path'
 import type { Command } from 'commander'
 import { MemoriaCore, resolveMemoriaPaths, runVerify, existsSync, closeAllConnections } from '../../core/index.js'
 import { runPreflight } from '../preflight.js'
-import { deployAgentSkill } from '../runtime.js'
+import { assertHostSkillTarget, deployAgentSkill, deployHostAgentSkill, HOST_AGENTS, resolveHostAgentSkillDir } from '../runtime.js'
 import type { RuntimeLayout } from '../runtime.js'
 
 export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLayout): void {
@@ -13,7 +13,8 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
         .option('--port <port>', 'Port for serve (default: 3917)')
         .option('--memoria-home <path>', 'Data root for .memory/ knowledge/ configs (default: ./memoria)')
         .option('--json', 'Emit JSON step logs for machine consumption')
-        .action(async (opts: { serve?: boolean; port?: string; json?: boolean; memoriaHome?: string; ['memoria-home']?: string }) => {
+        .option('--agent <name>', `Also deploy the skill into a host agent's own skill directory (${HOST_AGENTS.join(', ')})`)
+        .action(async (opts: { serve?: boolean; port?: string; json?: boolean; memoriaHome?: string; ['memoria-home']?: string; agent?: string }) => {
             const jsonOut = Boolean(opts.json)
             const requestedHome = opts.memoriaHome ?? opts['memoria-home'] ?? process.env.MEMORIA_HOME
             const setupMemoriaHome = path.resolve(requestedHome ?? path.join(process.cwd(), 'memoria'))
@@ -33,6 +34,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                     init: 'Data initialized',
                     verify: 'Database verified',
                     skill: 'Agent skill deployed',
+                    'agent-skill': 'Host agent skill deployed',
                     serve: 'Server running'
                 }
                 const detail =
@@ -48,6 +50,20 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             }
 
             let stepStart = Date.now()
+
+            // issue-22: settle --agent before anything is written, so a bad value or a hand-written
+            // skill at the target stops setup with nothing changed.
+            const hostSkillDir = opts.agent === undefined ? undefined : resolveHostAgentSkillDir(opts.agent)
+            if (opts.agent !== undefined) {
+                try {
+                    if (!hostSkillDir) throw new Error(`unknown agent '${opts.agent}'; valid values: ${HOST_AGENTS.join(', ')}`)
+                    await assertHostSkillTarget(hostSkillDir)
+                } catch (error) {
+                    stepLog('agent-skill', false, { error: error instanceof Error ? error.message : String(error), ...(hostSkillDir ? { path: hostSkillDir } : {}) })
+                    process.exitCode = 1
+                    return
+                }
+            }
 
             // Step 1: preflight
             stepStart = Date.now()
@@ -104,6 +120,20 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 stepLog('skill', true, { path: deployedSkillPath })
             } else {
                 stepLog('skill', false, { skipped: true, reason: 'bundled skill source not found (incomplete package?)' })
+            }
+
+            // Step 5b (--agent): the same skill where the host agent discovers skills
+            if (hostSkillDir) {
+                stepStart = Date.now()
+                try {
+                    const hostPath = await deployHostAgentSkill(runtimeLayout, setupPaths.memoriaHome, hostSkillDir)
+                    if (!hostPath) throw new Error('bundled skill source not found (incomplete package?)')
+                    stepLog('agent-skill', true, { agent: opts.agent, path: hostPath })
+                } catch (error) {
+                    stepLog('agent-skill', false, { error: error instanceof Error ? error.message : String(error), path: hostSkillDir })
+                    process.exitCode = 1
+                    return
+                }
             }
 
             // Step 6 (optional): serve

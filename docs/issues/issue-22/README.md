@@ -25,7 +25,7 @@
 |------|--------|--------|
 | 模板觸發詞 | setup、sync session、stats | 開始處理 issue 前、決策或踩坑後、合併或發版後、被問到過去的決定時 |
 | recall 範例 | 無 | 帶 `--mode vector` |
-| data root | 只由 skill 位置推導 | `MEMORIA_HOME` 已設定時沿用，否則由 skill 位置推導 |
+| data root | 只由 skill 位置推導 | `MEMORIA_HOME` 已設定時沿用，否則讀部署時寫入的 `DATA_ROOT` |
 | Claude Code 可見性 | 需手動複製 | `setup --agent claude-code` 一步寫入 |
 
 ## 涉及檔案
@@ -96,10 +96,10 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 | SCN-006 | 2026-10-20 | 已核准 |
 
 ## 重構步驟概要
-1. 📝 **S1 模板改寫** - 待實作
-2. 📝 **S2 `--agent` 旗標骨架** - 待實作
-3. 📝 **S3 寫入與覆蓋保護** - 待實作
-4. 📝 **S4 文件** - 待實作
+1. ✅ **S1 模板改寫** - 已完成
+2. ✅ **S2 `--agent` 旗標骨架** - 已完成
+3. ✅ **S3 寫入與覆蓋保護** - 已完成
+4. ✅ **S4 文件** - 已完成
 
 ## 風險與首要驗證
 
@@ -122,9 +122,10 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 |------|------|--------|
 | 2026-10-20 | 建立；資料根模型與部署方式兩項決策 | - |
 | 2026-10-20 | SCN-001～SCN-006 核准（「照建議」） | - |
+| 2026-10-20 | 實作完成；設計修訂：data root 改由 `DATA_ROOT` 檔提供（見 implementation-plan），覆蓋保護收緊為「非空且無 SKILL.md 也拒絕」；相依 issue-20（`--merge` 回傳既有摘要）與 issue-21（`--dismiss-pending`），須在兩者之後合併 | - |
 
 ---
 **建立日期**: 2026-10-20  
 **分級**: Medium  
 **風險**: Medium\
-**狀態**: 待實作
+**狀態**: 待審查

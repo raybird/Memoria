@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from '../core/index.js'
@@ -91,6 +92,57 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
     if (!skillSourcePath) return undefined
 
     const targetDir = path.join(memoriaHome, '.agents', 'skills', 'memoria')
+    await writeSkillCopy(runtimeLayout, skillSourcePath, targetDir, memoriaHome)
+    return targetDir
+}
+
+/** issue-22: host agents whose own skill directory `setup --agent` can deploy into. */
+const HOST_AGENT_SKILL_DIRS: Record<string, () => string> = {
+    'claude-code': () => path.join(os.homedir(), '.claude', 'skills', 'memoria')
+}
+
+export const HOST_AGENTS = Object.keys(HOST_AGENT_SKILL_DIRS)
+
+export function resolveHostAgentSkillDir(agent: string): string | undefined {
+    return HOST_AGENT_SKILL_DIRS[agent]?.()
+}
+
+/**
+ * `setup` replaces a host skill directory only when it is absent, empty, or a copy `setup` itself wrote —
+ * one whose SKILL.md frontmatter carries both deployment marks. Anything else is the user's own skill,
+ * and overwriting it would be a silent, irreversible loss (issue-22 SCN-006).
+ */
+export async function assertHostSkillTarget(targetDir: string): Promise<void> {
+    const check = await checkHostSkillTarget(targetDir)
+    if (!check.ok) throw new Error(`refusing to overwrite ${targetDir}: ${check.reason}; move it aside to deploy`)
+}
+
+async function checkHostSkillTarget(targetDir: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const stat = await fs.lstat(targetDir).catch(() => undefined)
+    if (!stat) return { ok: true }
+    if (!stat.isDirectory()) return { ok: false, reason: 'it exists and is not a directory' }
+    if ((await fs.readdir(targetDir)).length === 0) return { ok: true }
+
+    const skill = await fs.readFile(path.join(targetDir, 'SKILL.md'), 'utf8').catch(() => undefined)
+    if (skill === undefined) return { ok: false, reason: 'it is not empty and has no SKILL.md written by memoria setup' }
+    const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skill)?.[1] ?? ''
+    const marked = /^deployment_mode:\s*"?installed"?\s*$/m.test(frontmatter)
+        && /^repository:\s*"?Memoria"?\s*$/m.test(frontmatter)
+    return marked
+        ? { ok: true }
+        : { ok: false, reason: 'its SKILL.md lacks the deployment marks (deployment_mode: installed, repository: Memoria), so it was not written by memoria setup' }
+}
+
+export async function deployHostAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome: string, targetDir: string): Promise<string | undefined> {
+    const skillSourcePath = getBundledSkillSourcePath(runtimeLayout)
+    if (!skillSourcePath) return undefined
+
+    await assertHostSkillTarget(targetDir)
+    await writeSkillCopy(runtimeLayout, skillSourcePath, targetDir, memoriaHome)
+    return targetDir
+}
+
+async function writeSkillCopy(runtimeLayout: RuntimeLayout, skillSourcePath: string, targetDir: string, memoriaHome: string): Promise<void> {
     await fs.rm(targetDir, { recursive: true, force: true })
     await fs.mkdir(path.dirname(targetDir), { recursive: true })
     await fs.cp(skillSourcePath, targetDir, { recursive: true })
@@ -115,6 +167,6 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
     if (existsSync(deployedReferencePath)) {
         await fs.copyFile(deployedReferencePath, path.join(targetDir, 'REFERENCE.md'))
     }
-
-    return targetDir
+    // The skill reads its data root from here: a copy outside <memoriaHome> cannot derive it from its own path.
+    await fs.writeFile(path.join(targetDir, 'DATA_ROOT'), `${memoriaHome}\n`, 'utf8')
 }

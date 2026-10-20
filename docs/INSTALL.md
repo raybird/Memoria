@@ -26,6 +26,14 @@ memoria setup --serve --json
 
 `setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
 
+使用 Claude Code 時加上 `--agent claude-code`，`setup` 會另外把 skill 部署到 `~/.claude/skills/memoria/`（Claude Code 只掃描這裡），並以該目錄的 `DATA_ROOT` 檔綁定這次的 data root：
+
+```bash
+memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
+```
+
+目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria`（也就是 `setup` 自己部署的版本）才會被覆蓋；手寫的 skill 會原封不動，`setup` 以非 0 結束並印出路徑與原因，在寫入任何資料前就停下。要改用部署版，先把手寫的移走再重跑。
+
 ### Background service (macOS / Ubuntu)
 
 Setup 完成後，可安裝個人層級的常駐服務，不需要 sudo：

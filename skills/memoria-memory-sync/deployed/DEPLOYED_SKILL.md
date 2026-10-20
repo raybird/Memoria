@@ -1,6 +1,6 @@
 ---
 name: memoria
-description: You have persistent cross-session memory via Memoria. Use this skill to check whether memory is ready in the current folder, set it up if not, and persist/recall sessions. Each folder keeps its own memory (its own data root), independent of where the Memoria runtime is installed.
+description: Use before starting work on an issue or feature, after making a decision with a reason or hitting a pitfall, after a merge to the main branch or a release, and when asked how or why something was decided before — reads and writes Memoria cross-session memory (recall, feedback, remember, repo sync and merge-summary write-back), and sets up memory for a folder that has none yet.
 license: MIT
 compatibility: Designed for filesystem-based coding agents with bash access. Requires Node.js >=18.
 version: "1.29.1"
@@ -8,93 +8,112 @@ deployment_mode: installed
 repository: Memoria
 ---
 
-# Memoria Memory Sync
+# Memoria Memory
 
-**You have a persistent memory.** Memoria gives you cross-session memory that survives between conversations. This skill is your interface to it: check it is ready, set it up for a folder that has none yet, then write (sync) and read (stats/recall) memory.
+**You have a persistent memory.** Memoria keeps decisions, pitfalls and merge history across conversations. Two things stay separate:
 
-Two things are deliberately separate — keep them straight:
-
-- **Runtime** = the Memoria program/binary. Installed once, shared.
-- **Data root (`MEMORIA_HOME`)** = the actual memory (`.memory/`, `knowledge/`, `configs/`). **One per folder.** This is what makes "each folder has its own memory" work.
-
-## Activation Signals
-
-- "sync memory", "import session json", or "persist this conversation"
-- "remember this", "what do you remember", "recall", "show memory stats"
-- "init memoria", "set up memory for this folder", or "create sessions.db"
-- "doctor", "verify", "wiki build", or "run MCP enhancement"
+- **Runtime** = the Memoria program, reached through `bin/memoria` next to this file.
+- **Data root (`MEMORIA_HOME`)** = the memory itself (`.memory/`, `knowledge/`, `configs/`).
 
 ## Locate your data root (do this first)
 
-This skill lives at `<memoria-home>/.agents/skills/memoria/`, so **the data root is three levels up from this skill directory**. Derive it instead of guessing:
-
 ```bash
-SKILL_ROOT="$(cd "$(dirname "$0")" && pwd)"   # the directory containing this SKILL.md
-MEMORIA_HOME="$(cd "$SKILL_ROOT/../../.." && pwd)"
+SKILL_ROOT="<the directory containing this SKILL.md>"
+MEMORIA_HOME="${MEMORIA_HOME:-$(cat "$SKILL_ROOT/DATA_ROOT")}"
 MEMORIA_BIN="$SKILL_ROOT/bin/memoria"
 ```
 
-Always pass `MEMORIA_HOME` explicitly to every command. Never rely on auto-detection — if `MEMORIA_HOME` is unset and the folder was never set up, Memoria silently falls back to the runtime root and your writes land in the wrong place.
+An exported `MEMORIA_HOME` wins: that is a shared home the user chose on purpose. Otherwise `DATA_ROOT` holds the data root `memoria setup` deployed this copy for. Pass `MEMORIA_HOME` explicitly on every command below — without it Memoria falls back to the runtime root and your writes land in the wrong place.
 
-## Check it is ready BEFORE writing (fail closed)
+`<repo>` below is always a name from `"$MEMORIA_BIN" repo list`. A `--project` that names no registered repository files the memory as environment-wide, and it then appears in every project's brief.
+
+## Check it is ready before writing (fail closed)
 
 ```bash
 MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" doctor --json
 ```
 
-Read the result:
+- `homeSource` is `"fallback"`, or the `sessions.db` check is `ok:false` → this data root has no memory yet. Go to "Set up a folder" and write nothing until it passes.
+- Every check `ok:true` → ready. A failing check carries a `fix` string; follow it.
 
-- `homeSource` is `"fallback"`, **or** the `sessions.db` check is `ok:false` → **memory is NOT ready for this folder. Do not sync.** Go to "Set up a new folder" below.
-- All checks `ok:true` → memory is ready; proceed to sync/recall.
+## When to use it
 
-The `doctor` output includes a `fix` string on any failing check — follow it.
-
-## Set up a new folder (clean / blank directory)
-
-When the current folder has no memory yet, create its own data root:
+### Before starting an issue or feature — recall
 
 ```bash
-# Creates ./memoria as this folder's private data root, runs preflight + init + verify.
+MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" recall "<issue id or topic>" --mode vector --project <repo>
+```
+
+`--mode vector` fuses semantic and lexical hits; the default keyword mode misses anything phrased differently. Without a vector index it falls back to lexical on its own (`route_mode: vector_unavailable`). Keep the `recall_id` from the output for feedback.
+
+Done when: the relevant decisions and pitfalls among the hits are reflected in your plan or answer. No hits also counts.
+
+### After using (or ruling out) recall results — feedback
+
+```bash
+MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --used --hits <comma-separated hit ids>
+```
+
+If nothing helped, report `--score 0` without `--used`. This is the only utility signal Memoria gets; ranking adapts to it.
+
+Done when: every `recall_id` from this session has been reported once.
+
+### After a decision with a reason, or a pitfall — remember
+
+```bash
+MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" remember "<one-sentence fact>" --project <repo> --rationale "<why>"
+```
+
+Worth remembering is what the code and git history cannot tell: the reason behind a trade-off, a pitfall found by checking, a premise that turned out wrong.
+
+- `--durable` for a constraint that must not fade; it is pinned in the brief.
+- `--supersedes <old id>` corrects an older memory (the id comes from a recall hit); the old one leaves recall and the brief.
+
+Done when: the text makes sense on its own outside this conversation and includes the why.
+
+### After a merge to the main branch or a release — repo sync and the merge summary
+
+1. `MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo sync <repo>` (register a new repository first with `repo add <path>`).
+2. `MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo summarize <repo> --merge <merge sha> --json` returns the summary sync created for that merge (`data.summaries[0].id`). Status already `enriched` means someone wrote it; you are done.
+3. Write the payload described in `REFERENCE.md` from the work you just did, then:
+   ```bash
+   MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo summarize <repo> --submit <summary id> --file <payload.json>
+   ```
+
+Sync also creates pending skeletons for other people's merges and releases. Write back only your own; after that, `repo summarize <repo> --dismiss-pending --type merge,release` clears the rest from the 待增強 count without putting them into recall.
+
+Done when: the submit result shows `status: enriched` and `promoted: true`.
+
+### Wrap-up — once per session that ran remember or repo sync
+
+1. `MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" doctor` — when `vector coverage` shows `missing` above 0, run the fix it prints. The tree index updates itself; the vector index does not, and a memory missing from it is invisible to semantic recall without any error.
+2. Regenerate the brief your agent instructions import: `brief --global` for one global `BRIEF.md`, or `brief` inside a registered repository for its `BRIEF-<repo>.md`.
+
+Done when: `vector coverage` shows `missing=0` (or vector recall is disabled), and the brief's first line carries a timestamp from just now.
+
+## Set up a folder
+
+When the current folder has no memory yet, give it its own data root:
+
+```bash
 "$MEMORIA_BIN" setup --memoria-home "$(pwd)/memoria"
 ```
 
-After setup, this folder's `MEMORIA_HOME` is `$(pwd)/memoria`. Re-run `doctor --json` against it to confirm `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`.
-
-## Use it (once ready)
-
-```bash
-MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" sync /absolute/path/to/session.json
-MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" stats
-MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" wiki build
-MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" wiki lint --json
-MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" source add /absolute/path/to/note.md
-```
-
-Helper runners shipped with this deployed skill:
-
-```bash
-MEMORIA_BIN="$MEMORIA_BIN" bash "$SKILL_ROOT/scripts/run-sync.sh" /absolute/path/to/session.json "$MEMORIA_HOME"
-MEMORIA_BIN="$MEMORIA_BIN" bash "$SKILL_ROOT/scripts/run-sync-with-enhancement.sh" /absolute/path/to/session.json "$MEMORIA_HOME"
-```
+Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent claude-code` additionally installs this skill into `~/.claude/skills/memoria`, bound to that data root.
 
 ## Path & Safety Rules
 
-- Always pass `MEMORIA_HOME` explicitly; derive it from this skill's location (above).
-- One data root per folder. Don't reuse another folder's `MEMORIA_HOME` unless asked.
-- Prefer `bin/memoria` from this deployed skill. Override with `MEMORIA_BIN` only if a different launcher is required.
-- Use absolute session/source file paths.
-- Run `doctor`/`verify` before assuming a path or DB issue lives in the session payload.
+- Use absolute paths for session, source and payload files.
 - Keep Memoria SQLite as the source of truth even when MCP enhancement is enabled.
-- Do not rewrite deployed skill files during normal memory operations.
+- Leave the deployed skill files as they are during normal memory operations; `memoria setup` rewrites them.
 
 ## Troubleshooting
 
-- `doctor` shows `homeSource: fallback` → the folder was never set up. Run the setup step above.
-- `bin/memoria` missing → rerun `memoria setup` for the same `MEMORIA_HOME`.
-- `sync` fails → confirm the session JSON path exists and is readable.
-- MCP enhancement fails → retry the base sync first, then inspect `LIBSQL_URL`, `MEMORIA_MCP_SERVER_COMMAND`, `MEMORIA_MCP_SERVER_ARGS`.
+- `doctor` shows `homeSource: fallback` → the data root was never set up; run the setup step.
+- `bin/memoria` missing → rerun `memoria setup` for the same data root.
+- `recall --mode vector` reports `vector_timeout` → usually a cold start; the next call is warm.
 
 ## See Also
 
-- `REFERENCE.md`
+- `REFERENCE.md` — summary payload format, command map, deployed layout
 - `resources/mcp/INGEST_PLAYBOOK.md`
