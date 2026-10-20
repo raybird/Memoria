@@ -81,6 +81,10 @@ README 的 Gherkin 為驗收來源。風險與首要驗證見 README「風險與
    - S-3：本計畫第 7 步補記 detect_changes 結果，檢查清單勾選。
    - 回歸：`test-repo-summary`、`test-repo-promotion`、`test-pure-functions`、`test-brief-scope`、`test-http-api` 全部 exit 0；CI 全套（依 `ci.yml` 順序 34 支，清除開發者環境變數）全數 PASS、exit 0，被測為 `7f47d18` 加上本次提交內容的工作區，2026-10-20。
 
+9. ✅ **合併前 rebase 的語意衝突**（2026-10-20）— SCN-003
+   - issue-20 先合進 main 後，本分支 rebase 到其上（只有 `scripts/pure-fn-driver.mts` 文字衝突，兩邊新增區塊都保留）。文字上乾淨的 `scripts/test-repo-summary.sh` 在 CI 紅燈：`✗ fixture: 1 pending merge + 2 pending releases: expected '3', got '4'`——issue-20 新增的「先 `--merge` 再 sync」情境留下一筆 `feature/coupons` 的 pending merge。
+   - 修正：SCN-003 的字面值改為 4（2 merge＋2 release），並逐一斷言 `feature/coupons` 與 `feature/batch` 兩筆 merge 都變 dismissed。程式未改。
+
 ## 使用方式對照
 
 | 情境 | 變更前 | 變更後 |

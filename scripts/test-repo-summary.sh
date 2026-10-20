@@ -269,14 +269,17 @@ git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/batch'"
 "$CLI" repo sync "$REPO_ID" --json >/dev/null
 BATCH_MERGE_ID=$(db_get "SELECT s.id FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id WHERE r.source_ref = 'feature/batch'")
 BATCH_RELEASE_ID=$(db_get "SELECT id FROM git_summaries WHERE status = 'pending' AND summary_type = 'release' LIMIT 1")
+# issue-20's --merge-before-sync case above leaves its feature/coupons merge pending too.
+COUPONS_MERGE_ID=$(db_get "SELECT s.id FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id WHERE r.source_ref = 'feature/coupons'")
 MILESTONES_PENDING=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type IN ('merge','release')")
 RANGES_PENDING=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'commit_range'")
 ENRICHED_COUNT=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'enriched'")
-assert_eq "fixture: 1 pending merge + 2 pending releases" "$MILESTONES_PENDING" "3"
+assert_eq "fixture: 2 pending merges + 2 pending releases" "$MILESTONES_PENDING" "4"
 [ "$RANGES_PENDING" -gt 0 ] || { echo "  ✗ fixture lacks pending ranges"; exit 1; }
 BATCH=$("$CLI" repo summarize "$REPO_ID" --dismiss-pending --type merge,release --json)
-assert_eq "reports how many were dismissed" "$(json_get "$BATCH" "d.data.dismissed")" "3"
+assert_eq "reports how many were dismissed" "$(json_get "$BATCH" "d.data.dismissed")" "4"
 assert_eq "the pending merge is dismissed" "$(status_of "$BATCH_MERGE_ID")" "dismissed"
+assert_eq "the other pending merge is dismissed" "$(status_of "$COUPONS_MERGE_ID")" "dismissed"
 assert_eq "a pending release is dismissed" "$(status_of "$BATCH_RELEASE_ID")" "dismissed"
 assert_eq "no pending merge/release left" \
     "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type IN ('merge','release')")" "0"
