@@ -155,8 +155,8 @@ curl http://localhost:3917/v1/stats
 | `POST` | `/v1/repos/:ref/summarize` | 摘要 branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | 等待 agent 增強的摘要請求 |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫 |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | 略過一筆 pending 摘要（不自動促升） |
-| `POST` | `/v1/repos/:ref/summaries/dismiss` | 依 `{types}` 批次略過 pending 摘要 |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | 略過一筆 pending 摘要（不自動促升，只有明確的 `--promote` 能讓它進 recall；已在 recall 時回 `409`） |
+| `POST` | `/v1/repos/:ref/summaries/dismiss` | 依 `{types}` 批次略過 pending 摘要；已在 recall 的會跳過（`skipped_promoted`） |
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
 

@@ -100,7 +100,7 @@ Feature: 略過不寫進記憶的 git 摘要
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: a79d3be
+- **核准 commit**: a79d3be（SCN-001～007）；1f3d692（SCN-008，規格修訂與核准紀錄同一提交）
 - **核准來源**: 介面範圍——使用者 2026-10-20 對「dismissed 要提供哪種介面？」選擇「單筆加批次」（建議內容：`--dismiss <id>` 單筆、`--dismiss-pending --type merge,release` 批次，dismissed 之後仍可再 `--submit` 回到 enriched）。各 Scenario 的具體行為由規劃推導，使用者 2026-10-20 回覆「照建議」全部核准（建議內容：對 enriched 摘要 dismiss 報錯、批次必須給 `--type`、brief 另列「已略過 N」、HTTP 兩個端點）。SCN-008 來自獨立審查 S-1（`需決策`）的建議 (A)，使用者 2026-10-20 指示「一律都照建議」，依 acceptance.md 視為接受建議答案（見 TBD-3）
 
 | Scenario | 核准日期 | 狀態 |
@@ -145,6 +145,7 @@ Feature: 略過不寫進記憶的 git 摘要
 | 2026-10-20 | SCN-001～SCN-007 核准（「照建議」） | - |
 | 2026-10-20 | 獨立審查 RETURN TO execute-task（`3764a9f`，[報告](./review-3764a9f.md)）：M-1 SCN-003 未驗到 merge；S-1 需決策 | - |
 | 2026-10-20 | 規格修訂：依 TBD-3 新增 SCN-008 並核准 | - |
+| 2026-10-20 | 第二輪審查 PASS（`1f3d692`，[報告](./review-1f3d692.md)）；修正其 SHOULD FIX：`--promote` 例外補進 AGENTS.md／README／CLI help，回填 SCN-008 核准 commit；待第三輪審查 | - |
 
 ---
 **建立日期**: 2026-10-20  

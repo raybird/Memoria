@@ -175,8 +175,8 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
         .option('--limit <n>', 'Max pending summaries returned by --pending (default: 20)')
         .option('--submit <summaryId>', 'Write back an agent-generated summary payload')
         .option('--file <path>', 'JSON payload file for --submit (default: stdin, "-" for stdin)')
-        .option('--dismiss <summaryId>', 'Mark a pending summary as reviewed and skipped: not auto-promoted, not counted as 待增強')
-        .option('--dismiss-pending', 'Dismiss every pending summary of the --type list (--type required)')
+        .option('--dismiss <summaryId>', 'Mark a pending summary as reviewed and skipped: not auto-promoted (explicit --promote still can), not counted as 待增強')
+        .option('--dismiss-pending', 'Dismiss every pending summary of the --type list (--type required); ones already in recall are skipped')
         .option('--json', 'Machine-readable JSON output')
         .action(async (ref: string, options: {
             branch?: string; range?: string; merge?: string; tag?: string; type?: string
