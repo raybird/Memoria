@@ -18,6 +18,12 @@ const MODEL = process.env.MEMORIA_EMBED_MODEL?.trim() || 'Xenova/multilingual-e5
 
 let localPipeline = null
 
+/** Test seam: install a stand-in for the transformers pipeline so batching can be asserted without
+ *  the model. Same call shape — (texts, options) => { dims: [n, DIM], data: Float32Array }. */
+export function setLocalPipelineForTest(pipeline) {
+  localPipeline = pipeline
+}
+
 async function embedLocal(texts, kind) {
   if (!localPipeline) {
     let transformers
@@ -39,10 +45,31 @@ async function embedLocal(texts, kind) {
     localPipeline = await transformers.pipeline('feature-extraction', MODEL, { dtype: 'q8' })
   }
   const prefix = kind === 'query' ? 'query: ' : 'passage: '
-  const out = await localPipeline(texts.map((t) => prefix + t), { pooling: 'mean', normalize: true })
-  const [n, dim] = [out.dims[0], out.dims[1]]
-  if (dim !== DIM) throw new Error(`Model dim ${dim} != expected ${DIM}`)
-  return Array.from({ length: n }, (_, i) => Array.from(out.data.slice(i * dim, (i + 1) * dim)))
+  // One pipeline call per batch (issue-19). Every row in a call is padded to the longest one and the
+  // intermediate tensors scale with rows × length, so handing the whole corpus over at once grew a
+  // single process to 21.9GB at 771 entities and got it OOM-killed; batches of 32 peaked at 1.4GB.
+  const batchSize = resolveBatchSize()
+  const vectors = []
+  for (let start = 0; start < texts.length; start += batchSize) {
+    const batch = texts.slice(start, start + batchSize)
+    const out = await localPipeline(batch.map((t) => prefix + t), { pooling: 'mean', normalize: true })
+    const [n, dim] = [out.dims[0], out.dims[1]]
+    if (dim !== DIM) throw new Error(`Model dim ${dim} != expected ${DIM}`)
+    for (let i = 0; i < n; i++) vectors.push(Array.from(out.data.slice(i * dim, (i + 1) * dim)))
+  }
+  return vectors
+}
+
+const DEFAULT_EMBED_BATCH = 32
+
+function resolveBatchSize() {
+  const raw = process.env.MEMORIA_EMBED_BATCH?.trim()
+  if (!raw) return DEFAULT_EMBED_BATCH
+  const size = Number(raw)
+  if (!Number.isInteger(size) || size <= 0) {
+    throw new Error(`MEMORIA_EMBED_BATCH must be a positive integer, got '${raw}'`)
+  }
+  return size
 }
 
 // Deterministic pseudo-embedding: hash character trigrams into DIM buckets, L2-normalize.

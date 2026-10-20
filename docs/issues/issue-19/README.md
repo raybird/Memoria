@@ -58,14 +58,27 @@
 
 ## 實作與驗證步驟
 
-1. 📝 **AC-1：分批呼叫 pipeline** — 驗證方式：AC-1 的假 pipeline 斷言
-   - 完成證據：（實作時回寫紅綠燈命令與輸出）
-2. 📝 **AC-2：查詢路徑不變** — 驗證方式：`bash scripts/test-vector-recall.sh`
-   - 完成證據：（實作時回寫）
-3. 📝 **AC-3：實機 ingest** — 驗證方式：`/usr/bin/time -v node skills/memoria-vector/vector-ingest.mjs <payload>`，接著跑 `doctor`
-   - 完成證據：（回寫峰值 RSS 與 coverage）
-4. 📝 **新版發布後移除本機繞道** — 驗證方式：`~/.claude/skills/memoria/ingest-vectors.sh` 改為直接呼叫一次 `vector-ingest.mjs`，project.md 地雷 M-1 標註失效日期
-   - 完成證據：（回寫）
+1. ✅ **AC-1：分批呼叫 pipeline** — 驗證方式：AC-1 的假 pipeline 斷言
+   - 完成證據（2026-10-20）：
+     - 先只加測試注入點 `setLocalPipelineForTest`，不改行為。
+     - 紅燈：`bash scripts/test-pure-functions.sh` → exit 1，`✗ 70 texts at the default batch of 32 → 3 pipeline calls: expected 3, got 1`、`✗ batch sizes are 32/32/6: expected 32/32/6, got 70`，以及 env 覆寫與非法值兩條失敗——整份語料一次送進 pipeline。
+     - 最小實作：`embedLocal` 依 `MEMORIA_EMBED_BATCH`（預設 32）逐批呼叫，非正整數直接報錯並點名變數。
+     - 綠燈：`[pure] embedLocal batching` 七條 ✓、exit 0。假 pipeline 把輸入編號寫進輸出列的第 0 格，期望值是字面值 0..69，與實作不共用計算（不是同義反覆）。順序斷言在紅燈時也是綠的：它防的是分批後錯位這種回歸，不是本次的紅燈來源。
+     - 單迴圈合併：注入點直接換掉 transformers pipeline，斷言走的就是 `embedTexts`→`embedLocal` 的真實路徑，沒有另外的整合層；真實模型的整合由 AC-3 承擔。
+2. ✅ **AC-2：查詢路徑不變** — 驗證方式：`bash scripts/test-vector-recall.sh`
+   - 完成證據（2026-10-20）：`env -u LIBSQL_URL -u MEMORIA_HOME bash scripts/test-vector-recall.sh` → `[vector] ok`、exit 0，既有斷言未改。查詢每次只送一筆，分批後仍是一次呼叫。
+3. ✅ **AC-3：實機 ingest** — 驗證方式：`/usr/bin/time -v node skills/memoria-vector/vector-ingest.mjs <payload>`，接著跑 `doctor`
+   - 完成證據（2026-10-20，維護者機器，30GB RAM）：
+     - 判準：被 kill 或 `missing>0` 即失敗。為避免回歸時拖垮整台機器，兩次執行都在 `systemd-run --user --scope -p MemoryMax=6G` 內。
+     - 對照組（先驗證判準本身）：同一份 payload、改動前的 `embed.mjs`（`git show main:skills/memoria-vector/embed.mjs`，寫入另一個暫存向量庫）→ 5 秒內 `The kernel OOM killer killed some processes in this unit`，scope 峰值 6G，exit 143。判準確實能區分失敗。
+     - 本次：`build-mcp-bridge-payload.mjs` 產出 1310 筆實體（門檻 771），直接執行一次 `vector-ingest.mjs`（不經外部切批）→ `{"ok":true,"embedded":780,"skipped":530}`、exit 0，`Maximum resident set size` 2531328 kB（約 2.5GB），耗時 1:01.80。
+     - `node dist/cli.mjs doctor` → `vector coverage: embedded=780 expected=780 missing=0`。
+     - 回歸：`pnpm run check` 無錯；CI 全套（依 `ci.yml` 順序逐支執行 34 支，清除 `LIBSQL_URL`／`MEMORIA_HOME` 等開發者環境變數，`pnpm run build` 後執行）全數 PASS、exit 0，被測為 `ac76109` 加上本次提交內容的工作區，2026-10-20T21:02。
+     - GitNexus：`embedLocal` 的 impact 在改動之後才補跑（流程疏漏，照實記錄）——LOW，唯一呼叫端 `embedTexts`，再上層是 `vector-recall.mjs` 與 `vector-ingest.mjs`，兩者分別由 AC-2 與 AC-3 覆蓋；提交前 `detect_changes` 為 low、受影響流程 0。
+     - 精煉：code-simplify no-op——分批迴圈與 `resolveBatchSize` 各只有一處用途，沒有可再收斂的重複。
+     - 峰值不隨筆數線性成長：1310 筆是 771 筆的 1.7 倍，峰值卻從 21.9GB 降到 2.5GB。外部切批（每批各起一個行程）時量到 1.4GB，單一行程多出的部分未另行拆解。
+4. 📝 **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/ingest-vectors.sh` 改為直接呼叫一次 `vector-ingest.mjs`，project.md 地雷 M-1 標註失效日期
+   - 完成證據：（發布後回寫）
 
 ## Timeline
 
@@ -78,4 +91,4 @@
 **建立日期**: 2026-10-20  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 待實作
+**狀態**: 待審查

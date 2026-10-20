@@ -23,6 +23,7 @@ import { computeDecayFactor } from '../src/core/db/recall.js'
 import { parseMergeSourceRef } from '../src/core/git/summary-pipeline.js'
 import { isPromotable } from '../src/core/db/git-promote.js'
 import type { GitSummaryRecord } from '../src/core/types.js'
+import { embedTexts, setLocalPipelineForTest, DIM } from '../skills/memoria-vector/embed.mjs'
 
 let failures = 0
 
@@ -261,6 +262,43 @@ eq('enriched merge is promotable', isPromotable(milestone('enriched', 'merge'), 
 eq('pending merge is not', isPromotable(milestone('pending', 'merge'), 0.7), false)
 eq('dismissed merge is not', isPromotable(milestone('dismissed', 'merge'), 0.7), false)
 eq('dismissed release is not', isPromotable(milestone('dismissed', 'release'), 0.7), false)
+
+// ── embedLocal batching: memory must not scale with the corpus (issue-19 AC-1) ──────────────────
+console.log('[pure] embedLocal batching')
+const pipelineCalls: number[] = []
+setLocalPipelineForTest(async (inputs: string[]) => {
+    pipelineCalls.push(inputs.length)
+    // Each output row carries its input's number in slot 0, so order can be checked row by row.
+    const data = new Float32Array(inputs.length * DIM)
+    inputs.forEach((text, i) => { data[i * DIM] = Number(text.replace('passage: t', '')) })
+    return { dims: [inputs.length, DIM], data }
+})
+const savedProvider = process.env.MEMORIA_EMBED_PROVIDER
+const savedBatch = process.env.MEMORIA_EMBED_BATCH
+process.env.MEMORIA_EMBED_PROVIDER = 'local'
+delete process.env.MEMORIA_EMBED_BATCH
+const seventy = Array.from({ length: 70 }, (_, i) => `t${i}`)
+const vectors = await embedTexts(seventy, 'passage')
+eq('70 texts at the default batch of 32 → 3 pipeline calls', pipelineCalls.length, 3)
+eq('batch sizes are 32/32/6', pipelineCalls.join('/'), '32/32/6')
+eq('one vector per input', vectors.length, 70)
+eq('row order follows input order', vectors.every((v: number[], i: number) => v[0] === i), true)
+eq('rows keep the model dimension', vectors[69].length, DIM)
+
+pipelineCalls.length = 0
+process.env.MEMORIA_EMBED_BATCH = '50'
+await embedTexts(seventy, 'passage')
+eq('MEMORIA_EMBED_BATCH overrides the batch size', pipelineCalls.join('/'), '50/20')
+
+process.env.MEMORIA_EMBED_BATCH = '0'
+let rejected = ''
+try { await embedTexts(seventy, 'passage') } catch (error) { rejected = String(error) }
+eq('a non-positive MEMORIA_EMBED_BATCH is rejected by name', rejected.includes('MEMORIA_EMBED_BATCH'), true)
+
+if (savedProvider === undefined) delete process.env.MEMORIA_EMBED_PROVIDER
+else process.env.MEMORIA_EMBED_PROVIDER = savedProvider
+if (savedBatch === undefined) delete process.env.MEMORIA_EMBED_BATCH
+else process.env.MEMORIA_EMBED_BATCH = savedBatch
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

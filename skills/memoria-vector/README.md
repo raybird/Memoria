@@ -46,6 +46,7 @@ CI installs with `--omit=dev` and runs the deterministic `stub` provider instead
 - `LIBSQL_URL` (required) / `LIBSQL_AUTH_TOKEN` — same gate as the MCP/libSQL enhancement layer
 - `MEMORIA_EMBED_PROVIDER` — `local` (default) | `stub`
 - `MEMORIA_EMBED_MODEL` — override the local model (must emit 384-dim vectors)
+- `MEMORIA_EMBED_BATCH` — texts per local-model call during ingest (default 32). Peak memory follows the batch, not the corpus: 32 peaked at 1.4GB, while one call over 771 entities reached 21.9GB and was OOM-killed (issue-19). Lower it on small machines
 - `MEMORIA_VECTOR_ENABLE=1` — lets `run-sync-with-enhancement.sh` embed each sync's payload
 - `MEMORIA_VECTOR_TIMEOUT_MS` — recall-side helper timeout (default 4000; spawn-per-query measured ~1s warm-cache)
 - `MEMORIA_VECTOR_RECALL_CMD` — override the recall helper script path (tests)
