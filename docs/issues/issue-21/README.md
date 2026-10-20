@@ -147,9 +147,10 @@ Feature: 略過不寫進記憶的 git 摘要
 | 2026-10-20 | 規格修訂：依 TBD-3 新增 SCN-008 並核准 | - |
 | 2026-10-20 | 第二輪審查 PASS（`1f3d692`，[報告](./review-1f3d692.md)）；修正其 SHOULD FIX：`--promote` 例外補進 AGENTS.md／README／CLI help，回填 SCN-008 核准 commit；待第三輪審查 | - |
 | 2026-10-20 | 第三輪審查 PASS（`2146fb5`，[報告](./review-2146fb5.md)）；更正兩份 README 的「只有 `--promote`」（漏了 `--submit`）；待第四輪審查 | - |
+| 2026-10-20 | 合併進 main（rebase 後 fast-forward，`1df6530`），結案 | - |
 
 ---
 **建立日期**: 2026-10-20  
 **分級**: Medium  
 **風險**: Medium\
-**狀態**: 待審查
+**狀態**: 已完成
