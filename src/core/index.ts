@@ -72,7 +72,7 @@ export {
 export { resolveRepositoryIdentity, normalizeRemoteUrl } from './git/identity.js'
 export { getHostId } from './git/host.js'
 export { runGit, GitExecError } from './git/git-exec.js'
-export { parseGitSummaryPayload, gitSummaryPayloadSchema } from './git/summary-schema.js'
+export { parseGitSummaryPayload, gitSummaryPayloadSchema, parseDismissTypes } from './git/summary-schema.js'
 export {
     runSummaryPipeline,
     summarizeBranch,
@@ -116,5 +116,5 @@ export type {
     RepoAddInput, RepoRegistrationData, RepoListItem, RepoLiveStatus, RepoStatusData,
     RepoRemoveOptions, RepoRemoveData, RepoSyncOptions, RepoSyncData,
     GitSummaryType, GitSummaryStatus, GitSummaryContent, GitSummaryRangeRecord, GitSummaryRecord,
-    RepoSummarizeOptions, RepoSummarizeData, PendingSummaryRequest, PendingSummariesData
+    RepoSummarizeOptions, RepoSummarizeData, PendingSummaryRequest, PendingSummariesData, DismissPendingData
 } from './types.js'

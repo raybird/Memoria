@@ -239,6 +239,47 @@ assert_eq "branch range source_ref" \
 BRANCH2=$("$CLI" repo summarize "$REPO_ID" --branch feature/reports --json)
 assert_eq "branch summarize idempotent" "$(json_get "$BRANCH2" "d.data.created")" "0"
 
+echo "[repo-summary] dismiss: single pending summary (issue-21 SCN-001)"
+status_of() { db_get "SELECT status FROM git_summaries WHERE id = '$1'"; }
+DISMISS_ID=$(db_get "SELECT id FROM git_summaries WHERE summary_type = 'merge' AND status = 'pending' LIMIT 1")
+assert_eq "fixture has a pending merge" "$(test -n "$DISMISS_ID" && echo yes)" "yes"
+"$CLI" repo summarize "$REPO_ID" --dismiss "$DISMISS_ID" --json >/dev/null
+assert_eq "dismissed merge status" "$(status_of "$DISMISS_ID")" "dismissed"
+assert_eq "dismissed summary leaves --pending" \
+    "$(json_get "$("$CLI" repo summarize "$REPO_ID" --pending --limit 100 --json)" "d.data.requests.some(r => r.summary_id === '$DISMISS_ID')")" "false"
+
+echo "[repo-summary] dismiss refuses an enriched summary (issue-21 SCN-002)"
+ENRICHED_ID=$(db_get "SELECT id FROM git_summaries WHERE status = 'enriched' LIMIT 1")
+PROMOTED_BEFORE=$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$ENRICHED_ID'")
+if "$CLI" repo summarize "$REPO_ID" --dismiss "$ENRICHED_ID" --json >"$TMP_DIR/dismiss-enriched.out" 2>&1; then
+    echo "  ✗ dismissing an enriched summary succeeded"; exit 1
+fi
+assert_eq "error names the enriched state" "$(grep -c 'enriched' "$TMP_DIR/dismiss-enriched.out" | tr -d ' ' | sed 's/^[1-9][0-9]*$/yes/')" "yes"
+assert_eq "enriched summary untouched" "$(status_of "$ENRICHED_ID")" "enriched"
+assert_eq "its promoted memory untouched" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$ENRICHED_ID'")" "$PROMOTED_BEFORE"
+
+echo "[repo-summary] dismiss-pending by type (issue-21 SCN-003)"
+MILESTONES_PENDING=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type IN ('merge','release')")
+RANGES_PENDING=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'commit_range'")
+ENRICHED_COUNT=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'enriched'")
+[ "$MILESTONES_PENDING" -gt 0 ] && [ "$RANGES_PENDING" -gt 0 ] || { echo "  ✗ fixture lacks pending milestones or ranges"; exit 1; }
+BATCH=$("$CLI" repo summarize "$REPO_ID" --dismiss-pending --type merge,release --json)
+assert_eq "reports how many were dismissed" "$(json_get "$BATCH" "d.data.dismissed")" "$MILESTONES_PENDING"
+assert_eq "no pending merge/release left" \
+    "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type IN ('merge','release')")" "0"
+assert_eq "commit_range skeletons untouched" \
+    "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'commit_range'")" "$RANGES_PENDING"
+assert_eq "enriched summaries untouched" "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'enriched'")" "$ENRICHED_COUNT"
+
+echo "[repo-summary] dismiss-pending requires --type (issue-21 SCN-004)"
+DISMISSED_BEFORE=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'dismissed'")
+if "$CLI" repo summarize "$REPO_ID" --dismiss-pending --json >/dev/null 2>&1; then
+    echo "  ✗ --dismiss-pending without --type succeeded"; exit 1
+fi
+echo "  ✓ --dismiss-pending without --type rejected"
+assert_eq "nothing dismissed by the rejected call" \
+    "$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'dismissed'")" "$DISMISSED_BEFORE"
+
 echo "[repo-summary] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"
 if [ -n "$STATUS_OUT" ]; then echo "  ✗ repo has unexpected changes:"; echo "$STATUS_OUT"; exit 1; fi

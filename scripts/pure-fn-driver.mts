@@ -21,6 +21,8 @@ import {
 } from '../src/core/utils.js'
 import { computeDecayFactor } from '../src/core/db/recall.js'
 import { parseMergeSourceRef } from '../src/core/git/summary-pipeline.js'
+import { isPromotable } from '../src/core/db/git-promote.js'
+import type { GitSummaryRecord } from '../src/core/types.js'
 
 let failures = 0
 
@@ -250,6 +252,15 @@ eq('git default message names the branch', parseMergeSourceRef("Merge branch 'fe
 eq('GitLab message with target names the source branch', parseMergeSourceRef("Merge branch 'issue-7-fix' into 'dev'\n\nCloses #7"), 'issue-7-fix')
 eq('remote-tracking merge yields null', parseMergeSourceRef("Merge remote-tracking branch 'origin/main'"), null)
 eq('custom message yields null', parseMergeSourceRef('integrate pricing work'), null)
+
+// ── isPromotable: only enriched summaries reach recall (issue-21) ───────────────────────────────
+console.log('[pure] isPromotable')
+const milestone = (status: string, summary_type: string) =>
+    ({ status, summary_type, importance: 0.1, decisions: [], known_limitations: [], risks: [] }) as unknown as GitSummaryRecord
+eq('enriched merge is promotable', isPromotable(milestone('enriched', 'merge'), 0.7), true)
+eq('pending merge is not', isPromotable(milestone('pending', 'merge'), 0.7), false)
+eq('dismissed merge is not', isPromotable(milestone('dismissed', 'merge'), 0.7), false)
+eq('dismissed release is not', isPromotable(milestone('dismissed', 'release'), 0.7), false)
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

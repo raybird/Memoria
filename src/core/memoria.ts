@@ -39,6 +39,8 @@ import {
     listSummaries,
     getSummaryById,
     submitAgentSummary,
+    dismissSummary,
+    dismissPendingSummaries,
     isPromotable,
     promotionExists,
     promoteSummary,
@@ -64,7 +66,7 @@ import { scanSnapshot, listNewCommits, getCommitStats } from './git/scanner.js'
 import { detectChanges } from './git/change-detector.js'
 import { planCommitRanges, classifyTriviality } from './git/range-planner.js'
 import { buildRangeContext } from './git/summary-context.js'
-import { parseGitSummaryPayload } from './git/summary-schema.js'
+import { parseGitSummaryPayload, parseDismissTypes } from './git/summary-schema.js'
 import {
     runSummaryPipeline,
     summarizeBranch,
@@ -112,6 +114,7 @@ import type {
     RepoSummarizeOptions,
     RepoSummarizeData,
     PendingSummariesData,
+    DismissPendingData,
     PendingSummariesOptions,
     PendingSummaryRequest,
     GitSummaryRecord,
@@ -1221,6 +1224,30 @@ export class MemoriaCore {
                 }
             } catch { /* summary stays enriched; next sync retries promotion */ }
             return { data: { summary, promoted }, evidence: [summary.id], confidence: 1 }
+        })
+    }
+
+    /** issue-21: mark a pending skeleton as reviewed-and-skipped — out of 待增強, never promoted. */
+    async repoDismissSummary(ref: string, summaryId: string): Promise<MemoriaResult<{ summary: GitSummaryRecord }>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const { repositoryId } = await this.resolveManagedRepo(ref)
+            const existing = getSummaryById(this.paths.dbPath, summaryId)
+            if (!existing || existing.repository_id !== repositoryId) {
+                throw new Error(`summary_not_found: ${summaryId}`)
+            }
+            const summary = dismissSummary(this.paths.dbPath, summaryId)
+            return { data: { summary }, evidence: [summary.id], confidence: 1 }
+        })
+    }
+
+    async repoDismissPending(ref: string, types: unknown): Promise<MemoriaResult<DismissPendingData>> {
+        return withResult('sqlite', async () => {
+            await this.init()
+            const parsed = parseDismissTypes(types)
+            const { repositoryId } = await this.resolveManagedRepo(ref)
+            const ids = dismissPendingSummaries(this.paths.dbPath, repositoryId, parsed)
+            return { data: { dismissed: ids.length, summary_ids: ids }, evidence: ids, confidence: 1 }
         })
     }
 

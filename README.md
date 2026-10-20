@@ -156,6 +156,8 @@ Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summaries awaiting agent enrichment |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Skip a pending summary (never promoted) |
+| `POST` | `/v1/repos/:ref/summaries/dismiss` | Skip pending summaries by `{types}` |
 
 All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `latency_ms`).
 
@@ -191,6 +193,7 @@ match"). Only the opt-in vector route ever produces `null`.
 ./cli repo add /path/to/project      # Observe a git repo (read-only)
 ./cli repo sync project              # Incremental scan → events → summaries → promotion
 ./cli repo summarize project --pending --json  # Summary requests for agent enrichment
+./cli repo summarize project --dismiss-pending --type merge,release  # Skip teammates' skeletons without promoting them
 ./cli wiki build --json              # Rebuild the compiled wiki
 ./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 ./cli wiki lint --json               # Produce durable wiki governance findings

@@ -193,6 +193,51 @@ BAD_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/repos/$REPO_I
     -H 'Content-Type: application/json' -d '{"title":"x"}')
 assert_eq "schema violation → 400" "$BAD_CODE" "400"
 
+echo "[repo-promotion] dismissed merge is never promoted and leaves 待增強 (issue-21 SCN-005)"
+git -C "$REPO" switch -q -c feature/teammate
+seq 1 30 > "$REPO/src/teammate.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c5: teammate work"
+git -C "$REPO" switch -q main
+git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/teammate'" feature/teammate
+curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+TEAM_ID=$(db_get "SELECT s.id FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id WHERE r.source_ref = 'feature/teammate'")
+assert_eq "teammate merge skeleton exists" "$(test -n "$TEAM_ID" && echo yes)" "yes"
+PENDING_BEFORE=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending'")
+"$CLI" repo summarize "$REPO_ID" --dismiss "$TEAM_ID" --json >/dev/null
+curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+assert_eq "re-sync keeps it dismissed" "$(db_get "SELECT status FROM git_summaries WHERE id = '$TEAM_ID'")" "dismissed"
+assert_eq "dismissed merge not promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$TEAM_ID'")" "0"
+"$CLI" brief --project booking-api >/dev/null
+BRIEF_LINE=$(grep -F -- "- **booking-api**" "$MEMORIA_HOME/knowledge/BRIEF.md")
+assert_eq "brief 待增強 excludes the dismissed one" "$(echo "$BRIEF_LINE" | grep -o '待增強: [0-9]*')" "待增強: $((PENDING_BEFORE - 1))"
+assert_eq "brief shows 已略過" "$(echo "$BRIEF_LINE" | grep -o '已略過: [0-9]*')" "已略過: 1"
+
+echo "[repo-promotion] a dismissed summary can still be enriched (issue-21 SCN-006)"
+TEAM_SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$TEAM_ID" -H 'Content-Type: application/json' -d '{
+  "title": "合併隊友分支", "summary": "改變主意，這筆值得記。",
+  "decisions": [{"decision": "沿用既有預訂模組", "reason": "避免重複實作"}],
+  "importance": 0.5, "confidence": 0.8
+}')
+assert_eq "re-submit flips dismissed → enriched" "$(json_get "$TEAM_SUBMIT" "d.data.summary.status")" "enriched"
+assert_eq "and promotes under the normal rule" "$(json_get "$TEAM_SUBMIT" "d.data.promoted")" "true"
+
+echo "[repo-promotion] HTTP dismiss endpoints (issue-21 SCN-007)"
+git -C "$REPO" "${GIT_ID[@]}" tag -a v1.1.0 -m "v1.1"
+curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+REL2_ID=$(db_get "SELECT s.id FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id WHERE r.tag_name = 'v1.1.0'")
+ONE=$(curl -s -X POST "$URL/v1/repos/$REPO_ID/summaries/$REL2_ID/dismiss")
+assert_eq "single dismiss envelope ok" "$(json_get "$ONE" "d.ok")" "true"
+assert_eq "single dismiss returns dismissed summary" "$(json_get "$ONE" "d.data.summary.status")" "dismissed"
+assert_eq "envelope carries evidence" "$(json_get "$ONE" "Array.isArray(d.meta.evidence) && d.meta.evidence[0] === '$REL2_ID'")" "true"
+CONFLICT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/repos/$REPO_ID/summaries/$TEAM_ID/dismiss")
+assert_eq "dismissing an enriched summary → 409" "$CONFLICT_CODE" "409"
+NOTYPES_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/repos/$REPO_ID/summaries/dismiss" -H 'Content-Type: application/json' -d '{}')
+assert_eq "batch without types → 400" "$NOTYPES_CODE" "400"
+RANGES_LEFT=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'commit_range'")
+BATCH=$(curl -s -X POST "$URL/v1/repos/$REPO_ID/summaries/dismiss" -H 'Content-Type: application/json' -d '{"types":["commit_range"]}')
+assert_eq "batch dismiss envelope ok" "$(json_get "$BATCH" "d.ok")" "true"
+assert_eq "batch reports the count" "$(json_get "$BATCH" "d.data.dismissed")" "$RANGES_LEFT"
+
 echo "[repo-promotion] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"
 if [ -n "$STATUS_OUT" ]; then echo "  ✗ repo has unexpected changes"; echo "$STATUS_OUT"; exit 1; fi

@@ -267,12 +267,17 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                   SELECT COUNT(*) AS c FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id
                   WHERE r.repository_id = ? AND s.status = 'pending'
                 `).get(repo.id) as { c: number }).c)
+                const dismissed = Number((db.prepare(`
+                  SELECT COUNT(*) AS c FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id
+                  WHERE r.repository_id = ? AND s.status = 'dismissed'
+                `).get(repo.id) as { c: number }).c)
 
                 repositories.push({
                     repository: repo.name,
                     default_branch: repo.default_branch,
                     latest_summary: latest ? { id: latest.id, title: truncateText(latest.title, 120), type: latest.summary_type, created_at: latest.created_at } : null,
-                    pending_summaries: pending
+                    pending_summaries: pending,
+                    dismissed_summaries: dismissed
                 })
             }
         }
@@ -366,7 +371,8 @@ export function renderBrief(data: BriefData): string {
         lines.push('')
         for (const repo of data.repositories) {
             const branch = repo.default_branch ? ` (${repo.default_branch})` : ''
-            lines.push(`- **${repo.repository}**${branch} ｜ 待增強: ${repo.pending_summaries}`)
+            const dismissed = repo.dismissed_summaries > 0 ? ` ｜ 已略過: ${repo.dismissed_summaries}` : ''
+            lines.push(`- **${repo.repository}**${branch} ｜ 待增強: ${repo.pending_summaries}${dismissed}`)
             if (repo.latest_summary) {
                 lines.push(`  - 最新摘要: ${repo.latest_summary.title} [${repo.latest_summary.type}] ｜ ${repo.latest_summary.created_at}`)
             }

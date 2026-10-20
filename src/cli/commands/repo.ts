@@ -167,7 +167,7 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
         .option('--range <range>', 'Summarize an explicit <base>..<head> range')
         .option('--merge <sha>', 'Summarize a merge commit')
         .option('--tag <tag>', 'Summarize a release tag')
-        .option('--type <type>', 'Summary type label for --range: commit_range|branch|merge|release')
+        .option('--type <type>', 'Summary type label for --range; comma list for --dismiss-pending: commit_range|branch|merge|release')
         .option('--force', 'Bypass the trivial-change filter')
         .option('--promote', 'Promote resulting summaries to memory (Phase 5)')
         .option('--pending', 'List summaries awaiting agent enrichment (with rebuilt context)')
@@ -175,12 +175,35 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
         .option('--limit <n>', 'Max pending summaries returned by --pending (default: 20)')
         .option('--submit <summaryId>', 'Write back an agent-generated summary payload')
         .option('--file <path>', 'JSON payload file for --submit (default: stdin, "-" for stdin)')
+        .option('--dismiss <summaryId>', 'Mark a pending summary as reviewed and skipped: never promoted, not counted as 待增強')
+        .option('--dismiss-pending', 'Dismiss every pending summary of the --type list (--type required)')
         .option('--json', 'Machine-readable JSON output')
         .action(async (ref: string, options: {
             branch?: string; range?: string; merge?: string; tag?: string; type?: string
             force?: boolean; promote?: boolean; pending?: boolean; withDiff?: boolean; limit?: string
-            submit?: string; file?: string; json?: boolean
+            submit?: string; file?: string; json?: boolean; dismiss?: string; dismissPending?: boolean
         }) => {
+            if (options.dismiss) {
+                const result = await core.repoDismissSummary(ref, options.dismiss)
+                if (!result.ok) throw new Error(result.error)
+                if (options.json) {
+                    console.log(JSON.stringify(result))
+                } else {
+                    console.log(`✓ 已略過摘要: ${result.data!.summary.id} [${result.data!.summary.summary_type}]`)
+                }
+                return
+            }
+            if (options.dismissPending) {
+                const types = options.type ? options.type.split(',').map((t) => t.trim()).filter(Boolean) : []
+                const result = await core.repoDismissPending(ref, types)
+                if (!result.ok) throw new Error(result.error)
+                if (options.json) {
+                    console.log(JSON.stringify(result))
+                } else {
+                    console.log(`✓ 已略過 ${result.data!.dismissed} 筆 pending 摘要 (${types.join(', ')})`)
+                }
+                return
+            }
             if (options.pending) {
                 const result = await core.repoPendingSummaries(ref, {
                     includeDiff: options.withDiff,

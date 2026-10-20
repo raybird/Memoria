@@ -155,6 +155,8 @@ curl http://localhost:3917/v1/stats
 | `POST` | `/v1/repos/:ref/summarize` | 摘要 branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | 等待 agent 增強的摘要請求 |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫 |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | 略過一筆 pending 摘要（不促升） |
+| `POST` | `/v1/repos/:ref/summaries/dismiss` | 依 `{types}` 批次略過 pending 摘要 |
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
 
@@ -189,6 +191,7 @@ curl http://localhost:3917/v1/stats
 ./cli repo add /path/to/project      # 唯讀觀察 git repo
 ./cli repo sync project              # 增量掃描 → 事件 → 摘要 → promotion
 ./cli repo summarize project --pending --json  # 待 agent 增強的摘要請求
+./cli repo summarize project --dismiss-pending --type merge,release  # 略過他人的骨架，不寫進記憶
 ./cli wiki build --json              # 重建 compiled wiki
 ./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 ./cli wiki lint --json               # 產生 durable wiki governance findings

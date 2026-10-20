@@ -24,6 +24,8 @@
 //   POST /v1/repos/:ref/summarize  body: { branch?, range?, merge?, tag?, type?, force?, promote? } (empty ok)
 //   GET  /v1/repos/:ref/summaries/pending?with_diff=true&limit=20
 //   POST /v1/repos/:ref/summaries/:summaryId   body: §7.5 summary payload (agent write-back)
+//   POST /v1/repos/:ref/summaries/:summaryId/dismiss   (issue-21; 409 if already enriched)
+//   POST /v1/repos/:ref/summaries/dismiss      body: { types: GitSummaryType[] } (required, non-empty)
 
 import http from 'node:http'
 import { z } from 'zod'
@@ -150,6 +152,9 @@ const repoSummarizeSchema = z
     })
     .passthrough()
 
+// types is validated by the core (parseDismissTypes) so CLI and HTTP share one rule.
+const repoDismissPendingSchema = z.object({ types: z.unknown().optional() }).passthrough()
+
 // Reads the request body, capped at MAX_BODY_BYTES. On overflow it sends a 413 itself
 // (the caller must NOT write another response) and rejects with { statusCode: 413,
 // responded: true }. Remaining inbound data is drained and discarded — memory stays
@@ -194,7 +199,9 @@ function formatZodError(error: z.ZodError): string {
 function gitErrorStatus(error?: string): number {
     if (!error) return 500
     if (error.includes('not_found')) return 404
-    if (error.startsWith('invalid summary payload') || error.startsWith('invalid --range')) return 400
+    if (error.startsWith('invalid summary payload') || error.startsWith('invalid --range') ||
+        error.startsWith('invalid dismiss types')) return 400
+    if (error.includes('summary_not_pending')) return 409
     if (error.includes('not_a_git_repository') || error.includes('identity_mismatch') ||
         error.includes('repository_disabled') || error.includes('unborn_branch')) return 422
     return 500
@@ -461,6 +468,27 @@ export function createServer(core: MemoriaCore): http.Server {
                     includeDiff: parsedUrl.searchParams.get('with_diff') === 'true',
                     limit
                 })
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            // issue-21 dismiss routes: keep BEFORE the write-back route, whose `/summaries/:id`
+            // pattern would otherwise read `dismiss` as a summary id.
+            const repoDismissPendingMatch = /^\/v1\/repos\/([^/]+)\/summaries\/dismiss$/.exec(pathname)
+            if (method === 'POST' && repoDismissPendingMatch) {
+                const body = await readValidatedBody(req, res, repoDismissPendingSchema, { allowEmpty: true })
+                if (body === null) return
+                const result = await core.repoDismissPending(decodeURIComponent(repoDismissPendingMatch[1]), body.types)
+                send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
+                return
+            }
+
+            const repoDismissMatch = /^\/v1\/repos\/([^/]+)\/summaries\/([^/]+)\/dismiss$/.exec(pathname)
+            if (method === 'POST' && repoDismissMatch) {
+                const result = await core.repoDismissSummary(
+                    decodeURIComponent(repoDismissMatch[1]),
+                    decodeURIComponent(repoDismissMatch[2])
+                )
                 send(res, result.ok ? 200 : gitErrorStatus(result.error), result)
                 return
             }

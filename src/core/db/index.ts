@@ -45,7 +45,9 @@ export {
     insertSummaryIfMissing,
     listSummaries,
     getSummaryById,
-    submitAgentSummary
+    submitAgentSummary,
+    dismissSummary,
+    dismissPendingSummaries
 } from './git-summary.js'
 export {
     isPromotable,

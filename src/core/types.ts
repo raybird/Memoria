@@ -477,6 +477,7 @@ export type BriefRepository = {
     default_branch: string | null
     latest_summary: { id: string; title: string; type: string; created_at: string } | null
     pending_summaries: number
+    dismissed_summaries: number
 }
 
 export type BriefData = {
@@ -775,7 +776,9 @@ export type RepoStatusData = {
 
 export type GitSummaryType = 'commit_range' | 'branch' | 'merge' | 'release'
 
-export type GitSummaryStatus = 'pending' | 'enriched'
+// dismissed (issue-21): reviewed and deliberately kept out of recall — leaves 待增強, never promotes,
+// and can still be enriched later.
+export type GitSummaryStatus = 'pending' | 'enriched' | 'dismissed'
 
 /** Structured summary payload (spec §7.5) — what generators produce and agents write back. */
 export type GitSummaryContent = {
@@ -833,6 +836,11 @@ export type RepoSummarizeData = {
     summaries: GitSummaryRecord[]
     memories_promoted: number
     warnings: string[]
+}
+
+export type DismissPendingData = {
+    dismissed: number
+    summary_ids: string[]
 }
 
 export type PendingSummaryRequest = {

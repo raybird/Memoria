@@ -26,8 +26,10 @@ import type {
     RepoSummarizeOptions,
     RepoSummarizeData,
     PendingSummariesData,
+    DismissPendingData,
     PendingSummariesOptions,
-    GitSummaryRecord
+    GitSummaryRecord,
+    GitSummaryType
 } from './core/types.js'
 
 const DEFAULT_BASE_URL = 'http://localhost:3917'
@@ -165,6 +167,16 @@ export class MemoriaClient {
     /** Write back an agent-generated §7.5 summary payload */
     async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean }>> {
         return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/${encodeURIComponent(summaryId)}`, payload)
+    }
+
+    /** issue-21: keep a pending skeleton out of recall and 待增強 (rejected if already enriched) */
+    async repoDismissSummary(ref: string, summaryId: string): Promise<MemoriaResult<{ summary: GitSummaryRecord }>> {
+        return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/${encodeURIComponent(summaryId)}/dismiss`, {})
+    }
+
+    /** issue-21: dismiss every pending summary of the given types (types is required) */
+    async repoDismissPending(ref: string, types: GitSummaryType[]): Promise<MemoriaResult<DismissPendingData>> {
+        return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/dismiss`, { types })
     }
 
     /** Poll health until service is ready. Useful right after startup. */

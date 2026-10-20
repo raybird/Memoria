@@ -3,6 +3,7 @@
 // validated §7.5 payload out.
 
 import { z } from 'zod'
+import type { GitSummaryType } from '../types.js'
 
 export const gitSummaryPayloadSchema = z.object({
     title: z.string().min(1).max(200),
@@ -22,6 +23,17 @@ export const gitSummaryPayloadSchema = z.object({
 })
 
 export type GitSummaryPayload = z.infer<typeof gitSummaryPayloadSchema>
+
+const dismissTypesSchema = z.array(z.enum(['commit_range', 'branch', 'merge', 'release'])).min(1)
+
+/** Batch dismiss must name its types: an empty filter would silently clear every pending summary. */
+export function parseDismissTypes(input: unknown): GitSummaryType[] {
+    const result = dismissTypesSchema.safeParse(input)
+    if (!result.success) {
+        throw new Error('invalid dismiss types: give at least one of commit_range, branch, merge, release')
+    }
+    return [...new Set(result.data)]
+}
 
 export function parseGitSummaryPayload(input: unknown): GitSummaryPayload {
     const result = gitSummaryPayloadSchema.safeParse(input)

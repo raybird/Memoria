@@ -37,7 +37,7 @@ const CHECKPOINT_TYPE_BY_SUMMARY: Record<GitSummaryType, string> = {
  *  threshold passed on that alone. Explicit `repo summarize --promote` is unaffected: it
  *  force-promotes through `promoteEligible(force)` without consulting this gate. */
 export function isPromotable(summary: GitSummaryRecord, threshold: number): boolean {
-    if (summary.status === 'pending') return false
+    if (summary.status !== 'enriched') return false // pending skeleton or dismissed (issue-21)
     if (summary.summary_type === 'merge' || summary.summary_type === 'release') return true
     if (summary.importance >= threshold) return true
     return summary.decisions.length > 0 || summary.known_limitations.length > 0 || summary.risks.length > 0
