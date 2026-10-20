@@ -46,6 +46,13 @@ README 的 Gherkin 為驗收來源。風險與首要驗證見 README「風險與
    - 未處理（NICE）：frontmatter 沒有結尾 `---` 而正文另有 `---` 分隔線時，正文會被當成 frontmatter 判讀；權限錯誤訊息格式與其他拒絕不一致；SCN-001 的完成判準只檢查總數。
    - 回歸：CI 全套（依 `ci.yml` 順序 34 支）全數 PASS、exit 0，被測為 `8c87bfb` 加上本次提交內容的工作區，2026-10-20。
 
+7. ✅ **第二輪審查退回修正**（[review-ccf0d94](./review-ccf0d94.md)）— SCN-005
+   完成證據（2026-10-20）：
+   - M-1（測試不穩）：前一段 refresh 已留下一份備份，舊測試用 `find … | head -1` 取「第一筆」，目錄順序依檔案系統而定。對照組：`TMPDIR` 指向 ext4 目錄，以 `ccf0d94` 的 `test-bootstrap.sh` 連跑 6 次 → 3 次 `✗ SCN-005`（第 1、3、5 次）、3 次通過；本機 `/tmp` 是 tmpfs，順序剛好是最新在前，所以先前都綠。
+   - 修正：備份路徑改從 setup 的 `--json` step log（`agent-skill` 的 `backup` 欄位）讀取，並斷言備份數恰好增加 1、路徑在 data root 的 `skill-backups/` 底下；前一段 refresh 改用文字模式並斷言輸出含 `previous copy backed up to <data root>/.agents/skill-backups/claude-code-`，讓 JSON 與文字兩種輸出都被釘住。同一 ext4 `TMPDIR` 連跑 6 次 → 6 次 exit 0。
+   - `runtime.ts` 註解的 "moved" 改為 "copied"（實作是複製後覆蓋）。
+   - 回歸：CI 全套 34 支全數 PASS、exit 0，被測為 `1f62d32` 加上本次提交內容的工作區，2026-10-20。
+
 ## 使用方式對照
 
 | 情境 | 變更前 | 變更後 |

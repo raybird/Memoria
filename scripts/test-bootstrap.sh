@@ -123,8 +123,10 @@ echo "✓ SCN-004: ~/.claude/skills/memoria deployed from the template, bound to
 
 # SCN-005: a copy setup wrote (marker present) is refreshed in place.
 printf '\nstale line from an older deploy\n' >> "$H4/$HOST_SKILL_REL"
-HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code --json >/dev/null
+HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code >"$TMP/scn5.out" 2>&1
 cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: marked copy not refreshed"; exit 1; }
+grep -qF "previous copy backed up to $TMP/data-scn4/.agents/skill-backups/claude-code-" "$TMP/scn5.out" \
+  || { echo "✗ SCN-005: text output does not name the backup path"; cat "$TMP/scn5.out"; exit 1; }
 echo "✓ SCN-005: marked copy refreshed to the current template"
 
 # Review 81bb75d M-1: the marks also sit in every copy someone cp'd from a deployed skill and then
@@ -133,11 +135,16 @@ echo "✓ SCN-005: marked copy refreshed to the current template"
 printf '\nmy own trigger notes\n' >> "$H4/$HOST_SKILL_REL"
 echo "keep me" > "$H4/.claude/skills/memoria/NOTES.md"
 cp "$H4/$HOST_SKILL_REL" "$TMP/edited-marked.md"
-HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code >"$TMP/scn5b.out" 2>&1
-BACKUP=$(find "$TMP/data-scn4/.agents/skill-backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1 || true)
+# The refresh above already left one backup; directory order is filesystem-dependent (ext4 hashes
+# names), so take this run's backup from setup's own report, never from a listing.
+count_backups() { find "$TMP/data-scn4/.agents/skill-backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
+BACKUPS_BEFORE=$(count_backups)
+HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code --json >"$TMP/scn5b.out" 2>&1
+BACKUP=$(node -e 'for (const l of require("fs").readFileSync(process.argv[1], "utf8").split("\n")) { try { const r = JSON.parse(l); if (r.step === "agent-skill" && r.backup) console.log(r.backup) } catch {} }' "$TMP/scn5b.out")
+[ "$(count_backups)" -eq $((BACKUPS_BEFORE + 1)) ] || { echo "✗ SCN-005: expected exactly one new backup (before: $BACKUPS_BEFORE)"; exit 1; }
 [ -n "$BACKUP" ] && [ -f "$BACKUP/NOTES.md" ] || { echo "✗ SCN-005: replaced copy was not backed up"; cat "$TMP/scn5b.out"; exit 1; }
+case "$BACKUP" in "$TMP/data-scn4/.agents/skill-backups/"*) ;; *) echo "✗ SCN-005: backup outside the data root: $BACKUP"; exit 1 ;; esac
 cmp -s "$TMP/edited-marked.md" "$BACKUP/SKILL.md" || { echo "✗ SCN-005: backup SKILL.md differs from what was replaced"; exit 1; }
-grep -qF "$BACKUP" "$TMP/scn5b.out" || { echo "✗ SCN-005: output does not name the backup path"; cat "$TMP/scn5b.out"; exit 1; }
 [ ! -e "$H4/.claude/skills/memoria/NOTES.md" ] && cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: target not replaced after backup"; exit 1; }
 echo "✓ SCN-005: an edited marked copy is backed up outside ~/.claude/skills, then replaced"
 

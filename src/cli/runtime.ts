@@ -137,7 +137,7 @@ async function checkHostSkillTarget(targetDir: string): Promise<{ ok: true } | {
 /**
  * The marks prove a copy descends from a deployed template, not that nobody edited it since — copying a
  * deployed skill by hand and adding to it was the documented workaround before `--agent`. So a non-empty
- * target is moved into `<memoriaHome>/.agents/skill-backups/` first: outside the host's skills directory,
+ * target is copied into `<memoriaHome>/.agents/skill-backups/` first: outside the host's skills directory,
  * where it would otherwise load as a second "memoria" skill (review 81bb75d M-1).
  */
 export async function deployHostAgentSkill(

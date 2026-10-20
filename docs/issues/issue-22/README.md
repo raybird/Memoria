@@ -127,6 +127,7 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 | 2026-10-20 | SCN-001～SCN-006 核准（「照建議」） | - |
 | 2026-10-20 | 實作完成；設計修訂：data root 改由 `DATA_ROOT` 檔提供（見 implementation-plan），覆蓋保護收緊為「非空且無 SKILL.md 也拒絕」；相依 issue-20（`--merge` 回傳既有摘要）與 issue-21（`--dismiss-pending`），須在兩者之後合併 | - |
 | 2026-10-20 | 獨立審查 RETURN TO execute-task（`81bb75d`，[報告](./review-81bb75d.md)）：M-1 帶標記的副本可能是使用者改過的；依 TBD-3、TBD-4 修正 | - |
+| 2026-10-20 | 第二輪審查 RETURN TO execute-task（`ccf0d94`，[報告](./review-ccf0d94.md)）：備份測試依目錄順序取路徑，ext4 上不穩定；改由 setup 輸出取得 | - |
 
 ---
 **建立日期**: 2026-10-20  
