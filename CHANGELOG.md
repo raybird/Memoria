@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.30.1] - 2026-10-21
+
+No runtime, CLI or schema behaviour changed: one `doctor` message, the release script's last stage, and docs.
+
+### Fixed
+- **`doctor` now says that a global upgrade wipes semantic recall, and how to bring it back** (issue-23). The helper's dependencies and the e5 model cache both live in `skills/memoria-vector/node_modules` *inside* the globally installed package, and `npm i -g @raybird.chen/memoria@<new>` replaces that whole directory. Recall is fail-open by design, so after an upgrade it keeps answering with lexical hits (`vector_timeout` / `vector_unavailable`) and raises nothing. `doctor` already detected the state (`vector embedder: @huggingface/transformers missing`), but its fix blamed only `--omit=dev` / `NODE_ENV=production`, which nobody suspects right after an upgrade. The fix now names the upgrade, says to reinstall after every one, and gives the warm-up command `echo '{"query":"warm up"}' | node vector-recall.mjs`. The warm-up matters: the first run after a reinstall measured 14–17s against ~1s warm, longer than the recall timeout, so without it the first recalls still report `vector_timeout` and look as if the reinstall did not work. **Upgrade note:** if you use semantic recall, run the steps now in `docs/INSTALL.md` (Method A) after installing this version.
+- **`release.sh publish` no longer reports a failed release while npm is still catching up** (issue-24). Its verification compared `npm view @raybird.chen/memoria version`, which is the `latest` dist-tag, immediately after the workflow finished. For a few minutes after a publish that tag still names the previous release, so v1.30.0 died with `npm reports 1.29.1, expected 1.30.0` after publishing successfully, and the GitHub Release and artifact-parity checks queued behind it never ran. Those two checks now run first; npm is asked last, for the exact version (`@<version>`), polled for up to 5 minutes. A timeout still fails, but it says the workflow published, that the tag must not be reused, and which command to confirm with later.
+
+### Docs
+- The semantic-recall model cache is not in `~/.cache/huggingface`: transformers.js keeps it inside its own package (`node_modules/@huggingface/transformers/.cache/`), which is why an upgrade removes it too. Corrected in `skills/memoria-vector/README.md` and `docs/OPERATIONS.md`, and upgrade steps were added to `docs/INSTALL.md` and `docs/OPERATIONS.md`.
+
 ## [1.30.0] - 2026-10-21
 
 ### Added

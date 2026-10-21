@@ -49,7 +49,7 @@
 
 ---
 
-## 2. 出貨紀錄（v1.13.0 → v1.30.0）
+## 2. 出貨紀錄（v1.13.0 → v1.30.1）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -81,6 +81,7 @@
 | v1.29.0 | 記憶的嚴重度與範圍 | `brief` 新增 pinned 區（`retention='durable'` 免輪替）、依 cwd 產出 per-project BRIEF（`--global` 可還原）；新增 `mark` 讓既有記憶（含 git 促升的決策）可被標記；`doctor` 報向量索引覆蓋率 |
 | v1.29.1 | 發布路徑改走 OIDC | npm publish 改用 trusted publishing（OIDC），移除 `NODE_AUTH_TOKEN`——**移除是修復的一部分，不是事後整理**：secret 一旦刪掉，`${{ secrets.NPM_TOKEN }}` 會展開成**空字串**，npm 拿那個空 token 去認證而不是退回 OIDC，半套遷移的失敗長得跟 trusted publisher 設錯一模一樣，會把下一個人送去 debug 錯的那一邊。npm 在 publish 前一步升到 12（Node 22 內建 10.9.x，OIDC 需 >= 11.5.1），不在 job 開頭升是為了讓上面所有步驟維持在受測過的工具鏈上。另修：`gh release create` 在 release 已存在時失敗，使其後步驟全部不可重跑（v1.29.0 實際踩到，只剩「刪掉已發布的 release」或「燒掉一個版號」兩條路），改為冪等的 create ／ `upload --clobber` + `edit`。⚠ **套件內容與 v1.29.0 完全相同**，此版存在只是因為發布路徑不發一次就驗不了。另修**兩支安裝 gate 測試**（`test-npm-install.sh`、`test-no-clone-install.sh`，全 repo 只有這兩支做 `checks.every(ok)`）繼承開發者的向量環境變數：`MEMORIA_EMBED_PROVIDER=local` 讓收尾的 `doctor --json` 對「刻意不帶 embedding runtime」的打包產物報缺套件，`checks.every(ok)` 就把**正確的診斷**變成紅燈；`LIBSQL_URL` 同樣外洩，一直拿維護者的真實向量庫去量測試的暫存 DB（embedded=92 expected=0），只因分母碰巧是 0 才沒爆。no-clone 那支更諷刺——該斷言正是為了釘住 issue-12 的邊界「向量層關閉時 `every(ok)` 仍須成立」，而繼承來的變數把它要觀察的『關閉』給打開了。CI 兩個都沒設所以看不到，是連續卡住兩次發布才浮現；補上 `test-vector-recall.sh` 自 v1.22.0 起就有的同組 unset |
 | v1.30.0 | dismissed 摘要、setup --agent、embed 分批、--merge 去重 | **issue-21** 摘要新增 `dismissed` 狀態與 `repo summarize --dismiss`／`--dismiss-pending --type`（HTTP 兩個端點）：團隊 repo 的他人 merge／release 骨架原本只能補成 enriched 才能清掉，而那必然促升；`isPromotable` 改為只放行 enriched，已在 recall 的摘要拒絕 dismiss（409）。**issue-22** `setup --agent claude-code` 另部署到 `~/.claude/skills/memoria`（Claude Code 只掃這裡），以 `DATA_ROOT` 檔綁定 data root；只覆蓋 frontmatter 同時帶兩個部署標記的副本，且先備份到 `<memoria-home>/.agents/skill-backups/`——標記存在每份模板裡，手動複製再改過的副本也帶；手寫 skill 在任何寫入前拒絕。部署模板改寫為觸發時機導向。**issue-20** `repo summarize --merge` 與 sync 共用 `parseMergeSourceRef`，不再對同一 merge 建兩筆摘要（地雷 M-2）。**issue-19** `embedLocal` 依 `MEMORIA_EMBED_BATCH`（預設 32）分批，771 筆 21.9GB OOM → 約 2.5GB 持平（地雷 M-1）；單筆查詢不讀此變數。⚠ 疊合 rebase 時 `test-repo-summary.sh` 文字合併乾淨卻語意衝突（fixture 累積狀態），每個 tip 都需完整 CI |
+| v1.30.1 | 升級後的語意召回提示、release 驗證等 npm | **issue-23** 全域 `npm i -g` 升級會換掉整個套件目錄，連同 `skills/memoria-vector/node_modules` 裡的 helper 依賴與 e5 模型快取（模型在 transformers.js 自己的套件目錄 `.cache/`，**不在** `~/.cache/huggingface`）；recall 照設計 fail-open，只剩字面命中且不報錯。`doctor` 的 embedder fix 補上升級成因、每次升級後重裝、暖機命令（空 stdin 不會載入模型，所以命令必須帶查詢）；INSTALL／OPERATIONS 加升級步驟。依賴搬出套件目錄的根治另開 issue；⚠ 已知下游把 helper 腳本的完整路徑寫死，搬遷時 helper 本身不可移位。**issue-24** `release.sh publish` 驗證改為先查 GitHub Release 與 parity，最後以 `@<版本>` 輪詢 npm 至多 5 分鐘：`latest` 在 publish 後幾分鐘內仍指向上一版，v1.30.0 因此在發版成功後誤報失敗。 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
