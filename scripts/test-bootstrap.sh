@@ -274,6 +274,7 @@ cli_ok() {
     { echo "✗ $label exited $rc"; cat "$TMP/cli-ok.out" "$TMP/cli-ok.err"; } >&2
     exit 1
   fi
+  cat "$TMP/cli-ok.err" >&2
   cat "$TMP/cli-ok.out"
 }
 VEC_OUT=$(cli_ok "setup --vector (first install)" env XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
@@ -391,7 +392,7 @@ iso_vec() { env FAKE_TF_SRC="$FAKE_TF" MEMORIA_EMBED_PROVIDER=local MEMORIA_HOME
 no_marker_under() { [ -z "$(find "$1" -name .complete 2>/dev/null)" ] && [ -z "$(find "$1" -maxdepth 3 -name '*.partial-*' 2>/dev/null)" ]; }
 
 XW1="$TMP/xdg-w1"
-W1=$(iso_vec XDG_CACHE_HOME="$XW1" FAKE_TF_LOG="$TMP/w1.log")
+W1=$(cli_ok "setup --vector warm-up (W1)" iso_vec XDG_CACHE_HOME="$XW1" FAKE_TF_LOG="$TMP/w1.log")
 node -e "
 const s=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l)).find(x=>x.step==='vector-deps');
 const log=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
@@ -427,14 +428,14 @@ echo "✓ warm-up killed mid-way -> no .complete anywhere"
 # A dead run's partial directory is reclaimed by the next run instead of piling up (~720MB each).
 XW5="$TMP/xdg-w5"
 mkdir -p "$XW5/memoria/vector/$VEC_HASH.partial-2147483646/node_modules"
-iso_vec XDG_CACHE_HOME="$XW5" >/dev/null
+cli_ok "setup --vector (W5, after a dead partial)" iso_vec XDG_CACHE_HOME="$XW5" >/dev/null
 [ ! -e "$XW5/memoria/vector/$VEC_HASH.partial-2147483646" ] || { echo "✗ a dead run's partial dir was left in place"; exit 1; }
 echo "✓ partial dir of a dead run -> reclaimed"
 
 # Review 1ffc3a2 S-2: a node_modules beside the helper must not hijack the warm-up of the cache install.
 mkdir -p "$ISO/skills/memoria-vector/node_modules"
 XW4="$TMP/xdg-w4"
-W4=$(iso_vec XDG_CACHE_HOME="$XW4" FAKE_TF_LOG="$TMP/w4.log")
+W4=$(cli_ok "setup --vector beside a sibling node_modules (W4)" iso_vec XDG_CACHE_HOME="$XW4" FAKE_TF_LOG="$TMP/w4.log")
 node -e "
 const s=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l)).find(x=>x.step==='vector-deps');
 const log=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));

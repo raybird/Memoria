@@ -10,7 +10,7 @@
 
 ## 涉及檔案
 
-- `scripts/test-bootstrap.sh` - issue-25 段以指令替換呼叫 CLI 的兩處（`VEC_OUT`、`VEC_OUT2`）。開立時寫成 3 處，第三處是第 15 行的 `PREFLIGHT_OUTPUT`，不在 issue-25 段，依 TBD-2 不改
+- `scripts/test-bootstrap.sh` - issue-25 段裡預期成功、失敗時會被 `set -e` 靜默結束的五處：`VEC_OUT`、`VEC_OUT2`，以及 warm-up 小節的 `W1`、`W5`（stdout 丟進 `/dev/null`）、`W4`。開立時寫成 3 處：漏算了 warm-up 小節，又把第 15 行的 `PREFLIGHT_OUTPUT` 算進來，但它不在 issue-25 段，依 TBD-2 不改。W1、W4、W5 由審查 review-78c1782 M-1 指出，處理見 TBD-3
 
 ## 驗收條件
 
@@ -30,6 +30,7 @@
 | 編號 | 事項 | 狀態 | 影響 |
 |------|------|------|------|
 | TBD-1 | AC-1、AC-2 需使用者核准 | 已解決 | 2026-10-21 使用者回覆「照建議」，全部核准 |
+| TBD-3 | 審查 review-78c1782 M-1（`需決策`）：warm-up 小節的 `W1`、`W4`（以及 `W5`）是同類呼叫，第一輪沒有改。(A) 一起改走 `cli_ok`；(B) 在 README 記為範圍外 | 已解決 | 2026-10-21 採 (A)，依據是已核准的 TBD-2 範圍：「只改 issue-25 段」，W1、W4、W5 都在 issue-25 段內。第一輪少改是規劃時數錯處數，不是範圍要擴大，所以沿用原核准，不另外詢問 |
 | TBD-2 | 其他測試腳本有沒有相同的寫法要一起改。建議只改 `test-bootstrap.sh` 的 issue-25 段，其餘另行盤點 | 已解決 | 2026-10-21「照建議」：只改 issue-25 段 |
 
 ## 實作與驗證步驟
@@ -47,6 +48,11 @@
      - 限制：第二處（reuse）不會呼叫 `npm ci`，沒有辦法用同一個 harness 讓它失敗；它與第一處用的是同一個函式，只有 label 不同。
      - 精煉：code-simplify no-op。
      - CI：只改了測試腳本，`test-bootstrap.sh` 本機通過，CI 全套待 push 後確認。
+   - 審查回應（review-78c1782，RETURN）：
+     - M-1：依 TBD-3 採 (A)，`W1`、`W4`、`W5` 改走 `cli_ok`。驗證時在暫存複本裡讓每一處的 fake embedder 都以 `FAKE_TF_MODE=fail` 失敗，三處分別印出 `✗ setup --vector warm-up (W1) exited 1`、`✗ setup --vector (W5, after a dead partial) exited 1`、`✗ setup --vector beside a sibling node_modules (W4) exited 1`，都附上原因，rc=1。修正前的 W1 是靜默退出，reviewer 已用只讓 W1 失敗的 node 包裝重現過。
+     - S-1：補改後本機完整 CI（依 `ci.yml` 順序的 34 支腳本）34/34 通過，2026-10-21 13:28。GitHub CI 會在合併後 push main 時跑。
+     - N-1：成功時把命令的 stderr 原樣轉到 stderr，跟改動前一樣會進 log。
+     - N-2：Timeline 已補上實作與審查。
 
 ## Timeline
 
@@ -54,6 +60,7 @@
 |------|------|------|
 | 2026-10-21 | 建立；v1.31.0 第一次 `release:publish` 因本機 `/tmp` 配額失敗時發現 | - |
 | 2026-10-21 | AC-1、AC-2 與 TBD-2 核准（「照建議」） | - |
+| 2026-10-21 | 實作 `cli_ok`（`78c1782`）；審查 RETURN（[報告](./review-78c1782.md)），M-1 依 TBD-3 補改 warm-up 小節三處 | - |
 
 ---
 **建立日期**: 2026-10-21  
