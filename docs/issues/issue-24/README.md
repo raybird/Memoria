@@ -93,8 +93,8 @@ rc=$?; echo "rc=$rc npm_calls=$(cat "$FAKE_STATE/npm-calls" 2>/dev/null)"; rm -r
      ```
 
      </details>
-2. ⏳ **實際發版觀察**（相依：步驟 1 合併進 main）— 驗證方式：v1.30.1 的 `release:publish` 不用人工補驗就跑到 `Released`，輸出記錄 npm 輪詢的等待次數
-   - 完成證據：（發版時回寫）
+2. ✅ **實際發版觀察**（相依：步驟 1 合併進 main）— 驗證方式：v1.30.1 的 `release:publish` 不用人工補驗就跑到 `Released`，輸出記錄 npm 輪詢的等待次數
+   - 完成證據（2026-10-21，v1.30.1）：`pnpm run release:publish` 從 02:52:56Z 跑到 02:58:57Z，exit 0，全程沒有人工介入。Verify 段依序印出 `Delivery parity check passed`、`── Wait for npm to serve 1.30.1 ──`、`✓ npm serves 1.30.1 (attempt 19)`、`── Released v1.30.1 ──`。第 19 次才查到，也就是 publish 後約 3 分鐘 registry 才提供新版；換成修正前的立即比對，這次發版會和 v1.30.0 一樣誤報失敗。發版後 `npm view @raybird.chen/memoria@1.30.1` 的 `_npmUser` 為 GitHub Actions（`trustedPublisher.id: github`），`dist-tags.latest` 為 1.30.1，與 TBD-2 (A) 的前提相符。
 
 ## Timeline
 
@@ -104,9 +104,10 @@ rc=$?; echo "rc=$rc npm_calls=$(cat "$FAKE_STATE/npm-calls" 2>/dev/null)"; rm -r
 | 2026-10-21 | AC-1、AC-2 核准（「照建議」） | - |
 | 2026-10-21 | 獨立審查 PASS（`e522fd9`，[報告](./review-e522fd9.md)）；N-3 依 TBD-2 採 (A)，其餘 NIT 不修 | - |
 | 2026-10-21 | 決策紀錄審查 PASS（`b32aff2`，[報告](./review-b32aff2.md)）；fast-forward 合併進 main（`d9e073d`）。剩步驟 2，狀態改為等待外部驗收窗：窗口是下一次 `release:publish`（v1.30.1）；判準是該次發版不需人工補驗即跑到 `Released`，並回寫 npm 輪詢次數 | - |
+| 2026-10-21 | v1.30.1 發版觀察通過（npm 第 19 次輪詢才提供新版），結案 | - |
 
 ---
 **建立日期**: 2026-10-21  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 等待外部驗收窗
+**狀態**: 已完成
