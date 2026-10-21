@@ -249,6 +249,27 @@ if(d.checks.some(c=>c.name==='vector embedder')) throw new Error('stub provider 
 " "$DOC_OK"
 echo "  enabled + stub provider -> helper resolves, embedder not applicable"
 
+# issue-23: the embedder lives in the helper's node_modules inside the global package, so every
+# `npm i -g` upgrade wipes it (and the model cache with it) — the fix has to say so, or nobody thinks
+# to rerun it after an upgrade. A checkout may carry the full install, so assemble a layout whose
+# helper has no node_modules rather than depend on how this machine installed it.
+ISO_PKG="$TMP_DIR/pkg-no-embedder"
+mkdir -p "$ISO_PKG/dist" "$ISO_PKG/skills/memoria-vector"
+cp "$ROOT_DIR/dist/cli.mjs" "$ISO_PKG/dist/"
+cp "$ROOT_DIR/package.json" "$ISO_PKG/"
+ln -s "$ROOT_DIR/node_modules" "$ISO_PKG/node_modules"
+cp "$HELPER_DIR"/*.mjs "$ISO_PKG/skills/memoria-vector/"
+DOC_NOEMB=$(env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" node "$ISO_PKG/dist/cli.mjs" doctor --json || true)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const e=d.checks.find(c=>c.name==='vector embedder');
+if(!e||e.ok) throw new Error('a helper without @huggingface/transformers must fail the embedder check, got '+JSON.stringify(e));
+const f=e.fix||'';
+for (const s of ['--omit=dev','NODE_ENV=production','npm i -g','vector-recall.mjs','inside '+process.argv[2]])
+  if(!f.includes(s)) throw new Error('embedder fix must mention '+JSON.stringify(s)+', got: '+f);
+" "$DOC_NOEMB" "$ISO_PKG/skills/memoria-vector"
+echo "  enabled + embedder missing -> fix names the upgrade wipe and the warm-up"
+
 echo "[vector] stats exposes vector route counters"
 STATS=$(env MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" stats --json)
 node -e "

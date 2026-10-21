@@ -26,6 +26,17 @@ memoria setup --serve --json
 
 `setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
 
+升級用同一個命令指定版本：`npm install -g @raybird.chen/memoria@<版本>`。有啟用語意召回（設了 `LIBSQL_URL`）時，升級會連同套件目錄換掉 `skills/memoria-vector/node_modules`，helper 依賴與快取在裡面的模型都會被清空，recall 會不報錯地退回字面比對。每次升級後重裝並暖機一次（issue-23）：
+
+```bash
+cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector"
+npm install                                   # 不要加 --omit=dev
+echo '{"query":"warm up"}' | node vector-recall.mjs >/dev/null   # 下載並載入模型
+memoria doctor                                # vector embedder 已安裝、vector coverage missing=0
+```
+
+重裝後第一次執行約 14 秒，比 recall 的逾時長，不先暖機的話前幾次 recall 仍是 `vector_timeout`。向量本身存在 `LIBSQL_URL`，不在套件裡，不需要重新 ingest。細節見 [OPERATIONS.md](OPERATIONS.md)「Semantic Recall Operations」。
+
 使用 Claude Code 時加上 `--agent claude-code`，`setup` 會另外把 skill 部署到 `~/.claude/skills/memoria/`（Claude Code 只掃描這裡），並以該目錄的 `DATA_ROOT` 檔綁定這次的 data root：
 
 ```bash

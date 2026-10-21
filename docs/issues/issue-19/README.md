@@ -85,7 +85,7 @@
      - 實機驗證：不切批，一次把 1336 個 entity 的完整 payload 送進 `vector-ingest.mjs`（`systemd-run --user --scope -p MemoryMax=6G`）→ `{"ok":true,"embedded":799,"skipped":537}`，峰值 2499592 kB，耗時 70.65 秒，exit 0；`doctor` 的 vector coverage `embedded=799 expected=799 missing=0`。
      - 移除繞道：`~/.claude/skills/memoria/ingest-vectors.sh` 的 jq 切批迴圈換成一次呼叫 `vector-ingest.mjs`；改完後執行一次，印出 `missing=0`。
      - project.md 地雷 M-1 標註 2026-10-21 起失效。
-     - 升級時踩到：`npm i -g` 會整個換掉套件目錄，`skills/memoria-vector/node_modules`（含模型快取）跟著被清掉，doctor 報 `vector embedder: @huggingface/transformers missing`。用 `ONNXRUNTIME_NODE_INSTALL=skip npm ci --include=dev` 補裝；不加 skip 的話，onnxruntime-node 的 postinstall 下載 CUDA 執行檔時會失敗。模型冷啟動第一次約 14 秒，超過 recall 的 10 秒逾時，之後約 1 秒。
+     - 升級時踩到：`npm i -g` 會整個換掉套件目錄，`skills/memoria-vector/node_modules`（含模型快取）跟著被清掉，doctor 報 `vector embedder: @huggingface/transformers missing`。當下第一次 `npm ci` 在 onnxruntime-node 的 postinstall（下載 CUDA 執行檔）出現 `UNKNOWN: unknown error, write`，改用 `ONNXRUNTIME_NODE_INSTALL=skip npm ci --include=dev` 補裝；同日在暫存目錄與全域套件目錄各重現一次，不加 skip 都成功，那次失敗是偶發（更正：原寫「不加 skip 會失敗」，見 [issue-23](../issue-23/README.md)）。模型冷啟動第一次約 14 秒，超過 recall 的 10 秒逾時，之後約 1 秒。
 
 ## Timeline
 

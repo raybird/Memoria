@@ -30,7 +30,7 @@ results and still answers `ok:true`, with `route_mode` the only clue and nothing
 | `LIBSQL_URL` unset | `vector recall: not enabled` — **passing**. An opt-in feature that is switched off is not an unhealthy install |
 | enabled, helper resolves | `vector helper: <path>` plus `vector embedder` when the local provider is in use |
 | enabled, helper missing | **fails**, with a fix naming `route_mode=vector_unavailable` as the symptom to expect |
-| enabled, `@huggingface/transformers` missing | **fails**, with a fix naming `--omit=dev` / `NODE_ENV=production` as the usual cause |
+| enabled, `@huggingface/transformers` missing | **fails**, with a fix naming the causes — `--omit=dev` / `NODE_ENV=production`, or a global `npm i -g` upgrade that replaced the helper directory — and the warm-up to run after reinstalling (issue-23) |
 | `MEMORIA_VECTOR_RECALL_CMD` set | printed as `vector helper (overridden)` so it is clear *which* helper was diagnosed. Its dependency layout is not probed — an overridden helper may be bundled elsewhere — and the embedder line **says so** (`not checked`, passing) rather than going missing, so the skip is visible to the people most likely to be affected by it |
 
 ## Memory Quality & Pruning
@@ -300,11 +300,11 @@ export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge paylo
 `npm install --omit=dev` there installs only `@libsql/client` (~24MB) — enough for the `stub`
 provider and for ingest plumbing, but the `local` provider needs the full install.
 
-- First `local` embedding downloads the model (~120MB, cached in `~/.cache/huggingface`); a query that hits the download window fails open to lexical (`vector_timeout`) and recovers afterwards.
+- First `local` embedding downloads the model (~120MB). transformers.js caches it **inside its own package**, at `node_modules/@huggingface/transformers/.cache/` under the helper — not in a per-user cache directory — so it goes wherever the helper's `node_modules` goes. A query that hits the download window fails open to lexical (`vector_timeout`) and recovers afterwards.
 - `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the recall-side helper; warm-cache spawn measures ~1s.
 - Compare utility uplift across `route_mode` groups (telemetry + UFL outcomes) to judge whether semantic recall beats lexical for your corpus.
 
-### Two things that will silently give you no semantic recall
+### Three things that will silently give you no semantic recall
 
 **1. The helper's dependencies are never installed for you.** `resolveHelperScript()` finds the
 packaged helper at `<dist>/../skills/memoria-vector/vector-recall.mjs`, but installing `memoria`
@@ -339,6 +339,24 @@ LIBSQL_URL="file:$MEMORIA_HOME/.memory/vectors.db" MEMORIA_EMBED_PROVIDER=local 
 
 Verify coverage rather than assuming it: the ingest result's `embedded` count should match the
 sessions + decisions + nodes you expect, and `SELECT COUNT(*) FROM memoria_vectors` should agree.
+
+**3. Every global upgrade wipes the helper's dependencies and the cached model.** They live in the
+helper's `node_modules`, inside the globally installed package, and `npm i -g @raybird.chen/memoria@<new>`
+replaces that whole directory. Recall keeps answering with lexical hits (`vector_timeout` /
+`vector_unavailable`), and `doctor` reports `vector embedder: @huggingface/transformers missing`.
+After each upgrade (issue-23):
+
+```bash
+cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector"
+npm install                                   # not --omit=dev; re-downloads the full runtime
+echo '{"query":"warm up"}' | node vector-recall.mjs >/dev/null   # downloads + loads the model once
+memoria doctor                                # vector embedder installed, vector coverage missing=0
+```
+
+The warm-up matters: the first run after a reinstall measured ~14s against ~1s warm, longer than
+`MEMORIA_VECTOR_TIMEOUT_MS`, so without it the first recalls still report `vector_timeout` and look
+as if the reinstall did not work. The vectors themselves live in `LIBSQL_URL`, outside the package,
+and survive the upgrade — no re-ingest is needed.
 
 ### Reading vector distances
 
