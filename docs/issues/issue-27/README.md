@@ -25,14 +25,12 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
 
 ## 驗收條件
 
-> 待核准（TBD-1），以下為建議內容。
-
 1. **AC-1**：`missing` 大於 0 時，`doctor` 的修法是可以直接複製執行的命令：路徑是實際安裝的絕對路徑，`--memoria-home` 填入目前的資料根，payload 寫進暫存目錄、不留在資料根。執行後再跑 `doctor`，`missing=0` — 檢查方式：用 stub provider 與隔離的 `MEMORIA_HOME`／`LIBSQL_URL` 製造 `missing>0`，取出 `doctor --json` 的 fix 字串，原樣交給 `bash -c` 執行，再跑 `doctor`，斷言 `missing=0`，且資料根底下沒有多出 export 檔
    - 失敗路徑：fix 命令執行失敗時以非 0 結束（ingest 失敗不可被吞掉）
 2. **AC-2**：`missing` 為 0 或向量層未啟用時，doctor 的輸出不變 — 檢查方式：既有 `test-vector-recall.sh` 的 doctor 斷言照常通過
 
-- **核准日期**: （待核准）
-- **核准來源**: 使用者 2026-10-21 回覆「順手發現的也開 issue」，同意開立；驗收條件待核准
+- **核准日期**: 2026-10-21
+- **核准來源**: 使用者 2026-10-21 回覆「順手發現的也開 issue」同意開立；驗收條件與 TBD-2 由規劃提出建議，使用者 2026-10-21 回覆「好先清理再來照建議進行」核准
 
 ## 風險與首要驗證
 
@@ -42,8 +40,8 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
 
 | 編號 | 事項 | 狀態 | 影響 |
 |------|------|------|------|
-| TBD-1 | AC-1、AC-2 需使用者核准 | 待確認 | 核准前不實作 |
-| TBD-2 | 做法：(A) 只把 doctor 的 fix 改成可直接執行的完整命令（建議，介面不變）；(B) 新增一個 CLI 入口來補向量庫，例如 `setup --vector` 加旗標或新的子命令，skill 改呼叫它。B 比較好用，但會新增 CLI 介面，屬於 agent 契約的變更 | 待確認 | 決定範圍與是否改 DEPLOYED_SKILL.md |
+| TBD-1 | AC-1、AC-2 需使用者核准 | 已解決 | 2026-10-21 使用者回覆「照建議」，全部核准 |
+| TBD-2 | 做法：(A) 只把 doctor 的 fix 改成可直接執行的完整命令（建議，介面不變）；(B) 新增一個 CLI 入口來補向量庫，例如 `setup --vector` 加旗標或新的子命令，skill 改呼叫它。B 比較好用，但會新增 CLI 介面，屬於 agent 契約的變更 | 已解決 | 2026-10-21「照建議」採 (A)：只改 doctor 的 fix 文字，不新增 CLI 介面 |
 
 ## 實作與驗證步驟
 
@@ -54,9 +52,10 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
 | 日期 | 事件 | 關聯 |
 |------|------|------|
 | 2026-10-21 | 建立；v1.31.0 發版收尾時，部署版 skill 沒有可用的補向量庫步驟而發現 | - |
+| 2026-10-21 | AC-1、AC-2 核准，TBD-2 採 (A)（「照建議」） | - |
 
 ---
 **建立日期**: 2026-10-21  
 **分級**: Small  
 **風險**: Low  
-**狀態**: 待核准
+**狀態**: 進行中
