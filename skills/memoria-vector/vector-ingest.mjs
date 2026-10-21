@@ -12,8 +12,10 @@
 // This is the OFFLINE path (sync time) — latency here never touches the recall hot path.
 
 import fs from 'node:fs'
-import { createClient } from '@libsql/client'
+import { importDep } from './deps.mjs'
 import { embedTexts, DIM } from './embed.mjs'
+
+const { createClient } = await importDep('@libsql/client')
 
 const EMBEDDABLE_TYPES = new Set(['session', 'decision', 'skill', 'memory_node'])
 

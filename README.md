@@ -60,6 +60,8 @@ memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
 
 The deployed skill tells the agent when to use memory — before starting an issue or feature (`recall --mode vector`), after a decision with a reason or a pitfall (`remember`), after a merge to the main branch or a release (`repo sync` and the merge summary) — each with its command and a done criterion. An exported `MEMORIA_HOME` takes precedence over the data root the copy was deployed for. `setup` only replaces an existing `~/.claude/skills/memoria/` whose `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria`; since a copy made from a deployed skill by hand carries them too, the old directory is first backed up to `<memoria-home>/.agents/skill-backups/` and the path is printed. A hand-written skill without those marks is left untouched and `setup` exits non-zero naming the path. Without `--agent`, `setup` never touches `~/.claude`.
 
+Add `--vector` to also install the semantic-recall helper's dependencies (`@libsql/client`, `@huggingface/transformers`) and its model into `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/`, then warm the model once. They live outside the package, so a global `npm i -g` upgrade leaves them in place; `setup --vector` needs re-running only when an upgrade changes the helper's dependency set, which `memoria doctor` reports.
+
 Output is JSON Lines, one row per step:
 
 ```json

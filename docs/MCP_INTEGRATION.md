@@ -53,7 +53,8 @@ With `LIBSQL_URL` set you can additionally enable a real semantic index (libSQL 
 vectors** — this bypasses `mcp-memory-libsql`, which is text-search only):
 
 ```bash
-cd skills/memoria-vector && npm install     # one-time: embedding runtime + libSQL client
+memoria setup --vector                      # one-time: embedding runtime + libSQL client + model, in ~/.cache/memoria/vector
+# (from a checkout: cd skills/memoria-vector && npm install)
 export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each payload into vectors
 # then query with mode:"vector" via POST /v1/recall — fuses semantic + lexical (RRF),
 # and degrades to lexical-only when the index is unavailable (fail-open).

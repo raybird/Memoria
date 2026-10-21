@@ -50,7 +50,7 @@ CLI="$PREFIX/node_modules/.bin/memoria"
 # before this was fixed. node_modules must NOT come along.
 echo "[npm-install] vector helper source is packaged (source only, no node_modules)"
 HELPER_DIR="$PREFIX/node_modules/@raybird.chen/memoria/skills/memoria-vector"
-for f in vector-recall.mjs vector-ingest.mjs embed.mjs package.json; do
+for f in vector-recall.mjs vector-ingest.mjs embed.mjs deps.mjs package.json package-lock.json; do
     [ -f "$HELPER_DIR/$f" ] || { echo "Vector helper missing from package: $f"; exit 1; }
 done
 [ ! -d "$HELPER_DIR/node_modules" ] || { echo "Vector helper node_modules must not be packaged"; exit 1; }

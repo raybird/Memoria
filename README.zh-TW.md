@@ -60,6 +60,8 @@ memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
 
 部署出的 skill 寫明使用記憶的時機：開始處理 issue 或功能前（`recall --mode vector`）、做出有理由的決策或踩坑後（`remember`）、合併進主線或發版後（`repo sync` 與 merge 摘要），每個時機都附命令與完成判準。環境已 export `MEMORIA_HOME` 時，以它為準，不用部署時綁定的 data root。`setup` 只會覆蓋 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 的 `~/.claude/skills/memoria/`；從部署版手動複製再改過的副本也帶這兩個標記，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/` 並印出路徑。沒有這兩個標記的手寫 skill 原封不動，`setup` 以非 0 結束並印出路徑。沒加 `--agent` 時，`setup` 完全不碰 `~/.claude`。
 
+加上 `--vector` 會另外把語意召回 helper 的依賴（`@libsql/client`、`@huggingface/transformers`）與模型裝到 `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/`，並暖機一次。它們不在套件目錄裡，全域 `npm i -g` 升級不會清掉；只有升級改變了 helper 的依賴清單時才需要再跑一次，`memoria doctor` 會指出來。
+
 輸出 JSON lines，每步一行：
 
 ```json

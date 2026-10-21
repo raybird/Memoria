@@ -91,7 +91,7 @@ The CLI (`src/cli.ts`, ~50 lines) is a thin Commander registration shell — it 
 - `core/types.ts` — `MemoriaResult<T>` envelope, `RecallFilter`, etc.
 - `core/paths.ts` — `resolveMemoriaPaths()`, `getMemoriaHome()`
 - `core/utils.ts` — pure helpers (`safeDate`, `slugify`, `stableStringify`, `tokenCoverage`, `effectiveUtility`, `buildCalibration`, etc.)
-- `core/recall-vector.ts` — opt-in semantic recall: spawns the `skills/memoria-vector` helper, maps prefixed ids back to authoritative local rows, RRF fusion (`LIBSQL_URL`-gated, fail-open)
+- `core/recall-vector.ts` — opt-in semantic recall: spawns the `skills/memoria-vector` helper, maps prefixed ids back to authoritative local rows, RRF fusion (`LIBSQL_URL`-gated, fail-open). The helper loads its own deps through `skills/memoria-vector/deps.mjs` — sibling `node_modules` first, else the user cache `setup --vector` fills, keyed by the helper's lockfile hash (issue-25); doctor asks `node deps.mjs` rather than re-deriving the hash
 - `core/source-import.ts` — raw markdown/text ingestion
 - `core/wiki.ts` / `wiki-build.ts` / `wiki-query.ts` / `wiki-lint.ts` — compiled wiki pipeline (`index`/`log`/`overview` special pages, `synthesis`/`comparison` file-back, durable lint findings)
 - `core/index.ts` — unified re-export (import from here, not deep paths, when adding callers)

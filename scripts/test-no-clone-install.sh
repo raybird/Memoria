@@ -96,6 +96,7 @@ echo "[no-clone] semantic recall helper is installed (issue-10)"
 # the doctor probe below is what proves the installed CLI can actually resolve it.
 [ -f "$INSTALL_DIR/skills/memoria-vector/vector-recall.mjs" ] || { echo "Expected vector helper at $INSTALL_DIR/skills/memoria-vector/vector-recall.mjs"; exit 1; }
 [ -f "$INSTALL_DIR/skills/memoria-vector/embed.mjs" ] || { echo "Expected embed helper at $INSTALL_DIR/skills/memoria-vector/embed.mjs"; exit 1; }
+[ -f "$INSTALL_DIR/skills/memoria-vector/deps.mjs" ] && [ -f "$INSTALL_DIR/skills/memoria-vector/package-lock.json" ] || { echo "Expected deps.mjs + package-lock.json beside the helper (issue-25: they name the user-cache dependency dir)"; exit 1; }
 [ ! -e "$INSTALL_DIR/skills/memoria-vector/node_modules" ] || { echo "Helper dependencies must stay opt-in, not bundled"; exit 1; }
 
 echo "[no-clone] doctor resolves the helper once LIBSQL_URL is set (issue-12)"

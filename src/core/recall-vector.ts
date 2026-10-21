@@ -9,7 +9,7 @@
 // node:child_process): Memoria-only mode stays dependency-free. Spawn-per-query is viable because
 // the Phase 0' spike measured ~950ms cached model load + ~3ms inference (multilingual-e5-small q8).
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from './paths.js'
@@ -82,7 +82,12 @@ export type VectorLayerReport = {
     provider: string
     /** null = not probed; `embedderUnknownReason` says why. */
     embedderInstalled: boolean | null
+    /** Where the helper loads its dependencies from (issue-25): next to it, or the user cache that
+     *  `setup --vector` fills. null when neither holds an install. */
+    embedderSource: 'sibling' | 'cache' | null
     embedderDir: string | null
+    /** The cache directory for this helper's dependency set, installed or not. */
+    embedderCacheDir: string | null
     /** Why the embedder was not probed, so a renderer can say the check was SKIPPED rather than
      *  quietly omitting a line — the same no-silent-caps rule the truncation paths follow. */
     embedderUnknownReason: 'overridden_helper' | 'provider_needs_no_embedder' | 'helper_unresolved' | null
@@ -156,7 +161,9 @@ export function inspectVectorLayer(dbPath?: string): VectorLayerReport {
         override,
         provider,
         embedderInstalled: null,
+        embedderSource: null,
         embedderDir: null,
+        embedderCacheDir: null,
         embedderUnknownReason: null,
         coverage: null,
         coverageUnknownReason: null
@@ -204,10 +211,40 @@ export function inspectVectorLayer(dbPath?: string): VectorLayerReport {
         report.embedderUnknownReason = 'provider_needs_no_embedder'
         return report
     }
-    const dir = dirname(helperPath)
+    const helperDir = dirname(helperPath)
+    // A helper that cannot answer — older layout, broken copy — is judged the pre-issue-25 way, by its
+    // sibling node_modules alone.
+    const location = probeDepsLocation(helperDir) ?? (existsSync(resolve(helperDir, 'node_modules'))
+        ? { source: 'sibling', dir: helperDir, cacheDir: null }
+        : { source: 'none', dir: null, cacheDir: null })
+    report.embedderSource = location.source === 'none' ? null : location.source
+    report.embedderCacheDir = location.cacheDir
+    // With nothing installed, name the helper's own directory: that is where an in-place
+    // `npm install` would go, and the renderer offers the cache path separately.
+    const dir = location.dir ?? helperDir
     report.embedderDir = dir
-    report.embedderInstalled = existsSync(resolve(dir, 'node_modules', '@huggingface', 'transformers'))
+    report.embedderInstalled = location.source !== 'none' &&
+        existsSync(resolve(dir, 'node_modules', '@huggingface', 'transformers'))
     return report
+}
+
+export type DepsLocation = { source: 'sibling' | 'cache' | 'none'; dir: string | null; cacheDir: string | null }
+
+/** Ask the helper's own `deps.mjs` where its dependencies resolve (issue-25), so the lockfile-hash
+ *  rule lives in one file — doctor and `setup --vector` both come through here. null when the helper
+ *  cannot answer (no deps.mjs, or it failed). */
+export function probeDepsLocation(helperDir: string): DepsLocation | null {
+    const script = resolve(helperDir, 'deps.mjs')
+    if (!existsSync(script)) return null
+    const run = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 10_000 })
+    if (run.status !== 0) return null
+    try {
+        const parsed = JSON.parse(run.stdout) as Partial<DepsLocation>
+        if (parsed.source !== 'sibling' && parsed.source !== 'cache' && parsed.source !== 'none') return null
+        return { source: parsed.source, dir: parsed.dir ?? null, cacheDir: parsed.cacheDir ?? null }
+    } catch {
+        return null
+    }
 }
 
 function runHelper(

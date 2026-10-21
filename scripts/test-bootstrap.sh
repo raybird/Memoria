@@ -254,5 +254,53 @@ echo "✓ /v1/recall ok"
 
 kill "$SERVE_PID" 2>/dev/null || true
 
+# issue-25: `setup --vector` installs the semantic-recall helper's dependencies into the user cache,
+# keyed by the helper's lockfile, so a global `npm i -g` upgrade no longer wipes them. The stub
+# provider needs only @libsql/client, so CI installs without dev dependencies and skips the model
+# warm-up; the full local install is verified by hand (issue-25 S3).
+echo ""
+echo "[bootstrap] issue-25: setup --vector installs helper deps into the user cache"
+HELPER="$ROOT_DIR/skills/memoria-vector"
+VEC_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex').slice(0,16))" "$HELPER/package-lock.json")
+XDG_OK="$TMP/xdg-ok"
+VEC_OUT=$(XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
+VEC_DIR="$XDG_OK/memoria/vector/$VEC_HASH"
+echo "$VEC_OUT" | node -e "
+const steps=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l));
+const s=steps.find(x=>x.step==='vector-deps');
+if(!s||!s.ok) throw new Error('vector-deps step missing or failed: '+JSON.stringify(steps));
+if(s.path!==process.argv[1]) throw new Error('vector-deps must report '+process.argv[1]+', got '+s.path);
+if(s.provider!=='stub'||s.warmedUp!==false) throw new Error('stub provider must skip the warm-up, got '+JSON.stringify(s));
+const sibling=require('fs').existsSync(process.argv[2]+'/node_modules');
+if((s.shadowedBy??null)!==(sibling?process.argv[2]+'/node_modules':null)) throw new Error('shadowedBy must name a sibling node_modules exactly when one exists, got '+s.shadowedBy);
+" "$VEC_DIR" "$HELPER"
+[ -f "$VEC_DIR/.complete" ] || { echo "✗ setup --vector left no .complete"; exit 1; }
+[ -d "$VEC_DIR/node_modules/@libsql/client" ] || { echo "✗ @libsql/client not installed in $VEC_DIR"; exit 1; }
+[ ! -e "$VEC_DIR/node_modules/@huggingface/transformers" ] || { echo "✗ stub provider must not pull the ~700MB embedder"; exit 1; }
+echo "✓ setup --vector: deps in \$XDG_CACHE_HOME/memoria/vector/<lock hash>, .complete written"
+
+# A second run reuses the completed install instead of reinstalling it.
+VEC_OUT2=$(XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
+echo "$VEC_OUT2" | node -e "
+const s=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l)).find(x=>x.step==='vector-deps');
+if(!s||!s.ok||s.reused!==true) throw new Error('second run must reuse the install, got '+JSON.stringify(s));
+"
+echo "✓ setup --vector: second run reuses the completed install"
+
+# SCN-006: a failed install exits non-zero and leaves nothing that reads as installed.
+FAKEBIN="$TMP/fake-npm-bin"
+mkdir -p "$FAKEBIN"
+printf '#!/bin/sh\necho "simulated npm failure" >&2\nexit 1\n' > "$FAKEBIN/npm"
+chmod +x "$FAKEBIN/npm"
+XDG_FAIL="$TMP/xdg-fail"
+if XDG_CACHE_HOME="$XDG_FAIL" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" PATH="$FAKEBIN:$PATH" "$CLI" setup --vector >"$TMP/vec-fail.out" 2>&1; then
+  echo "✗ SCN-006: setup --vector exited 0 although npm failed"; cat "$TMP/vec-fail.out"; exit 1
+fi
+grep -q 'simulated npm failure' "$TMP/vec-fail.out" || { echo "✗ SCN-006: failure output does not carry npm's reason"; cat "$TMP/vec-fail.out"; exit 1; }
+if [ -d "$XDG_FAIL/memoria/vector" ] && [ -n "$(ls -A "$XDG_FAIL/memoria/vector")" ]; then
+  echo "✗ SCN-006: a failed install left files behind:"; ls -la "$XDG_FAIL/memoria/vector"; exit 1
+fi
+echo "✓ SCN-006: npm failure -> non-zero exit with npm's reason, nothing left in the cache"
+
 echo ""
 echo "[bootstrap] ok"

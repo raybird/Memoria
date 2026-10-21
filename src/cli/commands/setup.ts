@@ -2,7 +2,7 @@ import path from 'node:path'
 import type { Command } from 'commander'
 import { MemoriaCore, resolveMemoriaPaths, runVerify, existsSync, closeAllConnections } from '../../core/index.js'
 import { runPreflight } from '../preflight.js'
-import { assertHostSkillTarget, deployAgentSkill, deployHostAgentSkill, HOST_AGENTS, resolveHostAgentSkillDir } from '../runtime.js'
+import { assertHostSkillTarget, deployAgentSkill, deployHostAgentSkill, HOST_AGENTS, installVectorDeps, resolveHostAgentSkillDir } from '../runtime.js'
 import type { RuntimeLayout } from '../runtime.js'
 
 export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLayout): void {
@@ -14,7 +14,8 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
         .option('--memoria-home <path>', 'Data root for .memory/ knowledge/ configs (default: ./memoria)')
         .option('--json', 'Emit JSON step logs for machine consumption')
         .option('--agent <name>', `Also deploy the skill into a host agent's own skill directory (${HOST_AGENTS.join(', ')})`)
-        .action(async (opts: { serve?: boolean; port?: string; json?: boolean; memoriaHome?: string; ['memoria-home']?: string; agent?: string }) => {
+        .option('--vector', 'Also install the semantic-recall helper dependencies into the user cache and warm the model')
+        .action(async (opts: { serve?: boolean; port?: string; json?: boolean; memoriaHome?: string; ['memoria-home']?: string; agent?: string; vector?: boolean }) => {
             const jsonOut = Boolean(opts.json)
             const requestedHome = opts.memoriaHome ?? opts['memoria-home'] ?? process.env.MEMORIA_HOME
             const setupMemoriaHome = path.resolve(requestedHome ?? path.join(process.cwd(), 'memoria'))
@@ -35,6 +36,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                     verify: 'Database verified',
                     skill: 'Agent skill deployed',
                     'agent-skill': 'Host agent skill deployed',
+                    'vector-deps': 'Semantic recall dependencies',
                     serve: 'Server running'
                 }
                 const detail =
@@ -132,6 +134,22 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                     if (deployed.backup && !jsonOut) console.log(`  previous copy backed up to ${deployed.backup}`)
                 } catch (error) {
                     stepLog('agent-skill', false, { error: error instanceof Error ? error.message : String(error), path: hostSkillDir })
+                    process.exitCode = 1
+                    return
+                }
+            }
+
+            // Step 5c (--vector): semantic-recall helper dependencies in the user cache (issue-25)
+            if (opts.vector) {
+                stepStart = Date.now()
+                try {
+                    const installed = await installVectorDeps(runtimeLayout)
+                    stepLog('vector-deps', true, { ...installed })
+                    if (!jsonOut && installed.shadowedBy) {
+                        console.log(`  note: ${installed.shadowedBy} beside the helper takes precedence; this install is used once it is gone`)
+                    }
+                } catch (error) {
+                    stepLog('vector-deps', false, { error: error instanceof Error ? error.message : String(error) })
                     process.exitCode = 1
                     return
                 }

@@ -16,22 +16,34 @@ Deliberately **outside Memoria's core dependencies** — core spawns these scrip
 
 ## Install
 
+For a global install of memoria:
+
+```bash
+memoria setup --vector     # MEMORIA_HOME set, or pass --memoria-home: setup also initializes the data root
+```
+
+It installs this helper's dependencies into `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/<hash>/`,
+where `<hash>` comes from this directory's `package-lock.json`, downloads the model (~120MB) into
+`${XDG_CACHE_HOME:-~/.cache}/memoria/vector/models/`, and warms it once — the first load can take
+longer than the recall timeout (`route_mode: vector_timeout`), so setup pays it instead of your first
+recall (issue-25). A global `npm i -g` upgrade replaces this directory but not the cache: an upgrade
+that keeps the same lockfile needs nothing, and one that changes it resolves to a new hash, so
+`memoria doctor` reports the embedder missing and `setup --vector` installs the new set. Old hash
+directories (~720MB each) are not cleaned up; delete one when no installed version uses it.
+With `MEMORIA_EMBED_PROVIDER=stub`, `setup --vector` installs only `@libsql/client` and skips the model.
+
+From a checkout, or for an image that bundles the helper:
+
 ```bash
 cd skills/memoria-vector
 npm install          # @libsql/client + @huggingface/transformers (local embedding runtime)
 ```
 
-First `local` embedding downloads the model (~120MB). transformers.js caches it inside its own
-package — `node_modules/@huggingface/transformers/.cache/` here, not a per-user cache directory — so
-removing this `node_modules` removes the model too.
+A `node_modules` beside the helper always wins over the cache and loads exactly as it did before
+issue-25: transformers.js then keeps the model inside its own package —
+`node_modules/@huggingface/transformers/.cache/` here — so removing this `node_modules` removes the
+model too. `deps.mjs` holds the resolution order; `node deps.mjs` prints which location applies.
 CI installs with `--omit=dev` and runs the deterministic `stub` provider instead.
-
-> **A global `npm i -g` upgrade of memoria wipes this directory's `node_modules`, model included.**
-> The helper ships inside the package, and npm replaces the whole package directory on upgrade, so
-> semantic recall quietly falls back to lexical results until you reinstall here. After each upgrade,
-> run `npm install` in this directory again, then — with `LIBSQL_URL` set — warm the model once with
-> `echo '{"query":"warm up"}' | node vector-recall.mjs` — the first run after a reinstall can take
-> longer than the recall timeout (`route_mode: vector_timeout`). `memoria doctor` names both steps.
 
 > **`--omit=dev` and `NODE_ENV=production` produce a helper that cannot embed.**
 > `@huggingface/transformers` is a **devDependency** — deliberately, because it is ~850MB and a
@@ -46,6 +58,7 @@ CI installs with `--omit=dev` and runs the deterministic `stub` provider instead
 
 | Script | Role |
 |--------|------|
+| `deps.mjs` | Where the dependencies load from: a sibling `node_modules`, else the user cache `setup --vector` fills (keyed by `package-lock.json`); `node deps.mjs` prints the resolution |
 | `embed.mjs` | Provider abstraction: `local` (default, `Xenova/multilingual-e5-small` q8) or `stub` (deterministic, tests) |
 | `vector-ingest.mjs <bridge-payload.json>` | Embed a MCP-bridge payload's entities → upsert `memoria_vectors` in libSQL (offline path) |
 | `vector-recall.mjs` | stdin `{query, topK}` → embed query → `vector_top_k` → stdout `{hits:[{name,kind,distance}]}` |

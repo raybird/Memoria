@@ -55,7 +55,7 @@ fi
 echo "[vector] local provider names the cause when the embedder is absent (issue-11)"
 ISO_DIR="$TMP_DIR/embed-isolated"
 mkdir -p "$ISO_DIR"
-cp "$HELPER_DIR/embed.mjs" "$ISO_DIR/embed.mjs"
+cp "$HELPER_DIR/embed.mjs" "$HELPER_DIR/deps.mjs" "$ISO_DIR/"
 ERR_OUT=$(cd "$ISO_DIR" && MEMORIA_EMBED_PROVIDER=local node --input-type=module -e "
 const { embedTexts } = await import('./embed.mjs')
 try { await embedTexts(['x'], 'query'); console.log('NO_ERROR') }
@@ -259,17 +259,119 @@ mkdir -p "$ISO_PKG/dist" "$ISO_PKG/skills/memoria-vector"
 cp "$ROOT_DIR/dist/cli.mjs" "$ISO_PKG/dist/"
 cp "$ROOT_DIR/package.json" "$ISO_PKG/"
 ln -s "$ROOT_DIR/node_modules" "$ISO_PKG/node_modules"
-cp "$HELPER_DIR"/*.mjs "$ISO_PKG/skills/memoria-vector/"
-DOC_NOEMB=$(env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" node "$ISO_PKG/dist/cli.mjs" doctor --json || true)
+cp "$HELPER_DIR"/*.mjs "$HELPER_DIR/package.json" "$HELPER_DIR/package-lock.json" "$ISO_PKG/skills/memoria-vector/"
+# issue-25: the dependencies may now live in the user cache, so every doctor probe below pins
+# XDG_CACHE_HOME to a temp dir — the maintainer's real ~/.cache must not decide a test outcome.
+DOC_XDG="$(cd "$TMP_DIR" && pwd -P)/xdg-doctor"
+doctor_iso() { env MEMORIA_HOME="$TMP_DIR/home" LIBSQL_URL="file:$VECDB" XDG_CACHE_HOME="$DOC_XDG" node "$ISO_PKG/dist/cli.mjs" doctor --json || true; }
+ISO_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex').slice(0,16))" "$ISO_PKG/skills/memoria-vector/package-lock.json")
+ISO_CACHE="$DOC_XDG/memoria/vector/$ISO_HASH"
+DOC_NOEMB=$(doctor_iso)
 node -e "
 const d=JSON.parse(process.argv[1]);
 const e=d.checks.find(c=>c.name==='vector embedder');
 if(!e||e.ok) throw new Error('a helper without @huggingface/transformers must fail the embedder check, got '+JSON.stringify(e));
 const f=e.fix||'';
-for (const s of ['--omit=dev','NODE_ENV=production','npm i -g','vector-recall.mjs','vector_timeout','inside '+process.argv[2]])
+for (const s of ['memoria setup --vector','npm i -g','vector_timeout','MEMORIA_EMBED_PROVIDER=stub',process.argv[2]])
   if(!f.includes(s)) throw new Error('embedder fix must mention '+JSON.stringify(s)+', got: '+f);
-" "$DOC_NOEMB" "$ISO_PKG/skills/memoria-vector"
-echo "  enabled + embedder missing -> fix names the upgrade wipe and the warm-up"
+" "$DOC_NOEMB" "$ISO_CACHE"
+# Doctor reads that directory from deps.mjs rather than hashing on its own, and ISO_CACHE was hashed
+# independently above — the fix naming it is what pins "one implementation".
+echo "  enabled + embedder missing (global-install shape) -> fix names setup --vector and \$XDG_CACHE_HOME/memoria/vector/<lock hash>"
+
+echo "[vector] issue-25: doctor follows the helper's resolution order"
+mkdir -p "$ISO_CACHE/node_modules/@huggingface/transformers"
+DOC_INCOMPLETE=$(doctor_iso)
+node -e "
+const e=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector embedder');
+if(!e||e.ok) throw new Error('a cache dir without .complete must not count as installed, got '+JSON.stringify(e));
+" "$DOC_INCOMPLETE"
+echo "  cache dir without .complete -> still failing"
+
+touch "$ISO_CACHE/.complete"
+DOC_CACHE=$(doctor_iso)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const e=d.checks.find(c=>c.name==='vector embedder');
+if(!e||!e.ok) throw new Error('a completed cache install must pass, got '+JSON.stringify(e));
+if(!e.value.includes(process.argv[2])) throw new Error('embedder value must name the cache dir it uses, got '+e.value);
+" "$DOC_CACHE" "$ISO_CACHE"
+echo "  completed cache install -> embedder ok, names the cache dir"
+
+rm -rf "$ISO_CACHE/node_modules/@huggingface"
+DOC_CACHE_NODEV=$(doctor_iso)
+node -e "
+const e=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector embedder');
+if(!e||e.ok) throw new Error('a cache install without transformers must fail, got '+JSON.stringify(e));
+if(!(e.fix||'').includes('memoria setup --vector')) throw new Error('fix must name setup --vector, got '+e.fix);
+" "$DOC_CACHE_NODEV"
+echo "  cache install without transformers -> failing, fix names setup --vector"
+
+# Sibling node_modules wins even over a completed cache install — the downstream-image and
+# developer-checkout shape — and keeps the pre-issue-25 judgement and remedy (SCN-004).
+mkdir -p "$ISO_PKG/skills/memoria-vector/node_modules"
+mkdir -p "$ISO_CACHE/node_modules/@huggingface/transformers"
+DOC_SIB=$(doctor_iso)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const e=d.checks.find(c=>c.name==='vector embedder');
+if(!e||e.ok) throw new Error('sibling node_modules without transformers must fail even with a cache install, got '+JSON.stringify(e));
+if(e.value.includes('/memoria/vector/')) throw new Error('sibling must win over the cache, got '+e.value);
+const f=e.fix||'';
+for (const s of ['--omit=dev','NODE_ENV=production','npm i -g','vector-recall.mjs','vector_timeout','inside '+process.argv[2]])
+  if(!f.includes(s)) throw new Error('sibling fix must mention '+JSON.stringify(s)+', got: '+f);
+" "$DOC_SIB" "$ISO_PKG/skills/memoria-vector"
+echo "  sibling node_modules wins over the cache; fix keeps the in-place npm install remedy"
+
+# issue-25: a global `npm i -g` upgrade replaces the helper's directory, so its dependencies now live
+# in the user cache under a hash of the helper's lockfile. Exercised on a helper copy with NO sibling
+# node_modules (the shape of a fresh global install) and only @libsql/client in the cache, which is
+# all the stub provider needs.
+echo "[vector] issue-25: helper without sibling node_modules loads deps from the user cache"
+ISO_HELPER="$TMP_DIR/helper-cache-deps"
+XDG="$TMP_DIR/xdg"
+mkdir -p "$ISO_HELPER"
+cp "$HELPER_DIR"/*.mjs "$HELPER_DIR/package.json" "$HELPER_DIR/package-lock.json" "$ISO_HELPER/"
+LOCK_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex').slice(0,16))" "$ISO_HELPER/package-lock.json")
+CACHE_DEPS="$XDG/memoria/vector/$LOCK_HASH"
+mkdir -p "$CACHE_DEPS"
+cp "$HELPER_DIR/package.json" "$HELPER_DIR/package-lock.json" "$CACHE_DEPS/"
+(cd "$CACHE_DEPS" && npm ci --omit=dev --no-audit --no-fund >/dev/null 2>&1) || { echo "  ✗ cache deps install failed"; exit 1; }
+VEC25="$TMP_DIR/vectors-25.db"
+run25() { env XDG_CACHE_HOME="$XDG" LIBSQL_URL="file:$VEC25" MEMORIA_EMBED_PROVIDER=stub "$@"; }
+
+if run25 node "$ISO_HELPER/vector-ingest.mjs" "$TMP_DIR/payload.json" >/dev/null 2>&1; then
+    echo "  ✗ an install without .complete must not be used (an interrupted setup --vector would look installed)"; exit 1
+fi
+echo "  cache dir without .complete -> not used"
+
+touch "$CACHE_DEPS/.complete"
+INGEST25=$(run25 node "$ISO_HELPER/vector-ingest.mjs" "$TMP_DIR/payload.json")
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==3) throw new Error('ingest from cache deps failed: '+process.argv[1])" "$INGEST25"
+REC25=$(echo '{"query":"quantum flux capacitor","topK":5}' | run25 node "$ISO_HELPER/vector-recall.mjs")
+node -e "const d=JSON.parse(process.argv[1]); if(!d.hits.some(h=>h.name==='session:$SID_A')) throw new Error('recall from cache deps missing A: '+process.argv[1])" "$REC25"
+echo "  ingest + recall resolve @libsql/client from \$XDG_CACHE_HOME/memoria/vector/<lock hash>"
+
+# A newer helper whose lockfile differs must not load a cache built for another dependency set.
+printf '\n' >> "$ISO_HELPER/package-lock.json"
+if echo '{"query":"quantum flux capacitor"}' | run25 node "$ISO_HELPER/vector-recall.mjs" >/dev/null 2>&1; then
+    echo "  ✗ a lockfile change must not reuse the cache built for the old one"; exit 1
+fi
+echo "  changed lockfile -> old cache dir ignored"
+
+# Sibling node_modules wins and keeps today's behaviour, model cache location included (SCN-004).
+node --input-type=module -e "
+const { resolveDepsLocation } = await import(process.argv[1])
+const loc = resolveDepsLocation(process.argv[2])
+if (loc.source !== 'sibling') throw new Error('sibling node_modules must win, got '+JSON.stringify(loc))
+if (loc.modelCacheDir !== null) throw new Error('sibling deps must keep transformers.js default model cache, got '+loc.modelCacheDir)
+" "$HELPER_DIR/deps.mjs" "$HELPER_DIR"
+echo "  sibling node_modules -> source=sibling, model cache untouched"
+# deps.mjs prints its resolution only when run directly; importing it with an argv[1] that is not a
+# real path (`node -e '…' foo`) must stay silent and must not throw out of every helper import.
+DEPS_IMPORT=$(cd "$HELPER_DIR" && node --input-type=module -e "await import('./deps.mjs'); process.stdout.write('ok')" no-such-file)
+[ "$DEPS_IMPORT" = "ok" ] || { echo "  ✗ importing deps.mjs with a bogus argv[1] must neither throw nor print, got: $DEPS_IMPORT"; exit 1; }
+echo "  deps.mjs import with a non-path argv[1] -> silent, no throw"
 
 echo "[vector] stats exposes vector route counters"
 STATS=$(env MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" stats --json)

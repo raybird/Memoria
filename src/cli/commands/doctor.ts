@@ -40,7 +40,23 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
             'Reinstall from npm (the package ships the helper), or set MEMORIA_VECTOR_RECALL_CMD to its path.'
     })
 
-    if (report.embedderInstalled === false) {
+    if (report.embedderInstalled === false && report.embedderSource !== 'sibling') {
+        // issue-25: the global-install shape. Nothing next to the helper, so the remedy is the user
+        // cache — an in-place `npm install` here is exactly what the next `npm i -g` wipes again.
+        const target = report.embedderCacheDir ?? 'the user cache (~/.cache/memoria/vector)'
+        checks.push({
+            name: 'vector embedder',
+            ok: false,
+            value: report.embedderSource === 'cache'
+                ? `@huggingface/transformers missing in ${report.embedderDir}`
+                : `no dependency install for this helper (none beside it, none in ${target})`,
+            fix: 'MEMORIA_EMBED_PROVIDER=local needs @huggingface/transformers. Run "memoria setup --vector": ' +
+                `it installs the helper's dependencies into ${target}, which "npm i -g" upgrades do not touch, ` +
+                'and warms the model once — the first load can outlast the recall timeout (route_mode=vector_timeout). ' +
+                "It only needs re-running when an upgrade changes the helper's dependency set. " +
+                'Or set MEMORIA_EMBED_PROVIDER=stub.'
+        })
+    } else if (report.embedderInstalled === false) {
         checks.push({
             name: 'vector embedder',
             ok: false,
@@ -54,7 +70,7 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
                 'Or set MEMORIA_EMBED_PROVIDER=stub.'
         })
     } else if (report.embedderInstalled === true) {
-        checks.push({ name: 'vector embedder', ok: true, value: '@huggingface/transformers installed' })
+        checks.push({ name: 'vector embedder', ok: true, value: `@huggingface/transformers installed (${report.embedderDir})` })
     } else if (report.embedderUnknownReason === 'overridden_helper') {
         // Say the check was skipped instead of omitting the line. Whoever set an override is the most
         // likely person to be missing the embedder, and an absent line reads as "nothing to report"

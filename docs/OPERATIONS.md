@@ -30,7 +30,8 @@ results and still answers `ok:true`, with `route_mode` the only clue and nothing
 | `LIBSQL_URL` unset | `vector recall: not enabled` — **passing**. An opt-in feature that is switched off is not an unhealthy install |
 | enabled, helper resolves | `vector helper: <path>` plus `vector embedder` when the local provider is in use |
 | enabled, helper missing | **fails**, with a fix naming `route_mode=vector_unavailable` as the symptom to expect |
-| enabled, `@huggingface/transformers` missing | **fails**, with a fix naming the causes — `--omit=dev` / `NODE_ENV=production`, or a global `npm i -g` upgrade that replaced the helper directory — and the warm-up to run after reinstalling (issue-23) |
+| enabled, `@huggingface/transformers` missing, nothing beside the helper | **fails**, naming the user-cache directory for this helper's lockfile and `memoria setup --vector` as the fix (issue-25) — the shape of a global install, and of an upgrade that changed the helper's dependencies |
+| enabled, `node_modules` beside the helper but no `@huggingface/transformers` | **fails**, with a fix naming the causes — `--omit=dev` / `NODE_ENV=production` — and the in-place `npm install` plus warm-up (issue-23). A sibling `node_modules` wins over the cache, so this is judged on its own |
 | `MEMORIA_VECTOR_RECALL_CMD` set | printed as `vector helper (overridden)` so it is clear *which* helper was diagnosed. Its dependency layout is not probed — an overridden helper may be bundled elsewhere — and the embedder line **says so** (`not checked`, passing) rather than going missing, so the skip is visible to the people most likely to be affected by it |
 
 ## Memory Quality & Pruning
@@ -290,17 +291,19 @@ once, wherever the helper lives:
 # from a checkout
 cd skills/memoria-vector && npm install
 
-# from an npm install (the helper travels with the package since v1.23.1)
-cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector" && npm install
+# from an npm install: dependencies + model go to ${XDG_CACHE_HOME:-~/.cache}/memoria/vector (issue-25)
+memoria setup --vector
 
 export LIBSQL_URL="file:/path/to/vectors.db"
 export MEMORIA_VECTOR_ENABLE=1              # sync flow embeds each bridge payload into vectors
 ```
 
-`npm install --omit=dev` there installs only `@libsql/client` (~24MB) — enough for the `stub`
-provider and for ingest plumbing, but the `local` provider needs the full install.
+`npm install --omit=dev` in a checkout installs only `@libsql/client` (~24MB) — enough for the `stub`
+provider and for ingest plumbing, but the `local` provider needs the full install. `setup --vector`
+follows `MEMORIA_EMBED_PROVIDER` the same way: `stub` installs only `@libsql/client` and skips the model.
 
-- First `local` embedding downloads the model (~120MB). transformers.js caches it **inside its own package**, at `node_modules/@huggingface/transformers/.cache/` under the helper — not in a per-user cache directory — so it goes wherever the helper's `node_modules` goes. A query that hits the download window fails open to lexical (`vector_timeout`) and recovers afterwards.
+- Where the helper loads its dependencies from is decided by `skills/memoria-vector/deps.mjs`, and `node deps.mjs` prints the answer: a `node_modules` beside the helper wins (checkout, or an image that bundles it), otherwise `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/<hash>/`, where `<hash>` is taken from the helper's `package-lock.json` and only a directory carrying `.complete` counts.
+- First `local` embedding downloads the model (~120MB). With cache-installed dependencies it goes to `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/models/` and `setup --vector` downloads it up front. With a sibling `node_modules`, transformers.js keeps it **inside its own package**, at `node_modules/@huggingface/transformers/.cache/` under the helper, so it goes wherever that `node_modules` goes. A query that hits the download window fails open to lexical (`vector_timeout`) and recovers afterwards.
 - `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the recall-side helper; warm-cache spawn measures ~1s.
 - Compare utility uplift across `route_mode` groups (telemetry + UFL outcomes) to judge whether semantic recall beats lexical for your corpus.
 
@@ -309,8 +312,9 @@ provider and for ingest plumbing, but the `local` provider needs the full instal
 **1. The helper's dependencies are never installed for you.** `resolveHelperScript()` finds the
 packaged helper at `<dist>/../skills/memoria-vector/vector-recall.mjs`, but installing `memoria`
 does not install *that* directory's `package.json` — it is a separate npm project on purpose, so the
-~700MB embedding runtime stays opt-in. Until you run `npm install` inside it, `mode:'vector'`
-degrades to `vector_unavailable` (fail-open: lexical recall still answers).
+~700MB embedding runtime stays opt-in. Until you run `memoria setup --vector` (or `npm install`
+inside a checkout's helper), `mode:'vector'` degrades to `vector_unavailable` (fail-open: lexical
+recall still answers).
 
 On **v1.23.0 and earlier** the helper was not packaged at all, so an npm install could never resolve
 it. There the only route is pointing at a checkout:
@@ -340,24 +344,27 @@ LIBSQL_URL="file:$MEMORIA_HOME/.memory/vectors.db" MEMORIA_EMBED_PROVIDER=local 
 Verify coverage rather than assuming it: the ingest result's `embedded` count should match the
 sessions + decisions + nodes you expect, and `SELECT COUNT(*) FROM memoria_vectors` should agree.
 
-**3. Every global upgrade wipes the helper's dependencies and the cached model.** They live in the
-helper's `node_modules`, inside the globally installed package, and `npm i -g @raybird.chen/memoria@<new>`
-replaces that whole directory. Recall keeps answering with lexical hits (`vector_timeout` /
-`vector_unavailable`), and `doctor` reports `vector embedder: @huggingface/transformers missing`.
-After each upgrade, in a shell that has `LIBSQL_URL` set (issue-23) — without it the warm-up fails
-and `doctor` reports `vector recall: not enabled` as passing, which reads like all green:
+**3. An upgrade that changes the helper's dependencies needs `setup --vector` again.** `npm i -g
+@raybird.chen/memoria@<new>` replaces the whole package directory. Dependencies that `setup --vector`
+put in the user cache survive that, and so does the model (issue-25); what moves is the directory
+name, which hashes the helper's `package-lock.json`. A release that changes it looks for a directory
+that does not exist yet, so recall keeps answering with lexical hits (`vector_unavailable` /
+`vector_timeout`) and `doctor` reports the embedder missing, naming the new directory. Run it in a
+shell that has `LIBSQL_URL` set — without it `doctor` reports `vector recall: not enabled` as
+passing, which reads like all green:
 
 ```bash
-cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector"
-npm install                                   # not --omit=dev; re-downloads the full runtime
-echo '{"query":"warm up"}' | node vector-recall.mjs >/dev/null   # downloads + loads the model once
-memoria doctor                                # vector embedder installed, vector coverage missing=0
+memoria setup --vector     # installs the new dependency set, reuses the cached model, warms it
+memoria doctor             # vector embedder installed, vector coverage missing=0
 ```
 
-The warm-up matters: the first run after a reinstall measured ~14s against ~1s warm, longer than
-`MEMORIA_VECTOR_TIMEOUT_MS`, so without it the first recalls still report `vector_timeout` and look
-as if the reinstall did not work. The vectors themselves live in `LIBSQL_URL`, outside the package,
-and survive the upgrade — no re-ingest is needed.
+The warm-up matters: a cold first load measured ~14–17s against ~1s warm, longer than
+`MEMORIA_VECTOR_TIMEOUT_MS`, so `setup --vector` pays it rather than leaving the first recalls to
+report `vector_timeout`. The previous hash directory (~720MB) stays behind; delete it once no
+installed version uses it. Before issue-25 the dependencies lived beside the helper, so **every**
+global upgrade wiped them together with the model — a `node_modules` someone installed there by hand
+still behaves that way, and still wins over the cache while it exists. The vectors themselves live
+in `LIBSQL_URL`, outside the package, and survive any upgrade — no re-ingest is needed.
 
 ### Reading vector distances
 

@@ -37,14 +37,17 @@
 - `skills/memoria-vector/deps.mjs`（新）- 依賴與模型快取位置的解析：旁邊的 `node_modules` 優先，否則快取目錄
 - `skills/memoria-vector/embed.mjs`、`vector-recall.mjs`、`vector-ingest.mjs` - 改經由 `deps.mjs` 載入依賴
 ### 核心與 CLI
-- `src/core/recall-vector.ts` - `inspectVectorLayer` 的 embedder 探測涵蓋快取目錄
+- `src/core/recall-vector.ts` - `inspectVectorLayer` 的 embedder 探測涵蓋快取目錄；`probeDepsLocation`（執行 `node deps.mjs`）供 doctor 與 setup 共用
+- `src/core/index.ts` - 匯出 `probeDepsLocation`
+- `src/cli/runtime.ts` - `installVectorDeps`
 - `src/cli/commands/setup.ts` - `--vector` 旗標
 - `src/cli/commands/doctor.ts` - embedder 修法改指向 `setup --vector`
 ### 測試
 - `scripts/test-vector-recall.sh` - 快取目錄解析、旁邊優先、doctor 探測
 - `scripts/test-bootstrap.sh` - `setup --vector`
+- `scripts/test-npm-install.sh`、`scripts/test-no-clone-install.sh` - `deps.mjs` 與 `package-lock.json` 隨套件發佈
 ### 文件
-- `skills/memoria-vector/README.md`、`docs/INSTALL.md`、`docs/OPERATIONS.md`、`README.md`、`README.zh-TW.md`、`CLAUDE.md`（Architecture 的 recall-vector 說明）
+- `skills/memoria-vector/README.md`、`docs/INSTALL.md`、`docs/OPERATIONS.md`、`docs/MCP_INTEGRATION.md`、`README.md`、`README.zh-TW.md`、`CLAUDE.md`、`AGENTS.md`（helper 依賴位置說明）
 
 ## Gherkin 驗收劇本
 
@@ -112,11 +115,11 @@ Feature: 語意召回的依賴與模型撐過全域升級
 | SCN-006 | 2026-10-21 | 已核准 |
 
 ## 重構步驟概要
-1. ⏳ **S0 可行性驗證（Node 18）** - 待實作
-2. ⏳ **S1 helper 依賴解析** - 待實作
-3. ⏳ **S2 doctor 探測與修法** - 待實作
-4. ⏳ **S3 `setup --vector`** - 待實作
-5. ⏳ **S4 常青文件** - 待實作
+1. ✅ **S0 可行性驗證（Node 18）** - Node 18／22 spike 通過，採 CJS 進入點
+2. ✅ **S1 helper 依賴解析** - `deps.mjs`，SCN-003／004／005
+3. ✅ **S2 doctor 探測與修法** - SCN-001／003／004
+4. ✅ **S3 `setup --vector`** - SCN-001／002／006（local provider 實機驗證）
+5. ✅ **S4 常青文件** - 已完成
 
 ## 風險與首要驗證
 
@@ -140,6 +143,7 @@ Feature: 語意召回的依賴與模型撐過全域升級
 |------|------|--------|
 | 2026-10-21 | 建立；Q1～Q3 方向決策（「照建議」） | - |
 | 2026-10-21 | SCN-001～SCN-006 核准，TBD-2、TBD-3 維持本次不做（「照建議」） | - |
+| 2026-10-21 | S0～S4 完成；local provider 以隔離 prefix 實機驗證升級前後 | - |
 
 ---
 **建立日期**: 2026-10-21  

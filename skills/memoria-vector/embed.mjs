@@ -12,6 +12,8 @@
 // All providers emit DIM-dimensional L2-normalized Float32 vectors so the libSQL table schema
 // (F32_BLOB(DIM)) is provider-independent.
 
+import { depsLocation, importDep } from './deps.mjs'
+
 export const DIM = 384
 
 const MODEL = process.env.MEMORIA_EMBED_MODEL?.trim() || 'Xenova/multilingual-e5-small'
@@ -28,7 +30,7 @@ async function embedLocal(texts, kind) {
   if (!localPipeline) {
     let transformers
     try {
-      transformers = await import('@huggingface/transformers')
+      transformers = await importDep('@huggingface/transformers')
     } catch {
       // Name the cause, not just the cure (issue-11). This dependency is a devDependency on purpose
       // — it is ~850MB, and a stub-only user should not pay for it — but `local` is the DEFAULT
@@ -39,9 +41,15 @@ async function embedLocal(texts, kind) {
         'MEMORIA_EMBED_PROVIDER=local requires @huggingface/transformers, which is a devDependency ' +
         'of this helper — `npm install --omit=dev` and NODE_ENV=production both skip it, which is ' +
         'the usual reason it is missing here. Run `npm install` WITHOUT --omit=dev inside ' +
-        'skills/memoria-vector, or set MEMORIA_EMBED_PROVIDER=stub (no model download, no semantic quality).'
+        'skills/memoria-vector — or, for a global install, `memoria setup --vector`, which keeps it ' +
+        'outside the package so upgrades do not wipe it — or set MEMORIA_EMBED_PROVIDER=stub ' +
+        '(no model download, no semantic quality).'
       )
     }
+    // Dependencies from the user cache keep the model beside them (issue-25); a sibling install keeps
+    // transformers.js's default, inside its own package dir, exactly as before.
+    const { modelCacheDir } = depsLocation()
+    if (modelCacheDir) transformers.env.cacheDir = modelCacheDir
     localPipeline = await transformers.pipeline('feature-extraction', MODEL, { dtype: 'q8' })
   }
   const prefix = kind === 'query' ? 'query: ' : 'passage: '

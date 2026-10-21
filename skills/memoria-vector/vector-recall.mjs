@@ -9,8 +9,10 @@
 // treats any non-zero exit / malformed output as a fail-open condition, so errors here just exit 1
 // with the reason on stderr — never a partial JSON on stdout.
 
-import { createClient } from '@libsql/client'
+import { importDep } from './deps.mjs'
 import { embedTexts } from './embed.mjs'
+
+const { createClient } = await importDep('@libsql/client')
 
 const raw = await new Promise((resolve) => {
   let buf = ''
