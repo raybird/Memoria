@@ -1,6 +1,8 @@
+import path from 'node:path'
 import type { Command } from 'commander'
 import { existsSync, inspectVectorLayer, resolveMemoriaHomeInfo } from '../../core/index.js'
 import type { MemoriaPaths, VectorLayerReport } from '../../core/index.js'
+import { quoteShellArg } from '../runtime.js'
 
 type DoctorCheck = { name: string; ok: boolean; value: string; fix?: string }
 
@@ -13,7 +15,7 @@ type DoctorCheck = { name: string; ok: boolean; value: string; fix?: string }
  * user who never wanted semantic recall — which trains people to ignore doctor, and that is worse
  * than not checking at all. Same judgement as issue-7's on `verify`.
  */
-function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
+function vectorChecks(report: VectorLayerReport, memoriaHome: string): DoctorCheck[] {
     if (!report.enabled) {
         return [{ name: 'vector recall', ok: true, value: 'not enabled (LIBSQL_URL unset)' }]
     }
@@ -97,9 +99,7 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
             value: `embedded=${embedded} expected=${expected} missing=${missing}`,
             fix: missing === 0 ? undefined :
                 `${missing} memories are not in the vector index, so semantic recall cannot see them — ` +
-                'and that degrades silently (the helper answers "ok" with zero rows). Re-run the ingest ' +
-                'two-step: "node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs --memoria-home <home>" ' +
-                'then "node skills/memoria-vector/vector-ingest.mjs <payload.json>".'
+                'and that degrades silently (the helper answers "ok" with zero rows). ' + ingestFix(report.helperPath, memoriaHome)
         })
     } else if (report.coverageUnknownReason === 'remote_libsql') {
         // Named rather than omitted, for the same reason the overridden-helper skip is named.
@@ -123,6 +123,20 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
     }
 
     return checks
+}
+
+/** issue-27: the coverage fix is followed by an agent, which can only run what is printed. So it is one
+ *  command with real paths, not a description: the payload goes to a temporary directory, not the data
+ *  root (the builder's default), and the exit status is ingest's, so a failure is not hidden by the
+ *  cleanup that follows it. */
+function ingestFix(helperPath: string | null, memoriaHome: string): string {
+    if (!helperPath) return 'Re-run the ingest two-step once the vector helper resolves (see "vector helper" above).'
+    const skillsRoot = path.dirname(path.dirname(helperPath))
+    const build = quoteShellArg(path.join(skillsRoot, 'memoria-memory-sync', 'scripts', 'build-mcp-bridge-payload.mjs'))
+    const ingest = quoteShellArg(path.join(skillsRoot, 'memoria-vector', 'vector-ingest.mjs'))
+    return 'Run: D=$(mktemp -d) && ' +
+        `node ${build} --memoria-home ${quoteShellArg(memoriaHome)} --out "$D" >/dev/null && ` +
+        `node ${ingest} "$D"/*.json; S=$?; rm -rf "$D"; (exit $S)`
 }
 
 export function registerDoctorCommand(program: Command, paths: MemoriaPaths): void {
@@ -153,7 +167,7 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
                 { name: 'sessions path', ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
                 { name: 'config path', ok: existsSync(paths.configPath), value: paths.configPath },
                 { name: 'sessions.db', ok: existsSync(paths.dbPath), value: paths.dbPath },
-                ...vectorChecks(inspectVectorLayer(paths.dbPath))
+                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths.memoriaHome)
             ]
 
             if (opts.json) {

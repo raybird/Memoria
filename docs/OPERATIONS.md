@@ -341,8 +341,13 @@ LIBSQL_URL="file:$MEMORIA_HOME/.memory/vectors.db" MEMORIA_EMBED_PROVIDER=local 
   node skills/memoria-vector/vector-ingest.mjs /tmp/payload/mcp-bridge-*.json
 ```
 
-Verify coverage rather than assuming it: the ingest result's `embedded` count should match the
-sessions + decisions + nodes you expect, and `SELECT COUNT(*) FROM memoria_vectors` should agree.
+Verify coverage rather than assuming it: `memoria doctor` (in a shell with `LIBSQL_URL` set) reports
+`vector coverage: embedded=… expected=… missing=…`. When `missing` is above 0, its fix ends in
+`Run: <command>` — one line with this install's absolute paths and your data root, which you can paste
+as printed (issue-27). It writes the payload to a temporary directory rather than the data root, and
+exits with ingest's status. Counting the store by hand needs `SELECT COUNT(*) FROM memoria_vectors
+NOT INDEXED`: without `NOT INDEXED`, stock SQLite counts through libSQL's vector index and returns 0
+on a fully populated store.
 
 **3. An upgrade that changes the helper's dependencies needs `setup --vector` again.** `npm i -g
 @raybird.chen/memoria@<new>` replaces the whole package directory. Dependencies that `setup --vector`

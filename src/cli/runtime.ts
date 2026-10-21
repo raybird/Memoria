@@ -84,7 +84,7 @@ export function getRuntimeInvocation(runtimeLayout: RuntimeLayout): RuntimeInvoc
     return { command: getSkillWrapperTarget(runtimeLayout), args: [] }
 }
 
-function quoteShellArg(value: string): string {
+export function quoteShellArg(value: string): string {
     return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 

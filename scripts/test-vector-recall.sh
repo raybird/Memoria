@@ -520,4 +520,35 @@ if(!/not measured/.test(cov.value)) throw new Error('必須說明是沒量，而
 " "$DOC_OVR"
 echo "  override -> 具名跳過，未誤報為不健康"
 
+echo "[vector] (issue-27) doctor 的覆蓋率修法可原樣執行，執行後 missing=0"
+# 修法原本是兩行說明：相對於套件根目錄的 skills/... 路徑加上 <home>、<payload.json> 佔位符，照著打跑不起來。
+# 這裡把 "Run: " 之後的命令原樣交給 bash -c，工作目錄刻意不在 repo 裡。
+fix_cmd() {
+  node -e "
+const cov=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector coverage');
+const i=(cov&&cov.fix||'').lastIndexOf('Run: ');
+if(cov.ok!==false||i<0) throw new Error('missing>0 時 fix 必須以 Run: <命令> 結尾: '+JSON.stringify(cov));
+process.stdout.write(cov.fix.slice(i+5));
+" "$1"
+}
+EXPORTS_BEFORE=$(find "$TMP_DIR/home" -path '*exports*' -type f 2>/dev/null | wc -l)
+FIX_CMD=$(fix_cmd "$DOC_ON")
+(cd "$TMP_DIR" && env LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub bash -c "$FIX_CMD") >/dev/null \
+  || { echo "✗ doctor 的修法執行失敗: $FIX_CMD"; exit 1; }
+DOC_FIXED=$(env LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" doctor --json)
+node -e "
+const cov=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector coverage');
+if(!/missing=0\$/.test(cov.value)||cov.ok!==true) throw new Error('照修法執行後仍有缺口: '+cov.value);
+" "$DOC_FIXED"
+EXPORTS_AFTER=$(find "$TMP_DIR/home" -path '*exports*' -type f 2>/dev/null | wc -l)
+[ "$EXPORTS_AFTER" -eq "$EXPORTS_BEFORE" ] || { echo "✗ 修法在資料根留下 payload 檔（$EXPORTS_BEFORE -> $EXPORTS_AFTER）"; exit 1; }
+echo "  修法原樣執行後 missing=0，資料根沒有多出檔案"
+
+# 失敗路徑：ingest 失敗時整串命令必須以非 0 結束，不能被最後的清理吞掉。
+FIX_NEVER=$(fix_cmd "$DOC_NEVER")
+FIX_RC=0
+(cd "$TMP_DIR" && env LIBSQL_URL="file:$TMP_DIR/no-such-dir/x.db" MEMORIA_EMBED_PROVIDER=stub bash -c "$FIX_NEVER") >/dev/null 2>&1 || FIX_RC=$?
+[ "$FIX_RC" -ne 0 ] || { echo "✗ ingest 失敗時修法仍以 0 結束: $FIX_NEVER"; exit 1; }
+echo "  ingest 失敗時修法以非 0 結束（rc=$FIX_RC）"
+
 echo "[vector] ok"
