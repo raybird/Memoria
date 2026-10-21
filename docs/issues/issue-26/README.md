@@ -10,7 +10,7 @@
 
 ## 涉及檔案
 
-- `scripts/test-bootstrap.sh` - issue-25 段以指令替換呼叫 CLI 的地方（目前 3 處，含 `VEC_OUT`、`VEC_OUT2`）
+- `scripts/test-bootstrap.sh` - issue-25 段以指令替換呼叫 CLI 的兩處（`VEC_OUT`、`VEC_OUT2`）。開立時寫成 3 處，第三處是第 15 行的 `PREFLIGHT_OUTPUT`，不在 issue-25 段，依 TBD-2 不改
 
 ## 驗收條件
 
@@ -34,7 +34,19 @@
 
 ## 實作與驗證步驟
 
-1. ⬜ **AC-1、AC-2：失敗時印出原因** — 驗證方式：先在現行腳本取得紅燈（靜默退出，輸出沒有 `✗`），修正後取得綠燈；`bash -n scripts/test-bootstrap.sh`；CI 全套
+1. ✅ **AC-1、AC-2：失敗時印出原因** — 驗證方式：先在現行腳本取得紅燈（靜默退出，輸出沒有 `✗`），修正後取得綠燈；`bash -n scripts/test-bootstrap.sh`；CI 全套
+   - 完成證據（2026-10-21）：
+     - 做法：新增 `cli_ok <label> <命令…>`。命令的 stdout、stderr 先寫進 `$TMP` 底下的檔案；失敗時把 `✗ <label> exited <code>` 與兩份輸出印到 **stderr** 並 `exit 1`，成功時把 stdout 原樣印出。`VEC_OUT`、`VEC_OUT2` 改用它呼叫，環境變數改成 `env VAR=… "$CLI" …` 的形式傳入。印到 stderr 是必要的：函式跑在 `$(...)` 裡，印到 stdout 會又被變數吞掉。
+     - harness：PATH 前置假的 `npm`，`npm ci` 印出 `npm error code EI26` 與 `npm error issue-26 simulated install failure` 並以 1 結束，其他子命令交給真的 npm。
+     - 紅燈（修正前）：rc=1，log 最後一行是 `[bootstrap] issue-25: setup --vector installs helper deps into the user cache`，`✗` 0 筆，假 npm 的原因 0 筆，與 v1.31.0 發版時的情況相同。
+     - 綠燈：rc=1，輸出 `✗ setup --vector (first install) exited 1`，後面附上 setup 的 JSON 步驟，最後一步是 `{"step":"vector-deps","ok":false,…,"error":"npm ci failed (exit 1): npm error code EI26 | npm error issue-26 simulated install failure"}`。
+     - AC-2：不帶假 npm 時 `bash scripts/test-bootstrap.sh` 以 `[bootstrap] ok` 結束；`bash -n` 通過。
+     - 變異檢查：
+       - 拿掉 `>&2`：rc=1，`✗` 0 筆、原因 0 筆，又回到靜默退出，證明 stderr 是關鍵。
+       - 拿掉 `exit 1`：訊息照樣印出，測試仍以非 0 結束，因為後面的 JSON 斷言會失敗。所以 `exit 1` 只是讓腳本停在第一個錯誤，避免後面再冒出不相干的斷言錯誤；它不影響原因有沒有印出來，這部分沒有測試能區分。
+     - 限制：第二處（reuse）不會呼叫 `npm ci`，沒有辦法用同一個 harness 讓它失敗；它與第一處用的是同一個函式，只有 label 不同。
+     - 精煉：code-simplify no-op。
+     - CI：只改了測試腳本，`test-bootstrap.sh` 本機通過，CI 全套待 push 後確認。
 
 ## Timeline
 

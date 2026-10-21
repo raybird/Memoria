@@ -263,7 +263,20 @@ echo "[bootstrap] issue-25: setup --vector installs helper deps into the user ca
 HELPER="$ROOT_DIR/skills/memoria-vector"
 VEC_HASH=$(node -e "process.stdout.write(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex').slice(0,16))" "$HELPER/package-lock.json")
 XDG_OK="$TMP/xdg-ok"
-VEC_OUT=$(XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
+# Runs a CLI call whose stdout the assertions parse. A failure inside VAR=$(...) ends the script under
+# `set -e` before any message, and the command's own output is captured and lost with it; this names
+# the call and shows that output on stderr, which is the only stream that still reaches the log.
+cli_ok() {
+  local label=$1 rc=0
+  shift
+  "$@" >"$TMP/cli-ok.out" 2>"$TMP/cli-ok.err" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    { echo "✗ $label exited $rc"; cat "$TMP/cli-ok.out" "$TMP/cli-ok.err"; } >&2
+    exit 1
+  fi
+  cat "$TMP/cli-ok.out"
+}
+VEC_OUT=$(cli_ok "setup --vector (first install)" env XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
 VEC_DIR="$XDG_OK/memoria/vector/$VEC_HASH"
 echo "$VEC_OUT" | node -e "
 const steps=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l));
@@ -280,7 +293,7 @@ if((s.shadowedBy??null)!==(sibling?process.argv[2]+'/node_modules':null)) throw 
 echo "✓ setup --vector: deps in \$XDG_CACHE_HOME/memoria/vector/<lock hash>, .complete written"
 
 # A second run reuses the completed install instead of reinstalling it.
-VEC_OUT2=$(XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
+VEC_OUT2=$(cli_ok "setup --vector (reuse)" env XDG_CACHE_HOME="$XDG_OK" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP/data-vec" "$CLI" setup --vector --json)
 echo "$VEC_OUT2" | node -e "
 const s=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l)).find(x=>x.step==='vector-deps');
 if(!s||!s.ok||s.reused!==true) throw new Error('second run must reuse the install, got '+JSON.stringify(s));
