@@ -274,7 +274,7 @@ export async function installVectorDeps(runtimeLayout: RuntimeLayout): Promise<V
  * through the helper's own embed path but pinned to `depsDir` — the staged install, which deps.mjs
  * would not pick yet (no `.complete`) and a sibling node_modules would shadow (review 1ffc3a2 S-2).
  * The child prints only the error message on failure: Node prints the stack after it, so a tail of
- * stderr is all frames. Returns the model cache directory deps.mjs assigned.
+ * stderr is all frames. Returns the model cache directory deps.mjs assigned, printed as the last line.
  */
 async function warmUp(helperDir: string, depsDir: string): Promise<string> {
     const depsUrl = pathToFileURL(path.join(helperDir, 'deps.mjs')).href
@@ -286,7 +286,7 @@ async function warmUp(helperDir: string, depsDir: string): Promise<string> {
         `  deps.useDepsLocation({ source: 'cache', dir: ${JSON.stringify(depsDir)}, modelCacheDir, cacheDir: ${JSON.stringify(depsDir)} })`,
         `  const { embedTexts } = await import(${JSON.stringify(embedUrl)})`,
         `  await embedTexts(['warm up'], 'query')`,
-        '  process.stdout.write(JSON.stringify({ modelCacheDir }))',
+        "  process.stdout.write('\\n' + JSON.stringify({ modelCacheDir }) + '\\n')",
         '} catch (error) {',
         '  process.stderr.write(String(error?.message ?? error))',
         '  process.exit(1)',
@@ -294,16 +294,23 @@ async function warmUp(helperDir: string, depsDir: string): Promise<string> {
     ].join('\n')
     const run = await runChild(process.execPath, ['--input-type=module', '-e', script], { cwd: helperDir, env: process.env, timeoutMs: 15 * 60_000 })
     if (!run.ok) throw new Error(`model warm-up failed (${run.status}): ${run.stderr.trim() || 'no error output'}`)
-    return (JSON.parse(run.stdout) as { modelCacheDir: string }).modelCacheDir
+    // The result is the last line: the embedder may chatter on stdout first (review 113c6de N-B).
+    const last = run.stdout.trim().split('\n').pop() ?? ''
+    return (JSON.parse(last) as { modelCacheDir: string }).modelCacheDir
 }
 
 /** npm prints the reason first (`npm error code …` and the lines after it) and boilerplate last, so a
- *  plain tail keeps only the boilerplate (review 1ffc3a2 S-1). */
+ *  plain tail keeps only the boilerplate (review 1ffc3a2 S-1). A failing install script needs more than
+ *  the code: its first four lines only name the package and the command, and the script's own error
+ *  follows them (review 113c6de N-A). So keep up to eight lines from the code on, minus stack frames,
+ *  and the log path. */
 function npmReason(stderr: string): string {
     const lines = stderr.split('\n').map((l) => l.trimEnd()).filter(Boolean)
-    const code = lines.findIndex((l) => /^npm (error|ERR!) code /.test(l))
-    const picked = code >= 0 ? lines.slice(code, code + 4) : lines.slice(-5)
     const log = lines.find((l) => /complete log of this run/.test(l))
+    const code = lines.findIndex((l) => /^npm (error|ERR!) code /.test(l))
+    const picked = code >= 0
+        ? lines.slice(code).filter((l) => l !== log && !/^npm (error|ERR!)\s+at /.test(l)).slice(0, 8)
+        : lines.slice(-5)
     if (log && !picked.includes(log)) picked.push(log)
     return picked.join(' | ') || 'no error output'
 }

@@ -58,7 +58,7 @@ export async function importDep(name)
    - 原本的寫法是先改名、寫標記再暖機，失敗才移除標記；中斷暖機就會留下標記，經審查 1ffc3a2 M-1 指出後改為現行做法。
 5. 已有 `.complete`（local 還要有 transformers）時沿用、不重裝，直接在正式目錄上暖機；暖機失敗則移除標記。殘餘情境：沿用時暖機中途被砍會留下原有標記。只有使用者手動刪過 `models/` 時暖機才需要下載，所以影響有限。
 6. 開始前，刪除行程已不存在的 `<hash>.partial-*` 目錄；仍在執行的同時安裝不受影響。npm 逾時 30 分鐘，暖機逾時 15 分鐘。
-7. 錯誤訊息：暖機子行程只回傳 `error.message`；npm 失敗時保留 `npm error code …` 起算的四行，加上 log 路徑那一行。
+7. 錯誤訊息：暖機子行程只回傳 `error.message`；npm 失敗時從 `npm error code …` 那行起保留最多八行（略過 stack frame），再附上 log 路徑那一行。暖機結果以 stdout 的最後一行回傳，embedder 先印到 stdout 的內容不影響判定。
 8. `--json` 的 step log 為 `{ step: 'vector-deps', path, provider, reused, warmedUp, modelCacheDir, shadowedBy }`；`modelCacheDir` 取自暖機子行程（來源是 `deps.mjs`）。`shadowedBy` 在 helper 旁邊有 `node_modules` 時指出它，那時快取目錄的安裝不會被使用，文字模式另印一行提示。
 9. `XDG_CACHE_HOME` 不是絕對路徑時依 XDG 規範忽略，退回 `~/.cache`。
 
@@ -182,3 +182,14 @@ CI 不跑 local embedding（project.md 環境限制），所以 local provider �
 - **N-6** 已修正。doctor 的修法加註「以 `MEMORIA_HOME` 或 `--memoria-home` 執行」，否則會在目前目錄建立 `./memoria`。
 - **N-7** 已修正。`node -e '…' <deps.mjs 路徑>` 這種情況原本會誤判為直接執行並多印 JSON，在 S-3 的回歸測試裡實際觸發；改為 eval 模式一律不輸出。
 - **N-8** 檢查清單已勾選 GitNexus 項目，並新增發版時寫 CHANGELOG 的待辦。
+
+### review-113c6de（PASS）的建議項
+
+使用者 2026-10-21 問「建議的部份是否一起修一修比較好」，回覆「照建議」：修 N-A、N-B；N-C 維持已記錄的殘餘風險（「`setup --vector`」第 5 點）；N-D 記為 README TBD-5，本次不做。
+
+- **N-A npm 安裝腳本失敗時漏掉根因**：已修正，見第 7 點。
+  - 回歸：`test-bootstrap.sh` 的 `npm postinstall failure -> both the failing package and its cause survive`。假 npm 依 reviewer 實測的格式輸出：`code 1`、path、command、`Error: UNKNOWN …`、`errno: -122`、log 路徑。
+  - 舊寫法只保留前四行，得到 `✗ npm lifecycle failure lost its cause`。
+- **N-B 暖機子行程的 stdout 整段拿去解析**：已修正，改為只解析最後一行。
+  - 回歸：`embedder chatter on stdout -> warm-up still succeeds`。假 embedder 在暖機時往 stdout 印一行。
+  - 舊寫法下得到 `✗ warm-up with stdout chatter was reported as failed`。

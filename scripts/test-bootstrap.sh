@@ -328,6 +328,7 @@ exports.pipeline = async () => {
   }
   if (process.env.FAKE_TF_MODE === 'fail') throw new Error('simulated model download failure: connect ECONNREFUSED')
   if (process.env.FAKE_TF_MODE === 'hang') await new Promise(() => setInterval(() => {}, 1000))
+  if (process.env.FAKE_TF_MODE === 'noisy') console.log('transformers.js: loading model (stdout chatter)')
   return async (texts) => ({ dims: [texts.length, 384], data: new Float32Array(texts.length * 384) })
 }
 EOF
@@ -343,6 +344,22 @@ if [ "${FAKE_NPM_MODE:-}" = fail ]; then
   echo "npm error errno ECONNREFUSED" >&2
   echo "npm error request to https://registry.npmjs.org/@libsql%2fclient failed, reason: connect ECONNREFUSED 127.0.0.1:9" >&2
   i=0; while [ $i -lt 12 ]; do echo "npm error     at noise-frame-$i (node:internal/fake:1:1)" >&2; i=$((i+1)); done
+  echo "npm error A complete log of this run can be found in: /nonexistent/_logs/debug.log" >&2
+  exit 1
+fi
+if [ "${FAKE_NPM_MODE:-}" = lifecycle ]; then
+  # The shape a failing postinstall really produces (review 113c6de N-A): the cause sits after the
+  # four lines naming the package and command.
+  echo "npm error code 1" >&2
+  echo "npm error path /nonexistent/node_modules/onnxruntime-node" >&2
+  echo "npm error command failed" >&2
+  echo "npm error command sh -c node ./script/install" >&2
+  echo "npm error Downloading \"https://example.invalid/onnxruntime-linux-x64-gpu.tgz\"..." >&2
+  echo "npm error Error: UNKNOWN: unknown error, write" >&2
+  echo "npm error     at async writeFile (node:internal/fs/promises:1:1)" >&2
+  echo "npm error {" >&2
+  echo "npm error   errno: -122," >&2
+  echo "npm error }" >&2
   echo "npm error A complete log of this run can be found in: /nonexistent/_logs/debug.log" >&2
   exit 1
 fi
@@ -413,6 +430,19 @@ if WF=$(iso_vec XDG_CACHE_HOME="$TMP/xdg-wf" FAKE_NPM_MODE=fail 2>&1); then
 fi
 echo "$WF" | grep -q 'ECONNREFUSED 127.0.0.1:9' || { echo "✗ npm failure lost its reason: $WF"; exit 1; }
 echo "✓ noisy npm failure -> the reason line survives"
+
+if WL=$(iso_vec XDG_CACHE_HOME="$TMP/xdg-wl" FAKE_NPM_MODE=lifecycle 2>&1); then
+  echo "✗ npm lifecycle failure must exit non-zero"; exit 1
+fi
+echo "$WL" | grep -q 'Error: UNKNOWN: unknown error, write' || { echo "✗ npm lifecycle failure lost its cause: $WL"; exit 1; }
+echo "$WL" | grep -q 'onnxruntime-node' || { echo "✗ npm lifecycle failure lost the failing package: $WL"; exit 1; }
+echo "✓ npm postinstall failure -> both the failing package and its cause survive"
+
+# Review 113c6de N-B: anything the embedder prints to stdout must not turn a successful warm-up into a failure.
+XWN="$TMP/xdg-wn"
+WN=$(iso_vec XDG_CACHE_HOME="$XWN" FAKE_TF_MODE=noisy) || { echo "✗ warm-up with stdout chatter was reported as failed: $WN"; exit 1; }
+[ -f "$XWN/memoria/vector/$VEC_HASH/.complete" ] || { echo "✗ warm-up with stdout chatter left no .complete"; exit 1; }
+echo "✓ embedder chatter on stdout -> warm-up still succeeds"
 
 echo ""
 echo "[bootstrap] ok"
