@@ -32,6 +32,7 @@ Guards `publish` enforces, each from something that actually went wrong:
 | annotated tag, pushed **by ref** | `--follow-tags` silently skipping a lightweight tag |
 | release run must appear within 2 min | a successful push, an advanced `main`, and no release at all |
 | parity check against the **downloaded** artifact | a green workflow that shipped the wrong contents (issue-10) |
+| npm checked **last**, by exact version (`@<version>`), polled up to 5 min | the registry lagging the publish: `latest` still names the previous release for a few minutes, and v1.30.0 failed here after a successful publish, skipping the checks queued behind it (issue-24). A timeout still fails, naming the command to confirm later; the tag stays used |
 
 After the tag lands, the `release.yml` workflow:
 

@@ -24,6 +24,8 @@
 #                                            advanced main, and no release, with nothing in the output
 #     - inspect the PUBLISHED artifact     → a green workflow says the build passed, not that the
 #                                            tarball contains what it should (that was issue-10)
+#     - npm last, exact version, polled    → the registry lags the publish; `latest` still names the
+#                                            previous release for minutes (v1.30.0, issue-24)
 #
 # Usage:
 #   bash scripts/release.sh prepare <patch|minor|major|X.Y.Z>
@@ -40,6 +42,12 @@ WORKFLOW="release.yml"
 # than sleep-and-hope, and treat "never appeared" as a hard failure — that is the tag-not-pushed case.
 RUN_POLL_ATTEMPTS=24
 RUN_POLL_INTERVAL=5
+# npm answers the publish before the registry serves it ("may take a few minutes to become available"),
+# and `npm view <pkg> version` reads the `latest` tag, which still names the previous release in that
+# window — v1.30.0 failed here with a successful publish behind it (issue-24). Ask for the exact
+# version and wait for it. Overridable so the verify stage can be exercised without a real release.
+NPM_POLL_ATTEMPTS="${NPM_POLL_ATTEMPTS:-30}"
+NPM_POLL_INTERVAL="${NPM_POLL_INTERVAL:-10}"
 
 die() { echo "✗ $*" >&2; exit 1; }
 step() { echo; echo "── $* ──"; }
@@ -192,10 +200,12 @@ The tag is public and must not be reused — investigate, then release a new ver
     gh run watch "$run_id" --exit-status \
         || die "release workflow failed. The public tag $tag remains and must NOT be reused — fix forward with a new version."
 
+    verify_shipped "$version" "$tag"
+}
+
+verify_shipped() {
+    local version="$1" tag="$2"
     step "Verify what actually shipped"
-    local published
-    published="$(npm view @raybird.chen/memoria version)"
-    [ "$published" = "$version" ] || die "npm reports $published, expected $version"
     gh release view "$tag" >/dev/null || die "no GitHub Release for $tag"
 
     # A green workflow proves the build passed, not that the artifact carries what it should. issue-10
@@ -208,12 +218,29 @@ The tag is public and must not be reused — investigate, then release a new ver
         || die "the PUBLISHED artifact fails delivery parity"
     rm -rf "$tmp"
 
+    # Last, because it is the only check that has to wait: everything above is already decided.
+    step "Wait for npm to serve $version"
+    local published="" attempt
+    for attempt in $(seq 1 "$NPM_POLL_ATTEMPTS"); do
+        published="$(npm view "@raybird.chen/memoria@$version" version 2>/dev/null || true)"
+        [ "$published" = "$version" ] && break
+        sleep "$NPM_POLL_INTERVAL"
+    done
+    [ "$published" = "$version" ] || die "npm does not serve $version after $((NPM_POLL_ATTEMPTS * NPM_POLL_INTERVAL))s.
+The release workflow already published it and the GitHub Release and artifact parity checks passed;
+the public tag $tag must NOT be reused. Confirm once the registry catches up:
+  npm view @raybird.chen/memoria@$version version"
+    echo "✓ npm serves $version (attempt $attempt)"
+
     step "Released $tag"
     echo "npm: $published"
     echo "GitHub Release: $(gh release view "$tag" --json url --jq .url)"
     echo
     echo "Upgrade a global install with: npm i -g @raybird.chen/memoria@$version"
 }
+
+# Sourcing (instead of executing) only defines the functions, so a harness can drive one stage alone.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 case "${1:-}" in
     prepare) shift; cmd_prepare "$@" ;;
