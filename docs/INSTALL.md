@@ -26,7 +26,7 @@ memoria setup --serve --json
 
 `setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
 
-升級用同一個命令指定版本：`npm install -g @raybird.chen/memoria@<版本>`。有啟用語意召回（設了 `LIBSQL_URL`）時，升級會連同套件目錄換掉 `skills/memoria-vector/node_modules`，helper 依賴與快取在裡面的模型都會被清空，recall 會不報錯地退回字面比對。每次升級後重裝並暖機一次（issue-23）：
+升級用同一個命令指定版本：`npm install -g @raybird.chen/memoria@<版本>`。有啟用語意召回（設了 `LIBSQL_URL`）時，升級會連同套件目錄換掉 `skills/memoria-vector/node_modules`，helper 依賴與快取在裡面的模型都會被清空，recall 會不報錯地退回字面比對。每次升級後，在設了 `LIBSQL_URL` 的 shell 裡重裝並暖機一次（issue-23）。少了 `LIBSQL_URL`，暖機會失敗，doctor 也只會顯示 `vector recall: not enabled`，看起來像全綠：
 
 ```bash
 cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector"

@@ -53,12 +53,19 @@
      - 綠燈：`pnpm run check` 無錯；`pnpm run build` 後 `node dist/cli.mjs --help` 正常；`test-vector-recall.sh` exit 0，新行 `enabled + embedder missing -> fix names the upgrade wipe and the warm-up`。
      - GitNexus：`vectorChecks` 是模組內私有函式，不在索引中；grep 確認唯一呼叫端是 `registerDoctorCommand`，它的 impact 為 LOW（直接呼叫端只有 `src/cli.ts` 的 `run`）。只改字串，doctor 的判定邏輯與 JSON 結構不變。
      - 精煉：code-simplify no-op。改動是一段字串和一個測試區塊，沒有可收斂的重複。
+     - 審查修正（`review-45d6170` S-1、N-2、N-3）：
+       - S-1：`ISO_PKG` 改用 `pwd -P` 取得 realpath，因為 doctor 回報的路徑已解析 symlink。`TMPDIR` 指向 symlink 時重跑 `test-vector-recall.sh`，從誤紅轉為 exit 0。
+       - N-2：fix 改寫為「在全域安裝下，每次 `npm i -g` 升級……」。
+       - N-3：斷言加上 `vector_timeout`，刪掉逾時那半句時測試會紅。
+       - 改完後 `pnpm run check`、build、`test-vector-recall.sh` 皆通過。
+     - 提交前 `detect_changes`：`45d6170` 為 low，affected processes 0（只列出文件段落，`vectorChecks` 不在索引）。
      - 回歸：CI 全套 34 支依 `ci.yml` 順序逐支執行（清除 `LIBSQL_URL`、`MEMORIA_HOME` 等開發者環境變數，先 `pnpm run build` 與 `release:package`）全數 PASS、exit 0。被測對象是 `817d69a` 加上本次全部改動的工作區，2026-10-21T10:02。
 2. ✅ **AC-2、AC-3：文件更正與升級步驟**（相依：步驟 1，fix 文字與文件用同一套說法）— 驗證方式：AC-2 的 grep 無結果；AC-3 的命令在維護者機器照抄執行一次，記錄 `doctor` 輸出與 recall 的 `route_mode`
    - 完成證據（2026-10-21）：
      - AC-2：`grep -rn 'cache/huggingface' skills/memoria-vector/README.md docs/OPERATIONS.md` 無結果（exit 1）。兩處改寫為模型快取在 `node_modules/@huggingface/transformers/.cache/`、隨 `node_modules` 一起被移除。位置依據 transformers.js 的 `DEFAULT_CACHE_DIR`，以及實機目錄 `.cache/Xenova/multilingual-e5-small`。
      - AC-3：INSTALL.md Method A 新增升級段落；OPERATIONS.md 新增「3. Every global upgrade wipes …」，`doctor` 表格的 fix 說明同步更新，標題改為 Three things（repo 內沒有連到舊標題的錨點）。
      - AC-3 實機重現升級後的狀態（維護者機器，全域 1.30.0）：刪除 helper 的 `node_modules` → `doctor` 報 `✗ vector embedder: @huggingface/transformers missing`。照抄文件命令：`npm install` 用 24 秒裝回 65 個套件 → 暖機 17.58 秒（含模型下載），之後 `.cache/Xenova/multilingual-e5-small` 存在 → `doctor` 顯示 `✓ vector embedder: installed`、`vector coverage: embedded=818 expected=818 missing=0` → 暖機後第一次 `recall --mode vector` 就是 `route_mode=hybrid_vector`（971ms）。向量庫在 `LIBSQL_URL`，不受影響，不需要重新 ingest。
+     - 審查 N-1：INSTALL.md、OPERATIONS.md 與 helper README 的升級步驟改為寫明「在設了 `LIBSQL_URL` 的 shell 裡執行」，並說明少了它會發生什麼：暖機失敗，doctor 顯示 `not enabled` 卻算通過。
      - 另有一次是在既有安裝上直接執行（模型仍在快取），暖機只要 1.03 秒，不能當作升級後狀態的證據，所以又做了上面的重現。
 3. ✅ **AC-4：issue-19 證據更正** — 驗證方式：人工閱讀
    - 完成證據（2026-10-21）：issue-19 步驟 4 的說法由「不加 skip 會失敗」改為「當下出現偶發錯誤；同日兩次重現不加 skip 都成功」，並連到本 issue。
@@ -69,9 +76,10 @@
 |------|------|--------|
 | 2026-10-21 | 建立；範圍決策「A：只改 doctor fix 文字與文件」，依賴搬出套件目錄另開 issue | - |
 | 2026-10-21 | AC-1～AC-4 核准（「照建議」） | - |
+| 2026-10-21 | 獨立審查 PASS（`45d6170`，[報告](./review-45d6170.md)）；修正 S-1 與 N-1～N-4，待第二輪審查 | - |
 
 ---
 **建立日期**: 2026-10-21  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 進行中
+**狀態**: 待審查

@@ -46,8 +46,8 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
             ok: false,
             value: `@huggingface/transformers missing in ${report.embedderDir}`,
             fix: 'MEMORIA_EMBED_PROVIDER=local needs @huggingface/transformers, which is a devDependency ' +
-                'of the helper — "npm install --omit=dev" and NODE_ENV=production both skip it, and every ' +
-                '"npm i -g" upgrade replaces this directory, wiping it together with the cached model. Run ' +
+                'of the helper — "npm install --omit=dev" and NODE_ENV=production both skip it, and on a global ' +
+                'install every "npm i -g" upgrade replaces this directory, wiping it together with the cached model. Run ' +
                 `"npm install" (without --omit=dev) inside ${report.embedderDir}, again after each upgrade, ` +
                 `then warm the model once there with: echo '{"query":"warm up"}' | node vector-recall.mjs — ` +
                 'the first run downloads and loads it and can outlast the recall timeout (route_mode=vector_timeout). ' +

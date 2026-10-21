@@ -344,7 +344,8 @@ sessions + decisions + nodes you expect, and `SELECT COUNT(*) FROM memoria_vecto
 helper's `node_modules`, inside the globally installed package, and `npm i -g @raybird.chen/memoria@<new>`
 replaces that whole directory. Recall keeps answering with lexical hits (`vector_timeout` /
 `vector_unavailable`), and `doctor` reports `vector embedder: @huggingface/transformers missing`.
-After each upgrade (issue-23):
+After each upgrade, in a shell that has `LIBSQL_URL` set (issue-23) — without it the warm-up fails
+and `doctor` reports `vector recall: not enabled` as passing, which reads like all green:
 
 ```bash
 cd "$(dirname "$(readlink -f "$(which memoria)")")/../skills/memoria-vector"

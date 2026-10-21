@@ -29,7 +29,7 @@ CI installs with `--omit=dev` and runs the deterministic `stub` provider instead
 > **A global `npm i -g` upgrade of memoria wipes this directory's `node_modules`, model included.**
 > The helper ships inside the package, and npm replaces the whole package directory on upgrade, so
 > semantic recall quietly falls back to lexical results until you reinstall here. After each upgrade,
-> run `npm install` in this directory again, then warm the model once with
+> run `npm install` in this directory again, then — with `LIBSQL_URL` set — warm the model once with
 > `echo '{"query":"warm up"}' | node vector-recall.mjs` — the first run after a reinstall can take
 > longer than the recall timeout (`route_mode: vector_timeout`). `memoria doctor` names both steps.
 
