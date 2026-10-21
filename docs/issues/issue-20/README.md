@@ -58,8 +58,12 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
      - 精煉：code-simplify 檢查 no-op——改動只有一個 4 行函式加兩處呼叫，沒有可再收斂的重複，沿用上述綠燈。
      - GitNexus：改動前 `summarizeMergeCommit`、`runSummaryPipeline` 的 impact 為 CRITICAL（位於 `repo sync`／`repo summarize` 的 CLI 與 HTTP 入口），已向使用者揭露並以既有 sync 路徑斷言作防護；提交前 `detect_changes` 只列出這兩個函式（`summarizeTag`、`ok` 為 hunk 相鄰誤報）。
      - 回歸：CI 全套（依 `ci.yml` 順序逐支執行 34 支，清除 `LIBSQL_URL`／`MEMORIA_HOME` 等開發者環境變數）全數 PASS、exit 0，被測為 `ac76109` 加上本次提交內容的工作區，2026-10-20T20:47。
-3. 📝 **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`，project.md 地雷 M-2 標註失效日期
-   - 完成證據：（發布後回寫）
+3. ✅ **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`，project.md 地雷 M-2 標註失效日期
+   - 完成證據（2026-10-21，全域 memoria 1.30.0）：
+     - 實機驗證：在 external-repo 挑兩個 sync 已建立且已 enriched 的 merge（`423505d`、`c857522`），各跑一次 `repo summarize --merge <sha> --json`，回傳的都是原本那筆摘要 id，狀態 enriched；`git_summaries` 前後都是 237 筆。
+     - 移除繞道：`~/.claude/skills/memoria/SKILL.md` 時機 4 改回直接 `--merge`，刪除 `find-merge-summary.sh`。
+     - 修正前留下的重複：以 `head_sha` 分組，同 head 有兩筆 merge 摘要的只有一組（一筆 enriched、一筆 pending），已把 pending 那筆 `--dismiss`。其餘同 head 多筆的組合是 release 與 merge 落在同一個 commit，或同一個 commit 有多個 tag，不算重複。
+     - project.md 地雷 M-2 標註 2026-10-21 起失效。
 
 ## Timeline
 
@@ -69,9 +73,10 @@ agent 照「合併後跑 `--merge` 回寫自己那筆」的流程操作時，會
 | 2026-10-20 | AC-1～AC-3 核准（「照建議」） | - |
 | 2026-10-20 | 獨立審查 PASS（`bebc5b4`，[報告](./review-bebc5b4.md)）；依 S-1、S-2、N-1 修訂文件與註解，重新審查 | - |
 | 2026-10-20 | 合併進 main（rebase 後 fast-forward，`b62af5e`）；剩發版後移除本機繞道一步，狀態改為等待外部驗收窗——窗口：含本修正的下一個 npm 版本發布；判準：該步驟的驗證方式完成並回寫證據 | - |
+| 2026-10-21 | v1.30.0 發布；實機驗證 `--merge` 回傳既有摘要，移除本機繞道、dismiss 一筆修正前留下的重複，結案 | - |
 
 ---
 **建立日期**: 2026-10-20  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 等待外部驗收窗
+**狀態**: 已完成

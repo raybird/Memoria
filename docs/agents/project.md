@@ -45,5 +45,5 @@
 
 | 編號 | 症狀 | 觸發情境 | 怎麼查 | 證據 |
 | --- | --- | --- | --- | --- |
-| M-1 | `vector-ingest.mjs` 的 node 行程被 OOM kill，向量庫停在舊筆數 | 語料成長到數百筆以上後直接執行 ingest；容易被踩是因為小語料一直成功 | `journalctl -k` 找 `Killed process (node)`；`doctor` 的 vector coverage `missing>0` | [issue-19](../issues/issue-19/README.md) |
-| M-2 | 對同一個 merge 出現兩筆摘要，一筆永遠 pending | 先 sync 後再 `repo summarize --merge`（或反序）；兩條路徑算出的 fingerprint 不同 | `git_summaries` JOIN `git_summary_ranges` 以 `head_sha` 查，同 head 多於一筆 | [issue-20](../issues/issue-20/README.md) |
+| M-1 | （2026-10-21 起失效：v1.30.0 起 embed 分批）`vector-ingest.mjs` 的 node 行程被 OOM kill，向量庫停在舊筆數 | 語料成長到數百筆以上後直接執行 ingest；容易被踩是因為小語料一直成功 | `journalctl -k` 找 `Killed process (node)`；`doctor` 的 vector coverage `missing>0` | [issue-19](../issues/issue-19/README.md) |
+| M-2 | （2026-10-21 起失效：v1.30.0 起 `--merge` 回傳 sync 既有摘要；之前留下的重複需手動 dismiss）對同一個 merge 出現兩筆摘要，一筆永遠 pending | 先 sync 後再 `repo summarize --merge`（或反序）；兩條路徑算出的 fingerprint 不同 | `git_summaries` JOIN `git_summary_ranges` 以 `head_sha` 查，同 head 多於一筆 | [issue-20](../issues/issue-20/README.md) |

@@ -80,8 +80,12 @@
      - GitNexus：`embedLocal` 的 impact 在改動之後才補跑（流程疏漏，照實記錄）——LOW，唯一呼叫端 `embedTexts`，再上層是 `vector-recall.mjs` 與 `vector-ingest.mjs`，兩者分別由 AC-2 與 AC-3 覆蓋；提交前 `detect_changes` 為 low、受影響流程 0。
      - 精煉：code-simplify no-op——分批迴圈與 `resolveBatchSize` 各只有一處用途，沒有可再收斂的重複。
      - 峰值不隨筆數線性成長：以同一版程式在不同筆數下的量測為據——獨立審查 E9（合成 payload、暫存向量庫、`MemoryMax=6G`）400／800／1600 筆的峰值為 2534336／2556952／2556552 kB，持平；改動前 800 筆被 OOM kill（E10）。實機 780 筆的 2.5GB 與之一致。（審查 S-3 更正：原寫「1310 筆是 771 筆的 1.7 倍」，把未 embed 的 530 筆算進去了。）外部切批（每批各起一個行程）時量到的 1.4GB 不是本實作的數值；`embed.mjs` 註解與 helper README 已改為單一行程的約 2.5GB（S-4）。
-4. 📝 **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/ingest-vectors.sh` 改為直接呼叫一次 `vector-ingest.mjs`，project.md 地雷 M-1 標註失效日期
-   - 完成證據：（發布後回寫）
+4. ✅ **新版發布後移除本機繞道**（相依：含本修正的版本發布；不屬本 repo 交付內容）— 驗證方式：`~/.claude/skills/memoria/ingest-vectors.sh` 改為直接呼叫一次 `vector-ingest.mjs`，project.md 地雷 M-1 標註失效日期
+   - 完成證據（2026-10-21，全域 memoria 1.30.0）：
+     - 實機驗證：不切批，一次把 1336 個 entity 的完整 payload 送進 `vector-ingest.mjs`（`systemd-run --user --scope -p MemoryMax=6G`）→ `{"ok":true,"embedded":799,"skipped":537}`，峰值 2499592 kB，耗時 70.65 秒，exit 0；`doctor` 的 vector coverage `embedded=799 expected=799 missing=0`。
+     - 移除繞道：`~/.claude/skills/memoria/ingest-vectors.sh` 的 jq 切批迴圈換成一次呼叫 `vector-ingest.mjs`；改完後執行一次，印出 `missing=0`。
+     - project.md 地雷 M-1 標註 2026-10-21 起失效。
+     - 升級時踩到：`npm i -g` 會整個換掉套件目錄，`skills/memoria-vector/node_modules`（含模型快取）跟著被清掉，doctor 報 `vector embedder: @huggingface/transformers missing`。用 `ONNXRUNTIME_NODE_INSTALL=skip npm ci --include=dev` 補裝；不加 skip 的話，onnxruntime-node 的 postinstall 下載 CUDA 執行檔時會失敗。模型冷啟動第一次約 14 秒，超過 recall 的 10 秒逾時，之後約 1 秒。
 
 ## Timeline
 
@@ -92,9 +96,10 @@
 | 2026-10-20 | 獨立審查 PASS（`b968c23`，[報告](./review-b968c23.md)），附 S-2 `需決策` | - |
 | 2026-10-20 | 依 TBD-3（「一律都照建議」）修正 S-1～S-4，AC-2 檢查方式修訂；待重新審查 | - |
 | 2026-10-20 | 合併進 main（rebase 後 fast-forward，`274f58d`）；剩發版後移除本機繞道一步，狀態改為等待外部驗收窗——窗口：含本修正的下一個 npm 版本發布；判準：該步驟的驗證方式完成並回寫證據 | - |
+| 2026-10-21 | v1.30.0 發布；實機驗證完整 ingest 不 OOM，移除本機切批繞道，結案 | - |
 
 ---
 **建立日期**: 2026-10-20  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 等待外部驗收窗
+**狀態**: 已完成
