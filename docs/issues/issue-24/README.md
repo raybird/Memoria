@@ -103,9 +103,10 @@ rc=$?; echo "rc=$rc npm_calls=$(cat "$FAKE_STATE/npm-calls" 2>/dev/null)"; rm -r
 | 2026-10-21 | 建立 | - |
 | 2026-10-21 | AC-1、AC-2 核准（「照建議」） | - |
 | 2026-10-21 | 獨立審查 PASS（`e522fd9`，[報告](./review-e522fd9.md)）；N-3 依 TBD-2 採 (A)，其餘 NIT 不修 | - |
+| 2026-10-21 | 決策紀錄審查 PASS（`b32aff2`，[報告](./review-b32aff2.md)）；fast-forward 合併進 main（`d9e073d`）。剩步驟 2，狀態改為等待外部驗收窗：窗口是下一次 `release:publish`（v1.30.1）；判準是該次發版不需人工補驗即跑到 `Released`，並回寫 npm 輪詢次數 | - |
 
 ---
 **建立日期**: 2026-10-21  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待審查
+**狀態**: 等待外部驗收窗
