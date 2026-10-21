@@ -302,17 +302,24 @@ async function warmUp(helperDir: string, depsDir: string): Promise<string> {
 /** npm prints the reason first (`npm error code …` and the lines after it) and boilerplate last, so a
  *  plain tail keeps only the boilerplate (review 1ffc3a2 S-1). A failing install script needs more than
  *  the code: its first four lines only name the package and the command, and the script's own error
- *  follows them (review 113c6de N-A). So keep up to eight lines from the code on, minus stack frames,
- *  and the log path. */
+ *  comes after Node's uncaught-exception source excerpt (reviews 113c6de N-A, b525453 N-A'). So from
+ *  the code on, drop what carries no cause — stack frames, that excerpt, blank lines — keep up to eight
+ *  lines, and end with the log path. */
 function npmReason(stderr: string): string {
     const lines = stderr.split('\n').map((l) => l.trimEnd()).filter(Boolean)
     const log = lines.find((l) => /complete log of this run/.test(l))
     const code = lines.findIndex((l) => /^npm (error|ERR!) code /.test(l))
-    const picked = code >= 0
-        ? lines.slice(code).filter((l) => l !== log && !/^npm (error|ERR!)\s+at /.test(l)).slice(0, 8)
-        : lines.slice(-5)
-    if (log && !picked.includes(log)) picked.push(log)
-    return picked.join(' | ') || 'no error output'
+    if (code < 0) return lines.slice(-5).join(' | ') || 'no error output'
+    const excerpt = /^npm (error|ERR!) node:\S+:\d+$/
+    const rest = lines.slice(code).filter((l, i, all) =>
+        l !== log &&
+        !/^npm (error|ERR!)\s+at /.test(l) &&       // stack frame
+        !/^npm (error|ERR!)(\s+\^+)?$/.test(l) &&   // blank, or the excerpt's caret
+        !excerpt.test(l) &&                         // excerpt location
+        !(i > 0 && excerpt.test(all[i - 1])))       // the source line under it
+    const picked = rest.slice(0, 8)
+    if (log) picked.push(log)
+    return picked.join(' | ')
 }
 
 /** A staging directory whose process is gone will never be renamed into place; reclaim it (~720MB)

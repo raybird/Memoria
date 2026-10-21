@@ -58,7 +58,7 @@ export async function importDep(name)
    - 原本的寫法是先改名、寫標記再暖機，失敗才移除標記；中斷暖機就會留下標記，經審查 1ffc3a2 M-1 指出後改為現行做法。
 5. 已有 `.complete`（local 還要有 transformers）時沿用、不重裝，直接在正式目錄上暖機；暖機失敗則移除標記。殘餘情境：沿用時暖機中途被砍會留下原有標記。只有使用者手動刪過 `models/` 時暖機才需要下載，所以影響有限。
 6. 開始前，刪除行程已不存在的 `<hash>.partial-*` 目錄；仍在執行的同時安裝不受影響。npm 逾時 30 分鐘，暖機逾時 15 分鐘。
-7. 錯誤訊息：暖機子行程只回傳 `error.message`；npm 失敗時從 `npm error code …` 那行起保留最多八行（略過 stack frame），再附上 log 路徑那一行。暖機結果以 stdout 的最後一行回傳，embedder 先印到 stdout 的內容不影響判定。
+7. 錯誤訊息：暖機子行程只回傳 `error.message`；npm 失敗時從 `npm error code …` 那行起，略過 stack frame、Node 未捕捉例外的來源摘錄（`node:…:N`、其下一行原始碼、`^`）與空白行，保留最多八行，再附上 log 路徑那一行。暖機結果以 stdout 的最後一行回傳，embedder 先印到 stdout 的內容不影響判定。
 8. `--json` 的 step log 為 `{ step: 'vector-deps', path, provider, reused, warmedUp, modelCacheDir, shadowedBy }`；`modelCacheDir` 取自暖機子行程（來源是 `deps.mjs`）。`shadowedBy` 在 helper 旁邊有 `node_modules` 時指出它，那時快取目錄的安裝不會被使用，文字模式另印一行提示。
 9. `XDG_CACHE_HOME` 不是絕對路徑時依 XDG 規範忽略，退回 `~/.cache`。
 
@@ -193,3 +193,20 @@ CI 不跑 local embedding（project.md 環境限制），所以 local provider �
 - **N-B 暖機子行程的 stdout 整段拿去解析**：已修正，改為只解析最後一行。
   - 回歸：`embedder chatter on stdout -> warm-up still succeeds`。假 embedder 在暖機時往 stdout 印一行。
   - 舊寫法下得到 `✗ warm-up with stdout chatter was reported as failed`。
+
+### review-b525453（PASS）的建議項
+
+N-A 是使用者要求修的項目，review-b525453 用真實的 `npm ci` 指出它在真實的安裝腳本失敗時仍只修了一部分（N-A'），所以在同一個授權範圍內補完。
+
+- **N-A' 真實安裝腳本失敗仍漏掉根因**：已修正，見第 7 點。篩選時另外略過 Node 的來源摘錄、`^` 與空白行。
+  - 夾具改用 reviewer 從真實 npm debug log 取得的格式：`node:internal/process/promises:394`、`triggerUncaughtException…`、`^`、空白，之後才是 `[Error: Unknown system error -122 …]`。
+  - 舊寫法下得到 `✗ npm lifecycle failure lost its cause`。
+- **N-E 略過 stack frame 的規則沒有測試保護**：已補。ECONNREFUSED 夾具改成把 12 行 frame 放在原因之前；lifecycle 夾具另外斷言錯誤訊息裡不含每一種雜訊。
+  - 逐條拿掉篩選規則都會轉紅：
+    - 拿掉 frame：`✗ npm failure lost its reason`。
+    - 拿掉摘錄位置：`✗ … still carries noise 'node:internal/process/promises:394'`。
+    - 拿掉原始碼行：`✗ … still carries noise 'triggerUncaughtException'`。
+    - 拿掉空白與 `^`：`✗ … still carries noise 'npm error     ^'`。
+- **精煉**：
+  - 試過「額度內沒有 Error 行時補上第一個 Error 行」的保底。在這組夾具上它和篩選各自都能救回原因，測試分不出是哪一個起作用，屬於沒有測試保護的分支，所以移除。
+  - 「只保留帶 `npm error` 前綴的行」的條件同樣沒有測試，而且 npm 在 code 之後的輸出本來都帶前綴，一併移除。

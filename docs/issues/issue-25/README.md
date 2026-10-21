@@ -148,6 +148,7 @@ Feature: 語意召回的依賴與模型撐過全域升級
 | 2026-10-21 | S0～S4 完成；local provider 以隔離 prefix 實機驗證升級前後 | - |
 | 2026-10-21 | 審查 review-1ffc3a2 判 RETURN TO execute-task；修正 M-1、S-1～S-4、N-1～N-7 | - |
 | 2026-10-21 | 重審 review-113c6de 判 PASS；依使用者「照建議」再修 N-A、N-B，N-C 維持已記錄的殘餘風險，N-D 記為 TBD-5 | - |
+| 2026-10-21 | 重審 review-b525453 判 PASS；補完 N-A'（真實 npm 安裝腳本失敗格式）與 N-E | - |
 
 ---
 **建立日期**: 2026-10-21  
