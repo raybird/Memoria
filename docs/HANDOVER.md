@@ -225,5 +225,10 @@ MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
 
   ⚠ **helper 的檔案路徑本身也已經是事實上的契約**(2026-08-17 得知):該下游的 compose 把 `MEMORIA_VECTOR_RECALL_CMD` 寫成 npm 全域安裝下的**完整絕對路徑**(`…/node_modules/@raybird.chen/memoria/skills/memoria-vector/vector-recall.mjs`)。所以**搬動 helper 位置對他們是靜默失效**——CLI 照跑、`recall` 照回、只是永遠退回非語意路徑,沒有任何錯誤訊息。那是他們寫死路徑的選擇、他們自己的風險,但這是「動了會弄壞別人而且對方不會立刻知道」的少數幾件事之一,**要動就先知會**。
   ｜ 反過來,v1.28.1 的 helper 契約在他們那條路徑上是**實際驗過**而非「沒觸發」:14 項閘門全過,含 `route_mode=hybrid_vector`、唯讀掛載、非特權使用者、以及 `better-sqlite3` 的 ABI prebuild(Node 18.20.8 對 18.20.4,同 major)。
+  ｜ **issue-25（2026-10-21）改了 helper 的依賴載入順序**：helper 腳本位置與 stdin/stdout 契約都沒動，依賴改經 `skills/memoria-vector/deps.mjs` 載入。
+    - 旁邊有 `node_modules` 時照舊載入，模型快取位置也不變。該下游自帶 `node_modules`，所以走的是這條。
+    - 旁邊沒有時，才去找 `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/<package-lock.json 雜湊>/`（由 `setup --vector` 安裝）。
+    - sibling 路徑刻意不依賴 `homedir()` 與快取目錄，以符合唯讀掛載、非特權使用者的情境（審查 1ffc3a2 S-3）。
+    - 依本條規定，含這項變更的版本發版時 CHANGELOG 要寫明。
 - **`.serena/project.yml` 隨 Serena schema 升級才提交**(2026-07-27 起);`mcp-memory-libsql.db` 等 MCP/執行期產物一律不進版控(已在 `.gitignore`)。
 - **版控文件不得含外部 repo 的名稱/路徑/tag 命名**(2026-07-28 起):實測案例一律用代稱(如 external-repo、`nightly-<date>`),量化數據(commits/bytes/score)可留。本 repo 是公開的,issue 文件與 CHANGELOG 都會被讀到。
