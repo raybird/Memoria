@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.31.0] - 2026-10-21
+
+### Added
+- **`memoria setup --vector` installs the semantic-recall helper's dependencies outside the package, so a global upgrade no longer wipes them** (issue-25). Until now the helper's dependencies (`@libsql/client`, `@huggingface/transformers`, ~723MB) and the e5 model cache lived in `skills/memoria-vector/node_modules` inside the globally installed package, and every `npm i -g` replaced that directory, silently degrading recall to lexical hits. `setup --vector` installs them into `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/<hash>/`, where `<hash>` comes from the helper's `package-lock.json`, downloads the model into `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/models/`, and warms it once, because the first load can outlast the recall timeout. An upgrade that keeps the same lockfile needs nothing. One that changes it resolves to a new directory, which `doctor` reports with `setup --vector` as the fix. It follows `MEMORIA_EMBED_PROVIDER`: `stub` installs only `@libsql/client` and skips the model. npm and the warm-up both run in a staging directory, and the install is marked complete only after both succeed, so a failure, Ctrl-C or kill never leaves something that reads as installed. Failures exit non-zero with npm's or the embedder's actual reason. Old hash directories are not cleaned up; delete one once no installed version uses it. **Upgrade note:** this upgrade itself still replaces the old in-package `node_modules`; if you use semantic recall, run `memoria setup --vector` once after installing this version (with `MEMORIA_HOME` set, or `--memoria-home`, since `setup` also initializes the data root).
+
+### Changed
+- **The vector helper resolves its dependencies through `skills/memoria-vector/deps.mjs`** (issue-25). A `node_modules` beside the helper still wins and loads exactly as before, including transformers.js's default model cache location, so a checkout or an image that bundles the helper with its own dependencies sees no change. Only without one does the helper look in the user cache that `setup --vector` fills, and only at a directory carrying `.complete`. The helper scripts stay at the same paths and their stdin/stdout contract is unchanged. `node deps.mjs` prints which location applies, and `doctor` asks it rather than re-deriving the lockfile hash. A relative `XDG_CACHE_HOME` is ignored, as the XDG spec requires.
+- **`doctor`'s embedder fix depends on where the helper's dependencies would come from** (issue-25). With nothing beside the helper (the shape of a global install), it names the cache directory for this helper's lockfile and `memoria setup --vector`. With a `node_modules` beside the helper but no `@huggingface/transformers`, it keeps the issue-23 remedy: an in-place `npm install` without `--omit=dev`, then the warm-up.
+
+### Docs
+- `skills/memoria-vector/README.md`, `docs/INSTALL.md`, `docs/OPERATIONS.md`, `docs/MCP_INTEGRATION.md` and both READMEs now describe `setup --vector` as the install path for a global install. The upgrade steps added in 1.30.1 are replaced: re-running is needed only when an upgrade changes the helper's dependency set.
+
 ## [1.30.1] - 2026-10-21
 
 No runtime, CLI or schema behaviour changed: one `doctor` message, the release script's last stage, and docs.
