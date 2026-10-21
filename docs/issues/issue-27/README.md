@@ -90,9 +90,10 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
 | 2026-10-21 | 建立；v1.31.0 發版收尾時，部署版 skill 沒有可用的補向量庫步驟而發現 | - |
 | 2026-10-21 | AC-1、AC-2 核准，TBD-2 採 (A)（「照建議」） | - |
 | 2026-10-21 | 實作（`d22e5cb`，rebase 到 issue-26 後為 `8f9d5a0`，patch-id 相同）；審查 PASS（[報告](./review-d22e5cb.md)），依使用者選擇補修 S-1、S-2 | - |
+| 2026-10-21 | 重審 PASS（`2a42f8f`，[報告](./review-2a42f8f.md)）；fast-forward 合併進 main（`b4a4d1c`），結案 | - |
 
 ---
 **建立日期**: 2026-10-21  
 **分級**: Small  
 **風險**: Low  
-**狀態**: 進行中
+**狀態**: 已完成
