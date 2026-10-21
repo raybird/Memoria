@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.31.1] - 2026-10-21
+
+No runtime, schema or recall behaviour changed: one `doctor` fix text, one test script, and docs.
+
+### Fixed
+- **`doctor`'s vector coverage fix is now a command you can paste and run** (issue-27). With `missing` above 0, the fix described a two-step ingest with paths relative to the package root (`skills/...`) and two placeholders (`<home>`, `<payload.json>`). On a global install the package lives under `$(npm root -g)`, and the payload file is named with a timestamp, so nobody could run it as printed. The deployed memoria skill's wrap-up tells the agent to run the fix doctor prints, so this was the step it had to follow. The fix now ends in `Run: (…)`, one line with this install's absolute paths and your data root, quoted for both bash and dash. It writes the payload to a temporary directory instead of the data root, runs in a subshell so it does not overwrite your shell's variables, and exits with ingest's status. Run it in the same environment as doctor (`LIBSQL_URL`, `MEMORIA_EMBED_PROVIDER`).
+  - **It always covers the whole corpus.** The payload builder only takes memory nodes newer than its sync target's cursor, and `run-sync-with-enhancement.sh` advances the default target's cursor after an MCP ingest, whether or not the vector ingest kept up. With the default target, the fix would exit 0, embed nothing, and leave `missing` where it was, failing exactly the people the coverage check exists for. It now uses a dedicated target that nothing ever commits a cursor for.
+  - **No runnable command when `MEMORIA_DB_PATH` points elsewhere.** The payload builder always reads `<home>/.memory/sessions.db`, so a command printed under such an override would embed a different corpus. If the counts happened to match, it would turn the check green over memories that never reached the index. doctor names both paths instead.
+- **`scripts/test-bootstrap.sh` names the failing `setup --vector` call and shows its output** (issue-26). Five calls captured output with `VAR=$(…)`; under `set -e` a failure ended the script with no message, and the command's own explanation was lost into the variable. v1.31.0's first `release:publish` stopped this way on a full `/tmp` quota, with the log ending at a section heading. A small `cli_ok` wrapper now prints `✗ <step> exited <code>` and the command's output on stderr, which is the only stream that still reaches the log from inside `$(…)`.
+
+### Docs
+- `docs/OPERATIONS.md` now verifies coverage through `doctor` instead of a hand-written count. It also corrects the count it suggested: `SELECT COUNT(*) FROM memoria_vectors` needs `NOT INDEXED`, or stock SQLite counts through libSQL's vector index and returns 0 on a fully populated store.
+
 ## [1.31.0] - 2026-10-21
 
 ### Added

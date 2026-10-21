@@ -49,7 +49,7 @@
 
 ---
 
-## 2. 出貨紀錄（v1.13.0 → v1.31.0）
+## 2. 出貨紀錄（v1.13.0 → v1.31.1）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -83,6 +83,7 @@
 | v1.30.0 | dismissed 摘要、setup --agent、embed 分批、--merge 去重 | **issue-21** 摘要新增 `dismissed` 狀態與 `repo summarize --dismiss`／`--dismiss-pending --type`（HTTP 兩個端點）：團隊 repo 的他人 merge／release 骨架原本只能補成 enriched 才能清掉，而那必然促升；`isPromotable` 改為只放行 enriched，已在 recall 的摘要拒絕 dismiss（409）。**issue-22** `setup --agent claude-code` 另部署到 `~/.claude/skills/memoria`（Claude Code 只掃這裡），以 `DATA_ROOT` 檔綁定 data root；只覆蓋 frontmatter 同時帶兩個部署標記的副本，且先備份到 `<memoria-home>/.agents/skill-backups/`——標記存在每份模板裡，手動複製再改過的副本也帶；手寫 skill 在任何寫入前拒絕。部署模板改寫為觸發時機導向。**issue-20** `repo summarize --merge` 與 sync 共用 `parseMergeSourceRef`，不再對同一 merge 建兩筆摘要（地雷 M-2）。**issue-19** `embedLocal` 依 `MEMORIA_EMBED_BATCH`（預設 32）分批，771 筆 21.9GB OOM → 約 2.5GB 持平（地雷 M-1）；單筆查詢不讀此變數。⚠ 疊合 rebase 時 `test-repo-summary.sh` 文字合併乾淨卻語意衝突（fixture 累積狀態），每個 tip 都需完整 CI |
 | v1.30.1 | 升級後的語意召回提示、release 驗證等 npm | **issue-23** 全域 `npm i -g` 升級會換掉整個套件目錄，連同 `skills/memoria-vector/node_modules` 裡的 helper 依賴與 e5 模型快取（模型在 transformers.js 自己的套件目錄 `.cache/`，**不在** `~/.cache/huggingface`）；recall 照設計 fail-open，只剩字面命中且不報錯。`doctor` 的 embedder fix 補上升級成因、每次升級後重裝、暖機命令（空 stdin 不會載入模型，所以命令必須帶查詢）；INSTALL／OPERATIONS 加升級步驟。依賴搬出套件目錄的根治另開 issue；⚠ 已知下游把 helper 腳本的完整路徑寫死，搬遷時 helper 本身不可移位。**issue-24** `release.sh publish` 驗證改為先查 GitHub Release 與 parity，最後以 `@<版本>` 輪詢 npm 至多 5 分鐘：`latest` 在 publish 後幾分鐘內仍指向上一版，v1.30.0 因此在發版成功後誤報失敗。 |
 | v1.31.0 | 語意召回依賴搬出套件目錄、setup --vector | **issue-25** helper 依賴與模型改放 `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/`。依賴目錄以 helper `package-lock.json` 的雜湊命名，只認帶 `.complete` 的目錄，模型放 `models/`；全域升級不再清空，只有依賴清單改變時才需重跑。`memoria setup --vector` 依 provider 安裝並暖機，npm 與暖機都在暫存目錄完成後才標記並改名，中斷不留下假的已安裝。⚠ **helper 依賴載入順序變更**（§8 下游契約）：旁邊有 `node_modules` 時照舊，含模型快取位置；helper 腳本位置與 stdin/stdout 不變。doctor 經 `node deps.mjs` 判定，雜湊規則只有一份。四輪獨立審查（1ffc3a2 RETURN → 113c6de／b525453／82214e3 PASS）。另查明本機 `/tmp` 是有使用者配額的 tmpfs，大型安裝會以 errno -122 失敗 |
+| v1.31.1 | doctor 覆蓋率修法可執行、bootstrap 失敗訊息 | **issue-27** `vector coverage` 的 fix 原本是帶相對路徑與佔位符的兩行說明，部署版 skill 的收尾卻要 agent 照它做；現在以 `Run: (…)` 結尾，是一行可原樣執行的命令：絕對路徑取自 recall 實際解析到的 helper，payload 寫進暫存目錄，結束碼沿用 ingest。產生器帶專用的 `--sync-target memoria-doctor-repair`，因為 `run-sync-with-enhancement.sh` 會推進預設 target 的游標，沿用預設時修法會 rc=0、embedded=0（審查 d22e5cb S-1）。`MEMORIA_DB_PATH` 指向別處時不印命令（S-2）。**issue-26** `test-bootstrap.sh` 的 `setup --vector` 呼叫失敗時印出是哪一步與命令輸出，不再被 `set -e` 靜默結束 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
