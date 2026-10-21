@@ -15,7 +15,7 @@ type DoctorCheck = { name: string; ok: boolean; value: string; fix?: string }
  * user who never wanted semantic recall — which trains people to ignore doctor, and that is worse
  * than not checking at all. Same judgement as issue-7's on `verify`.
  */
-function vectorChecks(report: VectorLayerReport, memoriaHome: string): DoctorCheck[] {
+function vectorChecks(report: VectorLayerReport, paths: MemoriaPaths): DoctorCheck[] {
     if (!report.enabled) {
         return [{ name: 'vector recall', ok: true, value: 'not enabled (LIBSQL_URL unset)' }]
     }
@@ -99,7 +99,7 @@ function vectorChecks(report: VectorLayerReport, memoriaHome: string): DoctorChe
             value: `embedded=${embedded} expected=${expected} missing=${missing}`,
             fix: missing === 0 ? undefined :
                 `${missing} memories are not in the vector index, so semantic recall cannot see them — ` +
-                'and that degrades silently (the helper answers "ok" with zero rows). ' + ingestFix(report.helperPath, memoriaHome)
+                'and that degrades silently (the helper answers "ok" with zero rows). ' + ingestFix(report.helperPath, paths)
         })
     } else if (report.coverageUnknownReason === 'remote_libsql') {
         // Named rather than omitted, for the same reason the overridden-helper skip is named.
@@ -128,15 +128,31 @@ function vectorChecks(report: VectorLayerReport, memoriaHome: string): DoctorChe
 /** issue-27: the coverage fix is followed by an agent, which can only run what is printed. So it is one
  *  command with real paths, not a description: the payload goes to a temporary directory, not the data
  *  root (the builder's default), and the exit status is ingest's, so a failure is not hidden by the
- *  cleanup that follows it. */
-function ingestFix(helperPath: string | null, memoriaHome: string): string {
+ *  cleanup that follows it. It runs in a subshell so pasting it does not overwrite the caller's D or S.
+ *
+ *  `--sync-target` names a target nothing ever commits a cursor for. The builder only takes nodes newer
+ *  than its target's cursor, and run-sync-with-enhancement.sh advances the default target's cursor after
+ *  an MCP ingest whether or not the vector ingest kept up — so with the default, this command would exit
+ *  0, embed nothing, and leave `missing` where it was (review d22e5cb S-1). */
+function ingestFix(helperPath: string | null, paths: MemoriaPaths): string {
     if (!helperPath) return 'Re-run the ingest two-step once the vector helper resolves (see "vector helper" above).'
+    // The builder always reads <home>/.memory/sessions.db. Under a MEMORIA_DB_PATH pointing elsewhere a
+    // runnable command would embed a different corpus — and, if the counts happen to match, turn this
+    // check green over memories that never reached the index (review d22e5cb S-2).
+    if (path.resolve(paths.dbPath) !== path.resolve(paths.memoriaHome, '.memory', 'sessions.db')) {
+        return `MEMORIA_DB_PATH points at ${paths.dbPath}, but the ingest two-step reads ` +
+            `${path.join(paths.memoriaHome, '.memory', 'sessions.db')}, so no command is printed here. ` +
+            'Run the two-step against a data root whose .memory/sessions.db is that database.'
+    }
+    // Coverage is only measured when the helper is ours, not an override (inspectVectorLayer), so
+    // helperPath is <package>/skills/memoria-vector/vector-recall.mjs and its grandparent is skills/.
     const skillsRoot = path.dirname(path.dirname(helperPath))
     const build = quoteShellArg(path.join(skillsRoot, 'memoria-memory-sync', 'scripts', 'build-mcp-bridge-payload.mjs'))
     const ingest = quoteShellArg(path.join(skillsRoot, 'memoria-vector', 'vector-ingest.mjs'))
-    return 'Run: D=$(mktemp -d) && ' +
-        `node ${build} --memoria-home ${quoteShellArg(memoriaHome)} --out "$D" >/dev/null && ` +
-        `node ${ingest} "$D"/*.json; S=$?; rm -rf "$D"; (exit $S)`
+    return 'Run it in the same environment as this doctor (LIBSQL_URL, MEMORIA_EMBED_PROVIDER). ' +
+        'Run: (D=$(mktemp -d) && ' +
+        `node ${build} --memoria-home ${quoteShellArg(paths.memoriaHome)} --sync-target memoria-doctor-repair --out "$D" >/dev/null && ` +
+        `node ${ingest} "$D"/*.json; S=$?; rm -rf "$D"; exit $S)`
 }
 
 export function registerDoctorCommand(program: Command, paths: MemoriaPaths): void {
@@ -167,7 +183,7 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
                 { name: 'sessions path', ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
                 { name: 'config path', ok: existsSync(paths.configPath), value: paths.configPath },
                 { name: 'sessions.db', ok: existsSync(paths.dbPath), value: paths.dbPath },
-                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths.memoriaHome)
+                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths)
             ]
 
             if (opts.json) {

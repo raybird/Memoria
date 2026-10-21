@@ -532,6 +532,13 @@ process.stdout.write(cov.fix.slice(i+5));
 " "$1"
 }
 EXPORTS_BEFORE=$(find "$TMP_DIR/home" -path '*exports*' -type f 2>/dev/null | wc -l)
+# 審查 d22e5cb S-1：run-sync-with-enhancement.sh 會在 MCP ingest 成功後推進 memory_sync_state 的游標，向量庫卻可能
+# 沒跟上。產生器只取游標之後的節點，所以照修法跑會 rc=0、embedded=0、missing 不變。這裡先放一個未來的游標。
+node -e "
+const db=new (require('better-sqlite3'))(process.argv[1]);
+db.prepare('INSERT OR REPLACE INTO memory_sync_state (target, cursor_updated_at, updated_at) VALUES (?, ?, ?)').run('mcp-memory-libsql','2999-01-01T00:00:00.000Z',new Date().toISOString());
+db.close();
+" "$TMP_DIR/home/.memory/sessions.db"
 FIX_CMD=$(fix_cmd "$DOC_ON")
 (cd "$TMP_DIR" && env LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub bash -c "$FIX_CMD") >/dev/null \
   || { echo "✗ doctor 的修法執行失敗: $FIX_CMD"; exit 1; }
@@ -542,13 +549,27 @@ if(!/missing=0\$/.test(cov.value)||cov.ok!==true) throw new Error('照修法執�
 " "$DOC_FIXED"
 EXPORTS_AFTER=$(find "$TMP_DIR/home" -path '*exports*' -type f 2>/dev/null | wc -l)
 [ "$EXPORTS_AFTER" -eq "$EXPORTS_BEFORE" ] || { echo "✗ 修法在資料根留下 payload 檔（$EXPORTS_BEFORE -> $EXPORTS_AFTER）"; exit 1; }
-echo "  修法原樣執行後 missing=0，資料根沒有多出檔案"
+echo "  修法原樣執行後 missing=0（即使已有 sync 游標），資料根沒有多出檔案"
 
 # 失敗路徑：ingest 失敗時整串命令必須以非 0 結束，不能被最後的清理吞掉。
 FIX_NEVER=$(fix_cmd "$DOC_NEVER")
 FIX_RC=0
-(cd "$TMP_DIR" && env LIBSQL_URL="file:$TMP_DIR/no-such-dir/x.db" MEMORIA_EMBED_PROVIDER=stub bash -c "$FIX_NEVER") >/dev/null 2>&1 || FIX_RC=$?
+# 用 sh 執行：agent 貼上命令的 shell 不一定是 bash（Debian 系的 sh 是 dash）。
+(cd "$TMP_DIR" && env LIBSQL_URL="file:$TMP_DIR/no-such-dir/x.db" MEMORIA_EMBED_PROVIDER=stub sh -c "$FIX_NEVER") >/dev/null 2>&1 || FIX_RC=$?
 [ "$FIX_RC" -ne 0 ] || { echo "✗ ingest 失敗時修法仍以 0 結束: $FIX_NEVER"; exit 1; }
-echo "  ingest 失敗時修法以非 0 結束（rc=$FIX_RC）"
+echo "  ingest 失敗時修法以非 0 結束（sh，rc=$FIX_RC）"
+
+# 審查 d22e5cb S-2：產生器固定讀 <home>/.memory/sessions.db。MEMORIA_DB_PATH 指向別處時，可執行的命令會把另一份語料
+# 寫進向量庫，筆數剛好相符時還會變成 missing=0 的假綠燈，所以這時不能印 Run:。
+cp "$TMP_DIR/home/.memory/sessions.db" "$TMP_DIR/elsewhere.db"
+DOC_DBP=$(env LIBSQL_URL="file:$TMP_DIR/never-ingested.db" MEMORIA_EMBED_PROVIDER=stub MEMORIA_HOME="$TMP_DIR/home" \
+    MEMORIA_DB_PATH="$TMP_DIR/elsewhere.db" "$ROOT_DIR/cli" doctor --json)
+node -e "
+const cov=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector coverage');
+if(cov.ok!==false) throw new Error('前提：這個情況應該有缺口: '+cov.value);
+if(/Run: /.test(cov.fix||'')) throw new Error('MEMORIA_DB_PATH 與資料根不一致時不得印出可執行命令: '+cov.fix);
+if(!/MEMORIA_DB_PATH/.test(cov.fix||'')) throw new Error('fix 必須說明是 MEMORIA_DB_PATH 的緣故: '+cov.fix);
+" "$DOC_DBP"
+echo "  MEMORIA_DB_PATH 指向別處 -> 不印可執行命令，改為說明"
 
 echo "[vector] ok"

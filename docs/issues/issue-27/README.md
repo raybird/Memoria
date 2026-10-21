@@ -42,6 +42,7 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
 | 編號 | 事項 | 狀態 | 影響 |
 |------|------|------|------|
 | TBD-1 | AC-1、AC-2 需使用者核准 | 已解決 | 2026-10-21 使用者回覆「照建議」，全部核准 |
+| TBD-4 | 審查 d22e5cb S-1（`需決策`）：sync 游標存在時修法無效，要在本 PR 修還是記為限制 | 已解決 | 2026-10-21 使用者選「這次一起修」：改用專用的 `--sync-target`，S-2 與 NICE TO HAVE 一併處理後重審 |
 | TBD-2 | 做法：(A) 只把 doctor 的 fix 改成可直接執行的完整命令（建議，介面不變）；(B) 新增一個 CLI 入口來補向量庫，例如 `setup --vector` 加旗標或新的子命令，skill 改呼叫它。B 比較好用，但會新增 CLI 介面，屬於 agent 契約的變更 | 已解決 | 2026-10-21「照建議」採 (A)：只改 doctor 的 fix 文字，不新增 CLI 介面 |
 
 ## 實作與驗證步驟
@@ -65,7 +66,22 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
      - 常青文件：`docs/OPERATIONS.md` 的驗證段改指 doctor 的 coverage 與可執行的修法。順手更正原本的 `SELECT COUNT(*) FROM memoria_vectors`：少了 `NOT INDEXED` 會在填滿的向量庫上回 0。
      - GitNexus：`vectorChecks` 的 impact 為 LOW，只有 `registerDoctorCommand` 呼叫；`quoteShellArg` 只是改為 export，行為不變。
      - 精煉：code-simplify no-op。
-     - 限制：payload 產生器依 `memory_sync_state` 的游標只取游標之後更新的節點。有人跑過 `update-mcp-sync-state.mjs` 而向量庫又缺了更早的資料時，照修法執行後 `missing` 仍可能大於 0。這是產生器本來的行為，本 issue 不改；本機與測試環境都沒有這個游標。
+     - ~~限制：游標存在時照修法執行後 `missing` 仍可能大於 0~~。審查 d22e5cb S-1 指出這個限制低估了影響範圍，已在本 PR 修正，見下方「審查回應」。
+   - 審查回應（review-d22e5cb，PASS，2026-10-21）：
+     - S-1（`需決策`，使用者 2026-10-21 選「這次一起修」，見 TBD-4）：
+       - 問題：`run-sync-with-enhancement.sh` 在 MCP ingest 成功後就推進 `memory_sync_state` 的游標，向量 ingest 卻預設關閉，開了也是失敗照樣繼續。所以「游標已推進、向量庫卻短少」正是最需要這個修法的人；產生器只取游標之後的節點，命令會 rc=0、`embedded=0`，`missing` 不變。
+       - 修法：產生器加上 `--sync-target memoria-doctor-repair`。沒有任何流程會替這個名稱寫入游標，產生器本身也唯讀，所以每次都會取到全部節點。
+       - 紅燈：測試先在資料根寫入 `mcp-memory-libsql` 的未來游標，修正前得到 `Error: 照修法執行後仍有缺口: embedded=3 expected=7 missing=4`；修正後 `missing=0`。
+     - S-2：`MEMORIA_DB_PATH` 與 `<資料根>/.memory/sessions.db` 不一致時不印 `Run:`，改為說明兩個路徑。修正前的紅燈：`Error: MEMORIA_DB_PATH 與資料根不一致時不得印出可執行命令`。
+     - NICE TO HAVE：
+       - 整串命令包成 `( … ; exit $S)` subshell，貼上後不會覆寫使用者 shell 裡的 `D`、`S`。
+       - fix 文字補上「Run it in the same environment as this doctor (LIBSQL_URL, MEMORIA_EMBED_PROVIDER).」。
+       - 註解寫明 `dirname(dirname(helperPath))` 依賴「override 時不量測 coverage」這個前提。
+       - 失敗路徑改用 `sh -c` 執行，涵蓋 dash。
+       - 範圍外：`setup.ts` 用 `JSON.stringify` 為印出的命令加引號。這不屬於本 issue，不在這裡修。
+     - 重驗：
+       - 改成 subshell 後，結束碼變異仍會轉紅：`✗ ingest 失敗時修法仍以 0 結束`。
+       - 全域安裝形狀：複製全域 1.31.0 套件，只換上新的 bundle，helper 旁邊沒有 `node_modules`。資料根路徑含空白與單引號（`home dir's`），並寫入未來游標，以 `sh -c` 從 `/` 執行。結果 `{"ok":true,"embedded":6,"skipped":4}`、rc=0，doctor 顯示 `embedded=6 expected=6 missing=0`，沒有 export 檔殘留。
 
 ## Timeline
 
@@ -73,6 +89,7 @@ node skills/memoria-vector/vector-ingest.mjs <payload.json>
 |------|------|------|
 | 2026-10-21 | 建立；v1.31.0 發版收尾時，部署版 skill 沒有可用的補向量庫步驟而發現 | - |
 | 2026-10-21 | AC-1、AC-2 核准，TBD-2 採 (A)（「照建議」） | - |
+| 2026-10-21 | 實作（`d22e5cb`，rebase 到 issue-26 後為 `8f9d5a0`，patch-id 相同）；審查 PASS（[報告](./review-d22e5cb.md)），依使用者選擇補修 S-1、S-2 | - |
 
 ---
 **建立日期**: 2026-10-21  
