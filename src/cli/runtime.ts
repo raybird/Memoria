@@ -207,9 +207,10 @@ export type VectorDepsResult = {
  * `npm i -g` upgrade does not reach. The target comes from `probeDepsLocation` (`node deps.mjs`), the
  * same probe doctor uses, so the lockfile → directory rule has one implementation.
  *
- * `.complete` is written only once npm and the warm-up have both succeeded, and only directories
- * carrying it are ever loaded: npm runs in a sibling `.partial-<pid>` directory that is renamed into
- * place, and a failed warm-up takes the marker away again, so no interrupted run reads as installed.
+ * Only a directory carrying `.complete` is ever loaded, so the marker is written last: npm and the
+ * model warm-up both run against a `.partial-<pid>` staging directory, which is marked and renamed into
+ * place only after both succeed. A failure, Ctrl-C or kill at any point before that leaves nothing that
+ * reads as installed (review 1ffc3a2 M-1).
  */
 export async function installVectorDeps(runtimeLayout: RuntimeLayout): Promise<VectorDepsResult> {
     const helperDir = path.join(runtimeLayout.runtimeRoot, 'skills', 'memoria-vector')
@@ -227,75 +228,127 @@ export async function installVectorDeps(runtimeLayout: RuntimeLayout): Promise<V
     if (!location?.cacheDir) throw new Error(`could not resolve the helper's dependency directory (node ${path.join(helperDir, 'deps.mjs')} failed)`)
     const target = location.cacheDir
     const marker = path.join(target, '.complete')
+    await reclaimDeadPartials(target)
 
     // The stub provider needs only @libsql/client; `local` also needs the ~700MB embedder, so a stub
     // install does not count as complete for it.
     const needsEmbedder = provider === 'local'
     const reused = existsSync(marker) &&
         (!needsEmbedder || existsSync(path.join(target, 'node_modules', '@huggingface', 'transformers')))
+    const stage = reused ? target : `${target}.partial-${process.pid}`
 
-    if (!reused) {
-        const partial = `${target}.partial-${process.pid}`
-        await fs.rm(partial, { recursive: true, force: true })
-        await fs.mkdir(partial, { recursive: true })
-        try {
-            await fs.copyFile(path.join(helperDir, 'package.json'), path.join(partial, 'package.json'))
-            await fs.copyFile(path.join(helperDir, 'package-lock.json'), path.join(partial, 'package-lock.json'))
+    let modelCacheDir: string | null = null
+    try {
+        if (!reused) {
+            await fs.rm(stage, { recursive: true, force: true })
+            await fs.mkdir(stage, { recursive: true })
+            await fs.copyFile(path.join(helperDir, 'package.json'), path.join(stage, 'package.json'))
+            await fs.copyFile(path.join(helperDir, 'package-lock.json'), path.join(stage, 'package-lock.json'))
             // NODE_ENV=production would drop the embedder whatever the flags say (issue-11), so the
             // child never inherits it; the explicit flag decides.
             const env = { ...process.env }
             delete env.NODE_ENV
-            await runChild('npm', ['ci', '--no-audit', '--no-fund', needsEmbedder ? '--include=dev' : '--omit=dev'], { cwd: partial, env })
-            await fs.writeFile(path.join(partial, '.complete'), `${new Date().toISOString()}\n`, 'utf8')
+            const npm = await runChild('npm', ['ci', '--no-audit', '--no-fund', needsEmbedder ? '--include=dev' : '--omit=dev'], { cwd: stage, env, timeoutMs: 30 * 60_000 })
+            if (!npm.ok) throw new Error(`npm ci failed (${npm.status}): ${npmReason(npm.stderr)}`)
+        }
+        if (needsEmbedder) modelCacheDir = await warmUp(helperDir, stage)
+        if (!reused) {
+            await fs.writeFile(path.join(stage, '.complete'), `${new Date().toISOString()}\n`, 'utf8')
             await fs.rm(target, { recursive: true, force: true })
-            await fs.rename(partial, target)
-        } catch (error) {
-            await fs.rm(partial, { recursive: true, force: true })
-            throw error
+            await fs.rename(stage, target)
         }
+    } catch (error) {
+        if (!reused) await fs.rm(stage, { recursive: true, force: true })
+        // A reused install whose warm-up fails loses its marker too: doctor must not report an embedder
+        // that cannot load.
+        else await fs.rm(marker, { force: true })
+        throw error
     }
 
-    let warmedUp = false
-    if (needsEmbedder) {
-        // The first load downloads the model and can outlast the recall timeout (issue-23), so pay it
-        // here, through the helper's own embed path — the same resolution recall will use.
-        const embedUrl = pathToFileURL(path.join(helperDir, 'embed.mjs')).href
-        try {
-            await runChild(process.execPath, [
-                '--input-type=module', '-e',
-                `const { embedTexts } = await import(${JSON.stringify(embedUrl)}); await embedTexts(['warm up'], 'query')`
-            ], { cwd: helperDir, env: process.env, timeoutMs: 15 * 60_000 })
-        } catch (error) {
-            await fs.rm(marker, { force: true })
-            throw new Error(`dependencies installed in ${target}, but the model warm-up failed, so the install ` +
-                `is not marked complete; re-run "memoria setup --vector". ${error instanceof Error ? error.message : String(error)}`)
-        }
-        warmedUp = true
-    }
-
-    const modelCacheDir = needsEmbedder ? path.join(path.dirname(target), 'models') : null
     const shadowedBy = location.source === 'sibling' ? path.join(helperDir, 'node_modules') : null
-    return { path: target, provider, reused, warmedUp, modelCacheDir, shadowedBy }
+    return { path: target, provider, reused, warmedUp: needsEmbedder, modelCacheDir, shadowedBy }
+}
+
+/**
+ * The first model load downloads it and can outlast the recall timeout (issue-23), so pay it here,
+ * through the helper's own embed path but pinned to `depsDir` — the staged install, which deps.mjs
+ * would not pick yet (no `.complete`) and a sibling node_modules would shadow (review 1ffc3a2 S-2).
+ * The child prints only the error message on failure: Node prints the stack after it, so a tail of
+ * stderr is all frames. Returns the model cache directory deps.mjs assigned.
+ */
+async function warmUp(helperDir: string, depsDir: string): Promise<string> {
+    const depsUrl = pathToFileURL(path.join(helperDir, 'deps.mjs')).href
+    const embedUrl = pathToFileURL(path.join(helperDir, 'embed.mjs')).href
+    const script = [
+        'try {',
+        `  const deps = await import(${JSON.stringify(depsUrl)})`,
+        `  const modelCacheDir = deps.modelCacheDirFor()`,
+        `  deps.useDepsLocation({ source: 'cache', dir: ${JSON.stringify(depsDir)}, modelCacheDir, cacheDir: ${JSON.stringify(depsDir)} })`,
+        `  const { embedTexts } = await import(${JSON.stringify(embedUrl)})`,
+        `  await embedTexts(['warm up'], 'query')`,
+        '  process.stdout.write(JSON.stringify({ modelCacheDir }))',
+        '} catch (error) {',
+        '  process.stderr.write(String(error?.message ?? error))',
+        '  process.exit(1)',
+        '}'
+    ].join('\n')
+    const run = await runChild(process.execPath, ['--input-type=module', '-e', script], { cwd: helperDir, env: process.env, timeoutMs: 15 * 60_000 })
+    if (!run.ok) throw new Error(`model warm-up failed (${run.status}): ${run.stderr.trim() || 'no error output'}`)
+    return (JSON.parse(run.stdout) as { modelCacheDir: string }).modelCacheDir
+}
+
+/** npm prints the reason first (`npm error code …` and the lines after it) and boilerplate last, so a
+ *  plain tail keeps only the boilerplate (review 1ffc3a2 S-1). */
+function npmReason(stderr: string): string {
+    const lines = stderr.split('\n').map((l) => l.trimEnd()).filter(Boolean)
+    const code = lines.findIndex((l) => /^npm (error|ERR!) code /.test(l))
+    const picked = code >= 0 ? lines.slice(code, code + 4) : lines.slice(-5)
+    const log = lines.find((l) => /complete log of this run/.test(l))
+    if (log && !picked.includes(log)) picked.push(log)
+    return picked.join(' | ') || 'no error output'
+}
+
+/** A staging directory whose process is gone will never be renamed into place; reclaim it (~720MB)
+ *  instead of letting each interrupted run leave another. Live ones belong to a concurrent run. */
+async function reclaimDeadPartials(target: string): Promise<void> {
+    const prefix = `${path.basename(target)}.partial-`
+    const entries = await fs.readdir(path.dirname(target)).catch(() => [] as string[])
+    for (const entry of entries) {
+        if (!entry.startsWith(prefix)) continue
+        const pid = Number(entry.slice(prefix.length))
+        if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid || isAlive(pid)) continue
+        await fs.rm(path.join(path.dirname(target), entry), { recursive: true, force: true })
+    }
+}
+
+function isAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0)
+        return true
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'EPERM'
+    }
 }
 
 function runChild(
     command: string,
     args: string[],
-    opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs?: number }
-): Promise<void> {
+    opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }
+): Promise<{ ok: boolean; status: string; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
-        const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, stdio: ['ignore', 'ignore', 'pipe'] })
+        const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, stdio: ['ignore', 'pipe', 'pipe'] })
+        let stdout = ''
         let stderr = ''
-        child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString('utf8')).slice(-4000) })
-        const timer = opts.timeoutMs ? setTimeout(() => child.kill('SIGTERM'), opts.timeoutMs) : undefined
+        child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8') })
+        child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString('utf8')).slice(-16_000) })
+        const timer = setTimeout(() => child.kill('SIGTERM'), opts.timeoutMs)
         child.on('error', (error) => {
-            if (timer) clearTimeout(timer)
+            clearTimeout(timer)
             reject(new Error(`${command} could not start: ${error.message}`))
         })
         child.on('close', (code, signal) => {
-            if (timer) clearTimeout(timer)
-            if (code === 0) resolve()
-            else reject(new Error(`${command} ${args[0]} failed (${signal ?? `exit ${code}`}): ${stderr.trim().split('\n').slice(-5).join(' | ')}`))
+            clearTimeout(timer)
+            resolve({ ok: code === 0, status: signal ?? `exit ${code}`, stdout, stderr })
         })
     })
 }

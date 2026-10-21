@@ -373,6 +373,61 @@ DEPS_IMPORT=$(cd "$HELPER_DIR" && node --input-type=module -e "await import('./d
 [ "$DEPS_IMPORT" = "ok" ] || { echo "  ✗ importing deps.mjs with a bogus argv[1] must neither throw nor print, got: $DEPS_IMPORT"; exit 1; }
 echo "  deps.mjs import with a non-path argv[1] -> silent, no throw"
 
+# Review 1ffc3a2 S-4: the model cache location is set by embed.mjs, per source — exercised here with an
+# offline stand-in for @huggingface/transformers that records the env.cacheDir it was handed.
+FAKE_TF_PKG="$TMP_DIR/fake-tf-pkg"
+mkdir -p "$FAKE_TF_PKG"
+printf '{"name":"@huggingface/transformers","version":"0.0.0-fake","main":"index.cjs","exports":{".":{"import":"./index.mjs","require":"./index.cjs"}}}\n' > "$FAKE_TF_PKG/package.json"
+cat > "$FAKE_TF_PKG/index.cjs" <<'EOF'
+const fs = require('node:fs')
+exports.env = {}
+exports.pipeline = async () => {
+  fs.writeFileSync(process.env.FAKE_TF_LOG, JSON.stringify({ cacheDir: exports.env.cacheDir ?? null }))
+  return async (texts) => ({ dims: [texts.length, 384], data: new Float32Array(texts.length * 384) })
+}
+EOF
+printf "import cjs from './index.cjs'\nexport const env = cjs.env\nexport const pipeline = cjs.pipeline\nexport default cjs\n" > "$FAKE_TF_PKG/index.mjs"
+embed_once() { (cd "$1" && env XDG_CACHE_HOME="$2" FAKE_TF_LOG="$3" MEMORIA_EMBED_PROVIDER=local node --input-type=module -e "const { embedTexts } = await import('./embed.mjs'); await embedTexts(['x'], 'query')"); }
+
+SIB_HELPER="$TMP_DIR/helper-sibling-fake"
+mkdir -p "$SIB_HELPER/node_modules/@huggingface"
+cp "$HELPER_DIR"/*.mjs "$HELPER_DIR/package.json" "$HELPER_DIR/package-lock.json" "$SIB_HELPER/"
+cp -R "$FAKE_TF_PKG" "$SIB_HELPER/node_modules/@huggingface/transformers"
+embed_once "$SIB_HELPER" "$TMP_DIR/xdg-sib" "$TMP_DIR/tf-sib.log"
+node -e "const l=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if(l.cacheDir!==null) throw new Error('sibling deps must leave env.cacheDir at the transformers.js default, got '+l.cacheDir)" "$TMP_DIR/tf-sib.log"
+echo "  sibling deps -> embed.mjs leaves the model cache at transformers.js's default"
+
+CACHE_HELPER="$TMP_DIR/helper-cache-fake"
+mkdir -p "$CACHE_HELPER"
+cp "$HELPER_DIR"/*.mjs "$HELPER_DIR/package.json" "$HELPER_DIR/package-lock.json" "$CACHE_HELPER/"
+XDG_FAKE="$(cd "$TMP_DIR" && pwd -P)/xdg-fake-tf"
+FAKE_CACHE="$XDG_FAKE/memoria/vector/$LOCK_HASH"
+mkdir -p "$FAKE_CACHE/node_modules/@huggingface"
+cp "$HELPER_DIR/package.json" "$FAKE_CACHE/"
+cp -R "$FAKE_TF_PKG" "$FAKE_CACHE/node_modules/@huggingface/transformers"
+touch "$FAKE_CACHE/.complete"
+embed_once "$CACHE_HELPER" "$XDG_FAKE" "$TMP_DIR/tf-cache.log"
+node -e "const l=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); if(l.cacheDir!==process.argv[2]) throw new Error('cache deps must put the model in '+process.argv[2]+', got '+l.cacheDir)" "$TMP_DIR/tf-cache.log" "$XDG_FAKE/memoria/vector/models"
+echo "  cache deps -> embed.mjs points the model cache at \$XDG_CACHE_HOME/memoria/vector/models"
+
+# Review 1ffc3a2 S-3: the sibling path must not newly depend on a resolvable home directory.
+cat > "$TMP_DIR/no-home.mjs" <<'EOF'
+import os from 'node:os'
+import { syncBuiltinESMExports } from 'node:module'
+os.homedir = () => { throw new Error('uv_os_homedir: no home') }
+syncBuiltinESMExports()
+EOF
+NOHOME=$(env -u XDG_CACHE_HOME node --import "$TMP_DIR/no-home.mjs" --input-type=module -e "
+const { resolveDepsLocation } = await import(process.argv[1]); process.stdout.write(resolveDepsLocation(process.argv[2]).source)
+" "$HELPER_DIR/deps.mjs" "$SIB_HELPER")
+[ "$NOHOME" = "sibling" ] || { echo "  ✗ sibling resolution must survive an unresolvable home directory, got: $NOHOME"; exit 1; }
+echo "  sibling resolution -> independent of os.homedir()"
+
+# Review 1ffc3a2 N-2: a relative XDG_CACHE_HOME is invalid per XDG and must be ignored.
+REL=$(cd "$TMP_DIR" && env XDG_CACHE_HOME=relcache HOME="$TMP_DIR/fakehome" node "$CACHE_HELPER/deps.mjs")
+node -e "const d=JSON.parse(process.argv[1]); if(!d.cacheDir.startsWith(process.argv[2]+'/.cache/memoria/vector/')) throw new Error('relative XDG_CACHE_HOME must fall back to ~/.cache, got '+d.cacheDir)" "$REL" "$TMP_DIR/fakehome"
+echo "  relative XDG_CACHE_HOME -> ignored, falls back to ~/.cache"
+
 echo "[vector] stats exposes vector route counters"
 STATS=$(env MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" stats --json)
 node -e "

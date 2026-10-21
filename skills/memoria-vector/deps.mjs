@@ -23,23 +23,31 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HELPER_DIR = dirname(fileURLToPath(import.meta.url))
 
-export function vectorCacheRoot(env = process.env) {
-  const base = env.XDG_CACHE_HOME?.trim() || join(homedir(), '.cache')
+function vectorCacheRoot(env = process.env) {
+  // XDG says a relative XDG_CACHE_HOME is invalid and must be ignored; honouring it would resolve
+  // against each process's own cwd, so setup and recall could disagree about the directory.
+  const xdg = env.XDG_CACHE_HOME?.trim()
+  const base = xdg && isAbsolute(xdg) ? xdg : join(homedir(), '.cache')
   return join(base, 'memoria', 'vector')
 }
 
-export function lockHash(helperDir = HELPER_DIR) {
+/** Where transformers.js keeps the model when the dependencies come from the cache. */
+export function modelCacheDirFor(env = process.env) {
+  return join(vectorCacheRoot(env), 'models')
+}
+
+function lockHash(helperDir) {
   return createHash('sha256').update(readFileSync(join(helperDir, 'package-lock.json'))).digest('hex').slice(0, 16)
 }
 
 /** The cache directory this helper's dependency set installs into — whether or not it exists yet.
  *  null when the helper was copied without its lockfile and so cannot name one. */
-export function cacheDirFor(helperDir = HELPER_DIR, env = process.env) {
+function cacheDirFor(helperDir, env) {
   if (!existsSync(join(helperDir, 'package-lock.json'))) return null
   return join(vectorCacheRoot(env), lockHash(helperDir))
 }
@@ -48,17 +56,28 @@ export function cacheDirFor(helperDir = HELPER_DIR, env = process.env) {
  *  unless the dependencies come from the cache, so the sibling case keeps transformers.js's own
  *  default; cacheDir is where `setup --vector` installs for this lockfile. */
 export function resolveDepsLocation(helperDir = HELPER_DIR, env = process.env) {
-  const cacheDir = cacheDirFor(helperDir, env)
   if (existsSync(join(helperDir, 'node_modules'))) {
+    // The sibling path never needs the cache, so nothing it newly depends on (a home directory, a
+    // readable lockfile) may break it: cacheDir is only informational here (review 1ffc3a2 S-3).
+    let cacheDir = null
+    try { cacheDir = cacheDirFor(helperDir, env) } catch {}
     return { source: 'sibling', dir: helperDir, modelCacheDir: null, cacheDir }
   }
+  const cacheDir = cacheDirFor(helperDir, env)
   if (cacheDir !== null && existsSync(join(cacheDir, '.complete'))) {
-    return { source: 'cache', dir: cacheDir, modelCacheDir: join(vectorCacheRoot(env), 'models'), cacheDir }
+    return { source: 'cache', dir: cacheDir, modelCacheDir: modelCacheDirFor(env), cacheDir }
   }
   return { source: 'none', dir: null, modelCacheDir: null, cacheDir }
 }
 
 let location = null
+
+/** Pin the location instead of resolving it. `setup --vector` warms the model against the install it
+ *  has just staged — not yet marked complete, and possibly shadowed by a sibling node_modules — so the
+ *  warm-up exercises exactly the directory that will be marked. */
+export function useDepsLocation(pinned) {
+  location = pinned
+}
 
 /** Import one dependency from wherever resolveDepsLocation points. Returns the module's exports
  *  (for the CommonJS build loaded from the cache, its module.exports). */
@@ -77,9 +96,11 @@ export function depsLocation() {
 
 // `node deps.mjs` prints the resolution as JSON. doctor and `setup --vector` ask this file instead of
 // re-deriving the hash, so the lockfile → directory rule has exactly one implementation.
-// argv[1] is whatever the caller passed (`node -e '…' foo` makes it "foo"), so a path that does not
-// resolve must mean "not run directly" rather than throw out of every import of this module.
+// Under `node -e '…' a b` there is no main script and argv[1] is just "a" — possibly this very file's
+// path, which must not make an importer print JSON onto its own stdout (review 1ffc3a2 N-7). A path
+// that does not resolve means "not run directly" rather than a throw out of every import.
 function runDirectly() {
+  if (process.execArgv.some((a) => /^(-e|--eval|-p|--print)(=|$)/.test(a))) return false
   try {
     return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
   } catch {

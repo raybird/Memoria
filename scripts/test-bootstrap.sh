@@ -302,5 +302,117 @@ if [ -d "$XDG_FAIL/memoria/vector" ] && [ -n "$(ls -A "$XDG_FAIL/memoria/vector"
 fi
 echo "✓ SCN-006: npm failure -> non-zero exit with npm's reason, nothing left in the cache"
 
+# The local-provider warm-up, without downloading the real ~700MB embedder: a fake npm lays down an
+# offline stand-in for @huggingface/transformers that logs where it was loaded from and which model
+# cache it was handed, and can fail or hang on demand. Runs against an installed-shape copy of the
+# package so whether this checkout's helper has a node_modules beside it cannot decide the outcome
+# (review 1ffc3a2 S-2, S-4).
+echo ""
+echo "[bootstrap] issue-25: setup --vector warm-up (offline stand-in embedder)"
+ISO="$(cd "$TMP" && pwd -P)/iso-pkg"
+mkdir -p "$ISO/dist" "$ISO/skills/memoria-vector"
+cp "$ROOT_DIR/dist/cli.mjs" "$ISO/dist/"
+cp "$ROOT_DIR/package.json" "$ISO/"
+ln -s "$ROOT_DIR/node_modules" "$ISO/node_modules"
+cp "$HELPER"/*.mjs "$HELPER/package.json" "$HELPER/package-lock.json" "$ISO/skills/memoria-vector/"
+cp -R "$ROOT_DIR/skills/memoria-memory-sync" "$ISO/skills/"
+FAKE_TF="$TMP/fake-transformers"
+mkdir -p "$FAKE_TF"
+printf '{"name":"@huggingface/transformers","version":"0.0.0-fake","main":"index.cjs"}\n' > "$FAKE_TF/package.json"
+cat > "$FAKE_TF/index.cjs" <<'EOF'
+const fs = require('node:fs')
+exports.env = {}
+exports.pipeline = async () => {
+  if (process.env.FAKE_TF_LOG) {
+    fs.writeFileSync(process.env.FAKE_TF_LOG, JSON.stringify({ pid: process.pid, file: __filename, cacheDir: exports.env.cacheDir ?? null }))
+  }
+  if (process.env.FAKE_TF_MODE === 'fail') throw new Error('simulated model download failure: connect ECONNREFUSED')
+  if (process.env.FAKE_TF_MODE === 'hang') await new Promise(() => setInterval(() => {}, 1000))
+  return async (texts) => ({ dims: [texts.length, 384], data: new Float32Array(texts.length * 384) })
+}
+EOF
+FAKE_NPM_BIN="$TMP/fake-npm-tf"
+mkdir -p "$FAKE_NPM_BIN"
+cat > "$FAKE_NPM_BIN/npm" <<'EOF'
+#!/bin/sh
+# Stand-in for `npm ci`: lays down the offline embedder, or fails the way a real network error does —
+# the reason first, then a pile of noise that must not push it out of the error message.
+[ "$1" = ci ] || exit 1
+if [ "${FAKE_NPM_MODE:-}" = fail ]; then
+  echo "npm error code ECONNREFUSED" >&2
+  echo "npm error errno ECONNREFUSED" >&2
+  echo "npm error request to https://registry.npmjs.org/@libsql%2fclient failed, reason: connect ECONNREFUSED 127.0.0.1:9" >&2
+  i=0; while [ $i -lt 12 ]; do echo "npm error     at noise-frame-$i (node:internal/fake:1:1)" >&2; i=$((i+1)); done
+  echo "npm error A complete log of this run can be found in: /nonexistent/_logs/debug.log" >&2
+  exit 1
+fi
+mkdir -p node_modules/@huggingface && cp -R "$FAKE_TF_SRC" node_modules/@huggingface/transformers
+EOF
+chmod +x "$FAKE_NPM_BIN/npm"
+iso_vec() { env FAKE_TF_SRC="$FAKE_TF" MEMORIA_EMBED_PROVIDER=local MEMORIA_HOME="$TMP/data-iso" PATH="$FAKE_NPM_BIN:$PATH" "$@" node "$ISO/dist/cli.mjs" setup --vector --json; }
+no_marker_under() { [ -z "$(find "$1" -name .complete 2>/dev/null)" ] && [ -z "$(find "$1" -maxdepth 3 -name '*.partial-*' 2>/dev/null)" ]; }
+
+XW1="$TMP/xdg-w1"
+W1=$(iso_vec XDG_CACHE_HOME="$XW1" FAKE_TF_LOG="$TMP/w1.log")
+node -e "
+const s=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l)).find(x=>x.step==='vector-deps');
+const log=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
+const models=process.argv[1]+'/memoria/vector/models';
+if(!s||!s.ok||s.warmedUp!==true) throw new Error('local warm-up must succeed, got '+JSON.stringify(s));
+if(s.modelCacheDir!==models) throw new Error('reported modelCacheDir must be '+models+', got '+s.modelCacheDir);
+if(log.cacheDir!==models) throw new Error('transformers env.cacheDir must be '+models+', got '+log.cacheDir);
+if(!log.file.startsWith(process.argv[1]+'/memoria/vector/')) throw new Error('warm-up must load the embedder from the cache install, got '+log.file);
+" "$XW1" "$TMP/w1.log" <<<"$W1"
+[ -f "$XW1/memoria/vector/$VEC_HASH/.complete" ] || { echo "✗ warm-up succeeded but no .complete"; exit 1; }
+echo "✓ local warm-up: embedder loaded from the cache install, model cache = \$XDG_CACHE_HOME/memoria/vector/models"
+
+XW2="$TMP/xdg-w2"
+if W2=$(iso_vec XDG_CACHE_HOME="$XW2" FAKE_TF_MODE=fail 2>&1); then
+  echo "✗ warm-up failure must exit non-zero"; echo "$W2"; exit 1
+fi
+echo "$W2" | grep -q 'simulated model download failure' || { echo "✗ warm-up failure lost its reason: $W2"; exit 1; }
+no_marker_under "$XW2" || { echo "✗ failed warm-up left an install behind:"; find "$XW2"; exit 1; }
+echo "✓ warm-up failure -> non-zero with the embedder's reason, nothing that reads as installed"
+
+# Review 1ffc3a2 M-1: an interrupted warm-up (Ctrl-C, OOM kill) must not leave a marker behind either.
+XW3="$TMP/xdg-w3"
+iso_vec XDG_CACHE_HOME="$XW3" FAKE_TF_MODE=hang FAKE_TF_LOG="$TMP/w3.log" >/dev/null 2>&1 &
+W3_PID=$!
+for _ in $(seq 1 100); do [ -s "$TMP/w3.log" ] && break; sleep 0.2; done
+[ -s "$TMP/w3.log" ] || { echo "✗ hanging warm-up never started"; kill -9 "$W3_PID" 2>/dev/null; exit 1; }
+kill -9 "$W3_PID" 2>/dev/null || true
+kill -9 "$(node -p "JSON.parse(require('fs').readFileSync('$TMP/w3.log','utf8')).pid")" 2>/dev/null || true
+wait "$W3_PID" 2>/dev/null || true
+[ -z "$(find "$XW3" -name .complete 2>/dev/null)" ] || { echo "✗ M-1: a warm-up killed mid-way left .complete:"; find "$XW3" -name .complete; exit 1; }
+echo "✓ warm-up killed mid-way -> no .complete anywhere"
+
+# A dead run's partial directory is reclaimed by the next run instead of piling up (~720MB each).
+XW5="$TMP/xdg-w5"
+mkdir -p "$XW5/memoria/vector/$VEC_HASH.partial-2147483646/node_modules"
+iso_vec XDG_CACHE_HOME="$XW5" >/dev/null
+[ ! -e "$XW5/memoria/vector/$VEC_HASH.partial-2147483646" ] || { echo "✗ a dead run's partial dir was left in place"; exit 1; }
+echo "✓ partial dir of a dead run -> reclaimed"
+
+# Review 1ffc3a2 S-2: a node_modules beside the helper must not hijack the warm-up of the cache install.
+mkdir -p "$ISO/skills/memoria-vector/node_modules"
+XW4="$TMP/xdg-w4"
+W4=$(iso_vec XDG_CACHE_HOME="$XW4" FAKE_TF_LOG="$TMP/w4.log")
+node -e "
+const s=require('fs').readFileSync(0,'utf8').trim().split('\n').map(l=>JSON.parse(l)).find(x=>x.step==='vector-deps');
+const log=JSON.parse(require('fs').readFileSync(process.argv[2],'utf8'));
+if(!s||!s.ok||s.warmedUp!==true) throw new Error('warm-up must succeed despite a sibling node_modules, got '+JSON.stringify(s));
+if(s.shadowedBy!==process.argv[3]) throw new Error('shadowedBy must name '+process.argv[3]+', got '+s.shadowedBy);
+if(!log.file.startsWith(process.argv[1]+'/memoria/vector/')) throw new Error('warm-up must load the cache install, not the sibling, got '+log.file);
+" "$XW4" "$TMP/w4.log" "$ISO/skills/memoria-vector/node_modules" <<<"$W4"
+rm -rf "$ISO/skills/memoria-vector/node_modules"
+echo "✓ sibling node_modules present -> warm-up still exercises the cache install, shadowedBy reported"
+
+# Review 1ffc3a2 S-1: a real npm failure buries its reason under noise; the reason must survive.
+if WF=$(iso_vec XDG_CACHE_HOME="$TMP/xdg-wf" FAKE_NPM_MODE=fail 2>&1); then
+  echo "✗ npm failure must exit non-zero"; exit 1
+fi
+echo "$WF" | grep -q 'ECONNREFUSED 127.0.0.1:9' || { echo "✗ npm failure lost its reason: $WF"; exit 1; }
+echo "✓ noisy npm failure -> the reason line survives"
+
 echo ""
 echo "[bootstrap] ok"

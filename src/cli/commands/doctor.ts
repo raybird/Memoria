@@ -54,6 +54,8 @@ function vectorChecks(report: VectorLayerReport): DoctorCheck[] {
                 `it installs the helper's dependencies into ${target}, which "npm i -g" upgrades do not touch, ` +
                 'and warms the model once — the first load can outlast the recall timeout (route_mode=vector_timeout). ' +
                 "It only needs re-running when an upgrade changes the helper's dependency set. " +
+                'Run it with MEMORIA_HOME set (or pass --memoria-home): setup also initializes the data root, ' +
+                'and without either it creates ./memoria in the current directory. ' +
                 'Or set MEMORIA_EMBED_PROVIDER=stub.'
         })
     } else if (report.embedderInstalled === false) {

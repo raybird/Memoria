@@ -53,10 +53,14 @@ export async function importDep(name)
 
 1. 照現有步驟完成 setup，再加一步 `vector-deps`。
 2. 建立 `<hash>.partial-<pid>` 暫存目錄，複製 `package.json`／`package-lock.json`，執行 `npm ci --no-audit --no-fund`（子行程環境移除 `NODE_ENV`）。provider 為 `local` 時加 `--include=dev`；為 `stub` 時加 `--omit=dev`、不暖機——stub 只需要 `@libsql/client`，CI 也由此路徑測試，不必另靠 npm 設定。
-3. npm 成功後寫 `.complete`，把暫存目錄改名成正式的 `<hash>/`；失敗時刪除暫存目錄、以非 0 結束。
-4. provider 為 `local` 時以 `embed.mjs` 直接 embed 一次 `warm up` 完成暖機（不需要 `LIBSQL_URL`），模型下載到 `models/`；暖機失敗就移除 `.complete` 並以非 0 結束。暖機要靠 `deps.mjs` 找到依賴，所以 `.complete` 必須先寫，失敗時再拿掉，效果與「都成功才寫」相同。
-5. 已有 `.complete`（local 還要有 transformers）時沿用、不重裝，仍會暖機。
-6. `--json` 的 step log 為 `{ step: 'vector-deps', path, provider, reused, warmedUp, modelCacheDir, shadowedBy }`；`shadowedBy` 在 helper 旁邊有 `node_modules` 時指出它（那時快取目錄的安裝不會被使用），文字模式另印一行提示。
+3. provider 為 `local` 時，在**暫存目錄**上暖機：子行程先以 `deps.mjs` 的 `useDepsLocation` 把依賴位置釘在暫存目錄，再經 `embed.mjs` embed 一次 `warm up`（不需要 `LIBSQL_URL`），模型下載到 `deps.mjs` 的 `modelCacheDirFor()`，也就是 `models/`。這樣暖機的一定是即將被標記的那份安裝，不受旁邊的 `node_modules` 影響。
+4. npm 與暖機都成功後，才在暫存目錄寫 `.complete`，再改名成正式的 `<hash>/`。任何一步失敗、Ctrl-C 或行程被砍，都不會留下標記；失敗時刪除暫存目錄，以非 0 結束。
+   - 原本的寫法是先改名、寫標記再暖機，失敗才移除標記；中斷暖機就會留下標記，經審查 1ffc3a2 M-1 指出後改為現行做法。
+5. 已有 `.complete`（local 還要有 transformers）時沿用、不重裝，直接在正式目錄上暖機；暖機失敗則移除標記。殘餘情境：沿用時暖機中途被砍會留下原有標記。只有使用者手動刪過 `models/` 時暖機才需要下載，所以影響有限。
+6. 開始前，刪除行程已不存在的 `<hash>.partial-*` 目錄；仍在執行的同時安裝不受影響。npm 逾時 30 分鐘，暖機逾時 15 分鐘。
+7. 錯誤訊息：暖機子行程只回傳 `error.message`；npm 失敗時保留 `npm error code …` 起算的四行，加上 log 路徑那一行。
+8. `--json` 的 step log 為 `{ step: 'vector-deps', path, provider, reused, warmedUp, modelCacheDir, shadowedBy }`；`modelCacheDir` 取自暖機子行程（來源是 `deps.mjs`）。`shadowedBy` 在 helper 旁邊有 `node_modules` 時指出它，那時快取目錄的安裝不會被使用，文字模式另印一行提示。
+9. `XDG_CACHE_HOME` 不是絕對路徑時依 XDG 規範忽略，退回 `~/.cache`。
 
 ## 實作步驟
 
@@ -149,4 +153,32 @@ CI 不跑 local embedding（project.md 環境限制），所以 local provider �
 - [x] 雜湊算法只有一份來源（`deps.mjs`；TS 端經 `probeDepsLocation` 詢問）
 - [x] 沒有新增 runtime 依賴（Memoria 本體仍只有 `better-sqlite3`、`commander`、`zod`）
 - [x] 新旗標寫進 README／README.zh-TW；CLAUDE.md 的命令清單只列命令名稱、不列旗標，改在 Architecture 說明
-- [ ] GitNexus impact（`inspectVectorLayer`、setup 的 action）與提交前 `detect_changes`
+- [x] GitNexus impact（`inspectVectorLayer`、setup 的 action）與提交前 `detect_changes`
+- [ ] 發版時 CHANGELOG 寫明依賴解析順序的變更（HANDOVER §8 下游契約；審查 1ffc3a2 N-8）
+
+## 審查回應
+
+### review-1ffc3a2（RETURN TO execute-task）
+
+修正後各項的處理與證據（2026-10-21）：
+
+- **M-1 暖機中斷留下 `.complete`**：已修正。暖機改在暫存目錄上進行，兩者都成功後才寫標記再改名，見「`setup --vector`」第 3、4 點。
+  - 回歸：`test-bootstrap.sh` 的 `warm-up killed mid-way -> no .complete anywhere`。做法是用假 transformers 讓暖機卡住，再以 `kill -9` 結束 setup 與暖機子行程。舊寫法下得到 `✗ M-1: a warm-up killed mid-way left .complete`。
+- **S-1 失敗原因被截掉**：已修正，見第 7 點。
+  - 回歸：`warm-up failure -> non-zero with the embedder's reason…`。舊寫法下得到 `✗ warm-up failure lost its reason`，輸出只剩 stack frame。
+  - 回歸：`noisy npm failure -> the reason line survives`。假 npm 先印原因，再印 12 行雜訊和 log 路徑。
+- **S-2 sibling 影響暖機**：已修正，暖機固定在暫存目錄上。
+  - 回歸：`sibling node_modules present -> warm-up still exercises the cache install, shadowedBy reported`。舊寫法下 setup 以非 0 結束。
+- **S-3 sibling 路徑依賴 `homedir()`**：已修正。sibling 分支的 `cacheDir` 包在 try 裡，失敗時給 null。
+  - 回歸：`test-vector-recall.sh` 的 `sibling resolution -> independent of os.homedir()`，以 `--import` 預載讓 `os.homedir()` 拋錯。舊 `deps.mjs` 會拋出 `uv_os_homedir: no home`。
+- **S-4 暖機分支與模型快取位置缺 CI 證據**：已補。
+  - `test-bootstrap.sh` 以 installed 形狀的套件複本搭配假 npm 和假 transformers，涵蓋暖機成功與失敗兩條路徑，並斷言 `env.cacheDir` 和回報的 `modelCacheDir` 都是 `$XDG_CACHE_HOME/memoria/vector/models`。
+  - `test-vector-recall.sh` 的 `sibling deps -> embed.mjs leaves the model cache at transformers.js's default` 與 `cache deps -> … models`。變異：把 `embed.mjs` 改成一律設定 cacheDir 後，得到 `Error: sibling deps must leave env.cacheDir at the transformers.js default, got /mutated`。
+- **N-1** 已修正，見第 6 點。回歸：`partial dir of a dead run -> reclaimed`；舊寫法下得到 `✗ a dead run's partial dir was left in place`。
+- **N-2** 已修正，見第 9 點。回歸：`relative XDG_CACHE_HOME -> ignored, falls back to ~/.cache`；舊 `deps.mjs` 回傳 `relcache/memoria/vector/…`。
+- **N-3** 已修正。模型目錄只在 `deps.mjs` 的 `modelCacheDirFor()` 定義，`runtime.ts` 改取暖機子行程的輸出。
+- **N-4** 已修正。`deps.mjs` 只匯出外部有使用的 `resolveDepsLocation`、`modelCacheDirFor`、`useDepsLocation`、`importDep`、`depsLocation`。
+- **N-5** 已修正，npm 逾時 30 分鐘。
+- **N-6** 已修正。doctor 的修法加註「以 `MEMORIA_HOME` 或 `--memoria-home` 執行」，否則會在目前目錄建立 `./memoria`。
+- **N-7** 已修正。`node -e '…' <deps.mjs 路徑>` 這種情況原本會誤判為直接執行並多印 JSON，在 S-3 的回歸測試裡實際觸發；改為 eval 模式一律不輸出。
+- **N-8** 檢查清單已勾選 GitNexus 項目，並新增發版時寫 CHANGELOG 的待辦。
