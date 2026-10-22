@@ -4,341 +4,77 @@
 
 讓 AI Agent 擁有跨會話、可追溯、可自託管的持久記憶。
 
-## 30 秒導讀
+Memoria 將決策、踩坑經驗與學到的技能保存到本地 SQLite，在 agent 需要時召回相關記憶。Markdown 筆記與編譯後的 brief 讓記憶可讀，也能在下次 session 直接載入。
 
-- **問題**：LLM Agent 每次對話都從零開始 — 上次的決定、踩過的雷、學到的技能，全都丟掉。
-- **解法**：把 session 寫進本機 SQLite，需要時用 keyword / tree / hybrid recall（另有選用的語意 `vector` recall）撈回相關片段；可選 markdown 衍生視圖（compiled wiki）供人類審閱。
-- **形狀**：Node.js CLI（`./cli`）+ HTTP API（`:3917`）+ Node SDK（`MemoriaClient`）共用同一個 core；agent adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）開箱即用。
-- **依賴**：runtime 只用三個 npm 套件（`better-sqlite3` / `commander` / `zod`），HTTP 走 `node:http`，全離線可跑。
-- **擴充**：MCP/libSQL 跨節點語意圖譜為 optional，由 `LIBSQL_URL` env 啟用。
+## 能力概覽
 
-## 🤖 AI Agent Quick Install
+| 能力 | 用途 |
+| --- | --- |
+| 持久記憶 | 匯入 session，或用 `remember` 保存單筆筆記；SQLite 與 markdown 保留來源 |
+| 召回 | Keyword、tree、hybrid 檢索，以及選用的本地 embedding 語意召回 |
+| 長期上下文 | Durable 記憶、明確取代舊記憶，以及可供 `CLAUDE.md` 引入的專案 brief |
+| Git 記憶 | 唯讀觀察 repository，增強變更摘要，召回時附上 commit 來源 |
+| 效用回饋 | 回報召回是否有用，讓觀測效用影響排序與保留 |
+| Wiki | 匯入 markdown/text、編譯 wiki 頁面、歸檔有價值的查詢結果 |
+| 整合 | CLI、HTTP API、原始碼層級 Node.js SDK 與 agent adapter 共用核心 |
 
-> **Agent 看到這裡就夠了。** 用 npm 安裝；其他路徑見下方文件。
+核心在本地執行，只有 `better-sqlite3`、`commander`、`zod` 三個 runtime 依賴。MCP/libSQL 為選用功能，SQLite 始終是資料真相來源。需要語意索引或跨系統圖譜投射時，請見 [MCP/libSQL 指南](docs/MCP_INTEGRATION.md)。
 
-### 從 npm 安裝（推薦）
+## 快速開始
+
+需要 **Node.js ≥ 18**。安裝後指定固定的資料根目錄：
 
 ```bash
-# 日常使用建議採持久安裝
 npm install -g @raybird.chen/memoria
+export MEMORIA_HOME="$HOME/.memoria"
 memoria setup
+
+memoria remember "使用 pnpm" --project Memoria --rationale "以 lockfile 為準"
+memoria recall "為什麼用 pnpm" --project Memoria --json
+memoria brief --project Memoria
 ```
 
-Agent automation 可保留機器可讀的逐步輸出，並視需要直接啟動 server：
+這些命令直接存取本地資料，server 為選用。之後使用同一份記憶庫時，請保持 `MEMORIA_HOME` 設定；未設定它或 `--memoria-home` 時，setup 使用目前目錄下的 `./memoria`。
 
-```bash
-memoria setup --serve --json
-```
+`brief` 會印出可引入 `CLAUDE.md` 的檔案路徑。記憶更新後請重新產生。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
 
-macOS 或 Linux 可在 setup 後安裝個人層級背景服務，不需要 sudo：
+## 搭配 Agent 使用
 
-```bash
-memoria service install --memoria-home "$(pwd)/memoria"
-memoria service status
-```
-
-若只想快速試用、不建立持久的全域指令：
-
-```bash
-npx @raybird.chen/memoria setup --json
-```
-
-`setup` 也會把內建 agent skill 部署到 `<memoria-home>/.agents/skills/memoria/`(在 active_skills 中以 **memoria** 名稱出現),其中包含 runtime-safe 的 `SKILL.md`、`REFERENCE.md`、helper scripts 與本地 `bin/memoria` wrapper,讓 agent 安裝後即可直接發現並使用。每個資料夾各有獨立 data root,所以只要在乾淨資料夾執行 `setup`,該資料夾就能擁有自己的記憶。
-
-安裝後若要讓 agent 直接走 deployed skill：
+Setup 會將 **memoria** skill 部署到：
 
 ```text
 <memoria-home>/.agents/skills/memoria/SKILL.md
-<memoria-home>/.agents/skills/memoria/REFERENCE.md
 ```
 
-Claude Code 只掃描 `~/.claude/skills/` 底下的 skill，加上 `--agent claude-code` 就會另外部署一份到那裡，並綁定這個 data root：
+Claude Code 可另外部署到它的 skill 目錄：
 
 ```bash
-memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
+memoria setup --agent claude-code
 ```
 
-部署出的 skill 寫明使用記憶的時機：開始處理 issue 或功能前（`recall --mode vector`）、做出有理由的決策或踩坑後（`remember`）、合併進主線或發版後（`repo sync` 與 merge 摘要），每個時機都附命令與完成判準。環境已 export `MEMORIA_HOME` 時，以它為準，不用部署時綁定的 data root。`setup` 只會覆蓋 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 的 `~/.claude/skills/memoria/`；從部署版手動複製再改過的副本也帶這兩個標記，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/` 並印出路徑。沒有這兩個標記的手寫 skill 原封不動，`setup` 以非 0 結束並印出路徑。沒加 `--agent` 時，`setup` 完全不碰 `~/.claude`。
+Skill 引導 agent 在工作前召回記憶，並在做出決策或完成變更後寫回。部署路徑、備份與獨立安裝方式見 [安裝指南](docs/INSTALL.md)。
 
-加上 `--vector` 會另外把語意召回 helper 的依賴（`@libsql/client`、`@huggingface/transformers`）與模型裝到 `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/`，並暖機一次。它們不在套件目錄裡，全域 `npm i -g` 升級不會清掉；只有升級改變了 helper 的依賴清單時才需要再跑一次，`memoria doctor` 會指出來。
+選用的下一步：
 
-輸出 JSON lines，每步一行：
-
-```json
-{"step":"preflight","ok":true,"ms":120,"mode":"installed"}
-{"step":"init","ok":true,"ms":85}
-{"step":"verify","ok":true,"ms":42}
-{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/skills/memoria"}
-{"step":"serve","ok":true,"port":3917}
-```
-
-確認就緒：
-
-```bash
-curl -sf http://localhost:3917/v1/health
-```
-
-啟動後可透過 HTTP API 使用：
-
-```bash
-curl -X POST http://localhost:3917/v1/remember \
-  -H 'Content-Type: application/json' \
-  -d @examples/session.sample.json
-
-curl -X POST http://localhost:3917/v1/recall \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"SQLite migration","top_k":5}'
-
-curl http://localhost:3917/v1/stats
-```
-
-**前置需求**：Node.js ≥ 18。`better-sqlite3` 自帶 Linux / macOS / Windows prebuilt binaries；packed npm 安裝會在 Ubuntu 與 macOS CI 實際驗證。
-
-**獨立安裝**：`install.sh` 會依 Node runtime 自動選擇 Ubuntu/Linux 或 macOS 的 x64/arm64 no-clone artifact。獨立安裝與 repo 開發模式請見 [docs/INSTALL.md](docs/INSTALL.md)。
-
-**完整 Agent 整合指南**：[AGENTS.md](AGENTS.md)（含 Core Architecture / HTTP API / Bootstrap 章節）
-
----
-
-## 能力地圖
-
-| 領域 | 能力 |
-|------|------|
-| **入口** | CLI（init/sync/stats/doctor/verify/index/source/repo/wiki/govern/prune/export/serve/preflight/setup）｜HTTP API（19 端點 @ port 3917）｜Node.js SDK（`MemoriaClient`）｜Agent Adapter（Claude Code / Antigravity CLI / Codex CLI / OpenCode）｜所有指令支援 `--json` 機器可讀輸出 |
-| **儲存** | SQLite + markdown 雙軌持久化｜時間衰減評分（halfLife 90 天）+ 合併 + 過期清理｜utility-weighted retention（高效用記憶不被清掉）｜backward-compatible schema 自動升級 |
-| **檢索** | `keyword / tree / hybrid` recall + 選用語意 `vector` recall（本地 embedding + libSQL 原生向量，RRF 融合，fail-open）｜adaptive gate 跳過 trivial query｜Lightweight scope isolation（`global / project / agent / user`）｜Recall 路由 telemetry（`stats` + API） |
-| **效用回饋（UFL）** | 每次 recall 發 `recall_id`；adapter 把觀測到的字面重用效用寫回（`POST /v1/recall/:id/outcome`）｜明確回饋（`signal:'explicit'`、SDK `markRecallUseful`）凌駕 reuse proxy｜confidence×utility 校準呈現在 `stats`/telemetry｜聚合效用讓長期被忽略的記憶降權排序、有用的記憶免於清理 |
-| **Git-Aware Memory** | 唯讀觀察既有 git repo（`repo add/sync/...`）｜增量掃描 commits/refs/tags → 型別化事件（含 history rewrite 偵測）｜deterministic range 摘要 + agent 回寫增強｜高價值摘要升級為可 recall 記憶並附 SHA 級溯源（`hit.source`）｜非侵入式契約（runtime 白名單，git 狀態 byte-identical） |
-| **Wiki 工作流** | Raw source 匯入（markdown/text）｜Compiled wiki special pages（`index / log / overview`）｜Query file-back（`synthesis / comparison`）｜Wiki governance lint |
-| **治理** | Governance review（重複 decisions/skills 候選檢查）｜Import guardrails（低價值 summary 修正 + duplicate event suppression） |
-| **Bootstrap** | `./cli setup --serve --json` 一鍵安裝｜no-clone release artifact 安裝路徑｜deployed skill 自動部署到 `<memoria-home>/.agents/` |
-| **Optional** | MCP/libSQL 跨系統語意圖譜（由 `LIBSQL_URL` 啟用）｜語意召回（`mode:'vector'`）：本地 `multilingual-e5-small` embedding + libSQL `F32_BLOB`/`vector_top_k`，helper 在 `skills/memoria-vector/`——記憶內容不出機器 |
-| **Planned** | Policy 引擎（PII 過濾 / 讀寫策略 / 多租戶規則） |
-
-## Memoria vs MCP/libSQL
-
-`mcp-memory-libsql` 是 **optional enhancement**，不是必需依賴。
-
-| 能力 | Memoria 單獨可用 | Memoria + MCP/libSQL |
-|------|------------------|------------------------|
-| 本地持久記憶（SQLite + markdown） | ✅ | ✅ |
-| `recall`（keyword/tree/hybrid） | ✅ | ✅ |
-| 效用回饋迴路（recall_id / outcome / 校準 / utility-weighted 排序與保留） | ✅ | ✅ |
-| Recall telemetry（`stats` + API） | ✅ | ✅ |
-| 語意召回（`mode:'vector'`，本地 embedding + libSQL 原生向量） | ➖（降級為字面召回） | ✅ |
-| 跨系統圖譜投射/增量同步 | ➖ | ✅ |
-| 多 Agent 共用外部語意圖譜 | ➖ | ✅ |
-
-結論：
-
-- 要「完整可用」：Memoria 單獨就足夠。
-- 要「跨系統/多節點語意增強」：再加 MCP/libSQL。
-
-快速決策（3 行）：
-
-- 先上 Memoria-only（最小維運成本，功能已完整）。
-- 需要跨 Agent/跨節點語意圖譜時，再加 MCP/libSQL。
-- 無論哪種模式，都以 Memoria SQLite 為 source-of-truth。
-
-## HTTP API
-
-啟動：`./cli serve` (port 3917，可用 `MEMORIA_PORT` 覆寫)
-
-| Method | Path | 說明 |
-|--------|------|------|
-| `GET`  | `/v1/health` | 健康檢查 |
-| `GET`  | `/v1/stats` | 統計 |
-| `GET`  | `/v1/telemetry/recall` | Recall 路由遙測 + confidence×utility 校準（query: `window`, `limit`） |
-| `POST` | `/v1/remember` | 寫入記憶 (body: SessionData; optional `scope`) |
-| `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, scope?, mode?}`；`mode:'vector'` = 選用語意召回，需 `LIBSQL_URL` + `skills/memoria-vector`，不可用時降級字面召回) |
-| `POST` | `/v1/recall/:id/outcome` | 回報召回效用 (body: `{signal, utility_score?, used?, hits?}`；UFL 寫回 + per-memory 歸因) |
-| `POST` | `/v1/sources` | 匯入 markdown/text source |
-| `GET`  | `/v1/sources` | 列出 raw sources |
-| `POST` | `/v1/wiki/build` | 重建 compiled wiki special pages |
-| `POST` | `/v1/wiki/file-query` | 將高價值 query 回寫成 wiki page |
-| `POST` | `/v1/wiki/lint` | 執行 wiki governance lint |
-| `GET`  | `/v1/sessions/:id/summary` | 會話摘要 |
-| `POST` | `/v1/repos` | 註冊 git repository（唯讀觀察） |
-| `GET`  | `/v1/repos` | 列出受觀察的 repositories |
-| `GET`  | `/v1/repos/:ref/status` | Registry + 即時 git 狀態 |
-| `POST` | `/v1/repos/:ref/sync` | 增量掃描（`{generate_summaries?, dry_run?, ...}`） |
-| `POST` | `/v1/repos/:ref/summarize` | 摘要 branch/range/merge/tag |
-| `GET`  | `/v1/repos/:ref/summaries/pending` | 等待 agent 增強的摘要請求 |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫 |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | 略過一筆 pending 摘要（不自動促升；之後 `--submit` 或明確的 `--promote` 仍可讓它進 recall；已是 enriched 或已在 recall 時回 `409`） |
-| `POST` | `/v1/repos/:ref/summaries/dismiss` | 依 `{types}` 批次略過 pending 摘要；已在 recall 的會跳過（`skipped_promoted`） |
-
-所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
-
-`confidence` 是 `0–1` **或 `null`**；recall 回傳另帶 `confidence_basis` 說明這個值從何而來：
-`lexical_coverage`（查詢 token 在首位命中的覆蓋率）、`no_hits`（沒有任何命中，`confidence` 為 `0`）、
-`unavailable`（首位命中僅來自語意索引，字面匹配品質無從衡量，`confidence` 為 `null`——意思是
-「無法評估」，不是「匹配很差」）。只有 opt-in 的 vector route 會產生 `null`。
-
-## CLI 常用命令
-
-```bash
-./cli init                           # 初始化 DB + 目錄
-./cli sync <session.json>            # 匯入 session
-./cli sync --dry-run <session.json>  # 預覽不寫入
-./cli recall "為什麼用 pnpm" [--json] # 召回記憶（--project/--scope/--top-k/--time-window/--mode）
-./cli remember "改用 pnpm" --project Memoria --rationale "lockfile 是權威"
-./cli remember "..." --type skill --category cli   # 改寫成 SkillLearned 筆記
-./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL 效用回報
-./cli brief [--project X] [--days 30]  # 編譯 knowledge/BRIEF.md，供 CLAUDE.md 以 @ 引入
-./cli remember "..." --durable         # 恆真事實：不衰減、不被 stale 裁剪
-./cli remember "..." --supersedes <ref_id>       # 舊記憶退出召回（資料保留）
-./cli remember "..." --sensitivity private       # 標記供 export --redact 使用
-./cli recall "..." --include-superseded          # 一併顯示被取代的版本
-./cli export --redact                  # 對 private 記憶中的已知實體代稱化
-./cli stats [--json]                 # 統計
-./cli doctor [--json]                # 本地健康檢查
-./cli verify [--json]                # 完整驗證
-./cli index build [--json]           # 增量重建 tree index
-./cli index build --scope agent:main # 只重建指定 scope
-./cli source add notes/research.md   # 匯入 markdown/text source
-./cli source list --json             # 列出 raw sources
-./cli repo add /path/to/project      # 唯讀觀察 git repo
-./cli repo sync project              # 增量掃描 → 事件 → 摘要 → promotion
-./cli repo summarize project --pending --json  # 待 agent 增強的摘要請求
-./cli repo summarize project --dismiss-pending --type merge,release  # 略過他人的骨架，不寫進記憶
-./cli wiki build --json              # 重建 compiled wiki
-./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
-./cli wiki lint --json               # 產生 durable wiki governance findings
-./cli govern review --json           # 檢查可提升成 rule/skill 的候選項
-./cli prune --all --dry-run          # 清理預覽（含 consolidate 90d + stale 180d + git-observations 90d）
-./cli prune --consolidate-days 90    # 合併同 topic 下的舊 session nodes
-./cli prune --stale-days 180         # 移除從未被 recall 命中的過期記憶
-./cli export --type all --format json # 匯出
-./cli serve [--port 3917]            # HTTP API Server
-./cli preflight [--json]             # 前置條件檢查
-./cli setup [--serve] [--json]       # 一鍵安裝
-```
-
-## Node.js SDK
-
-```typescript
-import { MemoriaClient } from './src/sdk.js'
-
-const client = new MemoriaClient()         // default http://localhost:3917
-await client.waitUntilReady()              // poll /v1/health 直到就緒
-
-const r = await client.remember(sessionData)
-const hits = await client.recall({ query: 'migration', top_k: 3, scope: 'project:Memoria' })
-const telemetry = await client.recallTelemetry({ window: 'P7D', limit: 50 })
-const summary = await client.summarizeSession('session_abc')
-
-// 效用回饋（UFL）：回報這次召回實際有沒有幫上忙
-const recallId = hits.meta.recall_id!
-await client.recordRecallOutcome(recallId, { signal: 'reuse', utility_score: 0.8 })   // proxy 訊號
-await client.markRecallUseful(recallId, true, hits.data!.map(h => h.id))              // 明確回饋（高保真）
-```
-
-## Agent Adapter
-
-```typescript
-import { OpenCodeAdapter } from './src/adapter/index.js'
-
-const adapter = new OpenCodeAdapter({ client, project: 'my-project' })
-
-// Before prompt: 注入歷史記憶
-const context = await adapter.beforePrompt({ userMessage, conversationId })
-
-// After response: 儲存記憶（自動 throttle + dedupe + fail-open）
-await adapter.afterResponse({ response, conversationId, userMessage })
-```
-
-參考實作：`src/adapter/antigravity-adapter.ts`、`src/adapter/codex-adapter.ts`、`src/adapter/opencode-adapter.ts`、`src/adapter/claude-code-adapter.ts`
-
-Claude Code、Codex CLI、Antigravity CLI 都提供**零程式碼 hook 整合**——一行 CLI 指令同時處理 recall 注入與回合寫回。三者都 fail-open，Memoria 故障不會打斷 agent；都需要 `memoria serve` 在 `localhost:3917`（可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫）。
-
-### Claude Code（透過 hook 零程式碼整合）
-
-把 Memoria 接到 Claude Code 完全不用寫程式，只需 CLI：
-
-```jsonc
-// ~/.claude/settings.json（或專案的 .claude/settings.json）
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
-    ]
-  }
-}
-```
-
-`UserPromptSubmit` 會把相關過往記憶以 `additionalContext` 注入；`Stop` 會把剛完成的這一輪寫回 Memoria。兩者都 fail-open，Memoria 故障不會打斷 Claude Code session。需要 `memoria serve` 在 `localhost:3917`（可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫）。
-
-### Codex CLI（透過 hook 零程式碼整合）
-
-Codex CLI 的 hook 系統與 Claude Code 相同（stdin 收 JSON、stdout 回 JSON）。接進 Codex 設定旁的 `hooks.json`，或 `~/.codex/config.toml` 內的 `[hooks]` 表：
-
-```jsonc
-// ~/.codex/hooks.json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
-    ]
-  }
-}
-```
-
-`UserPromptSubmit` 把 recall 到的記憶以 `additionalContext`（額外 developer context）注入；`Stop` 用 payload 的 `last_assistant_message` 寫回這一輪。
-
-### Antigravity CLI（透過 hook 零程式碼整合）
-
-Antigravity CLI（`agy`）提供 agent 生命週期 hook（stdin/stdout 走 JSON）。在客製目錄的 `hooks.json` 註冊 handler：
-
-```jsonc
-// .agents/hooks/hooks.json（或 settings.json 的 "hooks"）
-{
-  "memoria": {
-    "PreInvocation": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
-    ]
-  }
-}
-```
-
-`PreInvocation` 在模型執行前 recall 並注入記憶，輸出為**扁平**的 top-level `additionalContext`（Antigravity 的輸出 schema 會拒絕巢狀 `hookSpecificOutput` 包裝）；`Stop` 寫回完成的這一輪。Antigravity 透過 `transcript_path` 傳遞對話（而非 payload 欄位），因此 adapter 改讀 transcript（如同 Claude Code）。transcript 行格式假設與 Claude Code 的 JSONL 相同——設 `MEMORIA_ADAPTER_DEBUG=<file>` 擷取你 `agy` 版本的真實 payload 來確認。
-
-## 專案結構
-
-```text
-src/
-  cli.ts        # Commander 指令注冊殼（~50 行）
-  cli/          # 各指令模組 + 共用輔助（shared.ts / runtime.ts / preflight.ts / commands/）
-  server.ts     # HTTP API Server（node:http，零外部依賴）
-  sdk.ts        # MemoriaClient SDK
-  core/         # 所有業務邏輯（types / paths / utils / db/ / memoria / source-import / wiki-*）
-  core/db/      # SQLite 操作按領域拆分（schema / session / source / wiki / lint / sync / telemetry / verify / prune-export / recall / mappers）
-  adapter/      # BaseAdapter + Claude Code / Antigravity CLI / Codex CLI / OpenCode adapter
-scripts/        # bash 端對端測試（test-*.sh）+ release 打包
-skills/         # memoria-memory-sync agent skill
-examples/       # session.sample.json
-```
-
-完整目錄與檔案職責請見 [AGENTS.md](AGENTS.md) 與 [CLAUDE.md](CLAUDE.md)。
+- **HTTP 或 hooks：** 執行 `memoria setup --serve --json`，接著參考 [API 文件](docs/API.zh-TW.md) 或 [SDK 與 Agent 整合](docs/INTEGRATIONS.zh-TW.md)。
+- **語意召回：** `memoria setup --vector` 安裝依賴並暖機本地模型；另需設定 `LIBSQL_URL` 並 ingest 記憶，流程見 [Semantic Recall Operations](docs/OPERATIONS.md#semantic-recall-operations-optional)。
+- **Repository 記憶：** 從 `memoria repo add /path/to/project` 開始，詳見 [Git-Aware Memory Operations](docs/OPERATIONS.md#git-aware-memory-operations)。
 
 ## 文件導覽
 
-| 文件 | 對象 | 說明 |
-|------|------|------|
-| [AGENTS.md](AGENTS.md) | AI Agent | 架構、API、Bootstrap、開發約定 |
-| [RELEASE.md](RELEASE.md) | 維護者 | patch/minor/major 發版 SOP 與驗證流程 |
-| [SPEC.md](SPEC.md) | 開發者 | 已落地功能規格 |
-| [RFC.md](RFC.md) | 開發者 | 規劃與未來方向 |
-| [docs/](docs/) | 維運 | 安裝、容器、MCP 整合等 |
+| 指南 | 內容 |
+| --- | --- |
+| [安裝](docs/INSTALL.md) | npm、獨立安裝包、資料路徑、部署 skill 與背景服務 |
+| [CLI](docs/CLI.zh-TW.md) · [English](docs/CLI.md) | 命令、記憶標記、brief 產生與範圍 |
+| [HTTP API](docs/API.zh-TW.md) · [English](docs/API.md) | 端點、請求範例與回傳語意 |
+| [SDK 與 Agent 整合](docs/INTEGRATIONS.zh-TW.md) · [English](docs/INTEGRATIONS.md) | 原始碼 SDK 用法與 hook 設定 |
+| [維運](docs/OPERATIONS.md) | 索引、向量修復、清理、備份與治理 |
+| [MCP/libSQL](docs/MCP_INTEGRATION.md) | 選用的圖譜投射與增量同步 |
+| [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) | 架構、開發命令與 agent 約定 |
+| [規格](SPEC.md) · [路線圖](RFC.md) | 已實作行為與未來方向 |
+| [版本紀錄](CHANGELOG.md) · [發版 SOP](RELEASE.md) | 版本歷史與維護者流程 |
+
+最後驗證：2026-10-23，對照 v1.31.1 原始碼、CLI help 與文件檢查。
 
 ## 授權
 

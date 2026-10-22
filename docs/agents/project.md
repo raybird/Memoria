@@ -19,11 +19,14 @@
 
 ## 常青文件更新責任
 
+README 保留介紹、快速開始與導覽；完整用法放在下表對應指南。修改 CLI、API 或整合指南時，同步其 `.zh-TW.md` 版本；修改 README 時同步 `README.zh-TW.md`。
+
 | 變更 | 更新的文件 |
 | --- | --- |
-| 新增或改名 CLI 命令、旗標、輸出格式 | `README.md`、`README.zh-TW.md`、`CLAUDE.md`「Conventions」命令清單 |
+| 新增或改名 CLI 命令、旗標、輸出格式 | `docs/CLI.md`、`docs/CLI.zh-TW.md`；影響快速開始時同步中英文 README；`CLAUDE.md`「Conventions」命令清單 |
 | 架構、模組切分、資料流、recall 語意 | `CLAUDE.md`「Architecture」、`AGENTS.md` |
-| HTTP 端點契約 | `AGENTS.md`（HTTP API 段）、`scripts/test-http-api.sh` |
+| HTTP 端點契約 | `docs/API.md`、`docs/API.zh-TW.md`、`AGENTS.md`（HTTP API 段）、`scripts/test-http-api.sh` |
+| SDK 用法、adapter 或 hook 整合 | `docs/INTEGRATIONS.md`、`docs/INTEGRATIONS.zh-TW.md`；安裝接線另同步 `docs/INSTALL.md` |
 | schema／migration、維運程序（index、prune、ingest） | `docs/OPERATIONS.md` |
 | 安裝路徑、交付清單、部署的 skill | `docs/INSTALL.md`、`skills/memoria-memory-sync/deployed/` |
 | 發版流程或守門 | `RELEASE.md`、`docs/HANDOVER.md` §8 |

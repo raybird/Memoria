@@ -50,12 +50,26 @@ function main() {
     failures.push(`CHANGELOG.md missing section for version ${version}`)
   }
 
-  const readme = readText('README.md')
-  if (!checkContains(readme, '/v1/telemetry/recall')) {
-    failures.push('README.md missing /v1/telemetry/recall endpoint docs')
-  }
-  if (!checkContains(readme, 'index build')) {
-    failures.push('README.md missing index build command docs')
+  for (const suffix of ['', '.zh-TW']) {
+    const readmePath = `README${suffix}.md`
+    const readme = readText(readmePath)
+    for (const guide of ['CLI', 'API', 'INTEGRATIONS']) {
+      const guidePath = `docs/${guide}${suffix}.md`
+      if (!checkContains(readme, `](${guidePath})`)) {
+        failures.push(`${readmePath} missing link to ${guidePath}`)
+      }
+      if (!fs.existsSync(path.join(root, guidePath))) {
+        failures.push(`Missing guide: ${guidePath}`)
+      }
+    }
+    const apiPath = `docs/API${suffix}.md`
+    if (!checkContains(readText(apiPath), '/v1/telemetry/recall')) {
+      failures.push(`${apiPath} missing /v1/telemetry/recall endpoint docs`)
+    }
+    const cliPath = `docs/CLI${suffix}.md`
+    if (!checkContains(readText(cliPath), 'index build')) {
+      failures.push(`${cliPath} missing index build command docs`)
+    }
   }
 
   const spec = readText('SPEC.md')

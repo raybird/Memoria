@@ -2,11 +2,17 @@
 
 This document is the source of truth for what Memoria currently implements.
 
+Last verified: 2026-10-23 against v1.31.1 source and CLI help for memory commands, vector setup and summary promotion.
+
 ## Implemented Scope
 
 - TypeScript CLI commands:
   - `init`
   - `sync` (`--dry-run`)
+  - `recall`, `remember`, `mark`, `feedback`, `brief` (local, no server required)
+  - `source add/list`, `wiki build/file-query/lint`
+  - `serve`, `preflight`, `setup` (including `--vector` and `--agent claude-code`)
+  - `service install/start/stop/status/uninstall`, `adapter claude-code/codex/antigravity`
   - `stats`
   - `doctor`
   - `verify` (`--json`)
@@ -20,6 +26,15 @@ This document is the source of truth for what Memoria currently implements.
   - `SessionData.scope` optional at write time
   - if omitted, scope defaults to `project:<project>` or `global`
   - `recall` and `index build` support scope filtering
+- Atomic CLI notes and long-term markers:
+  - `remember` writes one content-addressed note; identical text is idempotent, and can apply markers without rewriting it
+  - `memory_attributes` stores retention, supersession and sensitivity; `mark <ref_id>` updates retention/sensitivity on an existing session or event, including git-promoted decisions
+  - durable memories bypass time-decay and stale pruning; superseded memories leave default recall and brief; `export --redact` code-names known entities in private memories
+- Compiled brief:
+  - recent decisions, high-utility memories and repository state, plus durable memories pinned outside the `days`/`topK` limits
+  - cwd detection scopes a registered repository to `BRIEF-<project>.md`; explicit `--project` keeps `BRIEF.md`, and `--global` selects all projects
+  - environment-class memories (project not a registered repository name) accompany project briefs; superseded memories are excluded
+  - CLI generation is manual and overwrites the derived file; `GET /v1/brief` returns structured data and rendered markdown without writing a file
 - Markdown sync outputs:
   - `knowledge/Daily/`
   - `knowledge/Decisions/`
@@ -48,6 +63,9 @@ This document is the source of truth for what Memoria currently implements.
   - lexical floor always runs; results fuse via Reciprocal Rank Fusion; authoritative fields re-read from local SQLite
   - fail-open degradation: `route_mode = vector_unavailable | vector_timeout | keyword | hybrid_vector | vector`; `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the helper
   - sync-flow ingest step behind `MEMORIA_VECTOR_ENABLE=1` (default off)
+  - `setup --vector` installs dependencies/model into the user cache and warms the model; sibling helper dependencies take precedence, otherwise the cache is keyed by the helper lockfile and survives global upgrades
+  - local-model ingest is batched (`MEMORIA_EMBED_BATCH`, default 32); setup does not ingest the corpus
+  - `doctor` reports helper/embedder readiness and local vector coverage; missing coverage gets a runnable full-corpus ingest fix unless a custom database path differs from the builder's data-root database
 - Adaptive retrieval gate:
   - skips trivial/greeting recall requests when no explicit recall mode or memory intent is present
   - telemetry records skipped requests with `route_mode=skipped`
@@ -72,7 +90,9 @@ This document is the source of truth for what Memoria currently implements.
   - summary pipeline: deterministic commit-range grouping (time window + top-level-dir domains) → trivial filter (lockfile/generated/snapshot noise skipped; migration/schema/auth/security/deploy-class files always summarized) → context assembly per §17 priority (messages → file list → diffstat → capped diff), sensitive paths excluded and secret-like values masked; merge summaries (merge-base..merge), release summaries (`v1.2.0`-style tags, previous-release..tag or root..tag), branch summaries (`repo summarize --branch`, merge-base(default,branch)..head)
   - summaries are structured (title/summary/key_changes/decisions/known_limitations/risks/affected_domains/importance/confidence) and start as deterministic skeletons (`generator:'deterministic'`, `status:'pending'`); the host agent enriches them in place via `repo summarize --pending` → `--submit <id>` (Zod-validated payload; same row, `generator:'agent'`, `status:'enriched'`)
   - idempotency keys: `(repository_id, commit_sha)` for commits, `range_fingerprint` for ranges, `(repository_id, summary_range_id, prompt_version)` for summaries, deterministic ids + `INSERT OR IGNORE` for promotion
-  - memory promotion: merge/release summaries, importance ≥ `promoteImportanceThreshold` (default 0.7), or substantive decisions/limitations/risks promote into the existing recall corpus (synthetic session + `DecisionMade` events → FTS); `memory_sources` keeps SHA-level provenance, `memory_checkpoints` records milestones; the same summary never promotes twice
+  - memory promotion: only `enriched` summaries automatically qualify; merge/release summaries, importance ≥ `promoteImportanceThreshold` (default 0.7), or substantive decisions/limitations/risks promote into the existing recall corpus (synthetic session + `DecisionMade` events → FTS, followed by best-effort tree indexing); `memory_sources` keeps SHA-level provenance, `memory_checkpoints` records milestones; the same summary never promotes twice
+  - `repo summarize --dismiss <id>` or `--dismiss-pending --type <list>` skips unpromoted pending skeletons; enriched/promoted rows cannot be individually dismissed (batch skips promoted rows). Dismissed rows leave the pending queue and can later be submitted; explicit `--promote` bypasses the automatic eligibility gate
+  - explicit `repo summarize --merge` and sync reuse the same merge summary range
   - recall provenance: hits from promoted summaries carry `hit.source` = `{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`
   - HTTP: `POST/GET /v1/repos`, `GET /v1/repos/:ref/status`, `POST /v1/repos/:ref/sync|summarize`, `GET /v1/repos/:ref/summaries/pending`, `POST /v1/repos/:ref/summaries/:summaryId`; SDK: `repoAdd/repoList/repoStatus/repoSync/repoSummarize/repoPendingSummaries/repoSubmitSummary`
   - configuration: `<configPath>/config.json` (`git.*` block, Zod-validated, optional; the repo's only config file) — `summarization.{enabled,minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes}`, `filters.{excludePaths,sensitivePaths}`
@@ -104,7 +124,7 @@ bash scripts/test-repo-noninvasive.sh   # Git-Aware Memory end-to-end + non-inva
 - `src/core/` library: `types`, `paths`, `utils`, `db`, `memoria`, `index`
 - `MemoriaCore` class: `remember()`, `recall()`, `summarizeSession()`, `health()`, `stats()`
 - `MemoriaResult<T>` response envelope with `evidence[]`, `confidence` (`number | null`), `source`, `latency_ms`; recall adds `confidence_basis` (`lexical_coverage` | `unavailable` | `no_hits`) naming what produced the value — `null` means the route cannot measure match quality, as distinct from `0`
-- HTTP API server (`src/server.ts`, node:http): 6 endpoints on default port 3917
+- HTTP API server (`src/server.ts`, node:http): initially 6 endpoints on default port 3917; the current endpoint table is in the [API Reference](docs/API.md)
 - Node.js SDK client (`src/sdk.ts`): `MemoriaClient` with `waitUntilReady()`
 - CLI refactored to thin shell; new commands: `serve`, `preflight`, `setup`
 - `--json` flag added to all major commands

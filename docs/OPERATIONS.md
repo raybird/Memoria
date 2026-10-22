@@ -1,5 +1,7 @@
 # Operations Guide
 
+Last verified: 2026-10-23 against v1.31.1 source and CLI help for brief, markers and vector recovery.
+
 ## Runtime Health Commands
 
 ```bash
@@ -180,6 +182,8 @@ Notes that matter in practice:
 
 ```bash
 ./cli brief --project Memoria --days 30      # writes <knowledge>/BRIEF.md
+./cli brief                                 # registered cwd → <knowledge>/BRIEF-<project>.md
+./cli brief --global                        # all projects → <knowledge>/BRIEF.md
 ./cli brief --stdout                         # print instead of writing
 ```
 
@@ -195,24 +199,35 @@ already in context — no hooks, no server, nothing to execute. Operational cave
 - It is a **derived view**. Each run overwrites the whole file; do not edit it by hand.
 - Generation is **manual by design** — no write path regenerates it. Re-run `brief` after a batch of
   `remember` / `repo sync` work, otherwise the file silently ages.
+- With no explicit `--project` or `--global`, the working directory determines scope when it belongs
+  to a registered repository. Import the absolute path printed by the command into that project's
+  `CLAUDE.md`. Outside registered repositories it falls back to the all-projects `BRIEF.md`.
+- Memories whose project is not a registered repository name are environment-class and accompany
+  each project's brief. Their count is reported on every run; registering a repository can change
+  that classification.
+- Durable memories have a separate pinned block, exempt from `--days` and `--top-k`. Superseded
+  memories are excluded from all memory sections, including pinned and high-utility entries.
 - The UFL section stays empty until outcomes exist (`effectiveUtility` needs 1 explicit or 2 reuse
   observations), which is expected on a fresh database.
 
 ### Long-term memory markers (issue-5)
 
-Three markers, all optional, all set through `remember`. Re-running `remember` with identical text
-applies markers **without** rewriting the memory — that is how an existing memory gets marked:
+Three markers, all optional. Re-running `remember` with identical text applies markers **without**
+rewriting the note. To change retention or sensitivity on any existing memory, including a
+git-promoted decision, use `mark` with a ref from `recall --json`:
 
 ```bash
 ./cli remember "使用者一律用 pnpm" --project Memoria --durable
 ./cli remember "資料庫改用 SQLite" --supersedes note-abc123 --supersede-note "單機部署不需要 PG"
 ./cli remember "內部部署細節" --sensitivity private
+./cli mark <ref_id> --durable --note "Keep this constraint in every brief"
+./cli mark <ref_id> --episodic              # restore time-bound retention
 ```
 
 | marker | effect | escape hatch |
 |---|---|---|
-| `--durable` | recall undoes time-decay for it; `prune --stale-days` spares it | `--episodic` marks it explicitly time-bound |
-| `--supersedes <ref>` | the old memory stops appearing in recall | `recall --include-superseded`; `export` never filters |
+| `--durable` | recall undoes time-decay; `prune --stale-days` spares it; `brief` pins it outside the recency/size limits | `--episodic` marks it explicitly time-bound |
+| `--supersedes <ref>` | the old memory stops appearing in recall and brief | `recall --include-superseded`; `export` never filters |
 | `--sensitivity private` | `export --redact` code-names known entities inside it | — |
 
 Operational notes:
@@ -284,8 +299,7 @@ curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 ## Semantic Recall Operations (optional)
 
 `mode:'vector'` is gated by `LIBSQL_URL` and the `skills/memoria-vector` helper. The helper ships as
-**source only** — its embedding runtime is ~700MB of devDependencies, so you install those yourself,
-once, wherever the helper lives:
+**source only**; its embedding runtime is an optional separate install:
 
 ```bash
 # from a checkout
@@ -326,26 +340,31 @@ export MEMORIA_VECTOR_RECALL_CMD="/path/to/Memoria/skills/memoria-vector/vector-
 That override still works on current versions — useful when you already have a checkout with the
 runtime installed and would rather not download it twice.
 
-**2. Promoted git memories carry no `memory_node`, so they never reach the vector index.**
-`promoteSummary()` writes sessions/events/`memory_sources` but does not call `buildMemoryIndex`,
-while `build-mcp-bridge-payload.mjs` derives its scope from `memory_nodes`. On a database whose
-content came mostly from `repo sync`, the payload silently covers only the handful of memories
-written through `remember`. Run the index build first — it is incremental and exists precisely for
-unindexed sessions:
+**2. The runtime is ready, but memories have not reached the vector index.** `setup --vector`
+installs dependencies and warms the model; it does not ingest your corpus. The bridge payload derives
+its scope from `memory_nodes`, so missing tree nodes must be indexed before vector ingest. Since
+v1.24.0, git promotion automatically indexes its session (best-effort); older databases or a failed
+auto-build can still have gaps. `memoria stats` reports tree-index coverage. First repair any gap:
 
 ```bash
 memoria index build                     # picks up every session that has no node yet
-MEMORIA_MCP_PAYLOAD_MODE=full node skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs \
-  --memoria-home "$MEMORIA_HOME" --out /tmp/payload
-LIBSQL_URL="file:$MEMORIA_HOME/.memory/vectors.db" MEMORIA_EMBED_PROVIDER=local \
-  node skills/memoria-vector/vector-ingest.mjs /tmp/payload/mcp-bridge-*.json
+memoria doctor                          # with LIBSQL_URL set, inspect vector coverage and its fix
 ```
 
 Verify coverage rather than assuming it: `memoria doctor` (in a shell with `LIBSQL_URL` set) reports
 `vector coverage: embedded=… expected=… missing=…`. When `missing` is above 0, its fix ends in
 `Run: <command>` — one line with this install's absolute paths and your data root, which you can paste
-as printed (issue-27). It writes the payload to a temporary directory rather than the data root, and
-exits with ingest's status. Counting the store by hand needs `SELECT COUNT(*) FROM memoria_vectors
+as printed (issue-27). It writes the payload to a temporary directory rather than the data root,
+uses a dedicated sync target without a cursor so the whole corpus is covered, and exits with ingest's
+status. Keep the same `LIBSQL_URL` and `MEMORIA_EMBED_PROVIDER` as the doctor invocation, then run
+doctor again to verify `missing=0`.
+
+With `MEMORIA_DB_PATH` pointing outside `<home>/.memory/sessions.db`, doctor names the path mismatch
+and prints no ingest command: the payload builder reads the data root's default database. Use a data
+root whose `.memory/sessions.db` is the intended database. Remote libSQL and overridden helpers report
+coverage as `not measured`; `read_failed` and `no_local_db` also mean coverage is unknown, not complete.
+
+Counting the store by hand needs `SELECT COUNT(*) FROM memoria_vectors
 NOT INDEXED`: without `NOT INDEXED`, stock SQLite counts through libSQL's vector index and returns 0
 on a fully populated store.
 
@@ -360,7 +379,7 @@ passing, which reads like all green:
 
 ```bash
 memoria setup --vector     # installs the new dependency set, reuses the cached model, warms it
-memoria doctor             # vector embedder installed, vector coverage missing=0
+memoria doctor             # embedder installed; ingest separately if vector coverage has gaps
 ```
 
 The warm-up matters: a cold first load measured ~14–17s against ~1s warm, longer than

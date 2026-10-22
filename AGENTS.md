@@ -2,6 +2,8 @@
 
 Guidance for coding agents operating in this repository.
 
+Last verified: 2026-10-23 for test commands against `.github/workflows/ci.yml`.
+
 ## Project Snapshot
 
 - Stack: TypeScript CLI (Node.js).
@@ -53,11 +55,15 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-pure-functions.sh`
 - `scripts/test-cli-memory.sh`
 - `scripts/test-memory-attributes.sh`
+- `scripts/test-brief-scope.sh`
 - `scripts/test-migrations.sh`
 - `scripts/test-prune.sh`
 - `scripts/test-utility-ranking.sh`
 - `scripts/test-bootstrap.sh`
 - `scripts/test-adapter-runtime.sh`
+- `scripts/test-claude-code-adapter.sh`
+- `scripts/test-codex-adapter.sh`
+- `scripts/test-antigravity-adapter.sh`
 - `scripts/test-utility-shadow.sh`
 - `scripts/test-no-clone-install.sh`
 - `scripts/test-installer-platform.sh`
@@ -113,39 +119,30 @@ This repo currently has explicit runtime and wiki test scripts:
 
 ## CI Parity Checklist
 
-Before opening PRs, mirror CI locally in this order:
+Mirror `.github/workflows/ci.yml`: run static checks first, then each E2E group in its listed order. CI runs the groups as independent jobs.
 
 1. `pnpm install`
 2. `pnpm run check`
 3. `pnpm run build`
 4. `node dist/cli.mjs --help`
 5. `bash -n install.sh`
-6. `bash scripts/test-smoke.sh`
-7. `bash scripts/test-migrations.sh`
-8. `bash scripts/test-prune.sh`
-9. `bash scripts/test-utility-ranking.sh`
-10. `bash scripts/test-bootstrap.sh`
-11. `bash scripts/test-adapter-runtime.sh`
-12. `bash scripts/test-utility-shadow.sh`
-13. `bash scripts/test-no-clone-install.sh`
-14. `bash scripts/test-mcp-e2e.sh`
-15. `bash scripts/test-http-api.sh`
-16. `bash scripts/test-vector-recall.sh`
-17. `bash scripts/test-wiki-ingest.sh`
-18. `bash scripts/test-wiki-build.sh`
-19. `bash scripts/test-wiki-query-fileback.sh`
-20. `bash scripts/test-wiki-lint.sh`
-21. `bash scripts/test-repo-git-exec.sh`
-22. `bash scripts/test-repo-registry.sh`
-23. `bash scripts/test-repo-sync.sh`
-24. `bash scripts/test-repo-events.sh`
-25. `bash scripts/test-repo-summary.sh`
-26. `bash scripts/test-repo-promotion.sh`
-27. `bash scripts/test-repo-edge.sh`
-28. `bash scripts/test-repo-noninvasive.sh`
-29. `bash scripts/test-installer-platform.sh` (all Linux/macOS x64/arm64 URL routes)
-30. `bash scripts/test-npm-install.sh` (also runs on macOS in its own CI job)
-31. `bash scripts/test-service-manager.sh` (mocked systemd/launchd lifecycle; also runs on macOS)
+6. `pnpm run release:docs-check`
+
+Run each script below with `bash scripts/<name>.sh`:
+
+| CI group | Scripts in execution order |
+| --- | --- |
+| core | `test-pure-functions`, `test-smoke`, `test-cli-memory`, `test-memory-attributes`, `test-brief-scope`, `test-migrations`, `test-prune`, `test-utility-ranking`, `test-bootstrap` |
+| adapters | `test-adapter-runtime`, `test-claude-code-adapter`, `test-codex-adapter`, `test-antigravity-adapter`, `test-utility-shadow` |
+| wiki | `test-wiki-ingest`, `test-wiki-build`, `test-wiki-query-fileback`, `test-wiki-lint` |
+| http-mcp | `test-http-api`, `test-mcp-e2e`, `test-vector-recall` |
+| repo | `test-repo-git-exec`, `test-repo-registry`, `test-repo-sync`, `test-repo-events`, `test-repo-summary`, `test-repo-promotion`, `test-repo-edge`, `test-repo-noninvasive` |
+
+Additional CI jobs:
+
+- npm-install (Ubuntu/macOS): `test-installer-platform`, `test-service-manager`, `test-npm-install` in that order, after install/build.
+- node18-smoke: install/check the built entrypoint and run `test-smoke` under Node 18 (the minimum supported runtime).
+- release: build, `pnpm run release:package`, then `bash scripts/test-no-clone-install.sh`.
 
 ## Repository Layout
 

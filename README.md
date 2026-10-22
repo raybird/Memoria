@@ -4,343 +4,77 @@
 
 Cross-session, traceable, self-hostable persistent memory for AI agents.
 
-## 30-second Tour
+Memoria keeps decisions, pitfalls and learned skills in local SQLite, then recalls relevant memories when an agent needs them. Markdown notes and a compiled brief keep that memory readable and ready to load into the next session.
 
-- **Problem**: LLM agents start from scratch every conversation — last session's decisions, pitfalls, and learned skills are all lost.
-- **Solution**: Persist sessions into a local SQLite store; pull relevant fragments back through keyword / tree / hybrid recall (plus opt-in semantic `vector` recall). An optional markdown view (compiled wiki) keeps everything human-readable.
-- **Shape**: Node.js CLI (`./cli`) + HTTP API (`:3917`) + Node SDK (`MemoriaClient`) sharing one core; agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) included.
-- **Footprint**: Three runtime npm deps (`better-sqlite3` / `commander` / `zod`); HTTP runs on `node:http`. Fully offline.
-- **Extension**: An MCP/libSQL cross-node semantic graph is opt-in via the `LIBSQL_URL` env var.
+## What it does
 
-## 🤖 AI Agent Quick Install
+| Capability | What you get |
+| --- | --- |
+| Persistent memory | Import sessions or save a single note with `remember`; retain provenance in SQLite and markdown |
+| Recall | Keyword, tree and hybrid retrieval, plus optional semantic recall with local embeddings |
+| Long-term context | Durable memories, explicit replacements and project-scoped briefs for `CLAUDE.md` imports |
+| Git-aware memory | Observe repositories read-only, enrich change summaries and recall decisions with commit provenance |
+| Feedback | Report useful recalls; observed utility informs ranking and retention |
+| Wiki | Import markdown/text sources, compile wiki pages and file useful query results |
+| Integrations | CLI, HTTP API, source-level Node.js SDK and agent adapters sharing one core |
 
-> **Agents — this section is all you need.** Use npm; everything else is below.
+The core runs locally with three runtime dependencies: `better-sqlite3`, `commander` and `zod`. MCP/libSQL is optional; SQLite remains the source of truth. See the [MCP/libSQL guide](docs/MCP_INTEGRATION.md) when you need semantic indexing or cross-system graph projection.
 
-### Install from npm (Recommended)
+## Quick start
+
+Requires **Node.js ≥ 18**. Install once and choose a stable data root:
 
 ```bash
-# Persistent installation for regular use
 npm install -g @raybird.chen/memoria
+export MEMORIA_HOME="$HOME/.memoria"
 memoria setup
+
+memoria remember "Use pnpm" --project Memoria --rationale "The lockfile is authoritative"
+memoria recall "why pnpm" --project Memoria --json
+memoria brief --project Memoria
 ```
 
-For agent automation, keep the machine-readable step log and optionally start the server:
+These commands use local storage directly. A server is optional. Keep `MEMORIA_HOME` set when returning to this store; without it or `--memoria-home`, setup uses `./memoria` in the current directory.
 
-```bash
-memoria setup --serve --json
-```
+`brief` prints a path you can import from `CLAUDE.md`. Regenerate it after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
 
-On macOS or Linux, install a per-user background service after setup (no sudo):
+## Use it with an agent
 
-```bash
-memoria service install --memoria-home "$(pwd)/memoria"
-memoria service status
-```
-
-For a quick evaluation without a persistent global command:
-
-```bash
-npx @raybird.chen/memoria setup --json
-```
-
-`setup` also deploys the built-in agent skill into `<memoria-home>/.agents/skills/memoria/` (discoverable as the **memoria** skill), including a runtime-safe `SKILL.md`, `REFERENCE.md`, helper scripts, and a local `bin/memoria` wrapper — so agents can discover and use it immediately after install. Each folder gets its own data root, so you can give a clean folder its own memory by running `setup` there.
-
-To point agents at the deployed skill, use:
+Setup deploys the **memoria** skill to:
 
 ```text
 <memoria-home>/.agents/skills/memoria/SKILL.md
-<memoria-home>/.agents/skills/memoria/REFERENCE.md
 ```
 
-Claude Code only discovers skills under `~/.claude/skills/`, so add `--agent claude-code` to also deploy the skill there, bound to this data root:
+For Claude Code, also deploy into its skill directory:
 
 ```bash
-memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
+memoria setup --agent claude-code
 ```
 
-The deployed skill tells the agent when to use memory — before starting an issue or feature (`recall --mode vector`), after a decision with a reason or a pitfall (`remember`), after a merge to the main branch or a release (`repo sync` and the merge summary) — each with its command and a done criterion. An exported `MEMORIA_HOME` takes precedence over the data root the copy was deployed for. `setup` only replaces an existing `~/.claude/skills/memoria/` whose `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria`; since a copy made from a deployed skill by hand carries them too, the old directory is first backed up to `<memoria-home>/.agents/skill-backups/` and the path is printed. A hand-written skill without those marks is left untouched and `setup` exits non-zero naming the path. Without `--agent`, `setup` never touches `~/.claude`.
+The skill guides recall before work and memory write-back after decisions or completed changes. Deployment paths, backups and standalone installation are covered in the [Install Guide](docs/INSTALL.md).
 
-Add `--vector` to also install the semantic-recall helper's dependencies (`@libsql/client`, `@huggingface/transformers`) and its model into `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/`, then warm the model once. They live outside the package, so a global `npm i -g` upgrade leaves them in place; `setup --vector` needs re-running only when an upgrade changes the helper's dependency set, which `memoria doctor` reports.
+Optional next steps:
 
-Output is JSON Lines, one row per step:
+- **HTTP or hooks:** `memoria setup --serve --json`, then follow the [API Reference](docs/API.md) or [SDK and Agent Integrations](docs/INTEGRATIONS.md).
+- **Semantic recall:** `memoria setup --vector` installs dependencies and warms the local model. Configure `LIBSQL_URL` and ingest your memories separately; follow [Semantic Recall Operations](docs/OPERATIONS.md#semantic-recall-operations-optional).
+- **Repository memory:** start with `memoria repo add /path/to/project`; see [Git-Aware Memory Operations](docs/OPERATIONS.md#git-aware-memory-operations).
 
-```json
-{"step":"preflight","ok":true,"ms":120,"mode":"installed"}
-{"step":"init","ok":true,"ms":85}
-{"step":"verify","ok":true,"ms":42}
-{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/skills/memoria"}
-{"step":"serve","ok":true,"port":3917}
-```
+## Documentation
 
-Check readiness:
+| Guide | Contents |
+| --- | --- |
+| [Install](docs/INSTALL.md) | npm, standalone artifacts, data paths, deployed skills and background services |
+| [CLI](docs/CLI.md) · [繁中](docs/CLI.zh-TW.md) | Commands, memory markers, brief generation and scope |
+| [HTTP API](docs/API.md) · [繁中](docs/API.zh-TW.md) | Endpoints, request examples and response semantics |
+| [SDK and Agent Integrations](docs/INTEGRATIONS.md) · [繁中](docs/INTEGRATIONS.zh-TW.md) | Source-level SDK usage and hook configurations |
+| [Operations](docs/OPERATIONS.md) | Indexing, vector recovery, pruning, backups and governance |
+| [MCP/libSQL](docs/MCP_INTEGRATION.md) | Optional graph projection and incremental sync |
+| [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) | Architecture, development commands and agent conventions |
+| [Specification](SPEC.md) · [Roadmap](RFC.md) | Implemented behavior and future directions |
+| [Releases](CHANGELOG.md) · [Release SOP](RELEASE.md) | Version history and maintainer workflow |
 
-```bash
-curl -sf http://localhost:3917/v1/health
-```
-
-Once running, use the HTTP API:
-
-```bash
-curl -X POST http://localhost:3917/v1/remember \
-  -H 'Content-Type: application/json' \
-  -d @examples/session.sample.json
-
-curl -X POST http://localhost:3917/v1/recall \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"SQLite migration","top_k":5}'
-
-curl http://localhost:3917/v1/stats
-```
-
-**Prerequisites**: Node.js ≥ 18. `better-sqlite3` ships prebuilt binaries for Linux / macOS / Windows. Packed npm installation is exercised in CI on Ubuntu and macOS.
-
-**Standalone install**: `install.sh` auto-selects the native no-clone artifact for Ubuntu/Linux and macOS on x64 or arm64. Standalone and repo-mode setup are documented in [docs/INSTALL.md](docs/INSTALL.md).
-
-**Full agent integration guide**: [AGENTS.md](AGENTS.md) (covers Core Architecture / HTTP API / Bootstrap).
-
----
-
-## Capability Map
-
-| Area | Capabilities |
-|------|--------------|
-| **Entrypoints** | CLI (init/sync/stats/doctor/verify/index/source/repo/wiki/govern/prune/export/serve/preflight/setup) ｜ HTTP API (19 endpoints @ port 3917) ｜ Node.js SDK (`MemoriaClient`) ｜ Agent adapters (Claude Code / Antigravity CLI / Codex CLI / OpenCode) ｜ Every command supports `--json` machine-readable output |
-| **Storage** | SQLite + markdown dual persistence ｜ Time-decay scoring (90-day half-life) + consolidation + stale eviction ｜ Utility-weighted retention (high-utility memories survive pruning) ｜ Backward-compatible schema auto-upgrades |
-| **Retrieval** | `keyword / tree / hybrid` recall + opt-in semantic `vector` recall (local embeddings + libSQL native vectors, RRF-fused, fail-open) ｜ Adaptive gate skips trivial queries ｜ Lightweight scope isolation (`global / project / agent / user`) ｜ Recall routing telemetry (`stats` + API) |
-| **Utility feedback (UFL)** | Every recall gets a `recall_id`; adapters report observed lexical-reuse utility back (`POST /v1/recall/:id/outcome`) ｜ Explicit host feedback (`signal:'explicit'`, SDK `markRecallUseful`) overrides the reuse proxy ｜ Confidence×utility calibration in `stats`/telemetry ｜ Aggregated utility down-weights persistently-ignored memories in ranking and spares useful ones from pruning |
-| **Git-Aware Memory** | Read-only observation of existing git repos (`repo add/sync/...`) ｜ Incremental commit/ref/tag scan → typed events (incl. history-rewrite detection) ｜ Deterministic range summaries + agent enrichment write-back ｜ High-value summaries promote into recall with SHA-level provenance (`hit.source`) ｜ Non-invasive by contract (runtime allowlist, byte-identical git state) |
-| **Wiki workflows** | Raw source import (markdown/text) ｜ Compiled wiki special pages (`index / log / overview`) ｜ Query file-back (`synthesis / comparison`) ｜ Wiki governance lint |
-| **Governance** | Governance review (duplicate decisions/skills candidates) ｜ Import guardrails (low-value summary correction + duplicate event suppression) |
-| **Bootstrap** | One-shot `./cli setup --serve --json` ｜ No-clone release-artifact install path ｜ Deployed skill auto-installed to `<memoria-home>/.agents/` |
-| **Optional** | MCP/libSQL cross-system semantic graph (gated by `LIBSQL_URL`) ｜ Semantic recall (`mode:'vector'`): local `multilingual-e5-small` embeddings + libSQL `F32_BLOB`/`vector_top_k`, helper in `skills/memoria-vector/` — memory content never leaves the machine |
-| **Planned** | Policy engine (PII filtering / read-write policy / multi-tenant rules) |
-
-## Memoria vs MCP/libSQL
-
-`mcp-memory-libsql` is an **optional enhancement**, not a required dependency.
-
-| Capability | Memoria standalone | Memoria + MCP/libSQL |
-|------------|--------------------|------------------------|
-| Local persistent memory (SQLite + markdown) | ✅ | ✅ |
-| `recall` (keyword/tree/hybrid) | ✅ | ✅ |
-| Utility feedback loop (recall_id / outcome / calibration / utility-weighted ranking & retention) | ✅ | ✅ |
-| Recall telemetry (`stats` + API) | ✅ | ✅ |
-| Semantic recall (`mode:'vector'`, local embeddings + libSQL native vectors) | ➖ (degrades to lexical) | ✅ |
-| Cross-system graph projection / incremental sync | ➖ | ✅ |
-| Multi-agent shared external semantic graph | ➖ | ✅ |
-
-Bottom line:
-
-- For a **fully functional setup**: Memoria alone is enough.
-- For **cross-system / multi-node semantic enhancement**: add MCP/libSQL.
-
-Quick decision (three lines):
-
-- Start with Memoria-only (minimal ops cost, fully featured).
-- Add MCP/libSQL when you need cross-agent / cross-node semantic graphs.
-- Either way, Memoria's SQLite stays the source of truth.
-
-## HTTP API
-
-Launch: `./cli serve` (port 3917, override via `MEMORIA_PORT`).
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET`  | `/v1/health` | Health check |
-| `GET`  | `/v1/stats` | Statistics |
-| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (query: `window`, `limit`) |
-| `GET`  | `/v1/brief` | Compiled brief — structured data **and** rendered markdown (query: `project`, `days`, `top_k`); never writes `BRIEF.md` |
-| `POST` | `/v1/remember` | Write memory (body: SessionData; optional `scope`) |
-| `POST` | `/v1/recall` | Recall memories (body: `{query, top_k?, project?, scope?, mode?}`; `mode:'vector'` = opt-in semantic recall, needs `LIBSQL_URL` + `skills/memoria-vector`, degrades to lexical) |
-| `POST` | `/v1/recall/:id/outcome` | Report recall utility (body: `{signal, utility_score?, used?, hits?}`; UFL write-back + per-memory attribution) |
-| `POST` | `/v1/sources` | Import a markdown/text source |
-| `GET`  | `/v1/sources` | List raw sources |
-| `POST` | `/v1/wiki/build` | Rebuild compiled wiki special pages |
-| `POST` | `/v1/wiki/file-query` | File a high-value query back into a wiki page |
-| `POST` | `/v1/wiki/lint` | Run wiki governance lint |
-| `GET`  | `/v1/sessions/:id/summary` | Session summary |
-| `POST` | `/v1/repos` | Register a git repository for read-only observation |
-| `GET`  | `/v1/repos` | List observed repositories |
-| `GET`  | `/v1/repos/:ref/status` | Registry + live git state |
-| `POST` | `/v1/repos/:ref/sync` | Incremental git scan (`{generate_summaries?, dry_run?, ...}`) |
-| `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag |
-| `GET`  | `/v1/repos/:ref/summaries/pending` | Summaries awaiting agent enrichment |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Skip a pending summary (not auto-promoted; a later `--submit` or an explicit `--promote` can still put it in recall; `409` if it is enriched or already in recall) |
-| `POST` | `/v1/repos/:ref/summaries/dismiss` | Skip pending summaries by `{types}`; ones already in recall are skipped (`skipped_promoted`) |
-
-All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `latency_ms`).
-
-`confidence` is `0–1` **or `null`**, and recall responses carry `confidence_basis` naming where the
-value came from: `lexical_coverage` (query-token coverage of the top hit), `no_hits` (nothing
-matched — `confidence` is `0`), or `unavailable` (the top hit came from the semantic index alone, so
-match quality is not measurable — `confidence` is `null`, which means "cannot judge", not "poor
-match"). Only the opt-in vector route ever produces `null`.
-
-## Common CLI Commands
-
-```bash
-./cli init                           # Initialize DB + directories
-./cli sync <session.json>            # Import a session
-./cli sync --dry-run <session.json>  # Preview without writing
-./cli recall "why pnpm" [--json]     # Search memory (--project/--scope/--top-k/--time-window/--mode)
-./cli remember "switched to pnpm" --project Memoria --rationale "lockfile is authoritative"
-./cli remember "..." --type skill --category cli   # Write a SkillLearned note instead
-./cli feedback <recall_id> --score 0.9 --hits <id,id>  # UFL utility write-back
-./cli brief [--project X] [--days 30]  # Compile knowledge/BRIEF.md for CLAUDE.md `@`-import
-./cli remember "..." --durable         # Evergreen fact: no time-decay, survives stale pruning
-./cli remember "..." --supersedes <ref_id>       # Old memory drops out of recall (data kept)
-./cli remember "..." --sensitivity private       # Mark for export --redact
-./cli recall "..." --include-superseded          # Include replaced versions
-./cli export --redact                  # Code-name known entities in private memories
-./cli stats [--json]                 # Statistics
-./cli doctor [--json]                # Local health check
-./cli verify [--json]                # Full verification
-./cli index build [--json]           # Incremental tree-index rebuild
-./cli index build --scope agent:main # Rebuild only the given scope
-./cli source add notes/research.md   # Import a markdown/text source
-./cli source list --json             # List raw sources
-./cli repo add /path/to/project      # Observe a git repo (read-only)
-./cli repo sync project              # Incremental scan → events → summaries → promotion
-./cli repo summarize project --pending --json  # Summary requests for agent enrichment
-./cli repo summarize project --dismiss-pending --type merge,release  # Skip teammates' skeletons without promoting them
-./cli wiki build --json              # Rebuild the compiled wiki
-./cli wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
-./cli wiki lint --json               # Produce durable wiki governance findings
-./cli govern review --json           # Check for rule/skill promotion candidates
-./cli prune --all --dry-run          # Cleanup preview (consolidate 90d + stale 180d + git-observations 90d)
-./cli prune --consolidate-days 90    # Merge old session nodes under the same topic
-./cli prune --stale-days 180         # Remove memory never hit by recall
-./cli export --type all --format json # Export
-./cli serve [--port 3917]            # HTTP API server
-./cli preflight [--json]             # Prerequisite check
-./cli setup [--serve] [--json]       # One-shot install
-```
-
-## Node.js SDK
-
-```typescript
-import { MemoriaClient } from './src/sdk.js'
-
-const client = new MemoriaClient()         // defaults to http://localhost:3917
-await client.waitUntilReady()              // poll /v1/health until ready
-
-const r = await client.remember(sessionData)
-const hits = await client.recall({ query: 'migration', top_k: 3, scope: 'project:Memoria' })
-const telemetry = await client.recallTelemetry({ window: 'P7D', limit: 50 })
-const summary = await client.summarizeSession('session_abc')
-
-// Utility feedback (UFL): report how useful a recall actually was
-const recallId = hits.meta.recall_id!
-await client.recordRecallOutcome(recallId, { signal: 'reuse', utility_score: 0.8 })   // proxy signal
-await client.markRecallUseful(recallId, true, hits.data!.map(h => h.id))              // explicit, high-fidelity
-```
-
-## Agent Adapter
-
-```typescript
-import { OpenCodeAdapter } from './src/adapter/index.js'
-
-const adapter = new OpenCodeAdapter({ client, project: 'my-project' })
-
-// Before prompt: inject historical memory
-const context = await adapter.beforePrompt({ userMessage, conversationId })
-
-// After response: persist memory (auto throttle + dedupe + fail-open)
-await adapter.afterResponse({ response, conversationId, userMessage })
-```
-
-Reference implementations: `src/adapter/antigravity-adapter.ts`, `src/adapter/codex-adapter.ts`, `src/adapter/opencode-adapter.ts`, `src/adapter/claude-code-adapter.ts`.
-
-Claude Code, Codex CLI, and Antigravity CLI all ship **zero-code hook integrations** — one CLI command wires both recall injection and turn write-back. All three fail-open so a Memoria outage never blocks the agent, and all require `memoria serve` running on `localhost:3917` (override with `--server` or `MEMORIA_SERVER_URL`).
-
-### Claude Code (zero-code integration via hooks)
-
-Wire Memoria into Claude Code via its hook system — no SDK needed, just the CLI:
-
-```jsonc
-// ~/.claude/settings.json (or .claude/settings.json per project)
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter claude-code" }] }
-    ]
-  }
-}
-```
-
-`UserPromptSubmit` injects relevant past memory as `additionalContext`; `Stop` writes the just-completed turn back to Memoria. Both fail-open so a Memoria outage never blocks your Claude Code session. Requires `memoria serve` running on `localhost:3917` (override with `--server` or `MEMORIA_SERVER_URL`).
-
-### Codex CLI (zero-code integration via hooks)
-
-Codex CLI's hook system mirrors Claude Code's (JSON on stdin, JSON on stdout). Wire it into a `hooks.json` next to your Codex config, or an inline `[hooks]` table in `~/.codex/config.toml`:
-
-```jsonc
-// ~/.codex/hooks.json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter codex" }] }
-    ]
-  }
-}
-```
-
-`UserPromptSubmit` injects recalled memory as `additionalContext` (added as extra developer context); `Stop` persists the turn from the payload's `last_assistant_message`.
-
-### Antigravity CLI (zero-code integration via hooks)
-
-Antigravity CLI (`agy`) exposes agent lifecycle hooks (JSON on stdin/stdout). Register the handler in your `hooks.json` under the customization directory:
-
-```jsonc
-// .agents/hooks/hooks.json (or settings.json "hooks")
-{
-  "memoria": {
-    "PreInvocation": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
-    ]
-  }
-}
-```
-
-`PreInvocation` recalls memory and injects it before the model runs, emitted as **flat** top-level `additionalContext` (the Antigravity output schema rejects a nested `hookSpecificOutput` wrapper); `Stop` persists the completed turn. Antigravity delivers the conversation via `transcript_path` rather than payload fields, so the adapter reads the transcript (like Claude Code). The transcript line format is assumed to match Claude Code's JSONL — set `MEMORIA_ADAPTER_DEBUG=<file>` to capture a real payload from your `agy` build and confirm it.
-
-## Project Layout
-
-```text
-src/
-  cli.ts        # Commander registration shell (~50 lines)
-  cli/          # Per-command modules + shared helpers (shared.ts / runtime.ts / preflight.ts / commands/)
-  server.ts     # HTTP API server (node:http, zero extra deps)
-  sdk.ts        # MemoriaClient SDK
-  core/         # All business logic (types / paths / utils / db/ / memoria / source-import / wiki-*)
-  core/db/      # SQLite ops by domain (schema / session / source / wiki / lint / sync / telemetry / verify / prune-export / recall / mappers)
-  adapter/      # BaseAdapter + Claude Code / Antigravity CLI / Codex CLI / OpenCode adapters
-scripts/        # End-to-end bash tests (test-*.sh) + release packaging
-skills/         # memoria-memory-sync agent skill
-examples/       # session.sample.json
-```
-
-Full directory and file-level responsibilities live in [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md).
-
-## Documentation Map
-
-| Document | Audience | Purpose |
-|----------|----------|---------|
-| [AGENTS.md](AGENTS.md) | AI agents | Architecture, API, Bootstrap, dev conventions |
-| [RELEASE.md](RELEASE.md) | Maintainers | Patch/minor/major release SOP and validation |
-| [SPEC.md](SPEC.md) | Developers | Shipped feature specs |
-| [RFC.md](RFC.md) | Developers | Roadmap and future direction |
-| [docs/](docs/) | Operators | Install, containers, MCP integration, and more |
+Last verified: 2026-10-23 against v1.31.1 source, CLI help and documentation checks.
 
 ## License
 

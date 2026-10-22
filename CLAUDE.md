@@ -28,6 +28,8 @@ bash -n install.sh                  # syntax-check the installer
 
 ## Tests
 
+Last verified: 2026-10-23 against `.github/workflows/ci.yml`.
+
 There is **no unit-test framework** (no Jest/Vitest). All tests are bash scripts under `scripts/` that exercise the CLI end-to-end. To run a single flow, invoke its script directly:
 
 ```bash
@@ -41,8 +43,14 @@ bash scripts/test-prune.sh                  # destructive prune paths (consolida
 bash scripts/test-utility-ranking.sh        # UFL Phase 3 utility-weighted recall ranking (threshold/flip/explicit-override)
 bash scripts/test-bootstrap.sh              # ./cli setup self-install
 bash scripts/test-adapter-runtime.sh        # adapter ESM runtime
+bash scripts/test-claude-code-adapter.sh    # Claude Code hook contracts
+bash scripts/test-codex-adapter.sh          # Codex hook contracts
+bash scripts/test-antigravity-adapter.sh    # Antigravity hook contracts
 bash scripts/test-utility-shadow.sh         # UFL Phase 0 shadow spike plumbing (reuse signal discriminates)
 bash scripts/test-no-clone-install.sh       # install.sh from release tarball
+bash scripts/test-installer-platform.sh    # Linux/macOS x64/arm64 artifact routing
+bash scripts/test-service-manager.sh       # mocked systemd/launchd lifecycle
+bash scripts/test-npm-install.sh           # packed npm layout and deployed launcher
 bash scripts/test-mcp-e2e.sh                # MCP/libSQL hybrid + incremental
 bash scripts/test-http-api.sh               # HTTP endpoint contracts (sources/wiki/summary/outcome/calibration)
 bash scripts/test-vector-recall.sh          # semantic recall (mode:'vector') contract + degradation matrix (stub provider)
@@ -60,7 +68,7 @@ bash scripts/test-repo-edge.sh              # shallow/unshallow 升級、linked 
 bash scripts/test-repo-noninvasive.sh       # 非侵入性總驗收：完整流程後 git 狀態 byte-identical
 ```
 
-CI runs these in the order listed in `.github/workflows/ci.yml`. Mirror that order locally before opening a PR.
+CI runs E2E scripts in five independent groups; mirror the order within each group in `.github/workflows/ci.yml`. Static checks also include `pnpm run release:docs-check`. The grouped checklist and additional platform/release jobs are in `AGENTS.md` → CI Parity Checklist.
 
 For ad-hoc verification of a CLI flow without running full smoke:
 

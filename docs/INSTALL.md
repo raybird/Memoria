@@ -1,5 +1,7 @@
 # Install Guide
 
+最後驗證：2026-10-23，對照 v1.31.1 setup、doctor 與 CLI help；未重新下載模型。
+
 ## Environment
 
 - Node.js `>=18`（建議 20/22）
@@ -32,8 +34,10 @@ memoria setup --serve --json
 
 ```bash
 memoria setup --vector     # 依賴裝到 ~/.cache/memoria/vector/<雜湊>/，下載模型並暖機
-memoria doctor             # 在設了 LIBSQL_URL 的 shell 執行：vector embedder 已安裝、vector coverage missing=0
+memoria doctor             # 在設了 LIBSQL_URL 的 shell 檢查 embedder 與 vector coverage
 ```
+
+`setup --vector` 安裝依賴與暖機，記憶的向量 ingest 是另一個步驟。首次啟用或新增記憶後，若 doctor 顯示 `vector coverage missing>0`，在同一個 `LIBSQL_URL`、`MEMORIA_EMBED_PROVIDER` 環境執行它印出的 `Run:` 命令，再跑 doctor 確認 `missing=0`。遠端 libSQL 或自訂 helper 的覆蓋率會顯示 `not measured`；這不代表索引已完整。自訂 `MEMORIA_DB_PATH` 指向非 `<home>/.memory/sessions.db` 時，doctor 會指出路徑不符，需先確認 ingest 的 data root，詳見 [Operations](OPERATIONS.md#semantic-recall-operations-optional)。
 
 依賴與模型都放在使用者快取目錄（`XDG_CACHE_HOME`，預設 `~/.cache`），全域升級不會碰到（issue-25）。目錄名稱的雜湊取自 helper 的 `package-lock.json`，只有新版本改了 helper 依賴時，doctor 才會顯示 vector embedder 失敗，這時再跑一次 `setup --vector` 即可。舊雜湊的目錄（每份約 720MB）不會自動清除，確認沒有任何已安裝版本使用後可直接刪除。少了 `LIBSQL_URL`，doctor 只會顯示 `vector recall: not enabled`，看起來像全綠。向量本身存在 `LIBSQL_URL`，不在套件裡，升級後不需要重新 ingest。細節見 [OPERATIONS.md](OPERATIONS.md)「Semantic Recall Operations」。
 
@@ -44,6 +48,20 @@ memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
 ```
 
 目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 才會被覆蓋。每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/claude-code-<時間戳>/` 並印出路徑；手寫的 skill 會原封不動，`setup` 以非 0 結束並印出路徑與原因，在寫入任何資料前就停下。要改用部署版，先把手寫的移走再重跑。
+
+### Automation output
+
+`memoria setup --serve --json` emits JSON Lines, one row per step. A successful installed-mode run looks like:
+
+```json
+{"step":"preflight","ok":true,"ms":120,"mode":"installed"}
+{"step":"init","ok":true,"ms":85}
+{"step":"verify","ok":true,"ms":42}
+{"step":"skill","ok":true,"ms":14,"path":"./memoria/.agents/skills/memoria"}
+{"step":"serve","ok":true,"port":3917}
+```
+
+Confirm readiness with `curl -sf http://localhost:3917/v1/health`. Request examples and endpoint contracts are in the [API Reference](API.md) ([繁體中文](API.zh-TW.md)).
 
 ### Background service (macOS / Ubuntu)
 
@@ -162,7 +180,7 @@ MEMORIA_HOME=$(pwd) ./cli index build
 - `codex.hooks.json`
 - `antigravity.hooks.json`
 
-完整片段與各事件說明見 [README](../README.md#agent-adapter)。預設連 `localhost:3917`，可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫，`--project` 指定寫入的 project tag。
+完整片段與各事件說明見 [SDK 與 Agent 整合](INTEGRATIONS.zh-TW.md)（[English](INTEGRATIONS.md)）。預設連 `localhost:3917`，可用 `--server` 或 `MEMORIA_SERVER_URL` 覆寫，`--project` 指定寫入的 project tag。
 
 ## Path Overrides
 
