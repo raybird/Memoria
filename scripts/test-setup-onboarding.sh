@@ -450,6 +450,26 @@ grep -q "memoria:instructions:start" "$F2_UNSELECTED/AGENTS.md" && {
 [ ! -e "$H_F2/.memoria" ] || { echo "  ✗ F-2: data root was created before ~/.codex symlink was caught"; exit 1; }
 echo "  ✓ F-2: symlinked ancestor directory (~/.codex -> unselected dir with existing skills/ & AGENTS.md) is rejected before any write"
 
+# F-2 deep (review-a02c01c): arbitrary-depth user symlink ancestor (<fixture>/link/a/b/c/d/e) must ALSO be rejected before any write
+H_F2D="$TMP_DIR/home-f2-deep"
+XDG_F2D="$TMP_DIR/xdg-f2-deep"
+F2D_UNSELECTED="$TMP_DIR/f2-deep-unselected"
+F2D_SUB="$F2D_UNSELECTED/a/b/c/d/e"
+F2D_LINK="$TMP_DIR/f2-deep-link"
+mkdir -p "$H_F2D" "$XDG_F2D" "$F2D_SUB/skills"
+printf '# Deep Unselected Host Rules\n' > "$F2D_SUB/AGENTS.md"
+ln -s "$F2D_UNSELECTED" "$F2D_LINK"
+if HOME="$H_F2D" XDG_CONFIG_HOME="$XDG_F2D" CODEX_HOME="$F2D_LINK/a/b/c/d/e" "$CLI" setup --scope global --agent codex --no-vector --yes >"$TMP_DIR/f2d.out" 2>&1; then
+  echo "  ✗ F-2 deep: setup succeeded despite CODEX_HOME traversing a user symlink 6 levels up"; exit 1
+fi
+[ ! -e "$F2D_SUB/skills/memoria" ] || { echo "  ✗ F-2 deep: skill was deployed through deep CODEX_HOME symlink into unselected directory"; exit 1; }
+grep -q "memoria:managed:start" "$F2D_SUB/AGENTS.md" && {
+  echo "  ✗ F-2 deep: AGENTS.md in unselected directory was modified through deep CODEX_HOME symlink"
+  exit 1
+}
+[ ! -e "$H_F2D/.memoria" ] || { echo "  ✗ F-2 deep: data root was created before deep CODEX_HOME symlink was caught"; exit 1; }
+echo "  ✓ F-2 deep: arbitrary-depth symlinked ancestor (<fixture>/link/a/b/c/d/e) is rejected before any write"
+
 # F-3: Empty corpus (0 memories) + pre-existing 0-byte vectors.db file succeeds with --vector and passes doctor
 H_F3="$TMP_DIR/home-f3"
 XDG_F3="$TMP_DIR/xdg-f3"

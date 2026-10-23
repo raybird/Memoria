@@ -165,21 +165,33 @@ export function resolveHostAgentSkillDir(
 }
 
 /**
- * Walk up from `targetPath`'s parent until an existing filesystem entry is found,
+ * Standard macOS root-level OS aliases (`/tmp -> private/tmp`, `/var -> private/var`, `/etc -> private/etc`).
+ * Every other ancestor component along a user/temp path must be a real directory (never a symlink).
+ */
+function isPlatformRootAlias(dirPath: string): boolean {
+    return process.platform === 'darwin' && (dirPath === '/tmp' || dirPath === '/var' || dirPath === '/etc')
+}
+
+/**
+ * Walk up from `targetPath`'s parent all the way to the filesystem root,
  * verify that the nearest existing ancestor is a writable real directory (not a file or symlink),
- * and continue checking ancestors above it so an existing real child directory (e.g. `~/.codex/skills`)
- * cannot mask a symlinked ancestor directory higher up (e.g. `~/.codex -> /unselected-host`, F-2).
+ * and continue checking every ancestor above it so an existing real child directory (even many
+ * levels deep, e.g. `<fixture>/link/a/b/c/d/e/skills`) cannot mask a symlinked ancestor higher up
+ * (F-2 / review-a02c01c).
  */
 export async function checkWritableAncestorDir(
     targetPath: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
     let curr = path.dirname(path.resolve(targetPath))
     let checkedWritableNearest = false
-    let levelsChecked = 0
     while (curr && curr !== path.dirname(curr)) {
         const dirStat = await fs.lstat(curr).catch(() => undefined)
         if (dirStat) {
-            if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+            if (dirStat.isSymbolicLink()) {
+                if (!isPlatformRootAlias(curr)) {
+                    return { ok: false, reason: `ancestor ${curr} exists and is not a directory` }
+                }
+            } else if (!dirStat.isDirectory()) {
                 return { ok: false, reason: `ancestor ${curr} exists and is not a directory` }
             }
             if (!checkedWritableNearest) {
@@ -189,13 +201,6 @@ export async function checkWritableAncestorDir(
                     return { ok: false, reason: `parent directory ${curr} is not writable` }
                 }
                 checkedWritableNearest = true
-            }
-            levelsChecked += 1
-            // Once we have verified the nearest writable directory AND walked up through its parent
-            // containers (e.g. `<root>/.agents/skills` -> `<root>/.agents` -> `<root>`), stop before
-            // OS root symlinks such as `/var -> /private/var` on macOS.
-            if (levelsChecked >= 4) {
-                return { ok: true }
             }
         }
         curr = path.dirname(curr)

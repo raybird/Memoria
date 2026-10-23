@@ -525,6 +525,39 @@ async function main(): Promise<void> {
         }
         eq('F-2b: assertInstructionTargetsSafe rejects ~/.codex/AGENTS.md when ~/.codex is a symlink even if AGENTS.md exists', caughtF2Instr, true)
 
+        // F-2 deep (review-a02c01c): arbitrary-depth user symlink ancestor (<fixture>/link/a/b/c/d/e) must ALSO be rejected
+        const f2DeepUnselected = path.join(tmp, 'f2-deep-unselected')
+        const f2DeepSub = path.join(f2DeepUnselected, 'a', 'b', 'c', 'd', 'e')
+        await fs.mkdir(path.join(f2DeepSub, 'skills'), { recursive: true })
+        await fs.writeFile(path.join(f2DeepSub, 'AGENTS.md'), '# Deep Unselected Rules\n', 'utf8')
+        const f2DeepLink = path.join(tmp, 'f2-deep-link')
+        await fs.symlink(f2DeepUnselected, f2DeepLink)
+        const f2DeepCodexHome = path.join(f2DeepLink, 'a', 'b', 'c', 'd', 'e')
+
+        let caughtF2DeepSkill = false
+        try {
+            await assertHostSkillTarget(path.join(f2DeepCodexHome, 'skills', 'memoria'))
+        } catch {
+            caughtF2DeepSkill = true
+        }
+        eq('F-2c: assertHostSkillTarget rejects deep CODEX_HOME under symlinked ancestor (<fixture>/link/a/b/c/d/e/skills/memoria)', caughtF2DeepSkill, true)
+
+        const f2DeepInstrPlan = await planInstructionWiring({
+            scope: 'global',
+            dataRoot: path.join(f2Home, '.memoria'),
+            briefPath: path.join(f2Home, '.memoria', 'knowledge', 'BRIEF.md'),
+            hosts: ['codex'],
+            homedir: f2Home,
+            env: { HOME: f2Home, CODEX_HOME: f2DeepCodexHome }
+        })
+        let caughtF2DeepInstr = false
+        try {
+            await assertInstructionTargetsSafe(f2DeepInstrPlan)
+        } catch {
+            caughtF2DeepInstr = true
+        }
+        eq('F-2d: assertInstructionTargetsSafe rejects deep CODEX_HOME/AGENTS.md under symlinked ancestor (<fixture>/link/a/b/c/d/e/AGENTS.md)', caughtF2DeepInstr, true)
+
         // F-3: Empty corpus (expected=0) with a pre-existing 0-byte vector DB file initializes memoria_vectors so verifyVectorReadiness succeeds
         const f3Root = path.join(tmp, 'f3-empty-root')
         const f3Paths = resolveMemoriaPaths(f3Root, { env: envBase })
