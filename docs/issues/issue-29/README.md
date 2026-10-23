@@ -113,7 +113,7 @@ Feature: Host agent skill 統一以 symlink 連結至 canonical skill 目錄
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交（本次修訂）；前版基線 `88c77b2`，僅供追溯，不能代表本次修訂
+- **核准 commit**: a60c52a（本次修訂）；前版基線 `88c77b2`，僅供追溯，不能代表本次修訂
 - **核准來源**: 使用者於 2026-10-23 對話提出「評估一個新 issue 是否 setup 的 claudecode 與 codex 也都統一使用連結的方式」，並對 Q1（既有 Memoria symlink 與外部未知 symlink 的覆寫規則）、Q2（舊版帶標記實體目錄先備份再轉 symlink，已是 symlink 則不重複備份）、Q3（本次範圍聚焦於 `claude-code` 與 `codex`）回覆「照建議」全部核准。
 
 - **修訂核准來源**: 使用者於 2026-10-23 在收到四項 MUST FIX 與兩項改善建議後回覆「好幫我補上修正」，接受審查建議。SCN-001／SCN-004 保持原核准；SCN-002／SCN-003 補明邊界，新增 SCN-005～SCN-008，依下表記錄。

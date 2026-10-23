@@ -87,7 +87,7 @@ host symlink 的解析目標**必須以三個完整路徑元件 `.agents/skills/
 
 ## 檢查清單
 
-- [x] SCN-001～SCN-008 的核准來源已記於 README；修訂版核准 commit 待提交後回填
+- [x] SCN-001～SCN-008 的核准來源已記於 README；修訂版核准 commit 已回填為 `a60c52a`
 - [ ] 步驟 1 安全保護網與新行為紅燈證據已建立
 - [ ] 各驗收具有效綠燈與精煉／no-op 證據
 - [ ] 修改 symbol 前跑 GitNexus impact，提交前跑 detect_changes
