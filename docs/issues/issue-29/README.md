@@ -78,7 +78,7 @@ Feature: Host agent skill 統一以 symlink 連結至 canonical skill 目錄
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: 88c77b2
 - **核准來源**: 使用者於 2026-10-23 對話提出「評估一個新 issue 是否 setup 的 claudecode 與 codex 也都統一使用連結的方式」，並對 Q1（既有 Memoria symlink 與外部未知 symlink 的覆寫規則）、Q2（舊版帶標記實體目錄先備份再轉 symlink，已是 symlink 則不重複備份）、Q3（本次範圍聚焦於 `claude-code` 與 `codex`）回覆「照建議」全部核准。
 
 | Scenario | 核准日期 | 狀態 |
