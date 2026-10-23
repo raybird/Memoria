@@ -232,7 +232,20 @@ if (!d.ok || (d.meta.route_mode !== "vector" && d.meta.route_mode !== "hybrid_ve
   throw new Error("expected vector/hybrid_vector with fallback_used=false in new process, got: " + JSON.stringify(d.meta));
 }
 '
-echo "  ✓ SCN-006: populated DB vector setup indexes full corpus despite future sync cursor, missing=0, and new process recall routes via vector"
+# SCN-012 (outer-loop cross-root isolation): when switching to another data root via MEMORIA_HOME without LIBSQL_URL,
+# it must NOT leak the global root's vector store into the switched root.
+ISOLATED_VEC_ROOT="$TMP_DIR/isolated-vec-root"
+mkdir -p "$ISOLATED_VEC_ROOT"
+(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_HOME="$ISOLATED_VEC_ROOT" "$CLI" init >/dev/null)
+DOC_ISO_VEC=$(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_HOME="$ISOLATED_VEC_ROOT" "$CLI" doctor --json)
+echo "$DOC_ISO_VEC" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const vr = d.checks.find(c => c.name === "vector recall");
+if (!vr || vr.value !== "not enabled (LIBSQL_URL unset)") {
+  throw new Error("expected switched root without vector setup to have vector recall not enabled, got: " + JSON.stringify(d.checks));
+}
+'
+echo "  ✓ SCN-006/012: populated DB vector setup indexes full corpus despite future sync cursor, missing=0, new process recall routes via vector, and switched root stays isolated"
 
 # SCN-010: Simulated failure during vector setup reports core=ready, vector=failed, exits non-zero, and succeeds on retry
 H_FAIL="$TMP_DIR/home-fail"

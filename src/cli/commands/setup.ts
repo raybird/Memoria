@@ -374,22 +374,44 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 agentState.detail = plan.hostSkillTargets.map((h) => `${h.agent}:${h.dir}`).join(', ')
             }
 
-            // Persist core/host settings before vector step so partial retry can reuse core & host choices,
-            // while vector.enabled stays false until vector verification actually passes (SCN-010).
-            if (choices.saveSettings) {
+            const persistOnboardingSettings = async (vectorReady: boolean): Promise<void> => {
                 const prev = loadInstallSettingsSync()
                 const mergedHosts = Array.from(new Set([...(prev?.hosts ?? []), ...choices.hosts]))
+                const providerRaw = (process.env.MEMORIA_EMBED_PROVIDER ?? prev?.vector?.provider ?? 'local').trim()
+                const provider: 'local' | 'stub' = providerRaw === 'stub' ? 'stub' : 'local'
+                const prevRoots = prev?.vector?.roots ?? []
+
+                let nextRoots: string[]
+                let vectorEnabled: boolean
+                if (!vectorReady) {
+                    nextRoots = prevRoots.filter((r) => path.resolve(r) !== setupPaths.memoriaHome)
+                    if (choices.scope === 'global') {
+                        vectorEnabled = false
+                    } else {
+                        vectorEnabled = Boolean(prev?.vector?.enabled && nextRoots.length > 0)
+                    }
+                } else {
+                    nextRoots = Array.from(new Set([...prevRoots, setupPaths.memoriaHome]))
+                    vectorEnabled = true
+                }
+
                 await saveInstallSettings({
                     version: 1,
-                    defaultDataRoot: setupPaths.memoriaHome,
+                    defaultDataRoot: choices.scope === 'global' ? setupPaths.memoriaHome : prev?.defaultDataRoot,
                     ...(mergedHosts.length > 0 ? { hosts: mergedHosts } : {}),
                     vector: {
-                        enabled: false,
-                        provider: prev?.vector?.provider ?? 'local',
-                        ...(prev?.vector?.roots ? { roots: prev.vector.roots } : {})
+                        enabled: vectorEnabled,
+                        provider,
+                        ...(nextRoots.length > 0 ? { roots: nextRoots } : {})
                     },
                     updatedAt: new Date().toISOString()
                 })
+            }
+
+            // Persist core/host settings before vector step so partial retry can reuse core & host choices,
+            // while vector.enabled stays false until vector verification actually passes (SCN-010).
+            if (choices.saveSettings) {
+                await persistOnboardingSettings(false)
             }
 
             // Step 5d (--vector): install deps + warm model, and when full onboarding is active (or LIBSQL_URL / global config),
@@ -447,31 +469,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
 
             // Persist final install settings (including vector.enabled=true when vector succeeded)
             if (choices.saveSettings || (isFullOnboarding && choices.vector)) {
-                const prev = loadInstallSettingsSync()
-                const mergedHosts = Array.from(new Set([...(prev?.hosts ?? []), ...choices.hosts]))
-                const providerRaw = (process.env.MEMORIA_EMBED_PROVIDER ?? prev?.vector?.provider ?? 'local').trim()
-                const provider: 'local' | 'stub' = providerRaw === 'stub' ? 'stub' : 'local'
-                const prevRoots = prev?.vector?.roots ?? []
-                const nextRoots = choices.vector
-                    ? Array.from(new Set([...prevRoots, setupPaths.memoriaHome]))
-                    : prevRoots.filter((r) => path.resolve(r) !== setupPaths.memoriaHome)
-                const vectorEnabled = choices.vector
-                    ? true
-                    : choices.scope === 'global'
-                    ? false
-                    : Boolean(prev?.vector?.enabled && nextRoots.length > 0)
-
-                await saveInstallSettings({
-                    version: 1,
-                    defaultDataRoot: choices.scope === 'global' ? setupPaths.memoriaHome : prev?.defaultDataRoot,
-                    ...(mergedHosts.length > 0 ? { hosts: mergedHosts } : {}),
-                    vector: {
-                        enabled: vectorEnabled,
-                        provider,
-                        ...(nextRoots.length > 0 ? { roots: nextRoots } : {})
-                    },
-                    updatedAt: new Date().toISOString()
-                })
+                await persistOnboardingSettings(choices.vector)
             }
 
             if (isFullOnboarding) {

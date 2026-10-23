@@ -398,10 +398,10 @@ function isAlive(pid: number): boolean {
     }
 }
 
-function runChild(
+export function runChild(
     command: string,
     args: string[],
-    opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number }
+    opts: { cwd?: string; env: NodeJS.ProcessEnv; timeoutMs: number }
 ): Promise<{ ok: boolean; status: string; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
         const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, stdio: ['ignore', 'pipe', 'pipe'] })

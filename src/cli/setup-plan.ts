@@ -1,6 +1,5 @@
 // Setup planning, interactive prompts, full vector corpus ingest, and readiness verification (docs/issues/issue-28).
 
-import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -20,7 +19,7 @@ import {
     assertIngestDbPathMatchesRoot
 } from '../core/index.js'
 import type { InstallHostAgent, MemoriaPaths } from '../core/index.js'
-import { assertHostSkillTarget, resolveHostAgentSkillDir } from './runtime.js'
+import { assertHostSkillTarget, resolveHostAgentSkillDir, runChild } from './runtime.js'
 import type { RuntimeLayout } from './runtime.js'
 import {
     planInstructionWiring,
@@ -289,38 +288,6 @@ export async function generateSetupBrief(paths: MemoriaPaths, core: MemoriaCore)
     return outPath
 }
 
-function runNodeScript(
-    scriptPath: string,
-    args: string[],
-    env: NodeJS.ProcessEnv,
-    timeoutMs = 10 * 60_000
-): Promise<{ ok: boolean; stdout: string; stderr: string; status: string }> {
-    return new Promise((resolve, reject) => {
-        const child = spawn(process.execPath, [scriptPath, ...args], {
-            env,
-            stdio: ['ignore', 'pipe', 'pipe']
-        })
-        let stdout = ''
-        let stderr = ''
-        child.stdout.on('data', (c: Buffer) => { stdout += c.toString('utf8') })
-        child.stderr.on('data', (c: Buffer) => { stderr = (stderr + c.toString('utf8')).slice(-16_000) })
-        const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs)
-        child.on('error', (err) => {
-            clearTimeout(timer)
-            reject(err)
-        })
-        child.on('close', (code, signal) => {
-            clearTimeout(timer)
-            resolve({
-                ok: code === 0,
-                stdout,
-                stderr,
-                status: signal ?? `exit ${code}`
-            })
-        })
-    })
-}
-
 /**
  * Build the tree index and ingest the full corpus into the vector store, unaffected by any existing
  * MCP sync cursor (`--sync-target` uses a unique run id and cleans its cursor row afterwards).
@@ -358,16 +325,18 @@ export async function runFullVectorIngest(
 
     const tmpOut = await fs.mkdtemp(path.join(os.tmpdir(), 'memoria-setup-ingest-'))
     const syncTarget = `memoria-setup-full-${Date.now()}-${process.pid}`
+    const timeoutMs = 10 * 60_000
     try {
-        const buildRes = await runNodeScript(
-            buildScript,
+        const buildRes = await runChild(
+            process.execPath,
             [
+                buildScript,
                 '--memoria-home', paths.memoriaHome,
                 '--sync-target', syncTarget,
                 '--payload-mode', 'full',
                 '--out', tmpOut
             ],
-            env
+            { env, timeoutMs }
         )
         if (!buildRes.ok) {
             throw new Error(`bridge payload build failed (${buildRes.status}): ${buildRes.stderr.trim() || buildRes.stdout.trim()}`)
@@ -377,7 +346,7 @@ export async function runFullVectorIngest(
             throw new Error('bridge payload script did not produce a payload file')
         }
 
-        const ingestRes = await runNodeScript(ingestScript, [payloadPath], env)
+        const ingestRes = await runChild(process.execPath, [ingestScript, payloadPath], { env, timeoutMs })
         if (!ingestRes.ok) {
             throw new Error(`vector ingest failed (${ingestRes.status}): ${ingestRes.stderr.trim() || ingestRes.stdout.trim()}`)
         }
