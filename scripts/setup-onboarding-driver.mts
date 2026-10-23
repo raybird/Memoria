@@ -14,9 +14,12 @@ import {
     loadInstallSettingsSync,
     saveInstallSettings,
     resolveEffectiveVectorEnv,
+    applyEffectiveVectorEnv,
+    getExplicitVectorEnv,
     assertIngestDbPathMatchesRoot
 } from '../src/core/install-settings.js'
-import { resolveMemoriaHomeInfo, resolveMemoriaPaths } from '../src/core/paths.js'
+import { resolveMemoriaHomeInfo, resolveMemoriaPaths, detectLocalMemoriaRoot } from '../src/core/paths.js'
+import { countEmbeddableEntities } from '../src/core/recall-vector.js'
 
 let failures = 0
 
@@ -140,10 +143,82 @@ async function main(): Promise<void> {
         const switchedRoot = path.join(tmp, 'switched-root')
         const vecSwitched = resolveEffectiveVectorEnv(switchedRoot, { env: envBase })
         eq(
-            'when effective data root switches to another root, local vector store follows that root (does not mix global vectors.db)',
+            'when effective data root switches to another root not in vector.roots, local vector store is not enabled (does not mix global vectors.db)',
             vecSwitched.libsqlUrl,
+            undefined
+        )
+
+        // When switchedRoot IS in vector.roots, it gets its own <switchedRoot>/.memory/vectors.db (and globalRoot stays off if not in roots)
+        await saveInstallSettings(
+            {
+                version: 1,
+                defaultDataRoot: globalRoot,
+                vector: {
+                    enabled: true,
+                    provider: 'local',
+                    roots: [switchedRoot]
+                },
+                updatedAt: '2026-10-23T00:00:00.000Z'
+            },
+            { env: envBase }
+        )
+        const vecSwitchedEnabled = resolveEffectiveVectorEnv(switchedRoot, { env: envBase })
+        eq(
+            'when project root is in vector.roots, derives file:<switchedRoot>/.memory/vectors.db',
+            vecSwitchedEnabled.libsqlUrl,
             `file:${path.join(switchedRoot, '.memory', 'vectors.db')}`
         )
+        const vecGlobalDisabledWhenOnlyProjInRoots = resolveEffectiveVectorEnv(globalRoot, { env: envBase })
+        eq(
+            'when vector.roots only contains project root, defaultDataRoot is NOT implicitly vector-enabled (review-f38ce84 #7)',
+            vecGlobalDisabledWhenOnlyProjInRoots.libsqlUrl,
+            undefined
+        )
+
+        // Restore globalRoot in vector.roots for subsequent assertions
+        await saveInstallSettings(
+            {
+                version: 1,
+                defaultDataRoot: globalRoot,
+                hosts: ['claude-code', 'codex'],
+                vector: {
+                    enabled: true,
+                    provider: 'local',
+                    roots: [globalRoot]
+                },
+                updatedAt: '2026-10-23T00:00:00.000Z'
+            },
+            { env: envBase }
+        )
+
+        // Verify getExplicitVectorEnv distinguishes auto-injected process.env from caller env (review-f38ce84 #1)
+        const prevProcConfig = process.env.MEMORIA_USER_CONFIG_PATH
+        process.env.MEMORIA_USER_CONFIG_PATH = cfgFile
+        try {
+            applyEffectiveVectorEnv(globalRoot)
+            eq(
+                'applyEffectiveVectorEnv injects globalRoot LIBSQL_URL into process.env',
+                process.env.LIBSQL_URL,
+                `file:${path.join(globalRoot, '.memory', 'vectors.db')}`
+            )
+            const explicitAfterAuto = getExplicitVectorEnv(process.env)
+            eq(
+                'getExplicitVectorEnv treats auto-injected LIBSQL_URL as undefined (not an explicit user override)',
+                explicitAfterAuto.libsqlUrl,
+                undefined
+            )
+            applyEffectiveVectorEnv(switchedRoot)
+            eq(
+                're-running applyEffectiveVectorEnv on non-vector root clears auto-injected LIBSQL_URL',
+                process.env.LIBSQL_URL,
+                undefined
+            )
+        } finally {
+            delete process.env.LIBSQL_URL
+            delete process.env.MEMORIA_EMBED_PROVIDER
+            if (prevProcConfig === undefined) delete process.env.MEMORIA_USER_CONFIG_PATH
+            else process.env.MEMORIA_USER_CONFIG_PATH = prevProcConfig
+        }
 
         const vecOverridden = resolveEffectiveVectorEnv(globalRoot, {
             env: {
@@ -282,6 +357,68 @@ async function main(): Promise<void> {
             caughtUnsafeSymlink = true
         }
         eq('symlink instruction file is refused before writing', caughtUnsafeSymlink, true)
+
+        // Review-f38ce84 #2: assertHostSkillTarget & assertSetupPlanSafe reject plain file blocking ancestor
+        const { assertHostSkillTarget } = await import('../src/cli/runtime.js')
+        const { assertSetupPlanSafe, buildSetupPlan } = await import('../src/cli/setup-plan.js')
+        const blockedCodexHome = path.join(tmp, 'blocked-codex-home')
+        await fs.mkdir(blockedCodexHome, { recursive: true })
+        // Put a plain file at `<blockedCodexHome>/.codex/skills` so `<blockedCodexHome>/.codex/skills/memoria` cannot be created
+        await fs.mkdir(path.join(blockedCodexHome, '.codex'), { recursive: true })
+        await fs.writeFile(path.join(blockedCodexHome, '.codex', 'skills'), 'not a directory', 'utf8')
+        let caughtBlockedSkillAncestor = false
+        try {
+            await assertHostSkillTarget(path.join(blockedCodexHome, '.codex', 'skills', 'memoria'))
+        } catch {
+            caughtBlockedSkillAncestor = true
+        }
+        eq('plain file at ~/.codex/skills is rejected by assertHostSkillTarget pre-check (review-f38ce84 #2)', caughtBlockedSkillAncestor, true)
+
+        // Plain file blocking settingsPath parent is rejected by assertSetupPlanSafe
+        const blockedSettingsParent = path.join(tmp, 'blocked-settings-parent')
+        await fs.writeFile(blockedSettingsParent, 'plain file', 'utf8')
+        const prevUserCfg = process.env.MEMORIA_USER_CONFIG_PATH
+        process.env.MEMORIA_USER_CONFIG_PATH = path.join(blockedSettingsParent, 'install.json')
+        try {
+            const badSettingsPlan = await buildSetupPlan({
+                scope: 'global',
+                dataRoot: path.join(tmp, 'safe-root'),
+                hosts: [],
+                vector: false,
+                wireInstructions: false,
+                saveSettings: true
+            })
+            let caughtBadSettingsParent = false
+            try {
+                await assertSetupPlanSafe(badSettingsPlan)
+            } catch {
+                caughtBadSettingsParent = true
+            }
+            eq('plain file blocking install.json parent is rejected by assertSetupPlanSafe (review-f38ce84 #2)', caughtBadSettingsParent, true)
+        } finally {
+            if (prevUserCfg === undefined) delete process.env.MEMORIA_USER_CONFIG_PATH
+            else process.env.MEMORIA_USER_CONFIG_PATH = prevUserCfg
+        }
+
+        // Review-f38ce84 #5: detectLocalMemoriaRoot detects cwd/.memory, cwd/knowledge, cwd/memoria/.memory
+        eq('detectLocalMemoriaRoot(localCwd) returns localCwd when cwd/.memory exists', detectLocalMemoriaRoot(localCwd), path.resolve(localCwd))
+        eq('detectLocalMemoriaRoot(nestedCwd) returns nestedCwd/memoria when cwd/memoria/knowledge exists', detectLocalMemoriaRoot(nestedCwd), path.join(nestedCwd, 'memoria'))
+        eq('detectLocalMemoriaRoot(emptyCwd) returns null when no local layout exists', detectLocalMemoriaRoot(emptyCwd), null)
+
+        // Review-f38ce84 #3: countEmbeddableEntities counts corpus directly from SQLite even before vectors.db has memoria_vectors table
+        const { MemoriaCore } = await import('../src/core/memoria.js')
+        const countRoot = path.join(tmp, 'count-root')
+        const countPaths = resolveMemoriaPaths(countRoot, { env: envBase })
+        const countCore = new MemoriaCore(countPaths)
+        await countCore.init()
+        eq('countEmbeddableEntities is 0 on fresh empty DB', countEmbeddableEntities(countPaths.dbPath), 0)
+        await countCore.rememberNote({ text: 'First embeddable decision', project: 'p1', rationale: 'r1' })
+        const afterNoteCount = countEmbeddableEntities(countPaths.dbPath)
+        if (afterNoteCount > 0) {
+            ok(`countEmbeddableEntities returns ${afterNoteCount} (>0) directly from SQLite before any vector table exists (review-f38ce84 #3)`)
+        } else {
+            fail('countEmbeddableEntities', `expected >0 after rememberNote, got ${afterNoteCount}`)
+        }
     } finally {
         await fs.rm(tmp, { recursive: true, force: true })
     }

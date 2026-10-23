@@ -30,7 +30,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[setup-onboarding] Step 1: inner unit assertions for install-settings & path precedence (SCN-003, SCN-009, SCN-012)"
-(cd "$ROOT_DIR" && pnpm exec tsx scripts/setup-onboarding-driver.mts)
+(cd "$ROOT_DIR" && node --import tsx scripts/setup-onboarding-driver.mts)
 
 echo "[setup-onboarding] Step 2: CLI subprocess precedence & isolation (SCN-002, SCN-003, SCN-012)"
 H1="$TMP_DIR/home1"
@@ -262,5 +262,140 @@ grep -q "core: ready" "$TMP_DIR/fail10.out" && grep -q "vector: failed" "$TMP_DI
 # Retry with valid provider recovers and succeeds
 HOME="$H_FAIL" XDG_CONFIG_HOME="$XDG_FAIL" MEMORIA_EMBED_PROVIDER=stub "$CLI" setup --scope global --agent none --vector --yes >/dev/null
 echo "  ✓ SCN-010: vector failure exits non-zero, reports core=ready & vector=failed, and recovers on retry"
+
+echo "[setup-onboarding] Step 6: Third-party review regression checks (review-f38ce84 MUST FIX #1-#7)"
+# MUST FIX #2: Plain file at ~/.codex/skills (second host parent) is rejected during pre-check before touching ~/.claude or sessions.db
+H_MF2="$TMP_DIR/home-mf2"
+XDG_MF2="$TMP_DIR/xdg-mf2"
+mkdir -p "$H_MF2/.codex" "$XDG_MF2"
+printf 'not a directory\n' > "$H_MF2/.codex/skills"
+if HOME="$H_MF2" XDG_CONFIG_HOME="$XDG_MF2" "$CLI" setup --scope global --agent both --no-vector --yes >"$TMP_DIR/mf2.out" 2>&1; then
+  echo "  ✗ MUST FIX #2: setup succeeded despite ~/.codex/skills being a plain file"; exit 1
+fi
+[ ! -e "$H_MF2/.claude" ] || { echo "  ✗ MUST FIX #2: first host (.claude) was created before second host parent file was caught"; exit 1; }
+[ ! -e "$H_MF2/.memoria" ] || { echo "  ✗ MUST FIX #2: data root was created before second host parent file was caught"; exit 1; }
+echo "  ✓ MUST FIX #2: plain file blocking host skill ancestor or settings ancestor is rejected during pre-check before any writes"
+
+# MUST FIX #4: Interactive setup with --memoria-home <custom> previews <custom> BEFORE confirmation
+H_MF4="$TMP_DIR/home-mf4"
+XDG_MF4="$TMP_DIR/xdg-mf4"
+CUSTOM_MF4="$TMP_DIR/custom-mf4-root"
+mkdir -p "$H_MF4" "$XDG_MF4"
+PreviewMF4=$(cd "$OTHER_CWD" && printf '1\n4\n2\nn\n' | HOME="$H_MF4" XDG_CONFIG_HOME="$XDG_MF4" "$CLI" setup --interactive --memoria-home "$CUSTOM_MF4" 2>&1 || true)
+echo "$PreviewMF4" | grep -q "Data root:.*$CUSTOM_MF4" || {
+  echo "  ✗ MUST FIX #4: interactive preview did not show --memoria-home $CUSTOM_MF4 before confirmation:"
+  echo "$PreviewMF4"
+  exit 1
+}
+echo "  ✓ MUST FIX #4: interactive preview reflects --memoria-home / MEMORIA_HOME before confirmation"
+
+# MUST FIX #5: In a folder that already has ./.memory, setup --scope project uses cwd (matching doctor/recall), not cwd/memoria
+DOTMEM_PROJ="$TMP_DIR/dotmem-proj"
+mkdir -p "$DOTMEM_PROJ/.memory"
+(cd "$DOTMEM_PROJ" && HOME="$H1" XDG_CONFIG_HOME="$XDG1" "$CLI" setup --scope project --agent codex --no-vector --yes >/dev/null)
+[ -f "$DOTMEM_PROJ/.memory/sessions.db" ] || { echo "  ✗ MUST FIX #5: expected $DOTMEM_PROJ/.memory/sessions.db to be initialized"; exit 1; }
+[ ! -d "$DOTMEM_PROJ/memoria/.memory" ] || { echo "  ✗ MUST FIX #5: setup created duplicate $DOTMEM_PROJ/memoria/.memory alongside existing .memory"; exit 1; }
+DOC_DOTMEM=$(cd "$DOTMEM_PROJ" && HOME="$H1" XDG_CONFIG_HOME="$XDG1" "$CLI" doctor --json)
+echo "$DOC_DOTMEM" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+if (!d.ok || d.paths.memoriaHome !== process.argv[1]) {
+  throw new Error("MUST FIX #5: doctor home mismatch: " + JSON.stringify(d));
+}
+' "$DOTMEM_PROJ"
+echo "  ✓ MUST FIX #5: setup --scope project in a folder with existing ./.memory targets cwd (matching doctor/recall)"
+
+# MUST FIX #3: Existing empty SQLite file at LIBSQL_URL (no memoria_vectors table yet) still ingests populated corpus
+H_MF3="$TMP_DIR/home-mf3"
+XDG_MF3="$TMP_DIR/xdg-mf3"
+ROOT_MF3="$H_MF3/.memoria"
+EMPTY_VEC_FILE="$TMP_DIR/precreated-empty-vec.db"
+mkdir -p "$H_MF3" "$XDG_MF3"
+: > "$EMPTY_VEC_FILE"
+(cd "$OTHER_CWD" && HOME="$H_MF3" XDG_CONFIG_HOME="$XDG_MF3" "$CLI" setup --scope global --agent none --no-vector --yes >/dev/null)
+(cd "$OTHER_CWD" && HOME="$H_MF3" XDG_CONFIG_HOME="$XDG_MF3" "$CLI" remember "預先存在的空白向量資料庫檔案仍須完成語料索引" --project mf3 --rationale "review-f38ce84 #3" >/dev/null)
+MF3_OUT=$(HOME="$H_MF3" XDG_CONFIG_HOME="$XDG_MF3" LIBSQL_URL="file:$EMPTY_VEC_FILE" MEMORIA_EMBED_PROVIDER=stub "$CLI" setup --scope global --agent none --vector --yes --json)
+echo "$MF3_OUT" | node -e '
+const lines = require("node:fs").readFileSync(0, "utf8").trim().split("\n").map(l => JSON.parse(l));
+const r = lines.find(x => x.step === "readiness");
+if (!r || !r.ok || r.vector?.status !== "ready" || r.vector?.corpusVerified !== true) {
+  throw new Error("MUST FIX #3: expected corpusVerified=true when LIBSQL_URL pointed at empty file: " + JSON.stringify(lines));
+}
+'
+echo "  ✓ MUST FIX #3: populated DB with pre-existing empty vector file still runs full ingest and verifies corpusVerified=true"
+
+# MUST FIX #1, #6, #7:
+# - #1: After global vector setup on POP_ROOT (root A), running setup --memoria-home PROJ_VEC_B --scope project --vector --yes
+#       must write vectors into PROJ_VEC_B/.memory/vectors.db and NEVER into POP_ROOT/.memory/vectors.db.
+# - #6: Running setup --scope project --no-vector --yes on PROJ_VEC_B removes PROJ_VEC_B from vector.roots while keeping POP_ROOT enabled.
+# - #7: Re-enabling PROJ_VEC_B and then running setup --scope global --no-vector --yes on POP_ROOT disables POP_ROOT while keeping PROJ_VEC_B enabled.
+PROJ_VEC_B="$TMP_DIR/proj-vec-b"
+mkdir -p "$PROJ_VEC_B"
+(cd "$PROJ_VEC_B" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_HOME="$PROJ_VEC_B" "$CLI" init >/dev/null)
+(cd "$PROJ_VEC_B" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" "$CLI" remember "Project B exclusive vector decision" --project proj-b --rationale "review-f38ce84 #1" >/dev/null)
+
+# Count rows in POP_ROOT's vectors.db before setting up PROJ_VEC_B
+POP_VEC_COUNT_BEFORE=$(node -e '
+const Database = require("better-sqlite3");
+const db = new Database(process.argv[1], { readonly: true });
+console.log(db.prepare("SELECT COUNT(*) AS c FROM memoria_vectors").get().c);
+db.close();
+' "$POP_ROOT/.memory/vectors.db")
+
+(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_EMBED_PROVIDER=stub "$CLI" setup --scope project --memoria-home "$PROJ_VEC_B" --agent none --vector --yes >/dev/null)
+[ -f "$PROJ_VEC_B/.memory/vectors.db" ] || { echo "  ✗ MUST FIX #1: $PROJ_VEC_B/.memory/vectors.db was not created (polluted global vectors.db instead!)"; exit 1; }
+
+POP_VEC_COUNT_AFTER=$(node -e '
+const Database = require("better-sqlite3");
+const db = new Database(process.argv[1], { readonly: true });
+console.log(db.prepare("SELECT COUNT(*) AS c FROM memoria_vectors").get().c);
+db.close();
+' "$POP_ROOT/.memory/vectors.db")
+[ "$POP_VEC_COUNT_BEFORE" = "$POP_VEC_COUNT_AFTER" ] || {
+  echo "  ✗ MUST FIX #1: global vectors.db row count changed from $POP_VEC_COUNT_BEFORE to $POP_VEC_COUNT_AFTER during project B setup!"
+  exit 1
+}
+echo "  ✓ MUST FIX #1: setting up vector on a second root creates its own vectors.db and does not pollute the startup root's vectors.db"
+
+# MUST FIX #6: Disable vector on project B via non-interactive `--scope project --no-vector --yes`
+(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" "$CLI" setup --scope project --memoria-home "$PROJ_VEC_B" --agent none --no-vector --yes >/dev/null)
+DOC_B_DISABLED=$(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_HOME="$PROJ_VEC_B" "$CLI" doctor --json)
+echo "$DOC_B_DISABLED" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const vr = d.checks.find(c => c.name === "vector recall");
+if (!vr || vr.value !== "not enabled (LIBSQL_URL unset)") {
+  throw new Error("MUST FIX #6: expected project B vector recall to be disabled after --no-vector, got: " + JSON.stringify(vr));
+}
+'
+DOC_A_STILL_ENABLED=$(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" "$CLI" doctor --json)
+echo "$DOC_A_STILL_ENABLED" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const vr = d.checks.find(c => c.name === "vector recall");
+if (!vr || !vr.ok || !vr.value.startsWith("enabled")) {
+  throw new Error("MUST FIX #6: disabling project B accidentally disabled global root A: " + JSON.stringify(vr));
+}
+'
+echo "  ✓ MUST FIX #6: setup --scope project --no-vector --yes removes project root from vector.roots while keeping global root enabled"
+
+# MUST FIX #7: Re-enable project B, then disable global root A via `--scope global --no-vector --yes`;
+# global root A must be disabled while project B remains enabled!
+(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_EMBED_PROVIDER=stub "$CLI" setup --scope project --memoria-home "$PROJ_VEC_B" --agent none --vector --yes >/dev/null)
+(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" "$CLI" setup --scope global --agent none --no-vector --yes >/dev/null)
+DOC_A_DISABLED=$(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" "$CLI" doctor --json)
+echo "$DOC_A_DISABLED" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const vr = d.checks.find(c => c.name === "vector recall");
+if (!vr || vr.value !== "not enabled (LIBSQL_URL unset)") {
+  throw new Error("MUST FIX #7: expected global root A vector recall to be disabled after --scope global --no-vector, got: " + JSON.stringify(vr));
+}
+'
+DOC_B_STILL_ENABLED=$(cd "$OTHER_CWD" && HOME="$H_POP" XDG_CONFIG_HOME="$XDG_POP" MEMORIA_HOME="$PROJ_VEC_B" "$CLI" doctor --json)
+echo "$DOC_B_STILL_ENABLED" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const vr = d.checks.find(c => c.name === "vector recall");
+if (!vr || !vr.ok || !vr.value.startsWith("enabled")) {
+  throw new Error("MUST FIX #7: disabling global root A accidentally disabled project B: " + JSON.stringify(vr));
+}
+'
+echo "  ✓ MUST FIX #7: setup --scope global --no-vector disables global root while preserving project B's vector enablement"
 
 echo "[setup-onboarding] ok"

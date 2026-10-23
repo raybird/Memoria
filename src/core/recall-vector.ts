@@ -104,7 +104,7 @@ export type VectorLayerReport = {
  *  number that is permanently short is a standing false alarm — worse than no number at all.
  *  Superseded memories are counted because ingest embeds them too: the filter is applied at recall,
  *  not at index time. */
-function countEmbeddableEntities(dbPath: string): number {
+export function countEmbeddableEntities(dbPath: string): number {
     return withDb(dbPath, { readonly: true }, (db) => {
         const one = (sql: string): number => {
             try {

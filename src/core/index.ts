@@ -2,7 +2,7 @@
 // Import from here when consuming MemoriaCore in CLI, HTTP server, or SDK.
 
 export { MemoriaCore } from './memoria.js'
-export { resolveMemoriaPaths, getMemoriaHome, resolveMemoriaHomeInfo, existsSync } from './paths.js'
+export { resolveMemoriaPaths, getMemoriaHome, resolveMemoriaHomeInfo, detectLocalMemoriaRoot, existsSync } from './paths.js'
 export type { MemoriaHomeSource, MemoriaHomeResolution, PathResolveContext } from './paths.js'
 export {
     INSTALL_HOST_AGENTS,
@@ -11,13 +11,14 @@ export {
     loadInstallSettingsSync,
     saveInstallSettings,
     resolveLocalVectorDbPath,
+    getExplicitVectorEnv,
     resolveEffectiveVectorEnv,
     applyEffectiveVectorEnv,
     assertIngestDbPathMatchesRoot
 } from './install-settings.js'
 export type { InstallHostAgent, InstallVectorSettings, InstallSettings, InstallSettingsContext } from './install-settings.js'
 export { importSourceFile } from './source-import.js'
-export { inspectVectorLayer, probeDepsLocation } from './recall-vector.js'
+export { inspectVectorLayer, probeDepsLocation, countEmbeddableEntities } from './recall-vector.js'
 export type { DepsLocation, VectorLayerReport } from './recall-vector.js'
 export { loadMemoriaConfig, defaultMemoriaConfig, CONFIG_FILE_NAME } from './config.js'
 export type { MemoriaConfig, MemoriaGitConfig } from './config.js'

@@ -17,6 +17,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { InstallHostAgent } from '../core/index.js'
+import { assertWritableAncestorDir } from './runtime.js'
 
 export const MANAGED_START = '<!-- memoria:managed:start -->'
 export const MANAGED_END = '<!-- memoria:managed:end -->'
@@ -176,25 +177,7 @@ export async function assertInstructionTargetsSafe(plan: InstructionWiringPlan):
                 throw new Error(`refusing to modify ${target.path}: permission denied (not readable/writable)`)
             }
         } else {
-            // Walk up to existing ancestor and verify it is a writable directory (not a file or symlink blocking mkdir)
-            let curr = path.dirname(target.path)
-            while (curr && curr !== path.dirname(curr)) {
-                const dirStat = await fs.lstat(curr).catch(() => undefined)
-                if (dirStat) {
-                    if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
-                        throw new Error(
-                            `refusing to create ${target.path}: ancestor ${curr} exists and is not a directory`
-                        )
-                    }
-                    try {
-                        await fs.access(curr, fs.constants.W_OK)
-                    } catch {
-                        throw new Error(`refusing to create ${target.path}: parent directory ${curr} is not writable`)
-                    }
-                    break
-                }
-                curr = path.dirname(curr)
-            }
+            await assertWritableAncestorDir(target.path, 'create')
         }
     }
 }

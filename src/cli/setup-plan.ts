@@ -10,16 +10,18 @@ import {
     existsSync,
     buildMemoryIndex,
     inspectVectorLayer,
+    countEmbeddableEntities,
     probeDepsLocation,
     renderBrief,
     resolveInstallSettingsPath,
     resolveDefaultGlobalDataRoot,
     loadInstallSettingsSync,
     resolveLocalVectorDbPath,
+    getExplicitVectorEnv,
     assertIngestDbPathMatchesRoot
 } from '../core/index.js'
 import type { InstallHostAgent, MemoriaPaths } from '../core/index.js'
-import { assertHostSkillTarget, resolveHostAgentSkillDir, runChild } from './runtime.js'
+import { assertHostSkillTarget, assertWritableAncestorDir, resolveHostAgentSkillDir, runChild } from './runtime.js'
 import type { RuntimeLayout } from './runtime.js'
 import {
     planInstructionWiring,
@@ -63,6 +65,7 @@ export type SetupReadinessSummary = {
 export async function promptSetupChoices(defaults: {
     defaultGlobalRoot: string
     defaultProjectRoot: string
+    requestedHome?: string
     existingHosts?: InstallHostAgent[]
     existingVector?: boolean
 }): Promise<{ choices: SetupChoices; confirmed: boolean }> {
@@ -111,17 +114,28 @@ export async function promptSetupChoices(defaults: {
     }
 
     try {
+        const globalRootPreview = defaults.requestedHome
+            ? path.resolve(defaults.requestedHome)
+            : defaults.defaultGlobalRoot
+        const projectRootPreview = defaults.requestedHome
+            ? path.resolve(defaults.requestedHome)
+            : defaults.defaultProjectRoot
+
         console.log('\n=== Memoria Interactive Setup ===')
         console.log('1) Global memory (shared across folders; recommended)')
-        console.log(`   root: ${defaults.defaultGlobalRoot}`)
+        console.log(`   root: ${globalRootPreview}`)
         console.log('2) Project memory (current folder only)')
-        console.log(`   root: ${defaults.defaultProjectRoot}`)
+        console.log(`   root: ${projectRootPreview}`)
         const rawScope = await ask('Select data location [1/2, default 1]: ')
-        if (rawScope === null) return { choices: { scope: 'global', dataRoot: defaults.defaultGlobalRoot, hosts: [], vector: false, wireInstructions: false, saveSettings: false }, confirmed: false }
+        if (rawScope === null) return { choices: { scope: 'global', dataRoot: globalRootPreview, hosts: [], vector: false, wireInstructions: false, saveSettings: false }, confirmed: false }
         const scopeAns = rawScope.trim()
         const scope: 'global' | 'project' =
             scopeAns === '2' || scopeAns.toLowerCase() === 'project' ? 'project' : 'global'
-        const dataRoot = scope === 'global' ? defaults.defaultGlobalRoot : defaults.defaultProjectRoot
+        const dataRoot = defaults.requestedHome
+            ? path.resolve(defaults.requestedHome)
+            : scope === 'global'
+            ? defaults.defaultGlobalRoot
+            : defaults.defaultProjectRoot
 
         console.log('\nSelect host agent integration:')
         console.log('1) Claude Code (~/.claude/skills/memoria + CLAUDE.md)')
@@ -237,8 +251,9 @@ export function printSetupPlanPreview(plan: SetupPlan): void {
         console.log(`Instruction (${t.action}): ${t.path}`)
     }
     if (plan.choices.vector) {
-        const provider = (process.env.MEMORIA_EMBED_PROVIDER ?? 'local').trim()
-        const vectorDb = process.env.LIBSQL_URL?.trim() || `file:${resolveLocalVectorDbPath(plan.paths.memoriaHome)}`
+        const explicitVec = getExplicitVectorEnv(process.env)
+        const provider = (explicitVec.embedProvider ?? 'local').trim()
+        const vectorDb = explicitVec.libsqlUrl || `file:${resolveLocalVectorDbPath(plan.paths.memoriaHome)}`
         console.log(`Semantic recall:   enabled (provider=${provider}, store=${vectorDb})`)
         console.log(`Model download:    ${plan.vectorModelDownloadNeeded ? 'required (~700MB first-time install)' : 'reusing existing cache/install'}`)
     } else {
@@ -255,15 +270,28 @@ export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
         assertIngestDbPathMatchesRoot(plan.paths)
     }
 
-    // 2. Check all host skill directories up front
+    // 2. Verify data root path is either a real directory or has a writable ancestor directory
+    const rootStat = await fs.lstat(plan.paths.memoriaHome).catch(() => undefined)
+    if (rootStat) {
+        if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+            throw new Error(
+                `refusing to initialize ${plan.paths.memoriaHome}: it exists and is not a directory`
+            )
+        }
+        await assertWritableAncestorDir(path.join(plan.paths.memoriaHome, '.memory'), 'initialize')
+    } else {
+        await assertWritableAncestorDir(plan.paths.memoriaHome, 'initialize')
+    }
+
+    // 3. Check all host skill directories up front
     for (const target of plan.hostSkillTargets) {
         await assertHostSkillTarget(target.dir)
     }
 
-    // 3. Check all instruction targets up front
+    // 4. Check all instruction targets up front
     await assertInstructionTargetsSafe(plan.instructionPlan)
 
-    // 4. If saving install settings, verify settingsPath is not a symlink or directory
+    // 5. If saving install settings, verify settingsPath is not a symlink/directory and its ancestor is writable
     if (plan.choices.saveSettings) {
         const stat = await fs.lstat(plan.settingsPath).catch(() => undefined)
         if (stat) {
@@ -272,6 +300,13 @@ export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
                     `refusing to overwrite ${plan.settingsPath}: it exists and is not a regular file`
                 )
             }
+            try {
+                await fs.access(plan.settingsPath, fs.constants.R_OK | fs.constants.W_OK)
+            } catch {
+                throw new Error(`refusing to overwrite ${plan.settingsPath}: permission denied (not readable/writable)`)
+            }
+        } else {
+            await assertWritableAncestorDir(plan.settingsPath, 'write')
         }
     }
 }
@@ -300,8 +335,11 @@ export async function runFullVectorIngest(
     assertIngestDbPathMatchesRoot(paths)
     buildMemoryIndex(paths.dbPath, {})
 
-    const beforeReport = inspectVectorLayer(paths.dbPath)
-    const expected = beforeReport.coverage?.expected ?? 0
+    // Measure embeddable corpus directly from SQLite: `inspectVectorLayer().coverage` is null whenever
+    // the vector DB does not have a `memoria_vectors` table yet (e.g. an existing empty file) or when
+    // `LIBSQL_URL` is a remote URL, so `beforeReport.coverage?.expected ?? 0` would misreport a populated
+    // corpus as empty (review-f38ce84 #3).
+    const expected = existsSync(paths.dbPath) ? countEmbeddableEntities(paths.dbPath) : 0
     if (expected === 0) {
         return { embedded: 0, expected: 0, missing: 0 }
     }
@@ -355,17 +393,18 @@ export async function runFullVectorIngest(
     }
 
     const afterReport = inspectVectorLayer(paths.dbPath)
-    if (afterReport.coverage) {
-        if (afterReport.coverage.missing > 0) {
-            throw new Error(
-                `vector coverage incomplete after ingest: embedded=${afterReport.coverage.embedded} ` +
-                `expected=${afterReport.coverage.expected} missing=${afterReport.coverage.missing}`
-            )
-        }
-        return afterReport.coverage
+    if (!afterReport.coverage) {
+        throw new Error(
+            `vector coverage could not be verified after ingest (${afterReport.coverageUnknownReason ?? 'unknown'})`
+        )
     }
-
-    return { embedded: expected, expected, missing: 0 }
+    if (afterReport.coverage.missing > 0) {
+        throw new Error(
+            `vector coverage incomplete after ingest: embedded=${afterReport.coverage.embedded} ` +
+            `expected=${afterReport.coverage.expected} missing=${afterReport.coverage.missing}`
+        )
+    }
+    return afterReport.coverage
 }
 
 /**
@@ -392,13 +431,18 @@ export async function verifyVectorReadiness(
     if (report.embedderInstalled === false) {
         throw new Error('vector embedder (@huggingface/transformers) is not installed')
     }
-    if (report.coverage && report.coverage.missing > 0) {
+    const realExpected = existsSync(realPaths.dbPath) ? countEmbeddableEntities(realPaths.dbPath) : 0
+    if (!report.coverage) {
+        throw new Error(
+            `vector coverage could not be verified (${report.coverageUnknownReason ?? 'unknown'})`
+        )
+    } else if (report.coverage.missing > 0) {
         throw new Error(
             `vector coverage is incomplete: embedded=${report.coverage.embedded} expected=${report.coverage.expected} missing=${report.coverage.missing}`
         )
     }
 
-    const expected = report.coverage?.expected ?? 0
+    const expected = report.coverage?.expected ?? realExpected
     const embedded = report.coverage?.embedded ?? 0
 
     // Isolated probe in a temp directory so the user's real DB never receives synthetic sessions or recall telemetry (SCN-013).

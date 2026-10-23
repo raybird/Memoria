@@ -3,13 +3,15 @@ import type { Command } from 'commander'
 import {
     MemoriaCore,
     resolveMemoriaPaths,
+    detectLocalMemoriaRoot,
     runVerify,
     existsSync,
     closeAllConnections,
     resolveDefaultGlobalDataRoot,
     loadInstallSettingsSync,
     saveInstallSettings,
-    resolveLocalVectorDbPath
+    resolveLocalVectorDbPath,
+    getExplicitVectorEnv
 } from '../../core/index.js'
 import type { InstallHostAgent } from '../../core/index.js'
 import { runPreflight } from '../preflight.js'
@@ -97,7 +99,6 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             const requestedHome = opts.memoriaHome ?? opts['memoria-home'] ?? process.env.MEMORIA_HOME
             const existingSettings = loadInstallSettingsSync()
             const defaultGlobalRoot = existingSettings?.defaultDataRoot ?? resolveDefaultGlobalDataRoot()
-            const defaultProjectRoot = path.join(process.cwd(), 'memoria')
 
             const hasAnyAutomationFlag = Boolean(
                 jsonOut ||
@@ -124,6 +125,14 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 opts.yes ||
                 hasExplicitNoVector
             )
+
+            // When onboarding a project, honor an already-present local Memoria root (`cwd/.memory`,
+            // `cwd/knowledge`, or `cwd/memoria`) so `setup --scope project` targets the exact same root
+            // that `resolveMemoriaPaths()` / `memoria doctor` / `memoria recall` resolve in `cwd`.
+            // Legacy non-onboarding `setup` keeps `./memoria` for backward compatibility (`test-bootstrap.sh`).
+            const defaultProjectRoot = isFullOnboarding
+                ? (detectLocalMemoriaRoot(process.cwd()) ?? path.join(process.cwd(), 'memoria'))
+                : path.join(process.cwd(), 'memoria')
 
             let stepStart = Date.now()
             function stepLog(step: string, ok: boolean, extra: Record<string, unknown> = {}): void {
@@ -164,6 +173,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 const prompted = await promptSetupChoices({
                     defaultGlobalRoot,
                     defaultProjectRoot,
+                    requestedHome,
                     existingHosts: existingSettings?.hosts,
                     existingVector: existingSettings?.vector?.enabled
                 })
@@ -172,9 +182,6 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                     return
                 }
                 choices = prompted.choices
-                if (requestedHome) {
-                    choices.dataRoot = path.resolve(requestedHome)
-                }
             } else {
                 let parsedHosts: InstallHostAgent[] = []
                 if (opts.agent !== undefined) {
@@ -191,13 +198,14 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                     requestedHome ?? (scope === 'global' ? defaultGlobalRoot : defaultProjectRoot)
                 )
                 const vector = hasExplicitVectorTrue ? true : false
+                const rootWasInVectorRoots = Boolean(existingSettings?.vector?.roots?.includes(dataRoot))
                 choices = {
                     scope,
                     dataRoot,
                     hosts: parsedHosts,
                     vector,
                     wireInstructions: isFullOnboarding && parsedHosts.length > 0,
-                    saveSettings: isFullOnboarding && scope === 'global'
+                    saveSettings: isFullOnboarding && (scope === 'global' || vector || rootWasInVectorRoots)
                 }
             }
 
@@ -377,23 +385,15 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             const persistOnboardingSettings = async (vectorReady: boolean): Promise<void> => {
                 const prev = loadInstallSettingsSync()
                 const mergedHosts = Array.from(new Set([...(prev?.hosts ?? []), ...choices.hosts]))
-                const providerRaw = (process.env.MEMORIA_EMBED_PROVIDER ?? prev?.vector?.provider ?? 'local').trim()
+                const explicitVec = getExplicitVectorEnv(process.env)
+                const providerRaw = (explicitVec.embedProvider ?? prev?.vector?.provider ?? 'local').trim()
                 const provider: 'local' | 'stub' = providerRaw === 'stub' ? 'stub' : 'local'
                 const prevRoots = prev?.vector?.roots ?? []
 
-                let nextRoots: string[]
-                let vectorEnabled: boolean
-                if (!vectorReady) {
-                    nextRoots = prevRoots.filter((r) => path.resolve(r) !== setupPaths.memoriaHome)
-                    if (choices.scope === 'global') {
-                        vectorEnabled = false
-                    } else {
-                        vectorEnabled = Boolean(prev?.vector?.enabled && nextRoots.length > 0)
-                    }
-                } else {
-                    nextRoots = Array.from(new Set([...prevRoots, setupPaths.memoriaHome]))
-                    vectorEnabled = true
-                }
+                const nextRoots = vectorReady
+                    ? Array.from(new Set([...prevRoots, setupPaths.memoriaHome]))
+                    : prevRoots.filter((r) => path.resolve(r) !== setupPaths.memoriaHome)
+                const vectorEnabled = nextRoots.length > 0
 
                 await saveInstallSettings({
                     version: 1,
@@ -409,7 +409,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             }
 
             // Persist core/host settings before vector step so partial retry can reuse core & host choices,
-            // while vector.enabled stays false until vector verification actually passes (SCN-010).
+            // while this root stays out of `vector.roots` until vector verification actually passes (SCN-010).
             if (choices.saveSettings) {
                 await persistOnboardingSettings(false)
             }
@@ -426,8 +426,9 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                     }
 
                     if (isFullOnboarding) {
+                        const explicitVec = getExplicitVectorEnv(process.env)
                         const prevLibsql = process.env.LIBSQL_URL
-                        const effectiveVecUrl = prevLibsql?.trim() || `file:${resolveLocalVectorDbPath(setupPaths.memoriaHome)}`
+                        const effectiveVecUrl = explicitVec.libsqlUrl || `file:${resolveLocalVectorDbPath(setupPaths.memoriaHome)}`
                         process.env.LIBSQL_URL = effectiveVecUrl
                         try {
                             stepStart = Date.now()
@@ -448,8 +449,9 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                             vectorState.corpusVerified = verified.corpusVerified
                             vectorState.isolatedProbeVerified = verified.isolatedProbeVerified
                         } finally {
-                            if (prevLibsql === undefined && !choices.saveSettings) {
-                                delete process.env.LIBSQL_URL
+                            if (!explicitVec.libsqlUrl && !choices.saveSettings) {
+                                if (prevLibsql === undefined) delete process.env.LIBSQL_URL
+                                else process.env.LIBSQL_URL = prevLibsql
                             }
                         }
                     } else {
@@ -468,7 +470,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             }
 
             // Persist final install settings (including vector.enabled=true when vector succeeded)
-            if (choices.saveSettings || (isFullOnboarding && choices.vector)) {
+            if (choices.saveSettings) {
                 await persistOnboardingSettings(choices.vector)
             }
 

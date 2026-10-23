@@ -168,7 +168,15 @@
 - 證據：
   - 單迴圈紅燈（SCN-014）：在未更新 `dist/cli.mjs` 打包產物時對 packed npm 套件執行 `test-npm-install.sh` 新增之 `--scope global --agent both --no-vector --yes` 斷言，因舊 bundle 無 `--scope` 與 `codex` host 支援而失敗（exit 1）。（打包產物與安裝腳本屬單一交付層。）
   - 最小實作後全綠：重新 `pnpm run build` 後，`pnpm run check`、`node dist/cli.mjs --help`、`bash -n install.sh scripts/test-setup-onboarding.sh`、`bash scripts/test-setup-onboarding.sh`、`bash scripts/test-bootstrap.sh`、`bash scripts/test-npm-install.sh`、`bash scripts/test-vector-recall.sh`、`pnpm run release:package && bash scripts/test-no-clone-install.sh`、`bash scripts/test-smoke.sh`、`bash scripts/test-cli-memory.sh`、`bash scripts/test-brief-scope.sh` 全部 exit 0。
-  - 重構後全綠：テスト腳本與 CI workflow 結構精簡無多餘變更（no-op），全套腳本維持 exit 0。
+  - 重構後全綠：測試腳本與 CI workflow 結構精簡無多餘變更（no-op），全套腳本維持 exit 0。
+  - 第三方審查（`review-f38ce84.md`）7 項 MUST FIX 修復與雙迴圈迴歸驗證：
+    1. **MUST FIX #1（跨資料根 `process.env.LIBSQL_URL` 污染）**：於 `src/core/install-settings.ts` 追蹤 `applyEffectiveVectorEnv` 自動注入的環境變數並提供 `getExplicitVectorEnv()`，使 `setup` 在設定第二個資料根 `B` 時不會把啟動階段自動注入的 `A/.memory/vectors.db` 誤判為使用者明確傳入的 `LIBSQL_URL`。
+    2. **MUST FIX #2（Pre-check 祖先路徑檢查）**：於 `src/cli/runtime.ts` 新增 `checkWritableAncestorDir`／`assertWritableAncestorDir` 並接入 `checkHostSkillTarget` 與 `assertSetupPlanSafe`，確保當 `~/.codex/skills` 或 `install.json` 父目錄被一般檔案、symlink 或不可寫目錄佔用時，在建立任何目錄或資料庫前即失敗退出。
+    3. **MUST FIX #3（`coverage === null` 時語料計數與驗證）**：於 `src/cli/setup-plan.ts` 的 `runFullVectorIngest` 直接以 `countEmbeddableEntities(paths.dbPath)` 計算應嵌入筆數，並在 ingest 後及 `verifyVectorReadiness` 中拒絕 `coverage === null`（例如空白檔案或無法度量的 store），不再將 `null` 當作 `0/0` 跳過。
+    4. **MUST FIX #4（互動預覽與確認路徑一致）**：將 `requestedHome` 傳入 `promptSetupChoices`，在顯示預覽與詢問確認前即套用 `--memoria-home`／`MEMORIA_HOME`。
+    5. **MUST FIX #5（既有專案 `.memory`／`knowledge` 偵測）**：於 `src/core/paths.ts` 抽出 `detectLocalMemoriaRoot(cwd)`，使 `memoria setup --scope project` 在已具備 `./.memory` 或 `./knowledge` 的專案目錄中直接以 `cwd` 為目標（與 `doctor`／`recall` 一致）。
+    6. **MUST FIX #6 & #7（單一資料根 `--no-vector` 停用與多根隔離）**：統一以 `vector.roots` 判斷各資料根是否啟用向量召回，移除 `resolveEffectiveVectorEnv` 中對 `defaultDataRoot` 的無條件放行，並確保非互動 `setup --scope project --no-vector` 與 `setup --scope global --no-vector` 皆只從 `vector.roots` 移除當前資料根而不誤關其他已啟用資料根。
+    7. **Sandbox 相容性**：`scripts/test-setup-onboarding.sh` 改用 `node --import tsx scripts/setup-onboarding-driver.mts`，避免 `tsx` CLI IPC pipe 在受限沙盒中觸發 `EPERM`。
 
 ### Task 5.2 — 雙語文件、部署版 Skill 與架構規範更新（不改變可觀察行為）
 - 產出與範圍：

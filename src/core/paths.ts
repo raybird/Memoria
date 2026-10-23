@@ -26,6 +26,19 @@ export type PathResolveContext = InstallSettingsContext & {
     cwd?: string
 }
 
+export function detectLocalMemoriaRoot(cwd: string = process.cwd()): string | null {
+    if (existsSync(path.join(cwd, '.memory')) || existsSync(path.join(cwd, 'knowledge'))) {
+        return path.resolve(cwd)
+    }
+
+    const nestedMemoriaHome = path.join(cwd, 'memoria')
+    if (existsSync(path.join(nestedMemoriaHome, '.memory')) || existsSync(path.join(nestedMemoriaHome, 'knowledge'))) {
+        return path.resolve(nestedMemoriaHome)
+    }
+
+    return null
+}
+
 // Resolve MEMORIA_HOME and report HOW it was resolved so callers (doctor/preflight)
 // can warn when we silently fell back to the runtime root instead of a real data root.
 // Precedence (issue-28):
@@ -39,13 +52,9 @@ export function resolveMemoriaHomeInfo(ctx: PathResolveContext = {}): MemoriaHom
     if (envHome && envHome.trim()) return { home: path.resolve(envHome), source: 'env' }
 
     const cwd = ctx.cwd ?? process.cwd()
-    if (existsSync(path.join(cwd, '.memory')) || existsSync(path.join(cwd, 'knowledge'))) {
-        return { home: path.resolve(cwd), source: 'detected' }
-    }
-
-    const nestedMemoriaHome = path.join(cwd, 'memoria')
-    if (existsSync(path.join(nestedMemoriaHome, '.memory')) || existsSync(path.join(nestedMemoriaHome, 'knowledge'))) {
-        return { home: path.resolve(nestedMemoriaHome), source: 'detected' }
+    const detected = detectLocalMemoriaRoot(cwd)
+    if (detected) {
+        return { home: detected, source: 'detected' }
     }
 
     const settings = loadInstallSettingsSync(ctx)

@@ -173,6 +173,25 @@ export function resolveLocalVectorDbPath(dataRoot: string): string {
     return path.join(path.resolve(dataRoot), '.memory', 'vectors.db')
 }
 
+// Track values injected into `process.env` by `applyEffectiveVectorEnv()` so a subsequent call in the
+// same process (for example `memoria setup --memoria-home B` after CLI startup applied root A's default)
+// does not mistake its own auto-injected `LIBSQL_URL` for a caller's explicit environment override.
+let appliedLibsqlUrl: string | undefined
+let appliedEmbedProvider: string | undefined
+
+export function getExplicitVectorEnv(env: NodeJS.ProcessEnv = process.env): {
+    libsqlUrl: string | undefined
+    embedProvider: string | undefined
+} {
+    const rawUrl = env.LIBSQL_URL?.trim() || undefined
+    const rawProvider = env.MEMORIA_EMBED_PROVIDER?.trim() || undefined
+    const isProcessEnv = env === process.env
+    return {
+        libsqlUrl: isProcessEnv && rawUrl && rawUrl === appliedLibsqlUrl ? undefined : rawUrl,
+        embedProvider: isProcessEnv && rawProvider && rawProvider === appliedEmbedProvider ? undefined : rawProvider
+    }
+}
+
 /**
  * Determine effective `LIBSQL_URL` and `MEMORIA_EMBED_PROVIDER` for a given `effectiveDataRoot`.
  * Explicit environment variables always win (SCN-012). Otherwise, if local vector recall was enabled
@@ -184,20 +203,19 @@ export function resolveEffectiveVectorEnv(
     ctx: InstallSettingsContext = {}
 ): { libsqlUrl: string | undefined; embedProvider: string | undefined; fromSettings: boolean } {
     const env = ctx.env ?? process.env
-    const explicitUrl = env.LIBSQL_URL?.trim() || undefined
-    const explicitProvider = env.MEMORIA_EMBED_PROVIDER?.trim() || undefined
+    const { libsqlUrl: explicitUrl, embedProvider: explicitProvider } = getExplicitVectorEnv(env)
     if (explicitUrl && explicitProvider) {
         return { libsqlUrl: explicitUrl, embedProvider: explicitProvider, fromSettings: false }
     }
 
     const settings = loadInstallSettingsSync(ctx)
     const rootResolved = path.resolve(effectiveDataRoot)
+    const hasExplicitRootsList = Array.isArray(settings?.vector?.roots)
     const vectorEnabledForRoot = Boolean(
         settings?.vector?.enabled &&
-        (!settings.vector.roots ||
-            settings.vector.roots.length === 0 ||
-            settings.vector.roots.includes(rootResolved) ||
-            (settings.defaultDataRoot && path.resolve(settings.defaultDataRoot) === rootResolved))
+        (hasExplicitRootsList
+            ? settings!.vector!.roots!.includes(rootResolved)
+            : Boolean(settings?.defaultDataRoot && path.resolve(settings.defaultDataRoot) === rootResolved))
     )
 
     if (!vectorEnabledForRoot) {
@@ -212,23 +230,38 @@ export function resolveEffectiveVectorEnv(
 }
 
 /**
- * Apply saved vector settings to `process.env` when not already set in the environment.
- * Called once at CLI startup after resolving `paths.memoriaHome`.
+ * Apply saved vector settings to `process.env` when not already explicitly set in the environment.
+ * Re-evaluating for a different `effectiveDataRoot` replaces or clears any previously auto-injected value.
  */
 export function applyEffectiveVectorEnv(
     effectiveDataRoot: string,
     ctx: InstallSettingsContext = {}
 ): { libsqlUrl: string | undefined; embedProvider: string | undefined; fromSettings: boolean } {
-    const resolved = resolveEffectiveVectorEnv(effectiveDataRoot, ctx)
     const env = ctx.env ?? process.env
-    if (resolved.fromSettings) {
-        if (!env.LIBSQL_URL?.trim() && resolved.libsqlUrl) {
+    const isProcessEnv = env === process.env
+    const { libsqlUrl: explicitUrl, embedProvider: explicitProvider } = getExplicitVectorEnv(env)
+    const resolved = resolveEffectiveVectorEnv(effectiveDataRoot, ctx)
+
+    if (!explicitUrl) {
+        if (resolved.libsqlUrl) {
             env.LIBSQL_URL = resolved.libsqlUrl
-        }
-        if (!env.MEMORIA_EMBED_PROVIDER?.trim() && resolved.embedProvider) {
-            env.MEMORIA_EMBED_PROVIDER = resolved.embedProvider
+            if (isProcessEnv) appliedLibsqlUrl = resolved.libsqlUrl
+        } else {
+            delete env.LIBSQL_URL
+            if (isProcessEnv) appliedLibsqlUrl = undefined
         }
     }
+
+    if (!explicitProvider) {
+        if (resolved.embedProvider) {
+            env.MEMORIA_EMBED_PROVIDER = resolved.embedProvider
+            if (isProcessEnv) appliedEmbedProvider = resolved.embedProvider
+        } else {
+            delete env.MEMORIA_EMBED_PROVIDER
+            if (isProcessEnv) appliedEmbedProvider = undefined
+        }
+    }
+
     return resolved
 }
 

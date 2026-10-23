@@ -164,6 +164,39 @@ export function resolveHostAgentSkillDir(
 }
 
 /**
+ * Walk up from `targetPath`'s parent until an existing filesystem entry is found,
+ * and verify that the existing ancestor is a writable real directory (not a file or symlink).
+ */
+export async function checkWritableAncestorDir(
+    targetPath: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+    let curr = path.dirname(path.resolve(targetPath))
+    while (curr && curr !== path.dirname(curr)) {
+        const dirStat = await fs.lstat(curr).catch(() => undefined)
+        if (dirStat) {
+            if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+                return { ok: false, reason: `ancestor ${curr} exists and is not a directory` }
+            }
+            try {
+                await fs.access(curr, fs.constants.W_OK)
+            } catch {
+                return { ok: false, reason: `parent directory ${curr} is not writable` }
+            }
+            return { ok: true }
+        }
+        curr = path.dirname(curr)
+    }
+    return { ok: true }
+}
+
+export async function assertWritableAncestorDir(targetPath: string, actionLabel = 'create'): Promise<void> {
+    const check = await checkWritableAncestorDir(targetPath)
+    if (!check.ok) {
+        throw new Error(`refusing to ${actionLabel} ${targetPath}: ${check.reason}`)
+    }
+}
+
+/**
  * `setup` replaces a host skill directory only when it is absent, empty, or a copy `setup` itself wrote —
  * one whose SKILL.md frontmatter carries both deployment marks. Anything else is the user's own skill,
  * and overwriting it would be a silent, irreversible loss (issue-22 SCN-006).
@@ -175,8 +208,12 @@ export async function assertHostSkillTarget(targetDir: string): Promise<void> {
 
 async function checkHostSkillTarget(targetDir: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const stat = await fs.lstat(targetDir).catch(() => undefined)
-    if (!stat) return { ok: true }
+    if (!stat) {
+        return checkWritableAncestorDir(targetDir)
+    }
     if (!stat.isDirectory()) return { ok: false, reason: 'it exists and is not a directory' }
+    const ancestorCheck = await checkWritableAncestorDir(targetDir)
+    if (!ancestorCheck.ok) return ancestorCheck
     if ((await fs.readdir(targetDir)).length === 0) return { ok: true }
 
     const skill = await fs.readFile(path.join(targetDir, 'SKILL.md'), 'utf8').catch(() => undefined)
