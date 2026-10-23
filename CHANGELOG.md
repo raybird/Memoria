@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.31.2] - 2026-10-23
+
+### Fixed
+- **`brief` now prints shared `AGENTS.md` read instructions alongside Claude imports.** Project-scoped output names the consuming repository's instruction files and uses an absolute brief path; global output keeps the data-root-relative Claude import. `CLAUDE.md` imports `@AGENTS.md` plus the generated brief, and spaces in import paths are escaped. The generated brief, JSON envelope, recall behavior and database schema are unchanged.
+
+### Docs
+- Shortened both READMEs and moved detailed CLI, HTTP API and SDK/agent integration examples into paired English and Traditional Chinese guides. Document sync checks now validate the guide links and required reference content in both languages.
+- Unified repository instructions in `AGENTS.md`, with `CLAUDE.md` importing it. Detailed architecture and memory contracts moved to `docs/agents/architecture.md`.
+- Updated installation guidance and the deployed skill/reference to distinguish the global runtime, deployed skill copies, shared project instructions and the generated brief. Corrected operations/specification descriptions for tree indexing, summary promotion and brief scope; refreshed the documented CI checklist.
+- Removed accidentally tracked diagnostic archives from the repository.
+
+### Upgrade
+- After installing this version, run `memoria setup --memoria-home <existing-data-root>` to refresh the deployed skill and wrapper. Include `--agent claude-code` if you use the Claude host copy. Then regenerate the brief and follow its shared-entry instructions. npm upgrades replace the runtime package; they do not refresh previously deployed skill copies or edit project instruction files.
+- The semantic helper's dependency set and cache layout have not changed; this release does not require reinstalling the model or rebuilding existing vectors solely because of the upgrade.
+
 ## [1.31.1] - 2026-10-21
 
 No runtime, schema or recall behaviour changed: one `doctor` fix text, one test script, and docs.
