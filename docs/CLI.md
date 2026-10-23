@@ -16,7 +16,7 @@ memoria recall "why pnpm" [--json]     # Search memory (--project/--scope/--top-
 memoria remember "switched to pnpm" --project Memoria --rationale "lockfile is authoritative"
 memoria remember "..." --type skill --category cli   # Write a SkillLearned note instead
 memoria feedback <recall_id> --score 0.9 --hits <id,id>  # UFL utility write-back
-memoria brief [--project X] [--days 30]  # Compile a markdown brief for CLAUDE.md `@`-import
+memoria brief [--project X] [--days 30]  # Compile a markdown brief for shared AGENTS.md read instructions
 memoria remember "..." --durable         # Evergreen fact: no time-decay, survives stale pruning
 memoria mark <ref_id> --durable         # Pin an existing memory, including a git-promoted decision
 memoria brief --global                 # Write one all-projects knowledge/BRIEF.md
@@ -51,4 +51,4 @@ memoria setup --vector                # Install semantic-recall dependencies and
 
 `remember`, `recall`, `mark`, `feedback` and `brief` work directly against local storage, so a skill-based setup needs no server. When several repositories share a store, pass `--project` to recall to keep results scoped.
 
-Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Memories whose project is not a registered repository accompany each project's brief. Import the path printed by `brief` from `CLAUDE.md`, and regenerate it after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).
+Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Memories whose project is not a registered repository accompany each project's brief. Follow the output to add read instructions to `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the brief path. Regenerate the brief after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).

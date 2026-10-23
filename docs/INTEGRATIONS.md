@@ -6,6 +6,25 @@ Last verified: 2026-10-23 against v1.31.1 source, CLI help and documentation che
 
 Skill-based memory use needs no server; see the [Install Guide](INSTALL.md). The SDK examples below assume a repository checkout and source imports; the npm package exposes the CLI and has no SDK export. The SDK and hook adapters require the HTTP server.
 
+## Shared project instructions and brief
+
+Keep common rules in `AGENTS.md`. Use `CLAUDE.md` as Claude's entry point, importing them with `@AGENTS.md` on its own line. Put any Claude-specific additions below the import.
+
+After generating a brief, add the read instruction printed by `memoria brief` to `AGENTS.md`, so an agent reads it when it is not already in context:
+
+```markdown
+Before starting work, read /absolute/path/to/knowledge/BRIEF.md if it is not already in context.
+```
+
+Claude's `CLAUDE.md` can import both the shared rules and the generated brief for expansion at launch:
+
+```markdown
+@AGENTS.md
+@/absolute/path/to/knowledge/BRIEF.md
+```
+
+Replace the example with the path printed by `brief`; generate the file first, and escape spaces in `@` imports with backslashes. Other agents follow the read instruction in `AGENTS.md`; `@` expansion depends on the host. Regenerate the brief after memory updates. See the [official Claude import documentation](https://code.claude.com/docs/en/memory#import-additional-files).
+
 ## Node.js SDK
 
 ```typescript

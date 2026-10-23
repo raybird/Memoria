@@ -16,7 +16,7 @@ memoria recall "為什麼用 pnpm" [--json] # 召回記憶（--project/--scope/-
 memoria remember "改用 pnpm" --project Memoria --rationale "lockfile 是權威"
 memoria remember "..." --type skill --category cli   # 改寫成 SkillLearned 筆記
 memoria feedback <recall_id> --score 0.9 --hits <id,id>  # UFL 效用回報
-memoria brief [--project X] [--days 30]  # 編譯 markdown brief，供 CLAUDE.md 以 @ 引入
+memoria brief [--project X] [--days 30]  # 編譯 markdown brief，供 AGENTS.md 指引讀取
 memoria remember "..." --durable         # 恆真事實：不衰減、不被 stale 裁剪
 memoria mark <ref_id> --durable         # 固定既有記憶，包含 git 促升的決策
 memoria brief --global                 # 所有專案合寫 knowledge/BRIEF.md
@@ -51,4 +51,4 @@ memoria setup --vector                # 安裝語意召回依賴並暖機模型
 
 `remember`、`recall`、`mark`、`feedback`、`brief` 直接存取本地資料，skill 型部署不需要 server。多個 repository 共用記憶庫時，recall 請帶 `--project` 限定範圍。
 
-在已註冊 repository 內執行 `brief`，會自動辨識專案並寫入 `knowledge/BRIEF-<project>.md`；明確指定 `--project` 仍寫 `BRIEF.md`，`--global` 則選取所有專案。Durable 記憶會列在不受 `--days`、`--top-k` 限制的固定區塊，被取代的記憶會排除。project 不屬於任何已註冊 repository 的記憶會隨各專案的 brief 載入。將 `brief` 印出的路徑引入 `CLAUDE.md`，並在記憶更新後重新產生。詳見 [Operations](OPERATIONS.md#context-injection-via-briefmd)。
+在已註冊 repository 內執行 `brief`，會自動辨識專案並寫入 `knowledge/BRIEF-<project>.md`；明確指定 `--project` 仍寫 `BRIEF.md`，`--global` 則選取所有專案。Durable 記憶會列在不受 `--days`、`--top-k` 限制的固定區塊，被取代的記憶會排除。project 不屬於任何已註冊 repository 的記憶會隨各專案的 brief 載入。依 `brief` 輸出，在 `AGENTS.md` 設定讀取指令；Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 與 brief 路徑載入。記憶更新後重新產生 brief。詳見 [Operations](OPERATIONS.md#context-injection-via-briefmd)。

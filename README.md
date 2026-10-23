@@ -12,7 +12,7 @@ Memoria keeps decisions, pitfalls and learned skills in local SQLite, then recal
 | --- | --- |
 | Persistent memory | Import sessions or save a single note with `remember`; retain provenance in SQLite and markdown |
 | Recall | Keyword, tree and hybrid retrieval, plus optional semantic recall with local embeddings |
-| Long-term context | Durable memories, explicit replacements and project-scoped briefs for `CLAUDE.md` imports |
+| Long-term context | Durable memories, explicit replacements and project-scoped briefs read through shared `AGENTS.md` instructions |
 | Git-aware memory | Observe repositories read-only, enrich change summaries and recall decisions with commit provenance |
 | Feedback | Report useful recalls; observed utility informs ranking and retention |
 | Wiki | Import markdown/text sources, compile wiki pages and file useful query results |
@@ -36,7 +36,7 @@ memoria brief --project Memoria
 
 These commands use local storage directly. A server is optional. Keep `MEMORIA_HOME` set when returning to this store; without it or `--memoria-home`, setup uses `./memoria` in the current directory.
 
-`brief` prints a path you can import from `CLAUDE.md`. Regenerate it after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
+`brief` prints shared `AGENTS.md` read instructions and Claude import examples; `CLAUDE.md` imports the shared rules with `@AGENTS.md`. Regenerate the brief after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
 
 ## Use it with an agent
 

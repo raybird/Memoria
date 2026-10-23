@@ -187,20 +187,13 @@ Notes that matter in practice:
 ./cli brief --stdout                         # print instead of writing
 ```
 
-Import it once from `CLAUDE.md`:
-
-```markdown
-@knowledge/BRIEF.md
-```
-
-Every session then starts with recent decisions, high-utility memories (UFL) and repository state
-already in context — no hooks, no server, nothing to execute. Operational caveats:
+Keep shared read instructions in `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the generated brief for launch-time context. Follow the paths printed by `brief`. The complete setup is in [Shared project instructions and brief](INTEGRATIONS.md#shared-project-instructions-and-brief) ([繁體中文](INTEGRATIONS.zh-TW.md#共用專案規範與-brief)). This requires no hooks or server. Operational caveats:
 
 - It is a **derived view**. Each run overwrites the whole file; do not edit it by hand.
 - Generation is **manual by design** — no write path regenerates it. Re-run `brief` after a batch of
   `remember` / `repo sync` work, otherwise the file silently ages.
 - With no explicit `--project` or `--global`, the working directory determines scope when it belongs
-  to a registered repository. Import the absolute path printed by the command into that project's
+  to a registered repository. Use the printed read instruction in that project's `AGENTS.md` and the absolute import path in
   `CLAUDE.md`. Outside registered repositories it falls back to the all-projects `BRIEF.md`.
 - Memories whose project is not a registered repository name are environment-class and accompany
   each project's brief. Their count is reported on every run; registering a repository can change

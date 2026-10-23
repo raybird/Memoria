@@ -87,9 +87,11 @@ Done when: the `--json` submit result shows `status: enriched` and `promoted: tr
 ### Wrap-up — once per session that ran remember or repo sync
 
 1. `MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" doctor` — when `vector coverage` shows `missing` above 0, run the fix it prints. The tree index updates itself; the vector index does not, and a memory missing from it is invisible to semantic recall without any error.
-2. Regenerate the brief your agent instructions import: `brief --global` for one global `BRIEF.md`, or `brief` inside a registered repository for its `BRIEF-<repo>.md`.
+2. Regenerate the brief your agent instructions load: `brief --global` for one global `BRIEF.md`, or `brief` inside a registered repository for its `BRIEF-<repo>.md`.
 
-Done when: `vector coverage` shows `missing=0` (or vector recall is disabled), and the brief's first line carries a timestamp from just now.
+3. For a new integration, follow the output: shared read instructions go in the project's `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the generated brief. Keep the shared read instruction even when your host does not expand `@` imports.
+
+Done when: `vector coverage` shows `missing=0` (or vector recall is disabled), the brief's first line carries a timestamp from just now, and the consuming project's instructions point to that brief.
 
 ## Set up a folder
 

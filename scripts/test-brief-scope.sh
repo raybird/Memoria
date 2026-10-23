@@ -7,7 +7,7 @@
 #   (D) SCN-011 that class is counted in both human and --json output
 #   (E) SCN-012 registering the project as a repo drops the count — the drift is visible
 #   (F) SCN-010 --global restores the pre-issue-17 single-file, all-projects behaviour
-#   (G) SCN-013 a per-project run prints the exact @-line to paste into THAT repo's CLAUDE.md
+#   (G) SCN-013 a per-project run prints shared AGENTS.md guidance and Claude imports
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -144,16 +144,31 @@ make_repo "$TMP_DIR/alpha"
 ( cd "$TMP_DIR/alpha" && "$CLI" brief > "$TMP_DIR/out-g.txt" )
 SCOPED="$MEMORIA_HOME/knowledge/BRIEF-alpha.md"
 [ -f "$SCOPED" ] || { echo "  ✗ 未產出 BRIEF-alpha.md"; exit 1; }
-# 必須是絕對路徑：專案的 CLAUDE.md 不在 MEMORIA_HOME 底下,相對路徑在那裡解不開。
+# 共用入口必須點名該專案的 AGENTS.md，並提供完整路徑的讀取指令。
+grep -qF "$TMP_DIR/alpha/AGENTS.md" "$TMP_DIR/out-g.txt" || {
+    echo "  ✗ 沒有點名該專案的 AGENTS.md:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
+grep -qF "Before starting work, read $SCOPED if it is not already in context." "$TMP_DIR/out-g.txt" || {
+    echo "  ✗ 缺少 AGENTS.md 可用的讀取指令:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
+# Claude 的 @-import 必須是絕對路徑：專案的 CLAUDE.md 不在 MEMORIA_HOME 底下。
 grep -qF "@$SCOPED" "$TMP_DIR/out-g.txt" || {
     echo "  ✗ 輸出沒有可直接複製的絕對路徑 @$SCOPED:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
+grep -qF '@AGENTS.md' "$TMP_DIR/out-g.txt" || {
+    echo "  ✗ 缺少 Claude 引入共用規範的 @AGENTS.md:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
 # 且要點名是「該專案的」CLAUDE.md,而不是泛稱。
 grep -qF "$TMP_DIR/alpha/CLAUDE.md" "$TMP_DIR/out-g.txt" || {
     echo "  ✗ 沒有點名該專案的 CLAUDE.md:"; cat "$TMP_DIR/out-g.txt"; exit 1; }
 # 全域模式維持原本的相對路徑提示,不受影響。
 "$CLI" brief --global > "$TMP_DIR/out-g2.txt"
+grep -qF "$MEMORIA_HOME/AGENTS.md" "$TMP_DIR/out-g2.txt" || {
+    echo "  ✗ 全域模式沒有點名 data root 的 AGENTS.md:"; cat "$TMP_DIR/out-g2.txt"; exit 1; }
+grep -qF '@AGENTS.md' "$TMP_DIR/out-g2.txt" || {
+    echo "  ✗ 全域模式缺少 @AGENTS.md:"; cat "$TMP_DIR/out-g2.txt"; exit 1; }
 grep -qF "@knowledge/BRIEF.md" "$TMP_DIR/out-g2.txt" || {
     echo "  ✗ 全域模式的提示被改壞了:"; cat "$TMP_DIR/out-g2.txt"; exit 1; }
-echo "  印出絕對路徑並點名該專案的 CLAUDE.md,全域模式不受影響"
+echo "  AGENTS.md 共用入口與 Claude imports 皆明確，保留全域相對路徑"
+
+"$CLI" brief --global --out "$MEMORIA_HOME/knowledge/Brief With Space.md" > "$TMP_DIR/out-g3.txt"
+grep -qF '@knowledge/Brief\ With\ Space.md' "$TMP_DIR/out-g3.txt" || {
+    echo "  ✗ Claude import 未跳脫路徑中的空白:"; cat "$TMP_DIR/out-g3.txt"; exit 1; }
 
 echo "[brief-scope] ✓ all checks passed"

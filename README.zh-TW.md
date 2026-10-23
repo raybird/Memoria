@@ -12,7 +12,7 @@ Memoria 將決策、踩坑經驗與學到的技能保存到本地 SQLite，在 a
 | --- | --- |
 | 持久記憶 | 匯入 session，或用 `remember` 保存單筆筆記；SQLite 與 markdown 保留來源 |
 | 召回 | Keyword、tree、hybrid 檢索，以及選用的本地 embedding 語意召回 |
-| 長期上下文 | Durable 記憶、明確取代舊記憶，以及可供 `CLAUDE.md` 引入的專案 brief |
+| 長期上下文 | Durable 記憶、明確取代舊記憶，以及由 `AGENTS.md` 指引讀取的專案 brief |
 | Git 記憶 | 唯讀觀察 repository，增強變更摘要，召回時附上 commit 來源 |
 | 效用回饋 | 回報召回是否有用，讓觀測效用影響排序與保留 |
 | Wiki | 匯入 markdown/text、編譯 wiki 頁面、歸檔有價值的查詢結果 |
@@ -36,7 +36,7 @@ memoria brief --project Memoria
 
 這些命令直接存取本地資料，server 為選用。之後使用同一份記憶庫時，請保持 `MEMORIA_HOME` 設定；未設定它或 `--memoria-home` 時，setup 使用目前目錄下的 `./memoria`。
 
-`brief` 會印出可引入 `CLAUDE.md` 的檔案路徑。記憶更新後請重新產生。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
+`brief` 會印出 `AGENTS.md` 讀取指引與 Claude import 範例；`CLAUDE.md` 以 `@AGENTS.md` 引入共用規範。記憶更新後請重新產生 brief。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
 
 ## 搭配 Agent 使用
 

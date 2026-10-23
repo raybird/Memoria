@@ -6,6 +6,25 @@
 
 以 deployed skill 使用記憶不需要 server，設定方式見 [安裝指南](INSTALL.md)。以下 SDK 範例假設從 repository checkout 載入原始碼；npm 套件提供 CLI，未提供 SDK export。SDK 與 hook adapter 需要 HTTP server。
 
+## 共用專案規範與 brief
+
+共用規範維護在 `AGENTS.md`，`CLAUDE.md` 作為 Claude 的載入入口，以獨立一行的 `@AGENTS.md` 引入。Claude 專用設定放在 import 後方。
+
+產生 brief 後，將 `memoria brief` 印出的讀取指令加入 `AGENTS.md`，讓 agent 在尚未載入時讀取：
+
+```markdown
+Before starting work, read /absolute/path/to/knowledge/BRIEF.md if it is not already in context.
+```
+
+Claude 的 `CLAUDE.md` 可同時引入共用規範與產生的 brief，於啟動時展開：
+
+```markdown
+@AGENTS.md
+@/absolute/path/to/knowledge/BRIEF.md
+```
+
+請替換為 `brief` 實際印出的路徑；檔案需先產生，路徑含空白時 `@` import 用反斜線跳脫空白。其他 agent 依 `AGENTS.md` 的讀取指令使用 brief；是否展開 `@` 取決於 host。記憶更新後重新產生 brief。Claude 的 import 載入方式見 [官方文件](https://code.claude.com/docs/en/memory#import-additional-files)。
+
 ## Node.js SDK
 
 ```typescript

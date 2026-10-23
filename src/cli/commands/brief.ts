@@ -50,8 +50,8 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                 return
             }
 
-            // One global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
-            // `@`-imports a fixed path, so whoever ran it last would decide what every project sees.
+            // One global BRIEF.md cannot hold a cwd-filtered result: generation is manual and agent
+            // instructions refer to a fixed path, so the last writer would decide what projects see.
             const fileName = detected ? `BRIEF-${detected.project}.md` : 'BRIEF.md'
             const outPath = options.out ? path.resolve(options.out) : path.join(paths.knowledgeDir, fileName)
             await fs.mkdir(path.dirname(outPath), { recursive: true })
@@ -75,17 +75,15 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
                 // registered, so the number moving is the only signal that a project was
                 // reclassified out of it (SCN-011 / SCN-012).
                 console.log(`- 環境類記憶: ${data.totals.environment_memories} 筆（不屬任何已註冊 repo，每個專案的 brief 都會帶上）`)
-                if (detected) {
-                    // The project's CLAUDE.md lives in the repo, not under MEMORIA_HOME, so the
-                    // relative form used for the global brief does not resolve from there — this
-                    // line has to be absolute and copy-pasteable as-is. Printed rather than written
-                    // into a doc: the recipe someone follows is the one the command just printed
-                    // (docs/HANDOVER.md §8, the v1.25.1 lesson), and a second copy would drift.
-                    console.log(`- 接線: 在 ${path.join(detected.root, 'CLAUDE.md')} 加上這一行即可每次 session 自動載入`)
-                    console.log(`  @${outPath}`)
-                } else {
-                    console.log(`- 提示: 在 CLAUDE.md 以 @${path.relative(paths.memoriaHome, outPath)} 引入即可每次 session 自動載入`)
-                }
+                // Keep shared read instructions usable by any agent; Claude also gets explicit
+                // imports. A detected repo lives outside MEMORIA_HOME, so its import is absolute.
+                const instructionRoot = detected?.root ?? paths.memoriaHome
+                const importPath = detected ? outPath : path.relative(paths.memoriaHome, outPath)
+                console.log(`- 共用入口: 在 ${path.join(instructionRoot, 'AGENTS.md')} 加上以下讀取指令`)
+                console.log(`  Before starting work, read ${outPath} if it is not already in context.`)
+                console.log(`- Claude Code: 在 ${path.join(instructionRoot, 'CLAUDE.md')} 引入共用規範與 brief`)
+                console.log('  @AGENTS.md')
+                console.log(`  @${importPath.replace(/ /g, '\\ ')}`)
             }
         })
 }

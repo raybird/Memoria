@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Guidance for coding agents operating in this repository.
+Shared guidance for coding agents operating in this repository. `CLAUDE.md` imports this file with `@AGENTS.md`; maintain common rules here and Claude-specific additions in `CLAUDE.md`.
 
-Last verified: 2026-10-23 for test commands against `.github/workflows/ci.yml`.
+Last verified: 2026-10-23 for the shared agent entry, architecture references and test commands against `.github/workflows/ci.yml`.
 
 ## Project Snapshot
 
@@ -36,6 +36,8 @@ If local docs disagree with CI, follow CI.
 - Install deps: `pnpm install`
 - Run CLI in dev: `pnpm run memoria -- --help`
 - Initialize memory dirs/db: `MEMORIA_HOME=$(pwd) ./cli init`
+
+`dist/` is gitignored. The `./cli` wrapper prefers `dist/cli.mjs` when present and otherwise falls back to `tsx`; rebuild after source changes when using the bundle.
 
 ## Build, Lint, and Test Commands
 
@@ -182,57 +184,7 @@ Additional CI jobs:
 
 ## Core Architecture (Phase 1)
 
-All business logic lives in `src/core/`. The CLI is a thin commander registration shell.
-
-```
-src/core/
-  types.ts     – MemoriaResult<T> envelope, RecallFilter, RecallHit, HealthStatus …
-  paths.ts     – resolveMemoriaPaths(), getMemoriaHome()
-  utils.ts     – slugify, shortHash, safeDate, resolveSessionId …
-  db/          – SQLite operations split by domain (each file owns one concern):
-    schema.ts      – initDatabase (DDL + migrations)
-    session.ts     – importSession, listRecentSessions, querySessionSummary
-    source.ts      – upsertSourceRecord, listSourceRecords
-    wiki.ts        – wiki pages / links / artifacts (9 functions)
-    lint.ts        – wiki lint runs & findings (4 functions)
-    sync.ts        – syncDailyNote, extractDecisions, extractSkills
-    telemetry.ts   – logRecallTelemetry, recordRecallOutcome (UFL write-back + per-memory attribution), queryStats (incl. confidence×utility calibration), queryRecallTelemetry, queryGovernanceReview
-    verify.ts      – runVerify
-    prune-export.ts – runPrune (utility-weighted retention), exportMemory
-    recall.ts      – buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting (UFL re-rank)
-                     ⚠ memory_nodes is a COPY of session title/summary/scope, not a view, and
-                     buildMemoryIndex only indexes sessions never indexed before (--session-id does
-                     not override that). Rewriting sessions.summary in place is invisible to tree
-                     recall and `index build` will NOT repair it. See docs/OPERATIONS.md →
-                     Tree Index Notes.
-    git-repo.ts    – repository registry (registerRepository, findRepository, relocate/remove)
-    git-scan.ts    – incremental scan persistence (commits/refs/scan runs/events)
-    git-summary.ts – summary ranges + summaries (idempotent upserts, agent write-back)
-    git-promote.ts – memory promotion + checkpoints + lookupGitSources (recall provenance)
-    connection.ts  – cached SQLite connection pool (withDb, closeAllConnections); HTTP hot path reuses connections
-    mappers.ts     – shared row-to-type mappers + truncateText
-    index.ts       – barrel re-export
-  git/           – Git-Aware Memory read layer (allowlisted git exec, identity, scanner,
-                   change detector, deterministic range planner, summary context/generator/
-                   pipeline, secret filter, host id)
-  config.ts      – config.json loader (git.* block, Zod, optional)
-  recall-vector.ts – opt-in semantic recall: spawns skills/memoria-vector helper, maps prefixed ids to authoritative local rows, RRF fusion (fail-open, LIBSQL_URL-gated)
-  source-import.ts – raw markdown/text source import
-  wiki.ts      – wiki constants + markdown render helpers
-  wiki-build.ts – compiled wiki special pages (`index/log/overview`)
-  wiki-query.ts – file high-value recall output back into wiki pages
-  wiki-lint.ts – durable wiki lint finding generation
-  memoria.ts   – MemoriaCore class (remember/recall/wiki flows/health/stats)
-  index.ts     – unified re-export
-
-src/cli/
-  shared.ts    – readSession (Zod validator), previewSync
-  runtime.ts   – getRuntimeLayout, deployAgentSkill, related helpers
-  preflight.ts – runPreflight
-  commands/    – one file per command (init, sync, source, wiki, stats,
-                 index-cmd, govern, doctor, verify, prune, export,
-                 serve, preflight-cmd, setup)
-```
+All business logic lives in `src/core/`; CLI, HTTP server and SDK share that core. Before changing core modules, recall, markers, brief generation or Git memory, read [Architecture and Memory Contracts](docs/agents/architecture.md) for module responsibilities, index invalidation, utility ordering and downstream contracts.
 
 **MemoriaCore API** (all return `MemoriaResult<T>`):
 - `remember(sessionData)` – import + sync daily/decisions/skills
@@ -282,7 +234,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Mark a pending summary `dismissed` (not auto-promoted — an explicit `summarize --promote` still can; `409` if enriched or already in recall) |
 | `POST` | `/v1/repos/:ref/summaries/dismiss` | Dismiss every pending summary of `{types: [...]}` (required, non-empty; `400` otherwise); ones already in recall are skipped and counted in `skipped_promoted` |
 
-All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`.
+All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`. Preserve this envelope when adding endpoints or public core methods.
 Recall hits promoted from git summaries additionally carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`).
 
 `confidence` is `number | null`, and recall adds `confidence_basis` — `lexical_coverage` |
@@ -442,8 +394,7 @@ same note is a no-op. Human-readable `recall` output prints `relevance` (0–1);
 full envelope. `feedback` on an unknown/pruned `recall_id` exits 0 with `updated:false`.
 
 `brief` compiles recent decisions, high-utility memories and repository state into
-`<knowledge>/BRIEF.md`. Import it from `CLAUDE.md` with `@knowledge/BRIEF.md` and memory loads at the
-start of every session with nothing to execute — the practical substitute for hook-based injection.
+`<knowledge>/BRIEF.md`. Put a read instruction in the consuming project's `AGENTS.md`; for Claude, import `@AGENTS.md` and the generated brief from `CLAUDE.md`. Use the paths printed by `brief`; see [Operations](docs/OPERATIONS.md#context-injection-via-briefmd) for the shared-entry setup.
 
 Since issue-17 it also emits a **pinned block** for `retention='durable'` memories, which is exempt
 from the `--days` window and `topK` — the recent-decisions block is ordered by time alone, so without
@@ -497,6 +448,7 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
   2. Third-party packages
   3. Local modules (if added)
 - Keep side-effect imports explicit and rare.
+- New callers of core use the `src/core/index.ts` barrel rather than deep module imports.
 
 ## Naming Conventions
 
@@ -535,11 +487,15 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 - Shell scripts should use `set -euo pipefail` when practical.
 - Quote variable expansions in shell paths.
 
+## Commit Messages
+
+Use `type(scope): 中文摘要`. Git commit 訊息絕對不可包含 `Co-Authored-By: Claude` 或任何 AI 署名資訊；只寫功能描述。提交與交付細節見 [專案客製規範](docs/agents/project.md#提交與交付)。
+
 ## What Not to Change Implicitly
 
-- Do not rename CLI commands (`init`, `sync`, `recall`, `remember`, `feedback`, `brief`, `stats`, `doctor`, `verify`, `index`, `govern`, `prune`, `export`) without request.
+- Preserve CLI command names and subcommands unless explicitly requested. This includes `init`, `sync`, `recall`, `remember`, `mark`, `feedback`, `brief`, `stats`, `doctor`, `verify`, `index`, `source`, `repo`, `wiki`, `govern`, `prune`, `export`, `serve`, `service`, `preflight`, `setup`, `adapter`; `sync` imports sessions while `repo sync` scans git.
 - Do not change persisted table names/columns without migration plan.
-- `prune --all` includes consolidate (90d) and stale (180d) by default. Use `--consolidate-days` or `--stale-days` for custom thresholds.
+- `prune --all` includes consolidate (90d), stale (180d) and git-observations (90d). Use the corresponding `--*-days` flags for custom thresholds. Stale pruning spares memories with high accrued utility or durable retention; those exemptions keep the thresholds unchanged.
 - Do not alter sample file formats unless all readers are updated.
 
 ## Agent Workflow Recommendations
@@ -559,14 +515,15 @@ bash skills/memoria-memory-sync/scripts/run-sync-with-enhancement.sh examples/se
 ## Definition of Done for Agent Changes
 
 - Code compiles with `pnpm run check`.
-- Smoke test passes (`bash scripts/test-smoke.sh`) for flow changes.
+- `pnpm run build` succeeds and `node dist/cli.mjs --help` runs.
+- Smoke test (`bash scripts/test-smoke.sh`) and relevant `scripts/test-*.sh` pass for flow changes.
 - Script syntax remains valid for touched shell files.
 - Behavior and output remain consistent with existing CLI expectations.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Memoria** (3175 symbols, 5458 relationships, 271 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Memoria** (4160 symbols, 6780 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
