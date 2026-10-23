@@ -1,6 +1,12 @@
 import path from 'node:path'
 import type { Command } from 'commander'
-import { existsSync, inspectVectorLayer, resolveMemoriaHomeInfo } from '../../core/index.js'
+import {
+    existsSync,
+    inspectVectorLayer,
+    resolveMemoriaHomeInfo,
+    resolveInstallSettingsPath,
+    loadInstallSettingsSync
+} from '../../core/index.js'
 import type { MemoriaPaths, VectorLayerReport } from '../../core/index.js'
 import { quoteShellArg } from '../runtime.js'
 
@@ -170,9 +176,11 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
             // Did we land on a real data root, or silently fall back to the runtime root?
             // A fallback means this folder was never set up — warn instead of pretending it is healthy.
             const homeInfo = resolveMemoriaHomeInfo()
+            const settingsPath = resolveInstallSettingsPath()
+            const settings = loadInstallSettingsSync()
             const homeFix =
                 `This folder has no Memoria memory yet (resolved by ${homeInfo.source}). ` +
-                `Run "memoria setup --memoria-home <path>" here, or set MEMORIA_HOME to an initialized data root ` +
+                `Run "memoria setup" here, or set MEMORIA_HOME to an initialized data root ` +
                 `before syncing — otherwise writes land in the runtime root.`
             const homeOk = homeInfo.source !== 'fallback'
 
@@ -187,10 +195,19 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
             ]
 
             if (opts.json) {
-                console.log(JSON.stringify({ ok: checks.every((c) => c.ok), homeSource: homeInfo.source, paths, checks }))
+                console.log(JSON.stringify({
+                    ok: checks.every((c) => c.ok),
+                    homeSource: homeInfo.source,
+                    installSettingsPath: existsSync(settingsPath) ? settingsPath : null,
+                    paths,
+                    checks
+                }))
             } else {
                 console.log('Resolved path envs:')
                 for (const line of envDetails) console.log(line)
+                if (settings) {
+                    console.log(`- install settings=${settingsPath}`)
+                }
                 for (const c of checks) {
                     console.log(`${c.ok ? '✓' : '✗'} ${c.name}: ${c.value}`)
                     if (!c.ok && c.fix) console.log(`  ↳ fix: ${c.fix}`)

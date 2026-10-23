@@ -10,7 +10,9 @@ Skill-based memory use needs no server; see the [Install Guide](INSTALL.md). The
 
 Keep common rules in `AGENTS.md`. Use `CLAUDE.md` as Claude's entry point, importing them with `@AGENTS.md` on its own line. Put any Claude-specific additions below the import.
 
-After generating a brief, add the read instruction printed by `memoria brief` to `AGENTS.md`, so an agent reads it when it is not already in context:
+Running `memoria setup` (interactive or with `--scope global|project`) automatically generates the initial brief and wires a managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) into `AGENTS.md` and `CLAUDE.md` while backing up existing files under `<data-root>/.agents/instruction-backups/`.
+
+When configuring manually after `memoria brief`, add the read instruction printed by `memoria brief` to `AGENTS.md`, so an agent reads it when it is not already in context:
 
 ```markdown
 Before starting work, read /absolute/path/to/knowledge/BRIEF.md if it is not already in context.

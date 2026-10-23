@@ -22,34 +22,29 @@ Memoria 將決策、踩坑經驗與學到的技能保存到本地 SQLite，在 a
 
 ## 快速開始
 
-需要 **Node.js ≥ 18**。安裝後指定固定的資料根目錄：
+需要 **Node.js ≥ 18**。安裝後執行互動式 `memoria setup`（或直接傳入旗標一次完成）：
 
 ```bash
 npm install -g @raybird.chen/memoria
-export MEMORIA_HOME="$HOME/.memoria"
 memoria setup
+# 非互動一次到位（全域記憶 + Claude Code 與 Codex skills + 本地語意召回）：
+# memoria setup --scope global --agent both --vector --yes
 
 memoria remember "使用 pnpm" --project Memoria --rationale "以 lockfile 為準"
-memoria recall "為什麼用 pnpm" --project Memoria --json
+memoria recall "為什麼用 pnpm" --project Memoria --mode vector --json
 memoria brief --project Memoria
 ```
 
-這些命令直接存取本地資料，server 為選用。之後使用同一份記憶庫時，請保持 `MEMORIA_HOME` 設定；未設定它或 `--memoria-home` 時，setup 使用目前目錄下的 `./memoria`。
+這些命令直接存取本地資料，server 為選用。全域 setup 會將預設資料根目錄（`~/.memoria`）與本地向量設定寫入使用者設定檔（`install.json`），新開的終端機不需要手動 `export MEMORIA_HOME` 或 `LIBSQL_URL` 即可共用同一份記憶庫。專案範圍（`--scope project`）會使用目前專案的 `./memoria`，而顯式傳入的 `MEMORIA_HOME` 或 `--memoria-home` 永遠優先。
 
-`brief` 會印出 `AGENTS.md` 讀取指引與 Claude import 範例；`CLAUDE.md` 以 `@AGENTS.md` 引入共用規範。記憶更新後請重新產生 brief。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
+`setup` 也會產生初始 brief，並在備份既有檔案後，將受管理區塊（`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`）接進共用的 `AGENTS.md` 與 `CLAUDE.md`。記憶更新後請執行 `memoria brief` 重新產生 brief。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
 
 ## 搭配 Agent 使用
 
-Setup 會將 **memoria** skill 部署到：
-
-```text
-<memoria-home>/.agents/skills/memoria/SKILL.md
-```
-
-Claude Code 可另外部署到它的 skill 目錄：
+Setup 會將 **memoria** skill 部署到 `<memoria-home>/.agents/skills/memoria/SKILL.md`，並依選擇同步部署到 host 的標準探索目錄（Claude Code 為 `~/.claude/skills/memoria`，Codex 為 `~/.codex/skills/memoria` 或 `$CODEX_HOME/skills/memoria`）：
 
 ```bash
-memoria setup --agent claude-code
+memoria setup --scope global --agent both --yes
 ```
 
 Skill 引導 agent 在工作前召回記憶，並在做出決策或完成變更後寫回。部署路徑、備份與獨立安裝方式見 [安裝指南](docs/INSTALL.md)。
@@ -57,7 +52,7 @@ Skill 引導 agent 在工作前召回記憶，並在做出決策或完成變更�
 選用的下一步：
 
 - **HTTP 或 hooks：** 執行 `memoria setup --serve --json`，接著參考 [API 文件](docs/API.zh-TW.md) 或 [SDK 與 Agent 整合](docs/INTEGRATIONS.zh-TW.md)。
-- **語意召回：** `memoria setup --vector` 安裝依賴並暖機本地模型；另需設定 `LIBSQL_URL` 並 ingest 記憶，流程見 [Semantic Recall Operations](docs/OPERATIONS.md#semantic-recall-operations-optional)。
+- **語意召回：** 在 `memoria setup` 選擇 `--vector` 會一次完成依賴安裝、本地模型暖機、樹狀索引建立、全量記憶寫入 `<memoria-home>/.memory/vectors.db` 以及就緒驗證。進階診斷與修復流程見 [Semantic Recall Operations](docs/OPERATIONS.md#semantic-recall-operations-optional)。
 - **Repository 記憶：** 從 `memoria repo add /path/to/project` 開始，詳見 [Git-Aware Memory Operations](docs/OPERATIONS.md#git-aware-memory-operations)。
 
 ## 文件導覽

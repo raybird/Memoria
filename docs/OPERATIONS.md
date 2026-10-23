@@ -333,11 +333,7 @@ export MEMORIA_VECTOR_RECALL_CMD="/path/to/Memoria/skills/memoria-vector/vector-
 That override still works on current versions — useful when you already have a checkout with the
 runtime installed and would rather not download it twice.
 
-**2. The runtime is ready, but memories have not reached the vector index.** `setup --vector`
-installs dependencies and warms the model; it does not ingest your corpus. The bridge payload derives
-its scope from `memory_nodes`, so missing tree nodes must be indexed before vector ingest. Since
-v1.24.0, git promotion automatically indexes its session (best-effort); older databases or a failed
-auto-build can still have gaps. `memoria stats` reports tree-index coverage. First repair any gap:
+**2. The runtime is ready, but memories have not reached the vector index.** Running `memoria setup --vector` (or choosing semantic recall during interactive `memoria setup`) builds the tree index, ingests your existing corpus into `<memoria-home>/.memory/vectors.db` (or your explicit `LIBSQL_URL`), and verifies vector coverage and recall routing. However, memories added *after* setup via `remember` or `repo sync` are not automatically embedded unless `run-sync-with-enhancement.sh` is used. The bridge payload derives its scope from `memory_nodes`, so missing tree nodes must be indexed before vector ingest. Since v1.24.0, git promotion automatically indexes its session (best-effort); older databases or a failed auto-build can still have gaps. `memoria stats` reports tree-index coverage. First repair any gap:
 
 ```bash
 memoria index build                     # picks up every session that has no node yet

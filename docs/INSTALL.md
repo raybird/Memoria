@@ -18,7 +18,19 @@ npm install -g @raybird.chen/memoria
 memoria setup
 ```
 
-Agent automation 可使用 JSON Lines step log，並選擇直接啟動 server：
+在互動終端執行 `memoria setup` 時，引導流程會依序詢問：
+
+1. **記憶範圍**：全域共用（預設 `~/.memoria`，寫入使用者層級 `install.json`）或目前專案（`./memoria`）
+2. **Host agent skill 部署**：`both`（Claude Code + Codex）、`claude-code`、`codex` 或 `none`
+3. **語意召回**：是否啟用本地語意召回（`multilingual-e5-small` + `<memoria-home>/.memory/vectors.db`）
+
+寫入前會顯示完整變更預覽與路徑並請求確認。也可使用非互動旗標一次完成：
+
+```bash
+memoria setup --scope global --agent both --vector --yes
+```
+
+Agent automation 可使用 JSON Lines step log，並選擇直接啟動 server（無 TTY 或帶 `--json` 時不會等待問答）：
 
 ```bash
 memoria setup --serve --json
@@ -26,61 +38,68 @@ memoria setup --serve --json
 
 一次性試用可使用 `npx @raybird.chen/memoria setup --json`；正式長期使用仍建議安裝套件。packed npm artifact 與 deployed skill wrapper 會在 Ubuntu、macOS CI 實際安裝及執行。
 
-`setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
+### 資料根目錄與設定優先序
 
-升級時除了 npm 套件，也要刷新已部署的 skill，流程見下方「更新全域安裝」。
+當未明確傳入 `--memoria-home` 或 `MEMORIA_HOME` 時，Memoria 依下列優先序決定有效資料根目錄：
 
-要啟用語意召回（設了 `LIBSQL_URL`）時，安裝後執行一次 `setup --vector`。`MEMORIA_HOME` 沒有設的話要加 `--memoria-home`，否則 setup 會在目前目錄建立 `./memoria`：
+1. 明確旗標 `--memoria-home` 或環境變數 `MEMORIA_HOME`（`homeSource: "env"`）
+2. 目前工作目錄已存在的本地記憶（`./.memory/sessions.db`、`./knowledge` 或 `./memoria/.memory/sessions.db`，`homeSource: "detected"`）
+3. 全域安裝設定檔保存的 `defaultDataRoot`（Linux/macOS 於 `${XDG_CONFIG_HOME:-~/.config}/memoria/install.json` 或 macOS `~/Library/Application Support/memoria/install.json`，Windows 於 `%APPDATA%\memoria\install.json`；可用 `MEMORIA_USER_CONFIG_PATH` 覆寫，`homeSource: "global-config"`）
+4. Runtime fallback（非互動 `setup` 預設為 `./memoria`）
 
-```bash
-memoria setup --vector     # 依賴裝到 ~/.cache/memoria/vector/<雜湊>/，下載模型並暖機
-memoria doctor             # 在設了 LIBSQL_URL 的 shell 檢查 embedder 與 vector coverage
-```
+因此完成一次 `memoria setup --scope global` 後，新開終端機不需要手動 `export MEMORIA_HOME` 或 `LIBSQL_URL`，執行 `memoria remember`、`memoria recall`、`memoria brief`、`memoria doctor` 都會自動對齊同一個全域記憶庫；若進入已有獨立 `./memoria` 的專案目錄，則優先使用該專案記憶而不會串庫。
 
-`setup --vector` 安裝依賴與暖機，記憶的向量 ingest 是另一個步驟。首次啟用或新增記憶後，若 doctor 顯示 `vector coverage missing>0`，在同一個 `LIBSQL_URL`、`MEMORIA_EMBED_PROVIDER` 環境執行它印出的 `Run:` 命令，再跑 doctor 確認 `missing=0`。遠端 libSQL 或自訂 helper 的覆蓋率會顯示 `not measured`；這不代表索引已完整。自訂 `MEMORIA_DB_PATH` 指向非 `<home>/.memory/sessions.db` 時，doctor 會指出路徑不符，需先確認 ingest 的 data root，詳見 [Operations](OPERATIONS.md#semantic-recall-operations-optional)。
+### 啟用本地語意召回
 
-依賴與模型都放在使用者快取目錄（`XDG_CACHE_HOME`，預設 `~/.cache`），全域升級不會碰到（issue-25）。目錄名稱的雜湊取自 helper 的 `package-lock.json`，只有新版本改了 helper 依賴時，doctor 才會顯示 vector embedder 失敗，這時再跑一次 `setup --vector` 即可。舊雜湊的目錄（每份約 720MB）不會自動清除，確認沒有任何已安裝版本使用後可直接刪除。少了 `LIBSQL_URL`，doctor 只會顯示 `vector recall: not enabled`，看起來像全綠。向量本身存在 `LIBSQL_URL`，不在套件裡，升級後不需要重新 ingest。細節見 [OPERATIONS.md](OPERATIONS.md)「Semantic Recall Operations」。
-
-使用 Claude Code 時加上 `--agent claude-code`，`setup` 會另外把 skill 部署到 `~/.claude/skills/memoria/`（Claude Code 只掃描這裡），並以該目錄的 `DATA_ROOT` 檔綁定這次的 data root：
+在 `memoria setup` 選擇語意召回（或傳入 `--vector`）會一次完成：
 
 ```bash
-memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
+memoria setup --scope global --agent both --vector --yes
 ```
 
-目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 才會被覆蓋。每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/claude-code-<時間戳>/` 並印出路徑；手寫的 skill 會原封不動，`setup` 以非 0 結束並印出路徑與原因，在寫入任何資料前就停下。要改用部署版，先把手寫的移走再重跑。
+1. 安裝向量依賴至 `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/<雜湊>/` 並下載／暖機本地模型
+2. 將該資料根的本地向量庫路徑 `file:<memoria-home>/.memory/vectors.db` 寫入 `install.json`（不保存任何遠端 `LIBSQL_AUTH_TOKEN`）
+3. 建立樹狀索引（`buildMemoryIndex`）並以專用 `--sync-target` 執行全量向量 ingest
+4. 驗證 `vector coverage`（`missing=0`）與實際語意召回路由（空記憶庫會以隔離暫存庫探測鏈路後自動清除，不污染真實記憶庫）
 
-### 接上共用專案規範
+後續新增記憶後，若 `memoria doctor` 顯示 `vector coverage missing>0`，可直接執行它印出的 `Run:` 命令補齊，或重跑 `memoria setup --vector --yes`。遠端 libSQL 或自訂 helper 的覆蓋率會顯示 `not measured`；這不代表索引已完整。自訂 `MEMORIA_DB_PATH` 指向非 `<home>/.memory/sessions.db` 時，setup 與 doctor 都會拒絕執行向量 ingest 並指出路徑不符，詳見 [Operations](OPERATIONS.md#semantic-recall-operations-optional)。
 
-全域安裝的程式、記憶資料根目錄與使用記憶的專案規範各有不同用途。`setup` 部署 skill 與 runtime wrapper；專案的 `AGENTS.md`／`CLAUDE.md` 由使用者維護，setup 不會自動建立或改寫它們。
+依賴與模型都放在使用者快取目錄（`XDG_CACHE_HOME`，預設 `~/.cache`），全域升級不會碰到（issue-25）。目錄名稱的雜湊取自 helper 的 `package-lock.json`，只有新版本改了 helper 依賴時，doctor 才會顯示 vector embedder 失敗，這時再跑一次 `setup --vector` 即可。舊雜湊的目錄（每份約 720MB）不會自動清除，確認沒有任何已安裝版本使用後可直接刪除。向量本身存在 `<memoria-home>/.memory/vectors.db`（或自訂 `LIBSQL_URL`），不在套件裡，升級後不需要重新下載模型。細節見 [OPERATIONS.md](OPERATIONS.md)「Semantic Recall Operations」。
 
-在使用記憶的專案目錄執行 `memoria brief`（沿用同一個 `MEMORIA_HOME`），依輸出接線：
+### 部署 Host Skill（Claude Code 與 Codex）
 
-- 共用規範放在 `AGENTS.md`，加入 brief 的讀取指令。
-- Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 引入共用規範，另以 `@` 引入已產生的 brief。
-- 記憶更新後重新產生 brief；`setup` 本身不會產生 brief。
+`--agent` 支援 `claude-code`、`codex`、`both` 或 `none`：
 
-完整範例見 [共用專案規範與 brief](INTEGRATIONS.zh-TW.md#共用專案規範與-brief)（[English](INTEGRATIONS.md#shared-project-instructions-and-brief)）。
+- Claude Code：`~/.claude/skills/memoria/`
+- Codex：`~/.codex/skills/memoria/`（設定 `CODEX_HOME` 時為 `$CODEX_HOME/skills/memoria/`）
+
+```bash
+memoria setup --scope global --agent both --yes
+```
+
+目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 才會被覆蓋。每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/<agent>-<時間戳>/` 並印出路徑；手寫的 skill、一般檔案或 symlink 會原封不動，`setup` 在寫入任何目標前就會攔下並以非 0 結束。
+
+### 共用規範與 brief 自動接線
+
+在互動引導或指定 `--scope global|project` 時，`setup` 會自動產生初始 brief，並在修改前將既有規範檔備份至 `<memoria-home>/.agents/instruction-backups/`，接著以受管理區塊（`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`）更新：
+
+- 共用規範 `AGENTS.md`（全域為 `~/.codex/AGENTS.md` 或 `$CODEX_HOME/AGENTS.md`；專案為 `<project>/AGENTS.md`）：寫入 brief 讀取指令。
+- Claude 入口 `CLAUDE.md`（全域為 `~/.claude/CLAUDE.md`；專案為 `<project>/CLAUDE.md`）：引入共用規範 `@AGENTS.md` 與產生的 brief `@/path/to/BRIEF.md`。
+
+受管理區塊外的所有手寫內容都會逐位元組保留，重跑 `setup` 只會原地刷新受管理區塊而不會重複堆疊。日常記憶更新後請執行 `memoria brief` 重新整理 brief。完整範例見 [共用專案規範與 brief](INTEGRATIONS.zh-TW.md#共用專案規範與-brief)（[English](INTEGRATIONS.md#shared-project-instructions-and-brief)）。
 
 ### 更新全域安裝
 
-`npm install -g` 更新的是 runtime 套件；資料根目錄與 host skill 目錄中的副本，是上次 `setup` 複製的內容。升級後要對原本的 data root 重跑 setup，才會刷新 skill、REFERENCE 與 wrapper。
-
-先保持原有的 `MEMORIA_HOME` 設定，或將命令中的路徑替換成既有資料根目錄，再安裝**已發布**的目標版本：
+`npm install -g` 更新的是 runtime 套件；資料根目錄與 host skill 目錄中的副本，是上次 `setup` 複製的內容。升級後重跑一次 `setup`，即可刷新已部署的 skill、REFERENCE、wrapper 與 brief：
 
 ```bash
 npm install -g @raybird.chen/memoria@<版本>
-memoria setup --memoria-home /absolute/path/to/existing/memoria
+memoria setup --scope global --agent both --vector --yes
+# 或針對特定既有資料根目錄：
+memoria setup --memoria-home /absolute/path/to/existing/memoria --agent both
 ```
 
-若原本也部署了 Claude Code 的 skill，將上述 setup 命令改成下面這一行，讓兩份副本一起刷新：
-
-```bash
-memoria setup --memoria-home /absolute/path/to/existing/memoria --agent claude-code
-```
-
-後續以同一個 `MEMORIA_HOME` 執行 `memoria doctor`，並重新產生專案使用的 brief。不要省略既有 data root，否則可能在目前目錄初始化另一份 `./memoria`。有多個 data root 時各跑一次 setup；Claude 的 host skill 是單一目錄，其 `DATA_ROOT` 綁定最後一次部署的位置，export 的 `MEMORIA_HOME` 仍可覆寫它。
-
-GitHub `main` 上的提交不會自動進入已發布的 npm 版本；先確認包含所需變更的版本已發布，再執行升級。重新安裝同一個已發布版本不會取得只存在於 `main` 的修改。語意召回依賴的升級條件仍依前述 `setup --vector` 流程，與刷新 skill 分開處理。
+後續執行 `memoria doctor` 可確認 `homeSource`、skill 與向量覆蓋率皆為就緒狀態。GitHub `main` 上的提交不會自動進入已發布的 npm 版本；先確認包含所需變更的版本已發布，再執行升級。
 
 ### Automation output
 

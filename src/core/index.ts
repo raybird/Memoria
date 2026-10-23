@@ -3,7 +3,19 @@
 
 export { MemoriaCore } from './memoria.js'
 export { resolveMemoriaPaths, getMemoriaHome, resolveMemoriaHomeInfo, existsSync } from './paths.js'
-export type { MemoriaHomeSource, MemoriaHomeResolution } from './paths.js'
+export type { MemoriaHomeSource, MemoriaHomeResolution, PathResolveContext } from './paths.js'
+export {
+    INSTALL_HOST_AGENTS,
+    resolveInstallSettingsPath,
+    resolveDefaultGlobalDataRoot,
+    loadInstallSettingsSync,
+    saveInstallSettings,
+    resolveLocalVectorDbPath,
+    resolveEffectiveVectorEnv,
+    applyEffectiveVectorEnv,
+    assertIngestDbPathMatchesRoot
+} from './install-settings.js'
+export type { InstallHostAgent, InstallVectorSettings, InstallSettings, InstallSettingsContext } from './install-settings.js'
 export { importSourceFile } from './source-import.js'
 export { inspectVectorLayer, probeDepsLocation } from './recall-vector.js'
 export type { DepsLocation, VectorLayerReport } from './recall-vector.js'

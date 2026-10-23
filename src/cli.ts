@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Command } from 'commander'
-import { MemoriaCore, resolveMemoriaPaths } from './core/index.js'
+import { MemoriaCore, resolveMemoriaPaths, applyEffectiveVectorEnv } from './core/index.js'
 import { getRuntimeLayout } from './cli/runtime.js'
 import { registerInitCommand } from './cli/commands/init.js'
 import { registerSyncCommand } from './cli/commands/sync.js'
@@ -43,6 +43,7 @@ function resolveVersion(): string {
 
 async function run(): Promise<void> {
   const paths = resolveMemoriaPaths()
+  applyEffectiveVectorEnv(paths.memoriaHome)
   const runtimeLayout = getRuntimeLayout()
   const core = new MemoriaCore(paths)
 

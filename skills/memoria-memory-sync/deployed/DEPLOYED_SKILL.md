@@ -23,7 +23,7 @@ MEMORIA_HOME="${MEMORIA_HOME:-$(cat "$SKILL_ROOT/DATA_ROOT")}"
 MEMORIA_BIN="$SKILL_ROOT/bin/memoria"
 ```
 
-An exported `MEMORIA_HOME` wins: that is a shared home the user chose on purpose. Otherwise `DATA_ROOT` holds the data root `memoria setup` deployed this copy for. Pass `MEMORIA_HOME` explicitly on every command below — without it Memoria falls back to the runtime root and your writes land in the wrong place.
+An exported `MEMORIA_HOME` wins: that is a shared home the user chose on purpose. Otherwise `DATA_ROOT` holds the data root `memoria setup` deployed this copy for. Pass `MEMORIA_HOME` explicitly on every command below — without it Memoria falls back to the saved global setting or the runtime root and your writes can land in the wrong place. When semantic recall was enabled for that data root during `memoria setup`, `MEMORIA_BIN` automatically attaches its local vector store (`file:<MEMORIA_HOME>/.memory/vectors.db`).
 
 `<repo>` below is always a name from `"$MEMORIA_BIN" repo list`. A `--project` that names no registered repository files the memory as environment-wide, and it then appears in every project's brief.
 
@@ -101,7 +101,7 @@ When the current folder has no memory yet, give it its own data root:
 "$MEMORIA_BIN" setup --memoria-home "$(pwd)/memoria"
 ```
 
-Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent claude-code` additionally installs this skill into `~/.claude/skills/memoria`, bound to that data root; a copy already there is backed up under `<data root>/.agents/skill-backups/` first.
+Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent both` (or `--agent claude-code` / `--agent codex`) additionally installs this skill into `~/.claude/skills/memoria` and `~/.codex/skills/memoria` (or `$CODEX_HOME/skills/memoria`), bound to that data root; an existing deployed copy is backed up under `<data root>/.agents/skill-backups/` first.
 
 ## Path & Safety Rules
 

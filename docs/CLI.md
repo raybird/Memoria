@@ -45,8 +45,9 @@ memoria prune --stale-days 180         # Remove memory never hit by recall
 memoria export --type all --format json # Export
 memoria serve [--port 3917]            # HTTP API server
 memoria preflight [--json]             # Prerequisite check
-memoria setup [--serve] [--json]       # One-shot install
-memoria setup --vector                # Install semantic-recall dependencies and warm the model
+memoria setup                          # Interactive guided setup (scope, agent skills, vector, brief/instructions)
+memoria setup --scope global --agent both --vector --yes  # Non-interactive full setup
+memoria setup [--serve] [--json]       # Automation one-shot install
 ```
 
 `remember`, `recall`, `mark`, `feedback` and `brief` work directly against local storage, so a skill-based setup needs no server. When several repositories share a store, pass `--project` to recall to keep results scoped.

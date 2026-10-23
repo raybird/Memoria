@@ -86,6 +86,7 @@ jobs:
               bash scripts/test-prune.sh
               bash scripts/test-utility-ranking.sh
               bash scripts/test-bootstrap.sh
+              bash scripts/test-setup-onboarding.sh
               ;;
             adapters)
               bash scripts/test-adapter-runtime.sh

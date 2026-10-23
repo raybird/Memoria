@@ -4,7 +4,7 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
 
 ## Layout Contract
 
-`memoria setup` always deploys to `<memoria-home>/.agents/skills/memoria/`; `memoria setup --agent claude-code` also deploys an identical copy to `~/.claude/skills/memoria/`, where Claude Code discovers skills.
+`memoria setup` always deploys to `<memoria-home>/.agents/skills/memoria/`; `--agent claude-code`, `--agent codex`, or `--agent both` also deploys an identical copy to `~/.claude/skills/memoria/` and/or `~/.codex/skills/memoria/` (`$CODEX_HOME/skills/memoria/` when `CODEX_HOME` is set), where those host agents discover skills.
 
 ```text
 <skill-root>/
@@ -17,13 +17,11 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
   resources/mcp/INGEST_PLAYBOOK.md
 ```
 
-`setup --agent claude-code` replaces an existing `~/.claude/skills/memoria/` only when its `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria` — marks every deployed template carries, so a copy made from one by hand and edited since carries them too. The existing directory is therefore copied to `<memoria-home>/.agents/skill-backups/claude-code-<timestamp>/` first, and `setup` prints that path. Anything without both marks (a hand-written skill, a file, a symlink) is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
+`setup --agent <claude-code|codex|both>` replaces an existing host skill directory only when its `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria` — marks every deployed template carries, so a copy made from one by hand and edited since carries them too. The existing directory is therefore copied to `<memoria-home>/.agents/skill-backups/<agent>-<timestamp>/` first, and `setup` prints that path. Anything without both marks (a hand-written skill, a file, a symlink) is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
 
 ## Refresh after a runtime upgrade
 
-A global npm upgrade replaces the runtime package. This deployed skill is a copy, so refresh it by running `memoria setup --memoria-home <existing-data-root>` with the upgraded runtime. Include `--agent claude-code` if you also use the Claude host copy; one call refreshes both locations. Keep the same data root. GitHub main changes become available through npm only after a release includes them.
-
-Setup deploys the skill and wrapper; it does not edit a consuming project's `AGENTS.md` or `CLAUDE.md`, or generate a brief. Run `brief` for that project and follow its output: shared read instructions go in `AGENTS.md`, while Claude imports `@AGENTS.md` and the generated brief from `CLAUDE.md`. Regenerate the brief after memory updates.
+A global npm upgrade replaces the runtime package. This deployed skill is a copy, so refresh it by running `memoria setup` (interactive) or `memoria setup --scope global --agent both --vector --yes` (or `--memoria-home <existing-data-root>`) with the upgraded runtime. One call refreshes all selected host locations, updates the managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) in shared `AGENTS.md` / `CLAUDE.md` after backing up the file to `<memoria-home>/.agents/instruction-backups/`, and regenerates the brief. GitHub main changes become available through npm only after a release includes them.
 
 ## Summary payload (`repo summarize --submit`)
 

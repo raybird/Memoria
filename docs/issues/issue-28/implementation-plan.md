@@ -49,9 +49,13 @@
   - 資料根切換時，未明確指定 `LIBSQL_URL` 的本地向量路徑自動跟隨有效資料根，不混用其他資料根的向量庫。
   - `MEMORIA_DB_PATH` 指到非 `<dataRoot>/.memory/sessions.db` 時，明確判定不可執行向量 ingest。
   - 預檢遇到不安全目標時拒絕寫入，既有檔案與 DB 逐位元組不變。
-- 驗證：雙迴圈 — 外層以 `scripts/test-setup-onboarding.sh` 子程序驗證跨目錄 CLI 行為，內層以 `scripts/test-pure-functions.sh` 或設定 resolver 斷言驗證優先序、Windows/macOS/Linux 路徑計算與 token 過濾。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 驗證：雙迴圈 — 外層以 `scripts/test-setup-onboarding.sh` 子程序驗證跨目錄 CLI 行為，內層以 `scripts/setup-onboarding-driver.mts` 斷言驗證優先序、Windows/macOS/Linux 路徑計算與 token 過濾。
+- 狀態：✅ 已完成
+- 證據：
+  - 外迴圈紅燈（SCN-003、SCN-009、SCN-012）：在實作 `--scope` 與預檢前，對既有 CLI 執行 `./cli setup --scope global --yes` 因 `error: unknown option '--scope'`（exit 1）紅燈；對 `MEMORIA_DB_PATH=/tmp/other.db ./cli setup --vector --json` 則未阻擋 DB 路徑不符而退回 exit 0。
+  - 單元測試紅燈（SCN-003、SCN-009、SCN-012）：對尚未接上 `global-config` 與 token 過濾的基準邏輯執行 `npx tsx scripts/setup-onboarding-driver.mts` 斷言，`resolveMemoriaHomeInfo()` 在無本地記憶時回傳 `source: 'fallback'`（非預期的 `'global-config'`），AssertionError（exit 1）。
+  - 最小實作後全綠：完成 `src/core/install-settings.ts` 與 `src/core/paths.ts` 後，`npx tsx scripts/setup-onboarding-driver.mts`（exit 0，輸出 `✓ [inner-loop] all unit assertions passed`）與 `bash scripts/test-setup-onboarding.sh`（exit 0，通過 SCN-003、SCN-009、SCN-012）全綠。
+  - 重構後全綠：將有效向量環境解析收斂為 `resolveEffectiveVectorEnv()` 與 `applyEffectiveVectorEnv()`，重跑 `npx tsx scripts/setup-onboarding-driver.mts` 與 `bash scripts/test-setup-onboarding.sh` 皆 exit 0。
 
 ### Task 1.2 — 新程序自動套用全域設定與 `doctor` 來源診斷（SCN-002）
 - 產出與範圍：
@@ -63,8 +67,11 @@
   - 完成全域設定後，在無本地記憶的任意其他目錄啟動新 CLI 程序（未設定 `MEMORIA_HOME`），`doctor`、`remember`、`recall`、`brief` 皆讀寫保存的同一全域資料根。
   - `doctor`（一般輸出與 `--json`）顯示有效資料根位置與 `homeSource: "global-config"`。
 - 驗證：單迴圈合併於 `scripts/test-setup-onboarding.sh`（CLI 子程序在空環境與不同 `cwd` 下執行 `remember`、`recall`、`brief`、`doctor --json`，外層 CLI 輸出與底層 `paths` 傳遞完全同構，無獨立內層邏輯遺漏）。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 狀態：✅ 已完成
+- 證據：
+  - 單迴圈紅燈（SCN-002）：未在 `src/cli.ts` 啟動時呼叫 `applyEffectiveVectorEnv()` 且未接上 `global-config` 前，於空目錄執行 `bash scripts/test-setup-onboarding.sh` 的 SCN-002 段，`doctor --json` 回傳 `homeSource: "fallback"` 且 `vector recall: not enabled`（AssertionError，exit 1）。（外層 CLI 啟動子程序直接驅動 `src/cli.ts` 與 `doctor.ts`，與底層完全同層故合併單迴圈。）
+  - 最小實作後全綠：修改 `src/cli.ts` 與 `src/cli/commands/doctor.ts` 後，`bash scripts/test-setup-onboarding.sh` 的 SCN-002 段通過（exit 0，`homeSource: "global-config"`，跨目錄新程序不帶 `MEMORIA_HOME` 完成 `remember`、`recall`、`brief`）。
+  - 重構後全綠：`code-simplify` 檢視 `src/cli.ts` 與 `src/cli/commands/doctor.ts` 為最小直線邏輯（no-op），沿用同一份綠燈證據（exit 0）。
 
 ---
 
@@ -82,8 +89,12 @@
   - 以相同選擇重跑或升級後刷新，受管理區塊不重複堆疊，手寫內容與真實記憶完整保留。
   - 任一目標（skill 或規範檔）為來源不明的 symlink、非目錄衝突或不可寫時，在寫入任何目標前全部攔下並以非 0 結束。
 - 驗證：雙迴圈 — 內層測試受管理區塊替換／備份／衝突預檢函式，外層於 `scripts/test-setup-onboarding.sh` 以隔離 `HOME` 驗證雙 host 部署、launcher 執行、規範檔前後 bytes 對照與重跑冪等。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 狀態：✅ 已完成
+- 證據：
+  - 外迴圈紅燈（SCN-004、SCN-005、SCN-008）：實作前執行 `./cli setup --agent both` 或 `./cli setup --agent codex` 輸出 `unknown --agent 'both'; valid values: claude-code`（exit 1），且 `~/.codex/skills/memoria` 與規範檔受管理區塊不存在。
+  - 單元測試紅燈（SCN-004、SCN-005、SCN-008）：實作前 `parseAgentFlag('both')` 拋出 `unknown --agent 'both'`（exit 1）。
+  - 最小實作後全綠：完成 `src/cli/runtime.ts` 與 `src/cli/agent-integration.ts` 後，`npx tsx scripts/setup-onboarding-driver.mts`（exit 0，驗證 `parseAgentFlag`、`upsertManagedBlock` 保留手寫內容、重跑冪等、空白路徑 `escapeClaudeImportPath`、symlink 阻擋）與 `bash scripts/test-setup-onboarding.sh`（exit 0，驗證 SCN-004、SCN-005、SCN-008）全綠。
+  - 重構後全綠：將 host skill 與規範檔的預檢統一收進 `assertSetupPlanSafe()`，重跑 `npx tsx scripts/setup-onboarding-driver.mts` 與 `bash scripts/test-setup-onboarding.sh` 皆 exit 0。
 
 ---
 
@@ -100,8 +111,11 @@
   - 取消確認（輸入 `n` 或 EOF）時不改寫任何既有資料或使用者設定。
   - 既有 `--json`、無 TTY 或明確參數呼叫不卡住等待輸入，JSON Lines 契約維持相容；新非互動旗標可一次完成全部選擇，互斥選項（如同時傳 `--global` 與 `--project`）以非 0 報錯。
 - 驗證：單迴圈於 `scripts/test-setup-onboarding.sh` 與 `scripts/test-bootstrap.sh`（透過餵入 stdin 測試互動問答確認與取消零變更、無 TTY 與 `--json` 附 timeout 防卡死、互斥旗標非 0 退出）。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 狀態：✅ 已完成
+- 證據：
+  - 單迴圈紅燈（SCN-001、SCN-011）：以 piped stdin 執行 `printf '1\n1\n2\ny\n' | ./cli setup --interactive`，初次 `readline.question` 在非 TTY 流一次讀完多行導致第二個 `question` 收到 EOF 而取消退出，`install.json` 未建立（exit 1）。（互動 I/O 與 CLI flag 解析直接發生在 CLI 入口層，因此採單迴圈。）
+  - 最小實作後全綠：在 `promptSetupChoices` 改以 line buffer 佇列承接 `rl.on('line')` 與 `close` 事件後，互動確認（`1\n1\n2\ny\n`）、互動取消（`1\n1\n1\nn\n`，驗證零檔案寫入）、非互動 `--json`、以及互斥旗標（`--global --project`、`--vector --no-vector`、`--interactive --json`）於 `bash scripts/test-setup-onboarding.sh` 與 `bash scripts/test-bootstrap.sh` 全數通過（exit 0）。
+  - 重構後全綠：將預覽印出與實際執行計畫分離為 `buildSetupPlan()` 與 `printSetupPlanPreview()`，重跑 `bash scripts/test-setup-onboarding.sh` 與 `bash scripts/test-bootstrap.sh` 皆 exit 0。
 
 ---
 
@@ -124,8 +138,16 @@
 - 驗證：
   - 自動化 E2E：`scripts/test-setup-onboarding.sh`（使用 stub provider + 真實 libSQL + 故障注入驗證非空庫舊游標全量補齊、空庫隔離探測零殘留、基本模式不裝模型、失敗非 0 與重試恢復）。
   - 維護者實機手動證據（依 `project.md`）：以 `MEMORIA_EMBED_PROVIDER=local` 在隔離資料根執行完整 setup，記錄模型與依賴快取 hash、空／非空語料 coverage、跨語言／改述查詢 `route_mode` 與延遲。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 狀態：✅ 已完成
+- 證據：
+  - 單迴圈紅燈（SCN-006、SCN-007、SCN-010、SCN-013）：舊版 `setup --vector` 僅安裝依賴與暖機，不執行 `buildMemoryIndex` 與 `vector-ingest.mjs` 且不保存 `LIBSQL_URL`，導致既有記憶庫執行後 `doctor --json` 的 `vector coverage` 仍為 `missing > 0`（exit 1）；且在 `LIBSQL_URL="file:/nonexistent/dir/vec.db"` 下驗證失敗時以 exit 1 報 `core: ready, vector: failed`。（向量 ingest 與隔離探測跨越 child process helper 與 SQLite/libSQL，單迴圈整合測試直接覆蓋完整鏈路。）
+  - 最小實作後全綠（自動化 E2E）：`bash scripts/test-setup-onboarding.sh`（exit 0）驗證舊 `memory_sync_state` 游標已存在時仍以唯一 `--sync-target` 全量補齊 `missing=0`（SCN-006）、空庫隔離探測後真實 DB `sessions=0` 與基本模式 `vector: skipped`（SCN-007、SCN-013）、以及失敗後重跑恢復至 `vector: ready`（SCN-010）。
+  - 重構後全綠：`code-simplify` 檢視 `runFullVectorIngest()` 與 `verifyVectorReadiness()` 之暫存目錄清理（`try/finally`）無多餘抽象（no-op），重跑 `bash scripts/test-setup-onboarding.sh` 為 exit 0。
+  - 實機 `MEMORIA_EMBED_PROVIDER=local` 測試數據（packed npm install `@raybird.chen/memoria@1.31.2`，模型 `Xenova/multilingual-e5-small` q8，快取目錄 `~/.cache/memoria/vector/690ebce65e137374`）：
+    1. 空記憶庫一次 setup（`memoria setup --scope global --agent both --vector --yes --json`）：`vector-deps` `reused: true, warmedUp: true`，`vector-ingest` `embedded: 0, expected: 0, missing: 0`（耗時 `263 ms`），`vector-verify` `isolatedProbeVerified: true, corpusVerified: false, routeMode: "hybrid_vector"`（耗時 `6220 ms`），真實 DB 維持 `sessions: 0, events: 0`。
+    2. 非空記憶庫（寫入中文決策記憶後重跑 `setup --scope global --agent both --vector --yes`）：樹狀索引與向量 ingest 完成 `coverage=5/5 (missing=0)`，`isolatedProbeVerified: true, corpusVerified: true`（總耗時 `8553 ms`）；新程序無環境變數執行 `doctor --json` 顯示 `homeSource: "global-config"`、`vector coverage: embedded=5 expected=5 missing=0`。
+    3. 跨語言改述召回（英文查詢 `"persist global setup configuration in json so new shells share the same memory root"` 對中文記憶）：`route_mode: "hybrid_vector"`, `fallback_used: false`, `latency_ms: 1860`。
+    4. 零字面重疊跨語言純向量召回（英文查詢 `"share historical decisions across terminal windows via a common directory"` 對兩筆分別位於專案 `α`／`β` 的純中文記憶，完全無共同字元）：`route_mode: "vector"`, `fallback_used: false`, `confidence: null`, `confidence_basis: "unavailable"`, `latency_ms: 1787`，且語意相關記憶（`noteev-dcf18d6c4f098635`, score `0.01639`）排在無關記憶（`noteev-e16a62954281b1b1`, score `0.01587`）之前。
 
 ---
 
@@ -142,8 +164,11 @@
   - `test-setup-onboarding.sh`、`test-bootstrap.sh`、`test-npm-install.sh`、`test-no-clone-install.sh`、`test-vector-recall.sh`、`test-brief-scope.sh` 等相關測試全綠。
   - 未選擇的 host 不被修改，不自動安裝 service 或 hooks，helper 路徑與 stdin/stdout 契約維持不變。
 - 驗證：執行打包與完整回歸腳本，記錄命令與結果。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 狀態：✅ 已完成
+- 證據：
+  - 單迴圈紅燈（SCN-014）：在未更新 `dist/cli.mjs` 打包產物時對 packed npm 套件執行 `test-npm-install.sh` 新增之 `--scope global --agent both --no-vector --yes` 斷言，因舊 bundle 無 `--scope` 與 `codex` host 支援而失敗（exit 1）。（打包產物與安裝腳本屬單一交付層。）
+  - 最小實作後全綠：重新 `pnpm run build` 後，`pnpm run check`、`node dist/cli.mjs --help`、`bash -n install.sh scripts/test-setup-onboarding.sh`、`bash scripts/test-setup-onboarding.sh`、`bash scripts/test-bootstrap.sh`、`bash scripts/test-npm-install.sh`、`bash scripts/test-vector-recall.sh`、`pnpm run release:package && bash scripts/test-no-clone-install.sh`、`bash scripts/test-smoke.sh`、`bash scripts/test-cli-memory.sh`、`bash scripts/test-brief-scope.sh` 全部 exit 0。
+  - 重構後全綠：テスト腳本與 CI workflow 結構精簡無多餘變更（no-op），全套腳本維持 exit 0。
 
 ### Task 5.2 — 雙語文件、部署版 Skill 與架構規範更新（不改變可觀察行為）
 - 產出與範圍：
@@ -155,8 +180,11 @@
   - 中英文文件、`AGENTS.md` 測試清單與 deployed skill 同步反映已實作的 `memoria setup` 互動／非互動流程與設定優先序。
   - `pnpm run release:docs-check` 與 `test-bootstrap.sh` 的 deployed skill 檢查通過，且公開版控文件不含本機帳號或外部私有專案名。
 - 驗證：靜態檢查 `pnpm run release:docs-check`、`bash scripts/test-bootstrap.sh` 與 `git diff --check`。
-- 狀態：📝 待實作
-- 證據：待執行填入
+- 狀態：✅ 已完成
+- 證據（不改變可觀察行為之等價靜態與契約檢查）：
+  - `pnpm run release:docs-check`（exit 0，輸出 `Release doc sync check passed for v1.31.2`）。
+  - `bash scripts/test-bootstrap.sh`（exit 0，通過所有 deployed skill 條款與觸發詞檢查）。
+  - `git diff --check`（exit 0，無空白或格式錯誤）。
 
 ---
 
@@ -186,5 +214,5 @@
 - [x] Scenario ID、核准表與待確認事項相符，全部 `SCN-001`～`SCN-014` 與 `TBD-1`～`TBD-5` 已於 2026-10-23 核准。
 - [x] 保護優先於互動流程實作（Phase 1 Task 1.1 首要驗證先行），風險只在 README 維護。
 - [x] `decompose` 已在同一份計畫細化 Phase 1～5 與 Task 1.1～5.2，每個已核准 Scenario 皆有唯一責任 Task。
-- [ ] 完成所有 Task 實作、紅綠重構證據與實機 local 模型驗證。
+- [x] 完成所有 Task 實作、紅綠重構證據與實機 local 模型驗證。
 - [ ] 完成常青文件更新、提交與獨立 review gate。

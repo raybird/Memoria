@@ -10,7 +10,9 @@
 
 共用規範維護在 `AGENTS.md`，`CLAUDE.md` 作為 Claude 的載入入口，以獨立一行的 `@AGENTS.md` 引入。Claude 專用設定放在 import 後方。
 
-產生 brief 後，將 `memoria brief` 印出的讀取指令加入 `AGENTS.md`，讓 agent 在尚未載入時讀取：
+執行 `memoria setup`（互動式或指定 `--scope global|project`）會自動產生初始 brief，並在備份既有檔案到 `<data-root>/.agents/instruction-backups/` 後，將受管理區塊（`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`）寫入 `AGENTS.md` 與 `CLAUDE.md`。
+
+若在執行 `memoria brief` 後手動接線，將 `memoria brief` 印出的讀取指令加入 `AGENTS.md`，讓 agent 在尚未載入時讀取：
 
 ```markdown
 Before starting work, read /absolute/path/to/knowledge/BRIEF.md if it is not already in context.

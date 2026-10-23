@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { existsSync, probeDepsLocation } from '../core/index.js'
+import type { InstallHostAgent } from '../core/index.js'
 
 export type RuntimeLayout = {
     mode: 'repo' | 'installed'
@@ -97,16 +98,69 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
     return targetDir
 }
 
-/** issue-22: host agents whose own skill directory `setup --agent` can deploy into. */
-const HOST_AGENT_SKILL_DIRS: Record<string, () => string> = {
-    'claude-code': () => path.join(os.homedir(), '.claude', 'skills', 'memoria')
+/** issue-22 / issue-28: host agents whose own skill directory `setup --agent` can deploy into. */
+const HOST_AGENT_SKILL_DIRS: Record<InstallHostAgent, (ctx?: { homedir?: string; env?: NodeJS.ProcessEnv }) => string> = {
+    'claude-code': (ctx) => {
+        const home = ctx?.homedir?.trim() || (ctx?.env ?? process.env).HOME?.trim() || os.homedir()
+        return path.join(home, '.claude', 'skills', 'memoria')
+    },
+    'codex': (ctx) => {
+        const env = ctx?.env ?? process.env
+        const codexHome = env.CODEX_HOME?.trim()
+        if (codexHome) return path.join(path.resolve(codexHome), 'skills', 'memoria')
+        const home = ctx?.homedir?.trim() || env.HOME?.trim() || os.homedir()
+        return path.join(home, '.codex', 'skills', 'memoria')
+    }
 }
 
-export const HOST_AGENTS = Object.keys(HOST_AGENT_SKILL_DIRS)
+export const HOST_AGENTS = Object.keys(HOST_AGENT_SKILL_DIRS) as InstallHostAgent[]
 
-export function resolveHostAgentSkillDir(agent: string): string | undefined {
+export function parseAgentFlag(raw: string | string[] | undefined): InstallHostAgent[] {
+    if (raw === undefined) return []
+    const tokens = (Array.isArray(raw) ? raw : [raw])
+        .flatMap((item) => item.split(','))
+        .map((s) => s.trim())
+        .filter(Boolean)
+
+    if (tokens.length === 0) {
+        throw new Error(`unknown agent ''; valid values: ${HOST_AGENTS.join(', ')}, both, none`)
+    }
+
+    const picked: InstallHostAgent[] = []
+    let sawNone = false
+    for (const token of tokens) {
+        if (token === 'none') {
+            sawNone = true
+            continue
+        }
+        if (token === 'both') {
+            for (const h of HOST_AGENTS) {
+                if (!picked.includes(h)) picked.push(h)
+            }
+            continue
+        }
+        if (Object.hasOwn(HOST_AGENT_SKILL_DIRS, token)) {
+            const agent = token as InstallHostAgent
+            if (!picked.includes(agent)) picked.push(agent)
+            continue
+        }
+        throw new Error(`unknown agent '${token}'; valid values: ${HOST_AGENTS.join(', ')}, both, none`)
+    }
+
+    if (sawNone && picked.length > 0) {
+        throw new Error(`cannot combine '--agent none' with other host agents (${picked.join(', ')})`)
+    }
+    return picked
+}
+
+export function resolveHostAgentSkillDir(
+    agent: string,
+    ctx?: { homedir?: string; env?: NodeJS.ProcessEnv }
+): string | undefined {
     // Own keys only: `toString`, `constructor`… are on every object and are not host agents.
-    return Object.hasOwn(HOST_AGENT_SKILL_DIRS, agent) ? HOST_AGENT_SKILL_DIRS[agent]() : undefined
+    return Object.hasOwn(HOST_AGENT_SKILL_DIRS, agent)
+        ? HOST_AGENT_SKILL_DIRS[agent as InstallHostAgent](ctx)
+        : undefined
 }
 
 /**

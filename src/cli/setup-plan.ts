@@ -1,0 +1,493 @@
+// Setup planning, interactive prompts, full vector corpus ingest, and readiness verification (docs/issues/issue-28).
+
+import { spawn } from 'node:child_process'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import readline from 'node:readline/promises'
+import {
+    MemoriaCore,
+    resolveMemoriaPaths,
+    existsSync,
+    buildMemoryIndex,
+    inspectVectorLayer,
+    probeDepsLocation,
+    renderBrief,
+    resolveInstallSettingsPath,
+    resolveDefaultGlobalDataRoot,
+    loadInstallSettingsSync,
+    resolveLocalVectorDbPath,
+    assertIngestDbPathMatchesRoot
+} from '../core/index.js'
+import type { InstallHostAgent, MemoriaPaths } from '../core/index.js'
+import { assertHostSkillTarget, resolveHostAgentSkillDir } from './runtime.js'
+import type { RuntimeLayout } from './runtime.js'
+import {
+    planInstructionWiring,
+    assertInstructionTargetsSafe
+} from './agent-integration.js'
+import type { InstructionWiringPlan } from './agent-integration.js'
+
+export type SetupChoices = {
+    scope: 'global' | 'project'
+    dataRoot: string
+    hosts: InstallHostAgent[]
+    vector: boolean
+    wireInstructions: boolean
+    saveSettings: boolean
+}
+
+export type SetupPlan = {
+    choices: SetupChoices
+    paths: MemoriaPaths
+    briefPath: string
+    settingsPath: string
+    hostSkillTargets: Array<{ agent: InstallHostAgent; dir: string }>
+    instructionPlan: InstructionWiringPlan
+    vectorModelDownloadNeeded: boolean
+}
+
+export type ComponentReadiness = {
+    status: 'ready' | 'skipped' | 'failed'
+    detail: string
+    corpusVerified?: boolean
+    isolatedProbeVerified?: boolean
+}
+
+export type SetupReadinessSummary = {
+    ok: boolean
+    core: ComponentReadiness
+    agent: ComponentReadiness
+    vector: ComponentReadiness
+}
+
+export async function promptSetupChoices(defaults: {
+    defaultGlobalRoot: string
+    defaultProjectRoot: string
+    existingHosts?: InstallHostAgent[]
+    existingVector?: boolean
+}): Promise<{ choices: SetupChoices; confirmed: boolean }> {
+    const lineQueue: string[] = []
+    let eof = false
+    let waiter: ((line: string | null) => void) | null = null
+
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: Boolean(process.stdin.isTTY && process.stdout.isTTY)
+    })
+
+    rl.on('line', (line) => {
+        if (waiter) {
+            const resolve = waiter
+            waiter = null
+            resolve(line)
+        } else {
+            lineQueue.push(line)
+        }
+    })
+    rl.on('close', () => {
+        eof = true
+        if (waiter) {
+            const resolve = waiter
+            waiter = null
+            resolve(null)
+        }
+    })
+
+    const ask = async (promptText: string): Promise<string | null> => {
+        process.stdout.write(promptText)
+        if (lineQueue.length > 0) {
+            const next = lineQueue.shift()!
+            if (!process.stdin.isTTY) process.stdout.write(`${next}\n`)
+            return next
+        }
+        if (eof) return null
+        return new Promise<string | null>((resolve) => {
+            waiter = (val) => {
+                if (val !== null && !process.stdin.isTTY) process.stdout.write(`${val}\n`)
+                resolve(val)
+            }
+        })
+    }
+
+    try {
+        console.log('\n=== Memoria Interactive Setup ===')
+        console.log('1) Global memory (shared across folders; recommended)')
+        console.log(`   root: ${defaults.defaultGlobalRoot}`)
+        console.log('2) Project memory (current folder only)')
+        console.log(`   root: ${defaults.defaultProjectRoot}`)
+        const rawScope = await ask('Select data location [1/2, default 1]: ')
+        if (rawScope === null) return { choices: { scope: 'global', dataRoot: defaults.defaultGlobalRoot, hosts: [], vector: false, wireInstructions: false, saveSettings: false }, confirmed: false }
+        const scopeAns = rawScope.trim()
+        const scope: 'global' | 'project' =
+            scopeAns === '2' || scopeAns.toLowerCase() === 'project' ? 'project' : 'global'
+        const dataRoot = scope === 'global' ? defaults.defaultGlobalRoot : defaults.defaultProjectRoot
+
+        console.log('\nSelect host agent integration:')
+        console.log('1) Claude Code (~/.claude/skills/memoria + CLAUDE.md)')
+        console.log('2) Codex (~/.codex/skills/memoria + AGENTS.md)')
+        console.log('3) Both Claude Code and Codex (recommended)')
+        console.log('4) None (data root skill only)')
+        const rawHost = await ask('Select agent [1/2/3/4, default 3]: ')
+        if (rawHost === null) return { choices: { scope, dataRoot, hosts: [], vector: false, wireInstructions: false, saveSettings: false }, confirmed: false }
+        const hostAns = rawHost.trim()
+        let hosts: InstallHostAgent[] = ['claude-code', 'codex']
+        if (hostAns === '1' || hostAns.toLowerCase() === 'claude-code') hosts = ['claude-code']
+        else if (hostAns === '2' || hostAns.toLowerCase() === 'codex') hosts = ['codex']
+        else if (hostAns === '4' || hostAns.toLowerCase() === 'none') hosts = []
+
+        console.log('\nEnable local semantic recall (vector mode)?')
+        console.log('1) Yes — install local embedding runtime (~700MB on first run), warm model & index corpus')
+        console.log('2) No  — basic lexical/tree recall only (no model download)')
+        const vecDefault = defaults.existingVector ? '1' : '2'
+        const rawVec = await ask(`Enable local semantic recall [1/2, default ${vecDefault}]: `)
+        if (rawVec === null) return { choices: { scope, dataRoot, hosts, vector: false, wireInstructions: false, saveSettings: false }, confirmed: false }
+        const vecAns = rawVec.trim() || vecDefault
+        const vector = vecAns === '1' || vecAns.toLowerCase() === 'y' || vecAns.toLowerCase() === 'yes'
+
+        const choices: SetupChoices = {
+            scope,
+            dataRoot: path.resolve(dataRoot),
+            hosts,
+            vector,
+            wireInstructions: hosts.length > 0,
+            saveSettings: true
+        }
+
+        const plan = await buildSetupPlan(choices)
+        printSetupPlanPreview(plan)
+
+        const rawConfirm = await ask('\nApply this setup plan? [y/N]: ')
+        const confirmAns = (rawConfirm ?? '').trim().toLowerCase()
+        const confirmed = confirmAns === 'y' || confirmAns === 'yes'
+        return { choices, confirmed }
+    } finally {
+        rl.close()
+    }
+}
+
+export async function buildSetupPlan(
+    choices: SetupChoices,
+    runtimeLayout?: RuntimeLayout
+): Promise<SetupPlan> {
+    const paths = resolveMemoriaPaths(choices.dataRoot)
+    const briefPath = path.join(paths.knowledgeDir, 'BRIEF.md')
+    const settingsPath = resolveInstallSettingsPath()
+
+    const hostSkillTargets: Array<{ agent: InstallHostAgent; dir: string }> = []
+    for (const agent of choices.hosts) {
+        const dir = resolveHostAgentSkillDir(agent)
+        if (!dir) {
+            throw new Error(`unknown agent '${agent}'`)
+        }
+        hostSkillTargets.push({ agent, dir })
+    }
+
+    const instructionPlan = choices.wireInstructions
+        ? await planInstructionWiring({
+            scope: choices.scope,
+            dataRoot: paths.memoriaHome,
+            projectRoot: process.cwd(),
+            briefPath,
+            hosts: choices.hosts
+        })
+        : { targets: [] }
+
+    let vectorModelDownloadNeeded = false
+    if (choices.vector) {
+        const provider = (process.env.MEMORIA_EMBED_PROVIDER ?? 'local').trim()
+        if (provider === 'local' && runtimeLayout) {
+            const helperDir = path.join(runtimeLayout.runtimeRoot, 'skills', 'memoria-vector')
+            const loc = probeDepsLocation(helperDir)
+            const hasTransformers = Boolean(
+                loc?.dir && existsSync(path.join(loc.dir, 'node_modules', '@huggingface', 'transformers'))
+            )
+            vectorModelDownloadNeeded = !hasTransformers
+        }
+    }
+
+    return {
+        choices,
+        paths,
+        briefPath,
+        settingsPath,
+        hostSkillTargets,
+        instructionPlan,
+        vectorModelDownloadNeeded
+    }
+}
+
+export function printSetupPlanPreview(plan: SetupPlan): void {
+    console.log('\n--- Planned Setup Changes ---')
+    console.log(`Scope:             ${plan.choices.scope}`)
+    console.log(`Data root:         ${plan.paths.memoriaHome}`)
+    console.log(`Database:          ${plan.paths.dbPath}`)
+    console.log(`Brief output:      ${plan.briefPath}`)
+    if (plan.choices.saveSettings) {
+        console.log(`Install settings:  ${plan.settingsPath}`)
+    }
+    if (plan.hostSkillTargets.length > 0) {
+        for (const h of plan.hostSkillTargets) {
+            console.log(`Host skill (${h.agent}): ${h.dir}`)
+        }
+    } else {
+        console.log('Host skills:       none (data-root skill only)')
+    }
+    for (const t of plan.instructionPlan.targets) {
+        console.log(`Instruction (${t.action}): ${t.path}`)
+    }
+    if (plan.choices.vector) {
+        const provider = (process.env.MEMORIA_EMBED_PROVIDER ?? 'local').trim()
+        const vectorDb = process.env.LIBSQL_URL?.trim() || `file:${resolveLocalVectorDbPath(plan.paths.memoriaHome)}`
+        console.log(`Semantic recall:   enabled (provider=${provider}, store=${vectorDb})`)
+        console.log(`Model download:    ${plan.vectorModelDownloadNeeded ? 'required (~700MB first-time install)' : 'reusing existing cache/install'}`)
+    } else {
+        console.log('Semantic recall:   disabled (basic lexical/tree mode; no model download)')
+    }
+}
+
+/**
+ * Pre-check all planned targets BEFORE any file or database is modified (SCN-009, SCN-012).
+ */
+export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
+    // 1. If vector is requested, verify MEMORIA_DB_PATH matches the data root's DB
+    if (plan.choices.vector) {
+        assertIngestDbPathMatchesRoot(plan.paths)
+    }
+
+    // 2. Check all host skill directories up front
+    for (const target of plan.hostSkillTargets) {
+        await assertHostSkillTarget(target.dir)
+    }
+
+    // 3. Check all instruction targets up front
+    await assertInstructionTargetsSafe(plan.instructionPlan)
+
+    // 4. If saving install settings, verify settingsPath is not a symlink or directory
+    if (plan.choices.saveSettings) {
+        const stat = await fs.lstat(plan.settingsPath).catch(() => undefined)
+        if (stat) {
+            if (stat.isSymbolicLink() || !stat.isFile()) {
+                throw new Error(
+                    `refusing to overwrite ${plan.settingsPath}: it exists and is not a regular file`
+                )
+            }
+        }
+    }
+}
+
+export async function generateSetupBrief(paths: MemoriaPaths, core: MemoriaCore): Promise<string> {
+    const result = await core.brief({ days: 30, topK: 10 })
+    if (!result.ok || !result.data) {
+        throw new Error(result.error ?? 'failed to generate brief')
+    }
+    const markdown = renderBrief(result.data)
+    const outPath = path.join(paths.knowledgeDir, 'BRIEF.md')
+    await fs.mkdir(path.dirname(outPath), { recursive: true })
+    await fs.writeFile(outPath, markdown, 'utf8')
+    return outPath
+}
+
+function runNodeScript(
+    scriptPath: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    timeoutMs = 10 * 60_000
+): Promise<{ ok: boolean; stdout: string; stderr: string; status: string }> {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [scriptPath, ...args], {
+            env,
+            stdio: ['ignore', 'pipe', 'pipe']
+        })
+        let stdout = ''
+        let stderr = ''
+        child.stdout.on('data', (c: Buffer) => { stdout += c.toString('utf8') })
+        child.stderr.on('data', (c: Buffer) => { stderr = (stderr + c.toString('utf8')).slice(-16_000) })
+        const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs)
+        child.on('error', (err) => {
+            clearTimeout(timer)
+            reject(err)
+        })
+        child.on('close', (code, signal) => {
+            clearTimeout(timer)
+            resolve({
+                ok: code === 0,
+                stdout,
+                stderr,
+                status: signal ?? `exit ${code}`
+            })
+        })
+    })
+}
+
+/**
+ * Build the tree index and ingest the full corpus into the vector store, unaffected by any existing
+ * MCP sync cursor (`--sync-target` uses a unique run id and cleans its cursor row afterwards).
+ */
+export async function runFullVectorIngest(
+    paths: MemoriaPaths,
+    runtimeLayout: RuntimeLayout,
+    env: NodeJS.ProcessEnv = process.env
+): Promise<{ embedded: number; expected: number; missing: number }> {
+    assertIngestDbPathMatchesRoot(paths)
+    buildMemoryIndex(paths.dbPath, {})
+
+    const beforeReport = inspectVectorLayer(paths.dbPath)
+    const expected = beforeReport.coverage?.expected ?? 0
+    if (expected === 0) {
+        return { embedded: 0, expected: 0, missing: 0 }
+    }
+
+    const buildScript = path.join(
+        runtimeLayout.runtimeRoot,
+        'skills',
+        'memoria-memory-sync',
+        'scripts',
+        'build-mcp-bridge-payload.mjs'
+    )
+    const ingestScript = path.join(
+        runtimeLayout.runtimeRoot,
+        'skills',
+        'memoria-vector',
+        'vector-ingest.mjs'
+    )
+
+    if (!existsSync(buildScript)) throw new Error(`bridge payload script missing: ${buildScript}`)
+    if (!existsSync(ingestScript)) throw new Error(`vector ingest script missing: ${ingestScript}`)
+
+    const tmpOut = await fs.mkdtemp(path.join(os.tmpdir(), 'memoria-setup-ingest-'))
+    const syncTarget = `memoria-setup-full-${Date.now()}-${process.pid}`
+    try {
+        const buildRes = await runNodeScript(
+            buildScript,
+            [
+                '--memoria-home', paths.memoriaHome,
+                '--sync-target', syncTarget,
+                '--payload-mode', 'full',
+                '--out', tmpOut
+            ],
+            env
+        )
+        if (!buildRes.ok) {
+            throw new Error(`bridge payload build failed (${buildRes.status}): ${buildRes.stderr.trim() || buildRes.stdout.trim()}`)
+        }
+        const payloadPath = buildRes.stdout.trim().split('\n').pop()?.trim()
+        if (!payloadPath || !existsSync(payloadPath)) {
+            throw new Error('bridge payload script did not produce a payload file')
+        }
+
+        const ingestRes = await runNodeScript(ingestScript, [payloadPath], env)
+        if (!ingestRes.ok) {
+            throw new Error(`vector ingest failed (${ingestRes.status}): ${ingestRes.stderr.trim() || ingestRes.stdout.trim()}`)
+        }
+    } finally {
+        await fs.rm(tmpOut, { recursive: true, force: true })
+    }
+
+    const afterReport = inspectVectorLayer(paths.dbPath)
+    if (afterReport.coverage) {
+        if (afterReport.coverage.missing > 0) {
+            throw new Error(
+                `vector coverage incomplete after ingest: embedded=${afterReport.coverage.embedded} ` +
+                `expected=${afterReport.coverage.expected} missing=${afterReport.coverage.missing}`
+            )
+        }
+        return afterReport.coverage
+    }
+
+    return { embedded: expected, expected, missing: 0 }
+}
+
+/**
+ * Verify end-to-end vector recall routing without polluting the user's real memory database (SCN-006, SCN-007, SCN-013).
+ *
+ * Always runs a synthetic memory + paraphrase query inside an isolated temporary root & vector DB to
+ * verify the embedding model, libSQL vector store, and recall VectorRow mapping without adding any
+ * session, event, or telemetry row to the user's real DB.
+ * When the real DB already has memories (`expected > 0`), also verifies that the real DB's vector coverage
+ * has `missing === 0` and `embedded === expected`.
+ */
+export async function verifyVectorReadiness(
+    realPaths: MemoriaPaths,
+    runtimeLayout: RuntimeLayout,
+    env: NodeJS.ProcessEnv = process.env
+): Promise<{ corpusVerified: boolean; isolatedProbeVerified: boolean; routeMode: string; expected: number; embedded: number }> {
+    const report = inspectVectorLayer(realPaths.dbPath)
+    if (!report.enabled) {
+        throw new Error('vector recall is not enabled (LIBSQL_URL unset)')
+    }
+    if (!report.helperPath) {
+        throw new Error('vector helper script not found')
+    }
+    if (report.embedderInstalled === false) {
+        throw new Error('vector embedder (@huggingface/transformers) is not installed')
+    }
+    if (report.coverage && report.coverage.missing > 0) {
+        throw new Error(
+            `vector coverage is incomplete: embedded=${report.coverage.embedded} expected=${report.coverage.expected} missing=${report.coverage.missing}`
+        )
+    }
+
+    const expected = report.coverage?.expected ?? 0
+    const embedded = report.coverage?.embedded ?? 0
+
+    // Isolated probe in a temp directory so the user's real DB never receives synthetic sessions or recall telemetry (SCN-013).
+    const probeTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'memoria-vec-probe-'))
+    const prevLibsql = process.env.LIBSQL_URL
+    try {
+        const probeHome = path.join(probeTmp, 'data')
+        const probeVecDb = path.join(probeTmp, 'probe-vectors.db')
+        const probePaths = resolveMemoriaPaths(probeHome, { env: { ...env, MEMORIA_DB_PATH: undefined } })
+        const probeCore = new MemoriaCore(probePaths)
+        await probeCore.init()
+        await probeCore.rememberNote({
+            text: '資料庫統一改用 SQLite 與原生設定檔保存資料位置',
+            project: 'probe',
+            rationale: '確保跨程序一致性且不依賴 shell 環境變數'
+        })
+
+        const probeEnv: NodeJS.ProcessEnv = {
+            ...env,
+            MEMORIA_HOME: probeHome,
+            LIBSQL_URL: `file:${probeVecDb}`
+        }
+        delete probeEnv.MEMORIA_DB_PATH
+
+        process.env.LIBSQL_URL = `file:${probeVecDb}`
+        await runFullVectorIngest(probePaths, runtimeLayout, probeEnv)
+
+        // Query using a paraphrase that does NOT share lexical tokens with the note so only vector route can match,
+        // or verify route_mode is vector / hybrid_vector with fallback_used === false.
+        const recallRes = await probeCore.recall({
+            query: 'cross-process persistent configuration storage',
+            mode: 'vector',
+            top_k: 3
+        })
+        if (!recallRes.ok) {
+            throw new Error(`vector recall probe failed: ${recallRes.error ?? 'unknown error'}`)
+        }
+        const meta = (recallRes.meta ?? {}) as { route_mode?: string; fallback_used?: boolean }
+        const routeMode = String(meta.route_mode ?? '')
+        if ((routeMode !== 'vector' && routeMode !== 'hybrid_vector') || meta.fallback_used !== false) {
+            throw new Error(
+                `vector recall probe degraded (route_mode=${routeMode}, fallback_used=${String(meta.fallback_used)})`
+            )
+        }
+        if (!Array.isArray(recallRes.data) || recallRes.data.length === 0) {
+            throw new Error('vector recall probe returned 0 hits')
+        }
+
+        return {
+            corpusVerified: expected > 0 && embedded >= expected,
+            isolatedProbeVerified: true,
+            routeMode,
+            expected,
+            embedded
+        }
+    } finally {
+        if (prevLibsql === undefined) delete process.env.LIBSQL_URL
+        else process.env.LIBSQL_URL = prevLibsql
+        await fs.rm(probeTmp, { recursive: true, force: true })
+    }
+}

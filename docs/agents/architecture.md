@@ -22,7 +22,8 @@ The CLI (`src/cli.ts`, ~50 lines) is a thin Commander registration shell — it 
   - `mappers.ts` — shared row-to-type mappers + `truncateText`
   - `index.ts` — barrel re-export
 - `core/types.ts` — `MemoriaResult<T>` envelope, `RecallFilter`, etc.
-- `core/paths.ts` — `resolveMemoriaPaths()`, `getMemoriaHome()`
+- `core/paths.ts` — `resolveMemoriaPaths()`, `resolveMemoriaHomeInfo()` (`MemoriaHomeSource`: `env` > `detected` > `global-config` > `fallback`), `getMemoriaHome()`
+- `core/install-settings.ts` — user-level `install.json` persistence (`defaultDataRoot`, per-root local vector settings, `applyEffectiveVectorEnv`, `assertIngestDbPathMatchesRoot`; never persists `LIBSQL_AUTH_TOKEN`)
 - `core/utils.ts` — pure helpers (`safeDate`, `slugify`, `stableStringify`, `tokenCoverage`, `effectiveUtility`, `buildCalibration`, etc.)
 - `core/recall-vector.ts` — opt-in semantic recall: spawns the `skills/memoria-vector` helper, maps prefixed ids back to authoritative local rows, RRF fusion (`LIBSQL_URL`-gated, fail-open). The helper loads its own deps through `skills/memoria-vector/deps.mjs` — sibling `node_modules` first, else the user cache `setup --vector` fills, keyed by the helper's lockfile hash (issue-25); doctor asks `node deps.mjs` rather than re-deriving the hash
 - `core/source-import.ts` — raw markdown/text ingestion
@@ -31,7 +32,9 @@ The CLI (`src/cli.ts`, ~50 lines) is a thin Commander registration shell — it 
 
 CLI modules under `src/cli/`:
 - `shared.ts` — `readSession` (Zod validator), `previewSync`
-- `runtime.ts` — `getRuntimeLayout`, `deployAgentSkill` and related helpers
+- `runtime.ts` — `getRuntimeLayout`, `deployAgentSkill` (`HOST_AGENTS`: `claude-code`, `codex`), `parseAgentFlag`, `installVectorDeps` and related helpers
+- `agent-integration.ts` — managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) upsert for `AGENTS.md` and `CLAUDE.md`, pre-write safety check and backups under `<dataRoot>/.agents/instruction-backups/`
+- `setup-plan.ts` — interactive onboarding prompts (`promptSetupChoices`), `buildSetupPlan`, `assertSetupPlanSafe`, `runFullVectorIngest` and isolated vector readiness verification (`verifyVectorReadiness`)
 - `preflight.ts` — `runPreflight`
 - `commands/` — one file per command (`init`, `sync`, `recall`, `remember`, `feedback`, `brief`, `source`, `wiki`, `stats`, `index-cmd`, `govern`, `doctor`, `verify`, `prune`, `export`, `serve`, `preflight-cmd`, `setup`)
 

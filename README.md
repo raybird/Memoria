@@ -22,34 +22,29 @@ The core runs locally with three runtime dependencies: `better-sqlite3`, `comman
 
 ## Quick start
 
-Requires **Node.js ≥ 18**. Install once and choose a stable data root:
+Requires **Node.js ≥ 18**. Install once and run the guided setup (or pass explicit flags):
 
 ```bash
 npm install -g @raybird.chen/memoria
-export MEMORIA_HOME="$HOME/.memoria"
 memoria setup
+# Non-interactive one-shot (global memory + Claude Code & Codex skills + local semantic recall):
+# memoria setup --scope global --agent both --vector --yes
 
 memoria remember "Use pnpm" --project Memoria --rationale "The lockfile is authoritative"
-memoria recall "why pnpm" --project Memoria --json
+memoria recall "why pnpm" --project Memoria --mode vector --json
 memoria brief --project Memoria
 ```
 
-These commands use local storage directly. A server is optional. Keep `MEMORIA_HOME` set when returning to this store; without it or `--memoria-home`, setup uses `./memoria` in the current directory.
+These commands use local storage directly; a server is optional. Global setup saves your default data root (`~/.memoria`) and vector settings to the user config (`install.json`), so new terminals find the same memory store without manually exporting `MEMORIA_HOME` or `LIBSQL_URL`. Project-scoped setup (`--scope project`) keeps `./memoria` in the current project, and an explicit `MEMORIA_HOME` or `--memoria-home` always wins.
 
-`brief` prints shared `AGENTS.md` read instructions and Claude import examples; `CLAUDE.md` imports the shared rules with `@AGENTS.md`. Regenerate the brief after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
+`setup` can also generate the initial brief and wire a managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) into shared `AGENTS.md` and `CLAUDE.md` while backing up existing files. Regenerate the brief with `memoria brief` after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
 
 ## Use it with an agent
 
-Setup deploys the **memoria** skill to:
-
-```text
-<memoria-home>/.agents/skills/memoria/SKILL.md
-```
-
-For Claude Code, also deploy into its skill directory:
+Setup deploys the **memoria** skill to `<memoria-home>/.agents/skills/memoria/SKILL.md`, and when selected, into host discovery directories (`~/.claude/skills/memoria` for Claude Code, `~/.codex/skills/memoria` or `$CODEX_HOME/skills/memoria` for Codex):
 
 ```bash
-memoria setup --agent claude-code
+memoria setup --scope global --agent both --yes
 ```
 
 The skill guides recall before work and memory write-back after decisions or completed changes. Deployment paths, backups and standalone installation are covered in the [Install Guide](docs/INSTALL.md).
@@ -57,7 +52,7 @@ The skill guides recall before work and memory write-back after decisions or com
 Optional next steps:
 
 - **HTTP or hooks:** `memoria setup --serve --json`, then follow the [API Reference](docs/API.md) or [SDK and Agent Integrations](docs/INTEGRATIONS.md).
-- **Semantic recall:** `memoria setup --vector` installs dependencies and warms the local model. Configure `LIBSQL_URL` and ingest your memories separately; follow [Semantic Recall Operations](docs/OPERATIONS.md#semantic-recall-operations-optional).
+- **Semantic recall:** choosing `--vector` during `memoria setup` installs dependencies, warms the local model, builds the tree index, ingests your corpus into `<memoria-home>/.memory/vectors.db`, and verifies vector readiness. For advanced diagnostics and recovery, see [Semantic Recall Operations](docs/OPERATIONS.md#semantic-recall-operations-optional).
 - **Repository memory:** start with `memoria repo add /path/to/project`; see [Git-Aware Memory Operations](docs/OPERATIONS.md#git-aware-memory-operations).
 
 ## Documentation

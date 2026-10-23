@@ -12,8 +12,9 @@ set -euo pipefail
 # this temp DB (embedded=92 expected=0) — benign only by luck of the denominator. CI sets none of
 # these, so it only bites locally, and it blocked a release. Same failure mode, same remedy, and the
 # same two lines as scripts/test-vector-recall.sh.
-unset LIBSQL_URL MEMORIA_EMBED_PROVIDER MEMORIA_VECTOR_RECALL_CMD MEMORIA_VECTOR_TIMEOUT_MS
-unset MEMORIA_HOME MEMORIA_DB_PATH MEMORIA_SESSIONS_PATH MEMORIA_CONFIG_PATH
+unset LIBSQL_URL LIBSQL_AUTH_TOKEN MEMORIA_EMBED_PROVIDER MEMORIA_VECTOR_RECALL_CMD MEMORIA_VECTOR_TIMEOUT_MS
+unset MEMORIA_HOME MEMORIA_DB_PATH MEMORIA_SESSIONS_PATH MEMORIA_CONFIG_PATH MEMORIA_USER_CONFIG_PATH
+unset XDG_DATA_HOME XDG_CONFIG_HOME CODEX_HOME APPDATA LOCALAPPDATA
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(node -e "const fs=require('node:fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).version)" "$ROOT_DIR/package.json")"
@@ -99,6 +100,30 @@ const fs=require('node:fs')
 const data=JSON.parse(fs.readFileSync(0,'utf8'))
 if(!data.ok||data.homeSource!=='env') process.exit(1)
 if(!data.checks.every((check)=>check.ok)) process.exit(1)
+"
+
+echo "[npm-install] unified global setup persists across new processes & deploys both hosts (issue-28)"
+ISO_HOME="$TMP_DIR/iso-home"
+ISO_XDG="$TMP_DIR/iso-xdg"
+OTHER_CWD="$TMP_DIR/other-cwd"
+mkdir -p "$ISO_HOME" "$ISO_XDG" "$OTHER_CWD"
+
+(cd "$OTHER_CWD" && HOME="$ISO_HOME" XDG_CONFIG_HOME="$ISO_XDG" "$CLI" setup --scope global --agent both --no-vector --yes >/dev/null)
+[ -x "$ISO_HOME/.claude/skills/memoria/bin/memoria" ] || { echo "Claude host launcher missing"; exit 1; }
+[ -x "$ISO_HOME/.codex/skills/memoria/bin/memoria" ] || { echo "Codex host launcher missing"; exit 1; }
+[ -f "$ISO_HOME/.claude/CLAUDE.md" ] && [ -f "$ISO_HOME/.codex/AGENTS.md" ] || { echo "Host instruction files missing"; exit 1; }
+
+(cd "$OTHER_CWD" && HOME="$ISO_HOME" XDG_CONFIG_HOME="$ISO_XDG" "$CLI" remember "Packed npm global onboarding decision" --project npm-e2e --rationale "verify cross-process persistence" >/dev/null)
+GLOBAL_DOC="$(cd "$OTHER_CWD" && HOME="$ISO_HOME" XDG_CONFIG_HOME="$ISO_XDG" "$ISO_HOME/.codex/skills/memoria/bin/memoria" doctor --json)"
+echo "$GLOBAL_DOC" | node -e "
+const d = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
+if (!d.ok || d.homeSource !== 'global-config') process.exit(1)
+if (!d.checks.every((c) => c.ok)) process.exit(1)
+"
+GLOBAL_RECALL="$(cd "$OTHER_CWD" && HOME="$ISO_HOME" XDG_CONFIG_HOME="$ISO_XDG" "$ISO_HOME/.claude/skills/memoria/bin/memoria" recall "Packed npm global onboarding" --json)"
+echo "$GLOBAL_RECALL" | node -e "
+const d = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
+if (!d.ok || !Array.isArray(d.data) || d.data.length === 0) process.exit(1)
 "
 
 echo "[npm-install] ok"

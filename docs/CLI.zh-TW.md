@@ -45,8 +45,9 @@ memoria prune --stale-days 180         # 移除從未被 recall 命中的過期�
 memoria export --type all --format json # 匯出
 memoria serve [--port 3917]            # HTTP API Server
 memoria preflight [--json]             # 前置條件檢查
-memoria setup [--serve] [--json]       # 一鍵安裝
-memoria setup --vector                # 安裝語意召回依賴並暖機模型
+memoria setup                          # 互動式引導安裝（記憶範圍、agent skills、語意召回、brief／規範接線）
+memoria setup --scope global --agent both --vector --yes  # 非互動一次到位設定
+memoria setup [--serve] [--json]       # 自動化一鍵安裝
 ```
 
 `remember`、`recall`、`mark`、`feedback`、`brief` 直接存取本地資料，skill 型部署不需要 server。多個 repository 共用記憶庫時，recall 請帶 `--project` 限定範圍。

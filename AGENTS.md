@@ -62,6 +62,7 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-prune.sh`
 - `scripts/test-utility-ranking.sh`
 - `scripts/test-bootstrap.sh`
+- `scripts/test-setup-onboarding.sh`
 - `scripts/test-adapter-runtime.sh`
 - `scripts/test-claude-code-adapter.sh`
 - `scripts/test-codex-adapter.sh`
@@ -92,6 +93,7 @@ This repo currently has explicit runtime and wiki test scripts:
 - Run prune deletion path test: `bash scripts/test-prune.sh`
 - Run utility-weighted ranking test (UFL Phase 3): `bash scripts/test-utility-ranking.sh`
 - Run bootstrap/self-install test: `bash scripts/test-bootstrap.sh`
+- Run unified setup onboarding test: `bash scripts/test-setup-onboarding.sh`
 - Run adapter native ESM runtime test: `bash scripts/test-adapter-runtime.sh`
 - Run utility-shadow spike plumbing test: `bash scripts/test-utility-shadow.sh`
 - Run no-clone install test: `bash scripts/test-no-clone-install.sh`
@@ -134,7 +136,7 @@ Run each script below with `bash scripts/<name>.sh`:
 
 | CI group | Scripts in execution order |
 | --- | --- |
-| core | `test-pure-functions`, `test-smoke`, `test-cli-memory`, `test-memory-attributes`, `test-brief-scope`, `test-migrations`, `test-prune`, `test-utility-ranking`, `test-bootstrap` |
+| core | `test-pure-functions`, `test-smoke`, `test-cli-memory`, `test-memory-attributes`, `test-brief-scope`, `test-migrations`, `test-prune`, `test-utility-ranking`, `test-bootstrap`, `test-setup-onboarding` |
 | adapters | `test-adapter-runtime`, `test-claude-code-adapter`, `test-codex-adapter`, `test-antigravity-adapter`, `test-utility-shadow` |
 | wiki | `test-wiki-ingest`, `test-wiki-build`, `test-wiki-query-fileback`, `test-wiki-lint` |
 | http-mcp | `test-http-api`, `test-mcp-e2e`, `test-vector-recall` |
