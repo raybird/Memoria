@@ -19,6 +19,12 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
 
 `setup --agent claude-code` replaces an existing `~/.claude/skills/memoria/` only when its `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria` — marks every deployed template carries, so a copy made from one by hand and edited since carries them too. The existing directory is therefore copied to `<memoria-home>/.agents/skill-backups/claude-code-<timestamp>/` first, and `setup` prints that path. Anything without both marks (a hand-written skill, a file, a symlink) is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
 
+## Refresh after a runtime upgrade
+
+A global npm upgrade replaces the runtime package. This deployed skill is a copy, so refresh it by running `memoria setup --memoria-home <existing-data-root>` with the upgraded runtime. Include `--agent claude-code` if you also use the Claude host copy; one call refreshes both locations. Keep the same data root. GitHub main changes become available through npm only after a release includes them.
+
+Setup deploys the skill and wrapper; it does not edit a consuming project's `AGENTS.md` or `CLAUDE.md`, or generate a brief. Run `brief` for that project and follow its output: shared read instructions go in `AGENTS.md`, while Claude imports `@AGENTS.md` and the generated brief from `CLAUDE.md`. Regenerate the brief after memory updates.
+
 ## Summary payload (`repo summarize --submit`)
 
 Validated with Zod:

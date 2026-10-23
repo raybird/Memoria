@@ -1,6 +1,6 @@
 # Install Guide
 
-最後驗證：2026-10-23，對照 v1.31.1 setup、doctor 與 CLI help；未重新下載模型。
+最後驗證：2026-10-23，對照 setup 的 runtime／skill 部署流程、全域安裝與共用指令入口；未重新下載模型。
 
 ## Environment
 
@@ -28,7 +28,7 @@ memoria setup --serve --json
 
 `setup` 預設會把資料寫到執行當下工作目錄的 `./memoria`。若要固定位置，請顯式傳入 `--memoria-home`。
 
-升級用同一個命令指定版本：`npm install -g @raybird.chen/memoria@<版本>`。
+升級時除了 npm 套件，也要刷新已部署的 skill，流程見下方「更新全域安裝」。
 
 要啟用語意召回（設了 `LIBSQL_URL`）時，安裝後執行一次 `setup --vector`。`MEMORIA_HOME` 沒有設的話要加 `--memoria-home`，否則 setup 會在目前目錄建立 `./memoria`：
 
@@ -48,6 +48,39 @@ memoria setup --agent claude-code --memoria-home "$(pwd)/memoria"
 ```
 
 目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 才會被覆蓋。每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/claude-code-<時間戳>/` 並印出路徑；手寫的 skill 會原封不動，`setup` 以非 0 結束並印出路徑與原因，在寫入任何資料前就停下。要改用部署版，先把手寫的移走再重跑。
+
+### 接上共用專案規範
+
+全域安裝的程式、記憶資料根目錄與使用記憶的專案規範各有不同用途。`setup` 部署 skill 與 runtime wrapper；專案的 `AGENTS.md`／`CLAUDE.md` 由使用者維護，setup 不會自動建立或改寫它們。
+
+在使用記憶的專案目錄執行 `memoria brief`（沿用同一個 `MEMORIA_HOME`），依輸出接線：
+
+- 共用規範放在 `AGENTS.md`，加入 brief 的讀取指令。
+- Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 引入共用規範，另以 `@` 引入已產生的 brief。
+- 記憶更新後重新產生 brief；`setup` 本身不會產生 brief。
+
+完整範例見 [共用專案規範與 brief](INTEGRATIONS.zh-TW.md#共用專案規範與-brief)（[English](INTEGRATIONS.md#shared-project-instructions-and-brief)）。
+
+### 更新全域安裝
+
+`npm install -g` 更新的是 runtime 套件；資料根目錄與 host skill 目錄中的副本，是上次 `setup` 複製的內容。升級後要對原本的 data root 重跑 setup，才會刷新 skill、REFERENCE 與 wrapper。
+
+先保持原有的 `MEMORIA_HOME` 設定，或將命令中的路徑替換成既有資料根目錄，再安裝**已發布**的目標版本：
+
+```bash
+npm install -g @raybird.chen/memoria@<版本>
+memoria setup --memoria-home /absolute/path/to/existing/memoria
+```
+
+若原本也部署了 Claude Code 的 skill，將上述 setup 命令改成下面這一行，讓兩份副本一起刷新：
+
+```bash
+memoria setup --memoria-home /absolute/path/to/existing/memoria --agent claude-code
+```
+
+後續以同一個 `MEMORIA_HOME` 執行 `memoria doctor`，並重新產生專案使用的 brief。不要省略既有 data root，否則可能在目前目錄初始化另一份 `./memoria`。有多個 data root 時各跑一次 setup；Claude 的 host skill 是單一目錄，其 `DATA_ROOT` 綁定最後一次部署的位置，export 的 `MEMORIA_HOME` 仍可覆寫它。
+
+GitHub `main` 上的提交不會自動進入已發布的 npm 版本；先確認包含所需變更的版本已發布，再執行升級。重新安裝同一個已發布版本不會取得只存在於 `main` 的修改。語意召回依賴的升級條件仍依前述 `setup --vector` 流程，與刷新 skill 分開處理。
 
 ### Automation output
 
