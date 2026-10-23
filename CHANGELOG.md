@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.32.0] - 2026-10-23
+
+### Added
+- **One setup flow for a usable agent memory installation** (issue-28). Running `memoria setup` in an interactive terminal offers global/project scope, Claude Code/Codex/both integration, and optional local semantic recall. The plan previews the effective data root and file changes before confirmation. Automation can use `--scope global|project`, `--agent claude-code|codex|both|none`, `--vector` or `--no-vector`, and `--yes`; `--interactive` explicitly opens the wizard.
+- **Persistent installation settings.** The CLI reads a user-level `install.json` so new processes can reuse the chosen global data root and per-root vector enablement without sourcing shell files. Explicit environment overrides remain authoritative, existing local project memory takes precedence over the saved global default, and each enabled root derives its own local vector store. Authentication tokens are not persisted. `doctor` reports the effective data-root source, including `global-config`.
+- **Agent discovery and shared instructions.** Setup deploys the selected host skills and launchers, generates the brief, and wires managed AGENTS/CLAUDE sections while preserving existing rules. Instruction edits and replaced host skill copies are backed up. The complete plan checks data-root files/directories, host targets, settings and ancestor paths before writes; handwritten skills, conflicting files and unknown symlinks are refused. Standard macOS root aliases have explicit handling.
+- **Complete semantic onboarding.** Choosing vectors in the wizard or complete non-interactive onboarding installs and warms the model, repairs tree coverage, ingests the whole corpus independently of old sync cursors, and verifies coverage and vector routing. Empty corpora use an isolated probe without leaving synthetic memories in the real database; pre-existing empty local vector files are initialized safely. Core, agent and vector readiness are reported separately, with non-zero failure results and retry guidance.
+
+### Compatibility and upgrade
+- Existing explicit setup/JSON automation remains non-interactive. A legacy `memoria setup --vector` call without onboarding options still installs dependencies and warms the model only; use the complete flow to persist choices and ingest existing memory.
+- Upgrade the runtime, then use `memoria setup --scope global --memoria-home <existing-data-root> --agent both --vector --yes` to refresh a shared installation with both hosts and semantic recall. Choose the hosts you use; select `--no-vector` for basic mode or `--scope project` for project memory. Review existing explicit `MEMORIA_HOME`/`LIBSQL_URL` overrides, which continue to win over saved settings.
+- The SQLite memory schema, recall default mode/ranking, HTTP/SDK response envelope and helper script paths/stdin/stdout are unchanged. The semantic dependency lockfile and model cache layout are unchanged, so existing matching caches can be reused. Setup does not install hooks or a background service by default.
+
+### Docs and validation
+- Updated the paired README, CLI and integration guides, installation/operations guidance, architecture contracts and deployed skill for the unified flow. Added isolated onboarding regression tests for cross-root vector isolation, explicit preview paths, per-root disablement, safe preflight, retry and deep ancestor symlink protection, alongside packed npm and tarball installation checks.
+
 ## [1.31.2] - 2026-10-23
 
 ### Fixed

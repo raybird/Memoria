@@ -49,7 +49,7 @@
 
 ---
 
-## 2. 出貨紀錄（v1.13.0 → v1.31.2）
+## 2. 出貨紀錄（v1.13.0 → v1.32.0）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -85,6 +85,8 @@
 | v1.31.0 | 語意召回依賴搬出套件目錄、setup --vector | **issue-25** helper 依賴與模型改放 `${XDG_CACHE_HOME:-~/.cache}/memoria/vector/`。依賴目錄以 helper `package-lock.json` 的雜湊命名，只認帶 `.complete` 的目錄，模型放 `models/`；全域升級不再清空，只有依賴清單改變時才需重跑。`memoria setup --vector` 依 provider 安裝並暖機，npm 與暖機都在暫存目錄完成後才標記並改名，中斷不留下假的已安裝。⚠ **helper 依賴載入順序變更**（§8 下游契約）：旁邊有 `node_modules` 時照舊，含模型快取位置；helper 腳本位置與 stdin/stdout 不變。doctor 經 `node deps.mjs` 判定，雜湊規則只有一份。四輪獨立審查（1ffc3a2 RETURN → 113c6de／b525453／82214e3 PASS）。另查明本機 `/tmp` 是有使用者配額的 tmpfs，大型安裝會以 errno -122 失敗 |
 | v1.31.1 | doctor 覆蓋率修法可執行、bootstrap 失敗訊息 | **issue-27** `vector coverage` 的 fix 原本是帶相對路徑與佔位符的兩行說明，部署版 skill 的收尾卻要 agent 照它做；現在以 `Run: (…)` 結尾，是一行可原樣執行的命令：絕對路徑取自 recall 實際解析到的 helper，payload 寫進暫存目錄，結束碼沿用 ingest。產生器帶專用的 `--sync-target memoria-doctor-repair`，因為 `run-sync-with-enhancement.sh` 會推進預設 target 的游標，沿用預設時修法會 rc=0、embedded=0（審查 d22e5cb S-1）。`MEMORIA_DB_PATH` 指向別處時不印命令（S-2）。**issue-26** `test-bootstrap.sh` 的 `setup --vector` 呼叫失敗時印出是哪一步與命令輸出，不再被 `set -e` 靜默結束 |
 | v1.31.2 | AGENTS 共用入口、brief 接線與雙語指南 | `brief` 印出共用 `AGENTS.md` 讀取指令與 Claude 的 `@AGENTS.md`／brief imports，依專案使用絕對路徑，並跳脫 import 路徑空白；輸出 markdown、JSON、recall 與 schema 不變。中英文 README 精簡，CLI／API／SDK 與 Agent 整合另立雙語指南；架構契約移至 `docs/agents/architecture.md`。安裝指南與部署 skill／REFERENCE 補上 runtime 升級後對既有 data root 重跑 setup（Claude 副本帶 `--agent claude-code`），再產生 brief 並接線；npm 升級不會自動刷新已部署副本。語意 helper 依賴與模型快取未變。 |
+
+| v1.32.0 | 一次 setup 完成 agent 記憶接線 | **issue-28**：互動與明確非互動 onboarding、使用者 `install.json` 持久預設、per-root 向量設定、Codex／Claude skill 與 AGENTS／CLAUDE 受管理接線、brief、模型暖機／全量 ingest／coverage 與隔離 probe。預檢涵蓋資料根內部目標與完整祖先鏈，拒絕手寫 skill、衝突與未知 symlink；各輪跨根設定與空向量檔問題已修復。[完整交付審查](issues/issue-28/review-8b6c06d.md) PASS，報告提交 `a24653b` 已驗證 artifact 例外並 fast-forward 合併。乾淨 CI 的向量測試依賴準備順序另於 `7211b81` 修正並經[局部獨立審查](issues/issue-28/review-7211b81.md) PASS。舊 `setup --vector` 保留依賴安裝／暖機語意；完整升級用 `setup --scope global --memoria-home <existing-data-root> --agent both --vector --yes`，依需要選 host／基本模式。schema、recall 預設、helper 路徑與 cache 鎖檔不變。 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
