@@ -29,6 +29,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# The inner driver also exercises real libSQL initialization (F3).
+# Ensure helper has @libsql/client in cache or sibling for stub provider
+HELPER_DIR="$ROOT_DIR/skills/memoria-vector"
+if [ ! -d "$HELPER_DIR/node_modules/@libsql/client" ]; then
+  (cd "$HELPER_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1)
+fi
+
 echo "[setup-onboarding] Step 1: inner unit assertions for install-settings & path precedence (SCN-003, SCN-009, SCN-012)"
 (cd "$ROOT_DIR" && node --import tsx scripts/setup-onboarding-driver.mts)
 
@@ -164,12 +171,6 @@ echo "$RECALL_RERUN" | node -e 'const d=JSON.parse(require("node:fs").readFileSy
 echo "  ✓ SCN-008: rerun preserves existing memories and custom rules without duplicating managed blocks"
 
 echo "[setup-onboarding] Step 5: Vector enablement on empty & populated DB, cursor immunity, failure & retry (SCN-006, SCN-007, SCN-010, SCN-013)"
-# Ensure helper has @libsql/client in cache or sibling for stub provider
-HELPER_DIR="$ROOT_DIR/skills/memoria-vector"
-if [ ! -d "$HELPER_DIR/node_modules/@libsql/client" ]; then
-  (cd "$HELPER_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1)
-fi
-
 # SCN-007 & SCN-013: Empty DB with --vector runs isolated probe, leaves 0 sessions/events/telemetry in real DB
 H_EMPTY="$TMP_DIR/home-empty"
 XDG_EMPTY="$TMP_DIR/xdg-empty"

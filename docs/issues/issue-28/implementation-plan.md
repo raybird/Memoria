@@ -232,3 +232,10 @@
 - [x] 完成所有 Task 實作、紅綠重構證據與實機 local 模型驗證。
 - [x] 完成常青文件更新與程式提交；各輪審查修復已提交至 `0de3683`。
 - [ ] 完成發版前完整交付複查、合併與版本發布。
+
+## 發版前乾淨 CI 修正（2026-10-23）
+
+- 紅燈：main CI [39902809662](https://github.com/raybird/Memoria/actions/runs/39902809662)，core job `120248053124` 在 onboarding Step 1 的 F-3 初始化報 `ERR_MODULE_NOT_FOUND: @libsql/client`。這是測試依賴準備順序，並非產品行為紅燈；既有安裝區塊在 Step 5，晚於新增的真實 libSQL 測試。
+- 最小修正：只將原有 helper 依賴安裝移至 Step 1 前；不改產品、fixture 或 assertion。shell 頂層搬移不涉及函式 symbol。
+- 綠燈：`bash -n scripts/test-setup-onboarding.sh` exit 0；`bash scripts/test-setup-onboarding.sh` 在 sandbox 外 exit 0，完整 Step 1–7、原始七項與 F-1／F-2 深層祖先／F-3 回歸全過。本機 helper 依賴既存，乾淨環境另由後續完整 CI 驗證。sandbox 內首次執行因向量隔離探測受限失敗，未作通過證據。
+- 精煉 no-op：單一既有安裝區塊搬移已是最小修改，無可簡化內容；沿用同份綠燈。
