@@ -177,6 +177,13 @@
     5. **MUST FIX #5（既有專案 `.memory`／`knowledge` 偵測）**：於 `src/core/paths.ts` 抽出 `detectLocalMemoriaRoot(cwd)`，使 `memoria setup --scope project` 在已具備 `./.memory` 或 `./knowledge` 的專案目錄中直接以 `cwd` 為目標（與 `doctor`／`recall` 一致）。
     6. **MUST FIX #6 & #7（單一資料根 `--no-vector` 停用與多根隔離）**：統一以 `vector.roots` 判斷各資料根是否啟用向量召回，移除 `resolveEffectiveVectorEnv` 中對 `defaultDataRoot` 的無條件放行，並確保非互動 `setup --scope project --no-vector` 與 `setup --scope global --no-vector` 皆只從 `vector.roots` 移除當前資料根而不誤關其他已啟用資料根。
     7. **Sandbox 相容性**：`scripts/test-setup-onboarding.sh` 改用 `node --import tsx scripts/setup-onboarding-driver.mts`，避免 `tsx` CLI IPC pipe 在受限沙盒中觸發 `EPERM`。
+  - 後續獨立複審（`review-62075c8-followup.md`）3 項 MUST FIX（`F-1`～`F-3`）修復與紅綠重構驗證：
+    1. **紅燈驗證（Red）**：於 `scripts/setup-onboarding-driver.mts` 與 `scripts/test-setup-onboarding.sh` 新增 `F-1a`（`<dataRoot>/.agents/skills` 為一般檔案）、`F-1b`（`<dataRoot>/.agents/skills/memoria/SKILL.md` 為無部署標記的手寫 skill）、`F-1c`（`<dataRoot>/.memory` 為 symlink）、`F-2a/b`（`<HOME>/.codex` 為指向已含 `skills/` 與 `AGENTS.md` 之外部目錄的 symlink）及 `F-3a/b`（空語料 `expected === 0` 且 `<dataRoot>/.memory/vectors.db` 預先為 0-byte 空檔），執行 `node --import tsx scripts/setup-onboarding-driver.mts` 觀察到 `F-1a`、`F-1b`、`F-1c`、`F-2a`、`F-2b`、`F-3b` 共 6 項預期紅燈失敗。
+    2. **最小修復（Green）**：
+       - **`F-1`**：於 `src/cli/setup-plan.ts` 的 `assertSetupPlanSafe()` 預先檢查 data root 內所有寫入目標目錄（`.memory`、`sessions`、`sources`、`checkpoints`、`exports`、`knowledge` 及子目錄、`configs`、`.agents`、`.agents/skills`、`.agents/skill-backups`、`.agents/instruction-backups`）、內部檔案目標（`dbPath`、`briefPath`、local `vectors.db`）與 `<dataRoot>/.agents/skills/memoria`（透過 `assertHostSkillTarget`），並於 `deployAgentSkill` 套用 `assertHostSkillTarget` 保護，避免手寫 skill 被覆寫或在 `init()` 寫入 DB 後才失敗。
+       - **`F-2`**：於 `src/cli/runtime.ts` 的 `checkWritableAncestorDir()` 在確認最近既有祖先目錄可寫後，繼續向上檢查最多 4 層祖先目錄是否為真實目錄（非 symlink），並於 `src/cli/agent-integration.ts` 的 `assertInstructionTargetsSafe()` 對既有指令檔同樣執行 `assertWritableAncestorDir(target.path, 'modify')`，防止既有子目錄或檔案遮蔽上層的 symlink 祖先（如 `~/.codex -> /unselected-host`）。
+       - **`F-3`**：於 `src/cli/setup-plan.ts` 的 `runFullVectorIngest()` 當 `expected === 0` 且 local `file:` 向量檔已存在但 `inspectVectorLayer(paths.dbPath).coverage === null`（如 0-byte 空檔尚無 `memoria_vectors` 表）時，初始化空的 `memoria_vectors` 表與 vector index，使 `verifyVectorReadiness()` 與 `memoria doctor` 可正確量測 `0/0 (missing=0)`。
+    3. **綠燈與重構（Refactor）**：`pnpm run check`、`pnpm run build`、`node --import tsx scripts/setup-onboarding-driver.mts`、`bash scripts/test-setup-onboarding.sh`、`bash scripts/test-bootstrap.sh`、`bash scripts/test-smoke.sh`、`bash scripts/test-vector-recall.sh`、`pnpm run release:docs-check` 全部 exit 0。
 
 ### Task 5.2 — 雙語文件、部署版 Skill 與架構規範更新（不改變可觀察行為）
 - 產出與範圍：

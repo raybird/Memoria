@@ -193,6 +193,10 @@ async function main(): Promise<void> {
 
         // Verify getExplicitVectorEnv distinguishes auto-injected process.env from caller env (review-f38ce84 #1)
         const prevProcConfig = process.env.MEMORIA_USER_CONFIG_PATH
+        const prevProcLibsql = process.env.LIBSQL_URL
+        const prevProcProvider = process.env.MEMORIA_EMBED_PROVIDER
+        delete process.env.LIBSQL_URL
+        delete process.env.MEMORIA_EMBED_PROVIDER
         process.env.MEMORIA_USER_CONFIG_PATH = cfgFile
         try {
             applyEffectiveVectorEnv(globalRoot)
@@ -214,8 +218,10 @@ async function main(): Promise<void> {
                 undefined
             )
         } finally {
-            delete process.env.LIBSQL_URL
-            delete process.env.MEMORIA_EMBED_PROVIDER
+            if (prevProcLibsql === undefined) delete process.env.LIBSQL_URL
+            else process.env.LIBSQL_URL = prevProcLibsql
+            if (prevProcProvider === undefined) delete process.env.MEMORIA_EMBED_PROVIDER
+            else process.env.MEMORIA_EMBED_PROVIDER = prevProcProvider
             if (prevProcConfig === undefined) delete process.env.MEMORIA_USER_CONFIG_PATH
             else process.env.MEMORIA_USER_CONFIG_PATH = prevProcConfig
         }
@@ -418,6 +424,135 @@ async function main(): Promise<void> {
             ok(`countEmbeddableEntities returns ${afterNoteCount} (>0) directly from SQLite before any vector table exists (review-f38ce84 #3)`)
         } else {
             fail('countEmbeddableEntities', `expected >0 after rememberNote, got ${afterNoteCount}`)
+        }
+
+        console.log('[driver] review-62075c8-followup assertions (F-1, F-2, F-3)')
+        const { getRuntimeLayout } = await import('../src/cli/runtime.js')
+        const { runFullVectorIngest, verifyVectorReadiness } = await import('../src/cli/setup-plan.js')
+        const runtimeLayout = getRuntimeLayout()
+
+        // F-1a: plain file at <dataRoot>/.agents/skills is rejected by assertSetupPlanSafe BEFORE init
+        const f1BlockedRoot = path.join(tmp, 'f1-blocked-root')
+        await fs.mkdir(path.join(f1BlockedRoot, '.agents'), { recursive: true })
+        await fs.writeFile(path.join(f1BlockedRoot, '.agents', 'skills'), 'plain file', 'utf8')
+        const f1BlockedPlan = await buildSetupPlan({
+            scope: 'project',
+            dataRoot: f1BlockedRoot,
+            hosts: [],
+            vector: false,
+            wireInstructions: false,
+            saveSettings: false
+        }, runtimeLayout)
+        let caughtF1BlockedSkill = false
+        try {
+            await assertSetupPlanSafe(f1BlockedPlan)
+        } catch {
+            caughtF1BlockedSkill = true
+        }
+        eq('F-1a: plain file at <dataRoot>/.agents/skills is rejected by assertSetupPlanSafe', caughtF1BlockedSkill, true)
+
+        // F-1b: hand-written <dataRoot>/.agents/skills/memoria/SKILL.md without deployment marks is rejected by assertSetupPlanSafe
+        const f1HandRoot = path.join(tmp, 'f1-hand-root')
+        await fs.mkdir(path.join(f1HandRoot, '.agents', 'skills', 'memoria'), { recursive: true })
+        await fs.writeFile(path.join(f1HandRoot, '.agents', 'skills', 'memoria', 'SKILL.md'), '---\nname: custom\n---\nHand-written\n', 'utf8')
+        const f1HandPlan = await buildSetupPlan({
+            scope: 'project',
+            dataRoot: f1HandRoot,
+            hosts: [],
+            vector: false,
+            wireInstructions: false,
+            saveSettings: false
+        }, runtimeLayout)
+        let caughtF1HandSkill = false
+        try {
+            await assertSetupPlanSafe(f1HandPlan)
+        } catch {
+            caughtF1HandSkill = true
+        }
+        eq('F-1b: unmarked <dataRoot>/.agents/skills/memoria/SKILL.md is rejected by assertSetupPlanSafe', caughtF1HandSkill, true)
+
+        // F-1c: symlink at <dataRoot>/.memory is rejected by assertSetupPlanSafe
+        const f1SymRoot = path.join(tmp, 'f1-sym-root')
+        const f1OutsideMem = path.join(tmp, 'f1-outside-mem')
+        await fs.mkdir(f1SymRoot, { recursive: true })
+        await fs.mkdir(f1OutsideMem, { recursive: true })
+        await fs.symlink(f1OutsideMem, path.join(f1SymRoot, '.memory'))
+        const f1SymPlan = await buildSetupPlan({
+            scope: 'project',
+            dataRoot: f1SymRoot,
+            hosts: [],
+            vector: false,
+            wireInstructions: false,
+            saveSettings: false
+        }, runtimeLayout)
+        let caughtF1SymMemory = false
+        try {
+            await assertSetupPlanSafe(f1SymPlan)
+        } catch {
+            caughtF1SymMemory = true
+        }
+        eq('F-1c: symlink at <dataRoot>/.memory is rejected by assertSetupPlanSafe', caughtF1SymMemory, true)
+
+        // F-2: <HOME>/.codex is a symlink to an unselected directory that ALREADY contains a real `skills/` subdir and `AGENTS.md` file
+        const f2Home = path.join(tmp, 'f2-home')
+        const f2Unselected = path.join(tmp, 'f2-unselected-host')
+        await fs.mkdir(f2Home, { recursive: true })
+        await fs.mkdir(path.join(f2Unselected, 'skills'), { recursive: true })
+        await fs.writeFile(path.join(f2Unselected, 'AGENTS.md'), '# Unselected Host Rules\n', 'utf8')
+        await fs.symlink(f2Unselected, path.join(f2Home, '.codex'))
+
+        let caughtF2Skill = false
+        try {
+            await assertHostSkillTarget(path.join(f2Home, '.codex', 'skills', 'memoria'))
+        } catch {
+            caughtF2Skill = true
+        }
+        eq('F-2a: assertHostSkillTarget rejects ~/.codex/skills/memoria when ~/.codex is a symlink even if skills/ exists', caughtF2Skill, true)
+
+        const f2InstrPlan = await planInstructionWiring({
+            scope: 'global',
+            dataRoot: path.join(f2Home, '.memoria'),
+            briefPath: path.join(f2Home, '.memoria', 'knowledge', 'BRIEF.md'),
+            hosts: ['codex'],
+            homedir: f2Home,
+            env: { HOME: f2Home }
+        })
+        let caughtF2Instr = false
+        try {
+            await assertInstructionTargetsSafe(f2InstrPlan)
+        } catch {
+            caughtF2Instr = true
+        }
+        eq('F-2b: assertInstructionTargetsSafe rejects ~/.codex/AGENTS.md when ~/.codex is a symlink even if AGENTS.md exists', caughtF2Instr, true)
+
+        // F-3: Empty corpus (expected=0) with a pre-existing 0-byte vector DB file initializes memoria_vectors so verifyVectorReadiness succeeds
+        const f3Root = path.join(tmp, 'f3-empty-root')
+        const f3Paths = resolveMemoriaPaths(f3Root, { env: envBase })
+        const f3Core = new MemoriaCore(f3Paths)
+        await f3Core.init()
+        const f3EmptyVecDb = path.join(f3Root, '.memory', 'vectors.db')
+        await fs.writeFile(f3EmptyVecDb, '', 'utf8')
+        const prevLibsql = process.env.LIBSQL_URL
+        const prevProvider = process.env.MEMORIA_EMBED_PROVIDER
+        process.env.LIBSQL_URL = `file:${f3EmptyVecDb}`
+        process.env.MEMORIA_EMBED_PROVIDER = 'stub'
+        try {
+            const f3Env = { ...process.env, LIBSQL_URL: `file:${f3EmptyVecDb}`, MEMORIA_EMBED_PROVIDER: 'stub' }
+            const f3Ingest = await runFullVectorIngest(f3Paths, runtimeLayout, f3Env)
+            eq('F-3a: runFullVectorIngest on empty corpus returns missing=0', f3Ingest.missing, 0)
+            let f3ReadyOk = false
+            try {
+                const f3Ready = await verifyVectorReadiness(f3Paths, runtimeLayout, f3Env)
+                f3ReadyOk = f3Ready.isolatedProbeVerified === true && f3Ready.expected === 0 && f3Ready.embedded === 0
+            } catch {
+                f3ReadyOk = false
+            }
+            eq('F-3b: verifyVectorReadiness succeeds on empty corpus even when vectors.db started as a 0-byte file', f3ReadyOk, true)
+        } finally {
+            if (prevLibsql === undefined) delete process.env.LIBSQL_URL
+            else process.env.LIBSQL_URL = prevLibsql
+            if (prevProvider === undefined) delete process.env.MEMORIA_EMBED_PROVIDER
+            else process.env.MEMORIA_EMBED_PROVIDER = prevProvider
         }
     } finally {
         await fs.rm(tmp, { recursive: true, force: true })

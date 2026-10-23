@@ -170,6 +170,7 @@ export async function assertInstructionTargetsSafe(plan: InstructionWiringPlan):
                     `refusing to modify ${target.path}: it exists and is not a regular file`
                 )
             }
+            await assertWritableAncestorDir(target.path, 'modify')
             // Verify writeability by opening for reading/writing check
             try {
                 await fs.access(target.path, fs.constants.R_OK | fs.constants.W_OK)

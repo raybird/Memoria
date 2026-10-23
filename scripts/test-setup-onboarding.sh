@@ -398,4 +398,77 @@ if (!vr || !vr.ok || !vr.value.startsWith("enabled")) {
 '
 echo "  ✓ MUST FIX #7: setup --scope global --no-vector disables global root while preserving project B's vector enablement"
 
+echo "[setup-onboarding] Step 7: Follow-up review regression checks (review-62075c8-followup F-1, F-2, F-3)"
+# F-1a: Plain file at <dataRoot>/.agents/skills must be rejected BEFORE init creates sessions.db
+F1_ROOT_A="$TMP_DIR/f1-root-a"
+mkdir -p "$F1_ROOT_A/.agents"
+printf 'plain file\n' > "$F1_ROOT_A/.agents/skills"
+if HOME="$H1" XDG_CONFIG_HOME="$XDG1" "$CLI" setup --scope project --memoria-home "$F1_ROOT_A" --agent none --no-vector --yes >"$TMP_DIR/f1a.out" 2>&1; then
+  echo "  ✗ F-1a: setup succeeded despite plain file at <dataRoot>/.agents/skills"; exit 1
+fi
+[ ! -e "$F1_ROOT_A/.memory" ] || { echo "  ✗ F-1a: .memory was created before <dataRoot>/.agents/skills conflict was caught"; exit 1; }
+
+# F-1b: Hand-written <dataRoot>/.agents/skills/memoria/SKILL.md without deployment marks must NOT be overwritten
+F1_ROOT_B="$TMP_DIR/f1-root-b"
+mkdir -p "$F1_ROOT_B/.agents/skills/memoria"
+printf -- '---\nname: custom\n---\nHand-written data-root skill\n' > "$F1_ROOT_B/.agents/skills/memoria/SKILL.md"
+if HOME="$H1" XDG_CONFIG_HOME="$XDG1" "$CLI" setup --scope project --memoria-home "$F1_ROOT_B" --agent none --no-vector --yes >"$TMP_DIR/f1b.out" 2>&1; then
+  echo "  ✗ F-1b: setup succeeded despite unmarked <dataRoot>/.agents/skills/memoria/SKILL.md"; exit 1
+fi
+grep -q "Hand-written data-root skill" "$F1_ROOT_B/.agents/skills/memoria/SKILL.md" || {
+  echo "  ✗ F-1b: hand-written <dataRoot>/.agents/skills/memoria/SKILL.md was overwritten!"
+  exit 1
+}
+[ ! -e "$F1_ROOT_B/.memory" ] || { echo "  ✗ F-1b: .memory was created before unmarked data-root skill was caught"; exit 1; }
+
+# F-1c: Symlink at <dataRoot>/.memory must be rejected BEFORE writing into symlink target
+F1_ROOT_C="$TMP_DIR/f1-root-c"
+F1_OUTSIDE_MEM="$TMP_DIR/f1-outside-mem"
+mkdir -p "$F1_ROOT_C" "$F1_OUTSIDE_MEM"
+ln -s "$F1_OUTSIDE_MEM" "$F1_ROOT_C/.memory"
+if HOME="$H1" XDG_CONFIG_HOME="$XDG1" "$CLI" setup --scope project --memoria-home "$F1_ROOT_C" --agent none --no-vector --yes >"$TMP_DIR/f1c.out" 2>&1; then
+  echo "  ✗ F-1c: setup succeeded despite <dataRoot>/.memory being a symlink"; exit 1
+fi
+[ ! -e "$F1_OUTSIDE_MEM/sessions.db" ] || { echo "  ✗ F-1c: sessions.db was written into symlinked .memory target"; exit 1; }
+echo "  ✓ F-1: data-root internal paths (.memory, .agents/skills/memoria, etc.) are pre-checked and protected before any write"
+
+# F-2: ~/.codex is a symlink to an unselected directory that already has a real skills/ dir and AGENTS.md
+H_F2="$TMP_DIR/home-f2"
+XDG_F2="$TMP_DIR/xdg-f2"
+F2_UNSELECTED="$TMP_DIR/f2-unselected"
+mkdir -p "$H_F2" "$XDG_F2" "$F2_UNSELECTED/skills"
+printf '# Unselected Host Rules\n' > "$F2_UNSELECTED/AGENTS.md"
+ln -s "$F2_UNSELECTED" "$H_F2/.codex"
+if HOME="$H_F2" XDG_CONFIG_HOME="$XDG_F2" "$CLI" setup --scope global --agent codex --no-vector --yes >"$TMP_DIR/f2.out" 2>&1; then
+  echo "  ✗ F-2: setup succeeded despite ~/.codex being a symlink to an unselected directory"; exit 1
+fi
+[ ! -e "$F2_UNSELECTED/skills/memoria" ] || { echo "  ✗ F-2: skill was deployed through ~/.codex symlink into unselected directory"; exit 1; }
+grep -q "memoria:instructions:start" "$F2_UNSELECTED/AGENTS.md" && {
+  echo "  ✗ F-2: AGENTS.md in unselected directory was modified through ~/.codex symlink"
+  exit 1
+}
+[ ! -e "$H_F2/.memoria" ] || { echo "  ✗ F-2: data root was created before ~/.codex symlink was caught"; exit 1; }
+echo "  ✓ F-2: symlinked ancestor directory (~/.codex -> unselected dir with existing skills/ & AGENTS.md) is rejected before any write"
+
+# F-3: Empty corpus (0 memories) + pre-existing 0-byte vectors.db file succeeds with --vector and passes doctor
+H_F3="$TMP_DIR/home-f3"
+XDG_F3="$TMP_DIR/xdg-f3"
+ROOT_F3="$H_F3/.memoria"
+mkdir -p "$ROOT_F3/.memory" "$XDG_F3"
+: > "$ROOT_F3/.memory/vectors.db"
+F3_OUT=$(HOME="$H_F3" XDG_CONFIG_HOME="$XDG_F3" MEMORIA_EMBED_PROVIDER=stub "$CLI" setup --scope global --agent none --vector --yes --json)
+echo "$F3_OUT" | node -e '
+const lines = require("node:fs").readFileSync(0, "utf8").trim().split("\n").map(l => JSON.parse(l));
+const r = lines.find(x => x.step === "readiness");
+if (!r || !r.ok || r.vector?.status !== "ready" || r.vector?.isolatedProbeVerified !== true) {
+  throw new Error("F-3: expected readiness.vector.status=ready on empty corpus with 0-byte vectors.db: " + JSON.stringify(lines));
+}
+'
+DOC_F3=$(cd "$OTHER_CWD" && HOME="$H_F3" XDG_CONFIG_HOME="$XDG_F3" "$CLI" doctor --json)
+echo "$DOC_F3" | node -e '
+const d = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+if (!d.ok) throw new Error("F-3: doctor failed after empty-corpus 0-byte vectors.db setup: " + JSON.stringify(d));
+'
+echo "  ✓ F-3: empty corpus with pre-existing 0-byte vectors.db initializes vector table and passes readiness & doctor"
+
 echo "[setup-onboarding] ok"

@@ -261,8 +261,46 @@ export function printSetupPlanPreview(plan: SetupPlan): void {
     }
 }
 
+async function assertRegularFileOrCreatable(filePath: string, actionLabel = 'write'): Promise<void> {
+    const stat = await fs.lstat(filePath).catch(() => undefined)
+    if (stat) {
+        if (stat.isSymbolicLink() || !stat.isFile()) {
+            throw new Error(
+                `refusing to ${actionLabel} ${filePath}: it exists and is not a regular file`
+            )
+        }
+        await assertWritableAncestorDir(filePath, actionLabel)
+        try {
+            await fs.access(filePath, fs.constants.R_OK | fs.constants.W_OK)
+        } catch {
+            throw new Error(`refusing to ${actionLabel} ${filePath}: permission denied (not readable/writable)`)
+        }
+    } else {
+        await assertWritableAncestorDir(filePath, actionLabel)
+    }
+}
+
+async function assertRealDirectoryOrCreatable(dirPath: string, actionLabel = 'initialize'): Promise<void> {
+    const stat = await fs.lstat(dirPath).catch(() => undefined)
+    if (stat) {
+        if (stat.isSymbolicLink() || !stat.isDirectory()) {
+            throw new Error(
+                `refusing to ${actionLabel} ${dirPath}: it exists and is not a directory`
+            )
+        }
+        try {
+            await fs.access(dirPath, fs.constants.W_OK)
+        } catch {
+            throw new Error(`refusing to ${actionLabel} ${dirPath}: permission denied (not writable)`)
+        }
+        await assertWritableAncestorDir(dirPath, actionLabel)
+    } else {
+        await assertWritableAncestorDir(dirPath, actionLabel)
+    }
+}
+
 /**
- * Pre-check all planned targets BEFORE any file or database is modified (SCN-009, SCN-012).
+ * Pre-check all planned targets BEFORE any file or database is modified (SCN-009, SCN-012, F-1, F-2).
  */
 export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
     // 1. If vector is requested, verify MEMORIA_DB_PATH matches the data root's DB
@@ -270,20 +308,42 @@ export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
         assertIngestDbPathMatchesRoot(plan.paths)
     }
 
-    // 2. Verify data root path is either a real directory or has a writable ancestor directory
-    const rootStat = await fs.lstat(plan.paths.memoriaHome).catch(() => undefined)
-    if (rootStat) {
-        if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
-            throw new Error(
-                `refusing to initialize ${plan.paths.memoriaHome}: it exists and is not a directory`
-            )
-        }
-        await assertWritableAncestorDir(path.join(plan.paths.memoriaHome, '.memory'), 'initialize')
-    } else {
-        await assertWritableAncestorDir(plan.paths.memoriaHome, 'initialize')
+    // 2. Verify data root and every internal directory `init()` / backup / skill deployment creates
+    const internalDirs = [
+        plan.paths.memoriaHome,
+        plan.paths.memoryDir,
+        plan.paths.sessionsPath,
+        path.join(plan.paths.memoryDir, 'sources'),
+        path.join(plan.paths.memoryDir, 'checkpoints'),
+        path.join(plan.paths.memoryDir, 'exports'),
+        plan.paths.knowledgeDir,
+        path.join(plan.paths.knowledgeDir, 'Daily'),
+        path.join(plan.paths.knowledgeDir, 'Sources'),
+        path.join(plan.paths.knowledgeDir, 'Skills'),
+        path.join(plan.paths.knowledgeDir, 'Decisions'),
+        plan.paths.configPath,
+        path.join(plan.paths.memoriaHome, '.agents'),
+        path.join(plan.paths.memoriaHome, '.agents', 'skills'),
+        path.join(plan.paths.memoriaHome, '.agents', 'skill-backups'),
+        path.join(plan.paths.memoriaHome, '.agents', 'instruction-backups')
+    ]
+    for (const dir of internalDirs) {
+        await assertRealDirectoryOrCreatable(dir, 'initialize')
     }
 
-    // 3. Check all host skill directories up front
+    // Verify internal file targets inside the data root (DB, BRIEF.md, and local vector DB when requested)
+    await assertRegularFileOrCreatable(plan.paths.dbPath, 'initialize')
+    await assertRegularFileOrCreatable(plan.briefPath, 'write')
+    if (plan.choices.vector) {
+        const explicitVec = getExplicitVectorEnv(process.env)
+        const vecUrl = explicitVec.libsqlUrl || `file:${resolveLocalVectorDbPath(plan.paths.memoriaHome)}`
+        if (vecUrl.startsWith('file:')) {
+            await assertRegularFileOrCreatable(vecUrl.slice('file:'.length), 'initialize')
+        }
+    }
+
+    // 3. Check the data-root skill target (<memoriaHome>/.agents/skills/memoria) and all host skill directories up front
+    await assertHostSkillTarget(path.join(plan.paths.memoriaHome, '.agents', 'skills', 'memoria'))
     for (const target of plan.hostSkillTargets) {
         await assertHostSkillTarget(target.dir)
     }
@@ -293,21 +353,7 @@ export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
 
     // 5. If saving install settings, verify settingsPath is not a symlink/directory and its ancestor is writable
     if (plan.choices.saveSettings) {
-        const stat = await fs.lstat(plan.settingsPath).catch(() => undefined)
-        if (stat) {
-            if (stat.isSymbolicLink() || !stat.isFile()) {
-                throw new Error(
-                    `refusing to overwrite ${plan.settingsPath}: it exists and is not a regular file`
-                )
-            }
-            try {
-                await fs.access(plan.settingsPath, fs.constants.R_OK | fs.constants.W_OK)
-            } catch {
-                throw new Error(`refusing to overwrite ${plan.settingsPath}: permission denied (not readable/writable)`)
-            }
-        } else {
-            await assertWritableAncestorDir(plan.settingsPath, 'write')
-        }
+        await assertRegularFileOrCreatable(plan.settingsPath, 'overwrite')
     }
 }
 
@@ -341,6 +387,29 @@ export async function runFullVectorIngest(
     // corpus as empty (review-f38ce84 #3).
     const expected = existsSync(paths.dbPath) ? countEmbeddableEntities(paths.dbPath) : 0
     if (expected === 0) {
+        // F-3: If the corpus is empty (`expected === 0`) and `LIBSQL_URL` points at an already-existing
+        // empty file (e.g. 0-byte `vectors.db` with no `memoria_vectors` table yet), `inspectVectorLayer`
+        // would fail with `read_failed` (`no such table: memoria_vectors`). Initialize the empty native
+        // vector table so `inspectVectorLayer` and `doctor` measure `embedded=0 expected=0 missing=0`.
+        const libsqlUrl = (env.LIBSQL_URL ?? process.env.LIBSQL_URL)?.trim() ?? ''
+        if (libsqlUrl.startsWith('file:')) {
+            const vecFilePath = libsqlUrl.slice('file:'.length)
+            if (existsSync(vecFilePath) && inspectVectorLayer(paths.dbPath).coverage === null) {
+                const helperDir = path.join(runtimeLayout.runtimeRoot, 'skills', 'memoria-vector')
+                const initRes = await runChild(
+                    process.execPath,
+                    [
+                        '--input-type=module',
+                        '-e',
+                        `import { importDep } from './deps.mjs'; import { DIM } from './embed.mjs'; const { createClient } = await importDep('@libsql/client'); const db = createClient({ url: process.env.LIBSQL_URL, authToken: process.env.LIBSQL_AUTH_TOKEN }); try { await db.execute(\`CREATE TABLE IF NOT EXISTS memoria_vectors (name TEXT PRIMARY KEY, kind TEXT, text TEXT, updated_at TEXT, v F32_BLOB(\${DIM}))\`); await db.execute('CREATE INDEX IF NOT EXISTS memoria_vectors_idx ON memoria_vectors (libsql_vector_idx(v))'); } finally { db.close(); }`
+                    ],
+                    { cwd: helperDir, env, timeoutMs: 60_000 }
+                )
+                if (!initRes.ok) {
+                    throw new Error(`vector store initialization failed (${initRes.status}): ${initRes.stderr.trim() || initRes.stdout.trim()}`)
+                }
+            }
+        }
         return { embedded: 0, expected: 0, missing: 0 }
     }
 

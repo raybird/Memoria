@@ -94,6 +94,7 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
     if (!skillSourcePath) return undefined
 
     const targetDir = path.join(memoriaHome, '.agents', 'skills', 'memoria')
+    await assertHostSkillTarget(targetDir)
     await writeSkillCopy(runtimeLayout, skillSourcePath, targetDir, memoriaHome)
     return targetDir
 }
@@ -165,24 +166,37 @@ export function resolveHostAgentSkillDir(
 
 /**
  * Walk up from `targetPath`'s parent until an existing filesystem entry is found,
- * and verify that the existing ancestor is a writable real directory (not a file or symlink).
+ * verify that the nearest existing ancestor is a writable real directory (not a file or symlink),
+ * and continue checking ancestors above it so an existing real child directory (e.g. `~/.codex/skills`)
+ * cannot mask a symlinked ancestor directory higher up (e.g. `~/.codex -> /unselected-host`, F-2).
  */
 export async function checkWritableAncestorDir(
     targetPath: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
     let curr = path.dirname(path.resolve(targetPath))
+    let checkedWritableNearest = false
+    let levelsChecked = 0
     while (curr && curr !== path.dirname(curr)) {
         const dirStat = await fs.lstat(curr).catch(() => undefined)
         if (dirStat) {
             if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
                 return { ok: false, reason: `ancestor ${curr} exists and is not a directory` }
             }
-            try {
-                await fs.access(curr, fs.constants.W_OK)
-            } catch {
-                return { ok: false, reason: `parent directory ${curr} is not writable` }
+            if (!checkedWritableNearest) {
+                try {
+                    await fs.access(curr, fs.constants.W_OK)
+                } catch {
+                    return { ok: false, reason: `parent directory ${curr} is not writable` }
+                }
+                checkedWritableNearest = true
             }
-            return { ok: true }
+            levelsChecked += 1
+            // Once we have verified the nearest writable directory AND walked up through its parent
+            // containers (e.g. `<root>/.agents/skills` -> `<root>/.agents` -> `<root>`), stop before
+            // OS root symlinks such as `/var -> /private/var` on macOS.
+            if (levelsChecked >= 4) {
+                return { ok: true }
+            }
         }
         curr = path.dirname(curr)
     }

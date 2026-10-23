@@ -213,16 +213,23 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
             const setupPaths = plan.paths
             const setupCore = new MemoriaCore(setupPaths)
 
-            // Pre-check all planned targets BEFORE writing anything (SCN-009, SCN-012, issue-22).
+            // Pre-check all planned targets BEFORE writing anything (SCN-009, SCN-012, issue-22, F-1, F-2).
             try {
                 await assertSetupPlanSafe(plan)
             } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error)
-                const failedHost = plan.hostSkillTargets.find((h) => msg.includes(h.dir))
+                const dataRootSkillDir = path.join(setupPaths.memoriaHome, '.agents', 'skills', 'memoria')
+                const failedHost = plan.hostSkillTargets.find(
+                    (h) => msg.includes(h.dir) || msg.includes(path.dirname(h.dir)) || msg.includes(path.dirname(path.dirname(h.dir)))
+                )
                 const stepName = msg.includes('MEMORIA_DB_PATH')
                     ? 'vector-deps'
                     : failedHost
                     ? 'agent-skill'
+                    : msg.includes(dataRootSkillDir) || msg.includes(path.join(setupPaths.memoriaHome, '.agents'))
+                    ? 'skill'
+                    : msg.includes(setupPaths.memoriaHome) && !plan.instructionPlan.targets.some((t) => msg.includes(t.path))
+                    ? 'init'
                     : 'instructions'
                 stepLog(stepName, false, {
                     error: msg,
