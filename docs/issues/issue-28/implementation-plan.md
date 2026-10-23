@@ -1,0 +1,190 @@
+# Issue 28 - 實作計畫
+
+## 狀態與唯一工作清單
+
+本檔為已核准的唯一工作清單（2026-10-23 完成 `decompose`）。[README.md](./README.md) 的 `SCN-001`～`SCN-014` 與 `TBD-1`～`TBD-5` 均已核准。
+
+設計與流程依 [technical-analysis.md](./technical-analysis.md)，需求現況依 [requirement-analysis.md](./requirement-analysis.md)；風險與首要驗證僅以 [README.md](./README.md#風險與首要驗證) 為準。
+
+## 設計流程
+
+讀有效設定／判斷互動模式 → 收集選擇 → 預檢全部目標與顯示變更 → 使用者確認 → 初始化與安全寫入 → 部署 host → 可選模型／索引 → 產生 brief／接線 → 真實 readiness 驗證 → 保存／回報狀態。
+
+可預知衝突在套用前全部收集；執行期失敗沿用可恢復步驟，不把多檔案與外部下載假裝成一個 atomic transaction。完整成功必須符合所選能力，未選能力是 skipped，未知 coverage 不是 ready。
+
+## 驗收與責任 Task 對照
+
+| Scenario / 項目 | 責任 Task | 支援 Task |
+| --- | --- | --- |
+| 首要驗證（最大風險保護與路徑 characterization） | Task 1.1 | Task 1.2, Task 2.1 |
+| SCN-001 一般使用者在終端完成引導 | Task 3.1 | Task 2.1, Task 4.1 |
+| SCN-002 全域資料選擇在新程序中仍有效 | Task 1.2 | Task 3.1 |
+| SCN-003 專案記憶與既有明確路徑保持隔離 | Task 1.1 | Task 1.2 |
+| SCN-004 所選 host 可發現相同記憶 skill | Task 2.1 | Task 3.1 |
+| SCN-005 共用規範與 brief 接線保留原有內容 | Task 2.1 | Task 3.1 |
+| SCN-006 選擇本地語意召回即完成向量啟用 | Task 4.1 | Task 1.2, Task 3.1 |
+| SCN-007 基本模式與空記憶庫也有誠實的完成判定 | Task 4.1 | Task 3.1, Task 5.1 |
+| SCN-008 重跑或升級後刷新設定不重複或遺失資料 | Task 2.1 | Task 3.1, Task 5.1 |
+| SCN-009 衝突或不安全寫入在開始修改前被攔下 | Task 1.1 | Task 2.1, Task 3.1 |
+| SCN-010 安裝或索引失敗可以辨認與重試 | Task 4.1 | Task 3.1 |
+| SCN-011 自動化命令不等待問答 | Task 3.1 | Task 5.1 |
+| SCN-012 環境覆寫不被保存設定悄悄替換 | Task 1.1 | Task 1.2, Task 4.1 |
+| SCN-013 完成驗證不污染使用者記憶 | Task 4.1 | Task 3.1, Task 5.1 |
+| SCN-014 既有部署與未選擇的整合維持原行為 | Task 5.1 | Task 1.1, Task 3.1 |
+| 常青文件、雙語指南與 deployed skill 同步 | Task 5.2 | — |
+
+---
+
+## Phase 1 — 首要驗證：路徑優先序、安裝設定保存與環境覆寫保護
+
+### Task 1.1 — 首要驗證與安裝設定／路徑優先序負向保護（SCN-003、SCN-009、SCN-012）
+- 產出與範圍：
+  - 新增 `src/core/install-settings.ts`（Zod 驗證的使用者層級 `install.json` 讀寫、平台設定路徑解析 `XDG_CONFIG_HOME`／macOS `Application Support`／Windows `APPDATA` 與 `MEMORIA_USER_CONFIG_PATH` 測試覆寫、原子寫入、禁止寫入認證 token）。
+  - 修改 `src/core/paths.ts` 與 `src/core/index.ts`（擴充 `MemoriaHomeSource` 加入 `'global-config'`，優先序：`memoriaHomeOverride` > `MEMORIA_HOME` > `cwd` 本地 `.memory`/`knowledge` 或 `cwd/memoria` > 保存的全域 `dataRoot` > `fallback`；提供有效本地向量設定推導 helper，使向量庫跟隨有效 `dataRoot`，`LIBSQL_URL` 與 `MEMORIA_EMBED_PROVIDER` 環境覆寫保持優先；檢查 `MEMORIA_DB_PATH` 與 ingest 資料根不符時的阻擋判定）。
+  - 新增 `scripts/test-setup-onboarding.sh`（建立隔離 HOME／XDG 與雙資料根 fixtures，測試專案本地記憶優先於全域設定、環境變數覆寫優先、不存 token、`MEMORIA_DB_PATH` 不符阻擋，以及手寫 skill／symlink／不可寫目標的多目標預檢基礎負向案例）。
+- 相依：無（High 風險首要驗證，排在第一項執行）
+- 驗收編號：SCN-003（責任）、SCN-009（責任）、SCN-012（責任）
+- 完成判準：
+  - `resolveMemoriaHomeInfo()` 與安裝設定讀寫在隔離環境下滿足「明確參數／環境 > 本地既有記憶 > 保存的全域預設 > fallback」。
+  - 資料根切換時，未明確指定 `LIBSQL_URL` 的本地向量路徑自動跟隨有效資料根，不混用其他資料根的向量庫。
+  - `MEMORIA_DB_PATH` 指到非 `<dataRoot>/.memory/sessions.db` 時，明確判定不可執行向量 ingest。
+  - 預檢遇到不安全目標時拒絕寫入，既有檔案與 DB 逐位元組不變。
+- 驗證：雙迴圈 — 外層以 `scripts/test-setup-onboarding.sh` 子程序驗證跨目錄 CLI 行為，內層以 `scripts/test-pure-functions.sh` 或設定 resolver 斷言驗證優先序、Windows/macOS/Linux 路徑計算與 token 過濾。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+### Task 1.2 — 新程序自動套用全域設定與 `doctor` 來源診斷（SCN-002）
+- 產出與範圍：
+  - 修改 `src/cli.ts`（啟動時載入有效安裝設定，當該有效 `dataRoot` 已啟用本地向量且環境未顯式指定 `LIBSQL_URL`／`MEMORIA_EMBED_PROVIDER` 時自動套用對應的本地 `file:<dataRoot>/.memory/vectors.db` 與 provider，讓 `recall`、`doctor` 等命令在新程序直接生效，無須 `export` 或 `source`）。
+  - 修改 `src/cli/commands/doctor.ts`（顯示有效資料位置與來源 `global-config`／`detected`／`env`／`fallback`、設定檔路徑，以及 core／agent／vector readiness 狀態）。
+- 相依：Task 1.1
+- 驗收編號：SCN-002（責任）
+- 完成判準：
+  - 完成全域設定後，在無本地記憶的任意其他目錄啟動新 CLI 程序（未設定 `MEMORIA_HOME`），`doctor`、`remember`、`recall`、`brief` 皆讀寫保存的同一全域資料根。
+  - `doctor`（一般輸出與 `--json`）顯示有效資料根位置與 `homeSource: "global-config"`。
+- 驗證：單迴圈合併於 `scripts/test-setup-onboarding.sh`（CLI 子程序在空環境與不同 `cwd` 下執行 `remember`、`recall`、`brief`、`doctor --json`，外層 CLI 輸出與底層 `paths` 傳遞完全同構，無獨立內層邏輯遺漏）。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+---
+
+## Phase 2 — Host Skill 多目標部署與 AGENTS.md / CLAUDE.md 受管理接線
+
+### Task 2.1 — Codex／Claude Code 發現路徑、受管理規範區塊、備份與重跑冪等（SCN-004、SCN-005、SCN-008）
+- 產出與範圍：
+  - 修改 `src/cli/runtime.ts`（擴充 `HOST_AGENTS` 支援 `'claude-code'` 與 `'codex'`，支援解析 `--agent claude-code`、`--agent codex`、`--agent both`、`--agent none` 或多次 `--agent`；Codex 標準發現路徑 `~/.codex/skills/memoria` 或 `$CODEX_HOME/skills/memoria`，Claude Code `~/.claude/skills/memoria`；多目標同時預檢 `assertHostSkillTarget`）。
+  - 新增 `src/cli/agent-integration.ts`（管理共用 `AGENTS.md` 與 `CLAUDE.md` 的受管理區塊 `<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`、修改前備份至 `<dataRoot>/.agents/instruction-backups/`、保留區塊外所有原始 bytes、重跑去重與原地刷新、處理全域與專案範圍及含空白路徑的 `@` import）。
+- 相依：Task 1.1
+- 驗收編號：SCN-004（責任）、SCN-005（責任）、SCN-008（責任）、支援 SCN-009
+- 完成判準：
+  - 選擇 Codex、Claude Code 或兩者時，標準 skill 位置皆有可執行 `bin/memoria` launcher 且 `DATA_ROOT` 綁定所選資料根。
+  - 既有 `AGENTS.md` 與 `CLAUDE.md` 的手寫內容完整保留，修改前產生可定位備份，共用 `AGENTS.md` 含 brief 讀取指令，`CLAUDE.md` 含 `@AGENTS.md` 與對應 brief 的 `@` import（含空白路徑跳脫）。
+  - 以相同選擇重跑或升級後刷新，受管理區塊不重複堆疊，手寫內容與真實記憶完整保留。
+  - 任一目標（skill 或規範檔）為來源不明的 symlink、非目錄衝突或不可寫時，在寫入任何目標前全部攔下並以非 0 結束。
+- 驗證：雙迴圈 — 內層測試受管理區塊替換／備份／衝突預檢函式，外層於 `scripts/test-setup-onboarding.sh` 以隔離 `HOME` 驗證雙 host 部署、launcher 執行、規範檔前後 bytes 對照與重跑冪等。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+---
+
+## Phase 3 — 互動引導、變更計畫預覽與非互動旗標編排
+
+### Task 3.1 — `memoria setup` 互動問答、預覽確認／取消與非互動完整選項（SCN-001、SCN-011）
+- 產出與範圍：
+  - 新增 `src/cli/setup-plan.ts`（收集選擇 `scope: global | project`、`hosts: ('claude-code' | 'codex')[]`、`vector: boolean`、`wireInstructions: boolean`；計算完整 `SetupPlan` 預覽：資料根、設定檔、預計建立／更新／備份的 skill 與規範檔、是否需下載向量模型；提供 `readline/promises` 互動問答與確認）。
+  - 修改 `src/cli/commands/setup.ts`（整合互動模式與非互動旗標 `--scope <global|project>`、`--global`、`--project`、`--agent <name>`、`--vector`、`--no-vector`、`--yes`、`--interactive`；維持既有 `--json`、無 TTY、`--memoria-home`、`--serve` 不等待問答的自動化契約；互斥或無效旗標以非 0 與可定位錯誤結束；確認取消時 0 寫入退出）。
+- 相依：Task 1.2, Task 2.1
+- 驗收編號：SCN-001（責任）、SCN-011（責任）
+- 完成判準：
+  - 在互動終端（或 `--interactive`）執行 `memoria setup` 時，可依序選擇全域／專案、host（Codex／Claude Code／both／none）、是否啟用本地語意召回，寫入前顯示實際路徑、預計修改檔案與是否下載模型。
+  - 取消確認（輸入 `n` 或 EOF）時不改寫任何既有資料或使用者設定。
+  - 既有 `--json`、無 TTY 或明確參數呼叫不卡住等待輸入，JSON Lines 契約維持相容；新非互動旗標可一次完成全部選擇，互斥選項（如同時傳 `--global` 與 `--project`）以非 0 報錯。
+- 驗證：單迴圈於 `scripts/test-setup-onboarding.sh` 與 `scripts/test-bootstrap.sh`（透過餵入 stdin 測試互動問答確認與取消零變更、無 TTY 與 `--json` 附 timeout 防卡死、互斥旗標非 0 退出）。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+---
+
+## Phase 4 — 本地語意召回一次到位、隔離驗證與失敗恢復
+
+### Task 4.1 — 向量模型安裝／暖機、樹狀索引與全量 ingest、coverage 與隔離語意路由實測（SCN-006、SCN-007、SCN-010、SCN-013）
+- 產出與範圍：
+  - 修改 `src/cli/setup-plan.ts`、`src/cli/commands/setup.ts` 與 `src/cli/runtime.ts`（當選擇啟用本地語意召回時：檢查 `MEMORIA_DB_PATH` 一致性 → 安裝／重用 vector 依賴與模型暖機 → 保存本地向量設定 → 執行 `buildMemoryIndex` 補齊樹狀索引 → 以專用 `--sync-target memoria-setup-full --payload-mode full` 匯出完整語料並執行 `vector-ingest.mjs` → 檢查 `inspectVectorLayer` 確認 `missing === 0` → 驗證語意召回路由）。
+  - 實作空庫與非空庫的誠實完成驗證：
+    - 非空庫：對真實語料執行驗證查詢（或在隔離探測庫驗證向量鏈路＋真實庫驗證 coverage `embedded === expected && missing === 0` 與實際語意查詢 `route_mode` 為 `vector` 或 `hybrid_vector` 且 `fallback_used === false`），不在真實資料庫留下測試記憶或測試 feedback。
+    - 空庫：`expected === 0` 時不因無命中判失敗，也不偽稱已驗證真實語料查詢；自動在隔離暫存目錄與暫存向量庫寫入合成記憶、ingest 並驗證 `route_mode` 為 `vector`／`hybrid_vector` 且 `fallback_used === false`，驗證後完整刪除暫存目錄，真實記憶庫保持 0 筆測試殘留。
+    - 基本模式（未選向量）：不下載模型，明示 `core: ready`、`vector: skipped (basic mode)`。
+    - 失敗與重試：依賴下載、暖機、ingest 或驗證任一步失敗時以非 0 結束，分開顯示 `core`、`agent`、`vector` 狀態與重試命令；重跑時沿用已成功的 core／依賴快取並補齊失敗步驟。
+- 相依：Task 3.1
+- 驗收編號：SCN-006（責任）、SCN-007（責任）、SCN-010（責任）、SCN-013（責任）、支援 SCN-008／SCN-012
+- 完成判準：
+  - 選擇語意召回後一次完成模型暖機、樹狀索引、全量向量 ingest（不受舊 sync 游標影響）、`doctor` `embedded === expected` 且 `missing === 0`，且語意改述查詢驗證 `route_mode` 為 `vector` 或 `hybrid_vector`、`fallback_used === false`。
+  - 未選向量不下載模型；空庫以隔離暫存探測驗證鏈路並清理，真實記憶庫無任何合成筆記或 feedback 殘留。
+  - 注入 npm／暖機／ingest 失敗時 setup 以非 0 退出，清楚區分 `core: ready` 與 `vector: failed`，重跑可恢復至完成。
+- 驗證：
+  - 自動化 E2E：`scripts/test-setup-onboarding.sh`（使用 stub provider + 真實 libSQL + 故障注入驗證非空庫舊游標全量補齊、空庫隔離探測零殘留、基本模式不裝模型、失敗非 0 與重試恢復）。
+  - 維護者實機手動證據（依 `project.md`）：以 `MEMORIA_EMBED_PROVIDER=local` 在隔離資料根執行完整 setup，記錄模型與依賴快取 hash、空／非空語料 coverage、跨語言／改述查詢 `route_mode` 與延遲。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+---
+
+## Phase 5 — 打包安裝回歸、CI 矩陣與雙語常青文件同步
+
+### Task 5.1 — Packed npm、no-clone tarball、Node 18 與跨平台路徑回歸驗證（SCN-014）
+- 產出與範圍：
+  - 修改 `scripts/test-npm-install.sh`（在 packed npm 安裝環境驗證一次 setup 後，跨目錄新程序不帶 `MEMORIA_HOME` 即可透過保存設定執行 `remember`、`recall`、`doctor` 與 deployed launcher）。
+  - 修改 `scripts/test-bootstrap.sh`、`scripts/test-no-clone-install.sh`、`.github/workflows/ci.yml`（將 `scripts/test-setup-onboarding.sh` 加入 CI 測試矩陣，驗證 Windows／macOS／Linux 平台路徑解析與既有契約相容性）。
+- 相依：Task 4.1
+- 驗收編號：SCN-014（責任）
+- 完成判準：
+  - `pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n` 全部通過。
+  - `test-setup-onboarding.sh`、`test-bootstrap.sh`、`test-npm-install.sh`、`test-no-clone-install.sh`、`test-vector-recall.sh`、`test-brief-scope.sh` 等相關測試全綠。
+  - 未選擇的 host 不被修改，不自動安裝 service 或 hooks，helper 路徑與 stdin/stdout 契約維持不變。
+- 驗證：執行打包與完整回歸腳本，記錄命令與結果。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+### Task 5.2 — 雙語文件、部署版 Skill 與架構規範更新（不改變可觀察行為）
+- 產出與範圍：
+  - 更新 `README.md`、`README.zh-TW.md`、`docs/INSTALL.md`、`docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/INTEGRATIONS.md`、`docs/INTEGRATIONS.zh-TW.md`、`docs/OPERATIONS.md`、`AGENTS.md`、`docs/agents/architecture.md`、`docs/HANDOVER.md`。
+  - 更新 `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` 與 `DEPLOYED_REFERENCE.md`（說明保存的安裝設定與 `DATA_ROOT`／`MEMORIA_HOME` 優先序及一次 setup 流程，同時維持 `test-bootstrap.sh` 檢查的關鍵條款）。
+- 相依：Task 5.1
+- 驗收編號：支援 SCN-001～SCN-014（常青文件責任）
+- 完成判準：
+  - 中英文文件、`AGENTS.md` 測試清單與 deployed skill 同步反映已實作的 `memoria setup` 互動／非互動流程與設定優先序。
+  - `pnpm run release:docs-check` 與 `test-bootstrap.sh` 的 deployed skill 檢查通過，且公開版控文件不含本機帳號或外部私有專案名。
+- 驗證：靜態檢查 `pnpm run release:docs-check`、`bash scripts/test-bootstrap.sh` 與 `git diff --check`。
+- 狀態：📝 待實作
+- 證據：待執行填入
+
+---
+
+## 使用方式對照
+
+目前：npm 安裝 → 選 data root → `setup --agent` → 補另一個 host → 環境／規範接線 → `brief` → `setup --vector` → `index`／`ingest` → `doctor` → `recall`。
+
+目標：npm 安裝 → 一次 `memoria setup` 選擇與確認（或非互動 `memoria setup --scope global --agent both --vector --yes`）→ 直接在新終端或所選 agent 使用記憶。既有明確旗標與 `--json` 自動化命令保持相容。
+
+## 測試策略與 Readiness 反向驗證
+
+沿用 shell 整合測試與現有 TypeScript 靜態檢查，不新增測試框架。fixture 使用暫存 `HOME`／`XDG_CONFIG_HOME`／`XDG_CACHE_HOME`／`APPDATA`，明確 `unset` 繼承的 Memoria 與 libSQL 環境變數，禁止指到維護者真實資料。
+
+| 可能假成功 | 實作驗證對照 |
+| --- | --- |
+| `doctor ok` 只是 vector 未啟用 | 對比未啟用（`skipped`）／要求 local 但缺模型（`failed`）／已啟用且完成（`ready`）三種狀態 |
+| ingest ok 但漏 corpus | 已知缺失 id、已推進的舊 sync cursor、部分 vectors fixture；驗 `missing === 0` 與實際命中 |
+| recall 有 hit 但只走 lexical | 不包含 fixture 關鍵字的語意查詢；assert `route_mode` 為 `vector` 或 `hybrid_vector` 且 `fallback_used === false` |
+| 空庫被誤稱完成 corpus 驗證 | 空庫與非空庫對照，隔離 probe 回傳分開；真實 corpus 不留下任何合成測試資料 |
+| launcher 存在但不可用／root 錯 | 啟動新子程序，從 fixture 中取出唯一已知 id；另一 root 放干擾項確認沒有串庫 |
+| 重跑看似成功但覆蓋原文 | 事先寫入獨特手寫規則、區塊外 bytes 與不可覆寫 skill，檢查保留與拒絕副作用 |
+
+## 檢查清單
+
+- [x] 有可追溯的現況基線、需求來源與最小邊界。
+- [x] Large 的兩份分析各有觸發理由：現況需閱讀跨模組程式、持久設定與接線方案有實質取捨。
+- [x] Scenario ID、核准表與待確認事項相符，全部 `SCN-001`～`SCN-014` 與 `TBD-1`～`TBD-5` 已於 2026-10-23 核准。
+- [x] 保護優先於互動流程實作（Phase 1 Task 1.1 首要驗證先行），風險只在 README 維護。
+- [x] `decompose` 已在同一份計畫細化 Phase 1～5 與 Task 1.1～5.2，每個已核准 Scenario 皆有唯一責任 Task。
+- [ ] 完成所有 Task 實作、紅綠重構證據與實機 local 模型驗證。
+- [ ] 完成常青文件更新、提交與獨立 review gate。
