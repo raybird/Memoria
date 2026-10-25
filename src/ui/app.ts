@@ -42,16 +42,19 @@ function readState(): State {
     const view = p.get('view') as View;
     const page = Number(p.get('page') || 1);
     const rawScope = p.get('scope') || 'all';
+    const rawQuery = p.get('q') || '';
+    const query = rawQuery.trim().slice(0, 2000);
     const validScope=rawScope==='all'||rawScope==='environment'||(rawScope.startsWith('project:')&&rawScope.length>8);
     const invalid = (p.has('view') && !['library','pinned','brief'].includes(view)) ||
         (p.has('type') && !Object.hasOwn(names,kind)) || (p.has('detail_type') && !Object.hasOwn(names,detailKind)) ||
         !Number.isInteger(page) || page<1 || page>1000000 ||
         !validScope ||
+        (Boolean(rawQuery) && !query) ||
         (p.has('mode')&&!['keyword','vector'].includes(p.get('mode')!)) ||
         (p.has('include')&&!['true','false'].includes(p.get('include')!));
     return { invalid, view: ['library', 'pinned', 'brief'].includes(view) ? view : 'library', type: Object.hasOwn(names, kind) ? kind : 'decision',
         scope: view === 'brief' && rawScope === 'environment' ? 'all' : validScope ? rawScope : 'all',
-        page: Number.isInteger(page) && page > 0 && page <= 1000000 ? page : 1, query: view === 'pinned' || view === 'brief' ? '' : (p.get('q') || '').slice(0, 2000), mode: p.get('mode') === 'vector' ? 'vector' : 'keyword',
+        page: Number.isInteger(page) && page > 0 && page <= 1000000 ? page : 1, query: view === 'pinned' || view === 'brief' ? '' : query, mode: p.get('mode') === 'vector' ? 'vector' : 'keyword',
         include: p.get('include') === 'true', id: (p.get('id') || '').slice(0, 1024), detailType: Object.hasOwn(names, detailKind) ? detailKind : 'decision' };
 }
 let state = readState();
@@ -344,11 +347,7 @@ async function resolveMemory(id: string): Promise<void> {
     }
     catch {
         if(signal.aborted||sequence!==sourceSequence)return;
-        state.id = id;
-        mobileReading = true;
-        syncChrome();
-        updateUrl();
-        void loadDetail();
+        openMemory(id);
     }
 }
 document.addEventListener('keydown', event => {

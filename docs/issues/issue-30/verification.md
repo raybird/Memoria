@@ -2,7 +2,7 @@
 
 ## 版本與範圍
 
-2026-10-26，核准規格基線 `31f4a6f`，原始碼 BASE `f89d6754a9eaa534c5ce018716698ddb70164721`。最終重驗使用 `ca19124` 後的修正工作區，六個有變動的程式／fixture 雜湊見文末；其餘實作與該提交相同。此工作區提交後由獨立 reviewer 固定 HEAD，報告記完整 SHA 與 patch-id。測試使用 Node v22.20.0、Linux x64 與隔離資料根；不在真實共用記憶庫寫入 fixture。正式 UI 原始碼與概念 prototype 分開，後者不屬產品交付。
+2026-10-26，核准規格基線 `31f4a6f`，原始碼 BASE `f89d6754a9eaa534c5ce018716698ddb70164721`。重驗使用 `ca19124` 後的修正工作區，六個有變動的程式／fixture 雜湊見文末；其餘實作與該提交相同。第一輪提交 `2777c31` 後的獨立審查又發現兩個導覽邊界，補修與證據見下節；最終報告必須綁定新的 HEAD。測試使用 Node v22.20.0、Linux x64 與隔離資料根；不在真實共用記憶庫寫入 fixture。正式 UI 原始碼與概念 prototype 分開，後者不屬產品交付。
 
 ## 首要紅燈與綠燈
 
@@ -84,6 +84,17 @@ exit 0
 
 早期 [程式審查](./review-code-ca19124.md) 的三項 MUST FIX 已修：來源 lookup 取消／序號、空 project 正規化、真正列表 schema readiness。readiness 新斷言先失敗 `Missing expected rejection`，修正後 ui-http 全綠；桌面焦點建議也已修正。其餘建議的限制：取消會立即停止 UI 呈現及後續回應覆蓋，但已在 Core 執行的 environment 多專案語意召回不會隨 HTTP abort 終止，可能繼續計算；未修改既有 recall 排名或模型逾時契約。此版未承諾全平台／所有硬體延遲，macOS、Node 18 與 live 模型品質另由既有 CI／整合驗證處理。規劃 PASS 或早期程式報告不代表最終 PASS，最終門檻以新的固定 HEAD 獨立報告為準。
 
+## 最後審查的導覽補修
+
+2026-10-26，獨立 reviewer 對 `2777c31` 找到兩個 SCN-009／010 的失敗面，均在隔離正式 UI 以 Chrome 重現，沒有修改真實資料或弱化測試：
+
+- 摘要已載入後，以 sqlite3 刪除 fixture 的 `qa-sandbox`，點畫面中仍存在的摘要按鈕。紅燈：readerHidden=true、briefHidden=false，404 實際在不可見區域。改以 `openMemory(id)` 重用導覽路徑，避免 catch 複製不完整狀態操作；綠燈：readerHidden=false、view=library，顯示「這則記憶已不存在」與返回操作，返回後列表為 110 筆。
+- 網址 `/ui/?q=%20%20`。紅燈：空白字串被當成搜尋，畫面誤報「暫時無法連線」。readState 先 trim，再把純空白 query 視為無效並回退空查詢；綠燈：111 筆決策、輸入為空，顯示已套用預設值提示。
+
+兩個函式的 upstream impact 都為 LOW（readState 一個直接引用、resolveMemory 無直接引用）；無額外 execution flow。補修後 check／build／help 及 UI HTTP 重驗 exit 0。這兩項是可由真實畫面完整判定的導覽邊界，本次以瀏覽器紅綠合併同層內外迴圈；Core／HTTP 沒有新增語意，原先資料與安全契約證據仍有效。來源錯誤分支縮成既有 openMemory 呼叫是本輪精煉，未另增抽象層；其餘精煉 no-op。
+
+補修後依序重跑 `test-ui-http`、`test-npm-install`、`release:package`、`test-no-clone-install` 全部 exit 0；新建 `/tmp/memoria-ui-offline-final-prefix` 安裝最後 npm 包，並對它與最新 tar stage 重跑上述 Docker 斷網案例，兩者再次只有 lo 且 `PASS installed UI`／exit 0。Proof of Test 以 Python 比對核准規格與表格 ID 集合，結果 `13 unique approved scenarios, exact set`。
+
 ## Proof of Test
 
 固定規格為 `31f4a6f:docs/issues/issue-30/README.md`，以下每列對應同名 SCN；最終被測版本以本紀錄雜湊與獨立報告的 HEAD 交叉確認。無豁免及未決需求。
@@ -108,7 +119,7 @@ exit 0
 
 ```text
 a2b7a7adf43e509b71fb895d7102048919436e384469b076c1b92fe91b7e5acb  src/server.ts
-6b3713dfe879128113c031478ee074dfbb829e06d2cc2ad2923597581148d4c0  src/ui/app.ts
+587918be4b53b3f39c7fd4cd9cbd2155dfd253a6d479ce1c4ac007eb4cbd2b72  src/ui/app.ts
 f7a567fae79080d0dc1d18a8a7d5d93cab281bb59024ba6ca0e4cb49b4f7c6b5  src/ui/router.ts
 4f449452321014de0c22212c0539d7d12b7ca8f75aac6bed940890657c960580  src/ui/style.css
 005709ed264e515186662c0e86e316ccfa61de2d85f184614ac616d27d4803af  scripts/ui-http-driver.mts
