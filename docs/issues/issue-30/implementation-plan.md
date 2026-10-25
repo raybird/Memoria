@@ -45,8 +45,8 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - 驗收責任：SCN-006、SCN-007、SCN-008、SCN-009、SCN-010、SCN-011。
 - 完成判準：使用真實隔離資料完成找記憶→理由來源→返回三任務；過期 response、降級、無結果、斷線／404 可恢復；320／768／1440 與深淺色有實際證據。
 - 驗證：HTTP／Core 契約加真實瀏覽器互動與焦點／對比量測；視覺採手動等價證據，不以概念原型驗收正式產品。
-- 狀態：📝 待實作
-- 證據：執行時回寫。
+- 狀態：✅ 已完成
+- 證據：[驗證紀錄](./verification.md#真實瀏覽器檢查)，正式 UI 三尺寸、主題、來源／歷史／鍵盤與斷線重試。
 
 ## Phase 3 — 效能、安裝與交付
 
@@ -56,8 +56,8 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - 驗收責任：SCN-012、SCN-013。
 - 完成判準：50 筆列表 20 次暖查詢 p95 ≤500ms；提交回應 ≤100ms；隔離安裝離開 checkout 可瀏覽；不含 prototype／fixture。
 - 驗證：實際安裝 E2E、指定統計與 browser timing，保留機器／版本／資料樣本資訊。
-- 狀態：📝 待實作
-- 證據：執行時回寫。
+- 狀態：✅ 已完成
+- 證據：[驗證紀錄](./verification.md#回歸與安裝)，萬筆取樣及 npm／tar 真實斷網安裝。
 
 ### Task 3.2 — 文件、精煉、回歸與獨立審查
 - 產出與範圍：中英 CLI／API／README、安裝與架構文件、CI、Proof of Test 與固定 BASE／HEAD 的獨立審查。
@@ -65,8 +65,8 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - 驗收支援：SCN-001～SCN-013；各 SCN 責任仍在上列 Task，不新增第二份狀態清單。
 - 完成判準：typecheck／build／smoke／相關回歸通過，精煉與風險限制可追溯，GitNexus detect_changes 完成；不開 PR、不自行合併或發版。
 - 驗證：既有 CI 入口與文件一致性；獨立 reviewer 保存報告。
-- 狀態：📝 待實作
-- 證據：執行時回寫。
+- 狀態：實作、精煉、文件與回歸已完成；最後獨立審查 gate 依本目錄最新有效程式報告判定。
+- 證據：[驗證紀錄與 Proof of Test](./verification.md#proof-of-test)；[早期程式審查](./review-code-ca19124.md) 的三項 MUST FIX 已修，新固定 HEAD 必須重新審查，不沿用舊報告。
 
 ## 測試策略
 
@@ -96,9 +96,9 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - [x] 明確記錄 High 風險與首要契約驗證；計畫未將待核准內容列成可執行 Task。
 - [x] Q1～Q3 取得明確答案，回寫 SCN 核准狀態與可追溯來源。
 - [x] Large 計畫由 decompose 細化；初始規格提交後回填基線。
-- [ ] 各 Task 有有效行為／等價證據與精煉紀錄。
-- [ ] 雙語文件、安裝產物、視覺與可及性證據齊備。
-- [ ] GitNexus detect_changes 核對範圍，獨立 reviewer 保存對交付 BASE／HEAD 的審查。
+- [x] 各 Task 有有效行為／等價證據與精煉紀錄。
+- [x] 雙語文件、安裝產物、視覺與可及性證據齊備。
+- 最後提交前執行 GitNexus detect_changes；獨立 reviewer 的固定 BASE／HEAD 與結論見本目錄最新有效程式報告，此 gate 不由實作者自評勾選。
 
 ## 初版規劃檢查
 

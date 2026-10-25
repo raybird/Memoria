@@ -42,14 +42,15 @@ function readState(): State {
     const view = p.get('view') as View;
     const page = Number(p.get('page') || 1);
     const rawScope = p.get('scope') || 'all';
+    const validScope=rawScope==='all'||rawScope==='environment'||(rawScope.startsWith('project:')&&rawScope.length>8);
     const invalid = (p.has('view') && !['library','pinned','brief'].includes(view)) ||
         (p.has('type') && !Object.hasOwn(names,kind)) || (p.has('detail_type') && !Object.hasOwn(names,detailKind)) ||
         !Number.isInteger(page) || page<1 || page>1000000 ||
-        !(rawScope==='all'||rawScope==='environment'||(rawScope.startsWith('project:')&&rawScope.length>8)) ||
+        !validScope ||
         (p.has('mode')&&!['keyword','vector'].includes(p.get('mode')!)) ||
         (p.has('include')&&!['true','false'].includes(p.get('include')!));
     return { invalid, view: ['library', 'pinned', 'brief'].includes(view) ? view : 'library', type: Object.hasOwn(names, kind) ? kind : 'decision',
-        scope: view === 'brief' && rawScope === 'environment' ? 'all' : rawScope === 'all' || rawScope === 'environment' || rawScope.startsWith('project:') ? rawScope : 'all',
+        scope: view === 'brief' && rawScope === 'environment' ? 'all' : validScope ? rawScope : 'all',
         page: Number.isInteger(page) && page > 0 && page <= 1000000 ? page : 1, query: view === 'pinned' || view === 'brief' ? '' : (p.get('q') || '').slice(0, 2000), mode: p.get('mode') === 'vector' ? 'vector' : 'keyword',
         include: p.get('include') === 'true', id: (p.get('id') || '').slice(0, 1024), detailType: Object.hasOwn(names, detailKind) ? detailKind : 'decision' };
 }
@@ -60,6 +61,8 @@ let listController: AbortController | undefined;
 let detailController: AbortController | undefined;
 let listSequence = 0;
 let detailSequence = 0;
+let sourceSequence = 0;
+let sourceController: AbortController | undefined;
 let rows: MemoryItem[] = [];
 let total = 0;
 let returnId = '';
@@ -221,8 +224,8 @@ async function loadDetail(): Promise<void> {
         const sourceMarkup = source ? `<p>${escape(source.repository)} · ${escape(source.type)}</p><p>${escape(source.tag || source.branch || '未記錄分支')}</p><code>${escape(source.base_sha || '起點未記錄')} → ${escape(source.head_sha)}</code><p>摘要 ${escape(source.summary_id)}</p>` : `<p>${d.source_missing ? '原先記錄的 Git 來源已不存在' : '未記錄 Git 來源'}</p>`;
         reader.innerHTML = `<div class="reader-inner"><button class="back" data-action="back">${icon('arrow')}返回記憶列表</button><div class="eyebrow"><span>${escape(d.project)} / ${names[d.type]}</span><span class="badge">${d.retention === 'durable' ? '常駐記憶' : '一般記憶'}</span></div>${d.superseded_by ? `<div class="superseded">這則記憶已被取代。<button data-open="${escape(d.superseded_by)}">查看取代它的記憶 →</button></div>` : ''}<h2>${escape(d.title.slice(0, 160))}${d.title.length > 160 ? '…' : ''}</h2>${d.body !== d.title || d.title.length > 160 ? `<div class="body-text">${escape(d.body)}</div>` : ''}<h4>為什麼記住這件事</h4><div class="rationale ${d.rationale ? '' : 'muted'}">${escape(d.rationale || '未記錄理由')}</div>${d.note ? `<h4>備註</h4><p class="body-text">${escape(d.note)}</p>` : ''}<details class="source"><summary>查看記憶來源</summary><div class="trace"><h4>原始記憶</h4><code>${escape(d.id)}</code><h4>關聯 Session</h4>${d.session ? `<button class="text-button" data-session="${escape(d.session.id)}">${escape(d.session.id)} →</button>` : '<p>來源 Session 已不存在</p>'}<h4>Git 脈絡</h4>${sourceMarkup}</div></details><details class="raw-content"><summary>檢視原始內容</summary><pre>${escape(typeof d.content === 'string' ? d.content : JSON.stringify(d.content, null, 2))}</pre></details><div class="record-meta"><time>${escape(date(d.timestamp, true))}</time><span>${escape(d.sensitivity === 'private' ? '私人記憶' : '本機記憶')}</span></div></div>`;
         reader.scrollTop = 0;
+        $<HTMLButtonElement>('.back').focus({ preventScroll: true });
         if (mobileReading && matchMedia('(max-width:820px)').matches) {
-            $<HTMLButtonElement>('.back').focus({ preventScroll: true });
             $('.reader').scrollIntoView({ block: 'start' });
         }
     }
@@ -255,6 +258,7 @@ async function loadBrief(signal: AbortSignal, sequence: number): Promise<void> {
     }
 }
 function openMemory(id: string, kind: MemoryKind = state.type): void {
+    cancelSourceLookup();
     listScroll = $('#list').scrollTop;
     windowScroll = window.scrollY;
     returnId = id;
@@ -277,7 +281,8 @@ function restoreListPosition(): void {
     if (matchMedia('(max-width:820px)').matches)
         window.scrollTo({ top: windowScroll });
 }
-function refresh(): void { syncChrome(); void loadList(); void loadDetail(); }
+function cancelSourceLookup(): void {sourceController?.abort();sourceSequence++;}
+function refresh(): void { cancelSourceLookup();syncChrome(); void loadList(); void loadDetail(); }
 function filterChange(): void { state.page = 1; state.id = ''; state.query = ''; mobileReading = false; listScroll = 0; updateUrl(); refresh(); }
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view as View; if (state.view === 'brief' && state.scope === 'environment')
     state.scope = 'all'; filterChange(); });
@@ -317,6 +322,7 @@ document.addEventListener('click', event => {
             void loadDetail();
             break;
         case 'back':
+            cancelSourceLookup();
             state.id = '';
             mobileReading = false;
             syncChrome();
@@ -328,11 +334,16 @@ document.addEventListener('click', event => {
     }
 });
 async function resolveMemory(id: string): Promise<void> {
+    sourceController?.abort();
+    sourceController=new AbortController();
+    const signal=sourceController.signal,sequence=++sourceSequence;
     try {
-        const result = await api<MemoryDetail>(`/v1/memories/${encodeURIComponent(id)}`);
+        const result = await api<MemoryDetail>(`/v1/memories/${encodeURIComponent(id)}`,{signal});
+        if(signal.aborted||sequence!==sourceSequence)return;
         openMemory(id, result.data!.type);
     }
     catch {
+        if(signal.aborted||sequence!==sourceSequence)return;
         state.id = id;
         mobileReading = true;
         syncChrome();
@@ -345,7 +356,7 @@ document.addEventListener('keydown', event => {
         event.preventDefault();
         $<HTMLInputElement>('#search').focus();
     }
-    if (event.key === 'Escape' && mobileReading && matchMedia('(max-width:820px)').matches)
+    if (event.key === 'Escape' && state.id)
         document.querySelector<HTMLButtonElement>('[data-action=back]')?.click();
 });
 window.addEventListener('popstate', () => { state = readState(); mobileReading = Boolean(state.id); restoreList = !state.id && Boolean(returnId); refresh(); });

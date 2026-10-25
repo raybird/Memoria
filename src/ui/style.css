@@ -677,7 +677,11 @@ select {
   padding: 10px 22px;
 }
 .back {
-  display: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--blue);
+  padding: 0 0 20px;
 }
 .brief-content {
   grid-column: 1/-1;

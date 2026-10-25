@@ -84,8 +84,8 @@ export async function createUiRouter(core: MemoriaCore): Promise<(req: IncomingM
             }
             const match = /^\/v1\/memories\/([^/]+)$/.exec(url.pathname);
             if (match) {
-                const type = url.searchParams.get('type');
-                if (type)
+                const type = url.searchParams.get('type') ?? undefined;
+                if (type !== undefined)
                     z.enum(['decision', 'skill', 'session']).parse(type);
                 const result = await core.getMemory(decodeURIComponent(match[1]), type as MemoryKind | undefined);
                 json(res, result.ok ? 200 : result.error === 'memory not found' ? 404 : 500, result);

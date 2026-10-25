@@ -535,7 +535,8 @@ export async function startServer(port?: number, memoriaHomeOverride?: string, o
     if (options.ui) {
         if (!existsSync(paths.dbPath)) throw new Error('Memory is not initialized. Run memoria init with the intended MEMORIA_HOME first.')
         const readiness = await core.memoryFacets()
-        if (!readiness.ok) throw new Error('Memory schema is not initialized or readable. Run memoria doctor, then memoria init with the intended MEMORIA_HOME.')
+        const readable = await core.listMemories({page_size:1})
+        if (!readiness.ok || !readable.ok) throw new Error('Memory schema is not initialized or readable. Run memoria doctor, then memoria init with the intended MEMORIA_HOME.')
         const { createUiRouter } = await import('./ui/router.js')
         const route = await createUiRouter(core)
         server = http.createServer((req, res) => { void route(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() }) })

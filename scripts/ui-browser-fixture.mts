@@ -10,7 +10,7 @@ import { createUiRouter } from '../src/ui/router.js'
 const home=await mkdtemp(join(tmpdir(),'memoria-browser-qa-'))
 const core=new MemoriaCore(resolveMemoriaPaths(home))
 await core.init()
-await core.rememberNote({text:'所有專案共用同一份記憶',project:'preferences',rationale:'跨專案保留共同約束，讓每次對話延續脈絡。',retention:'durable'})
+const pinned=await core.rememberNote({text:'所有專案共用同一份記憶',project:'preferences',rationale:'跨專案保留共同約束，讓每次對話延續脈絡。',retention:'durable'})
 await core.remember({id:'product-session',timestamp:'2026-10-25T10:00:00.000Z',project:'Memoria',summary:'記憶瀏覽器的產品決策與驗證經驗',events:[
     {id:'qa-sandbox',type:'DecisionMade',content:{decision:'先排除沙箱限制，再重裝依賴',rationale:'依賴快取可能原本就存在。先檢查執行權限，可以避免無效重裝與錯誤診斷。'}},
     {id:'qa-compatibility',type:'DecisionMade',content:{decision:'保留 setup --vector 的相容行為',rationale:'既有自動化需要穩定的命令契約；完整 onboarding 由明確旗標啟用。'}},
@@ -26,6 +26,8 @@ db.transaction(()=>{for(let n=0;n<105;n++)insert.run(`page-${String(n).padStart(
 db.close()
 const search=core.searchMemories.bind(core)
 core.searchMemories=async input=>{if(input.query==='慢速')await new Promise(r=>setTimeout(r,5000));return search(input)}
+const getMemory=core.getMemory.bind(core)
+core.getMemory=async (ref,kind)=>{if(ref===pinned.data!.sessionId&&kind==null)await new Promise(r=>setTimeout(r,5000));return getMemory(ref,kind)}
 const route=await createUiRouter(core)
 const timing=`document.addEventListener('submit',function(){const start=performance.now();const observer=new MutationObserver(function(){const count=document.getElementById('count');if(count&&count.textContent==='正在搜尋…'){observer.disconnect();requestAnimationFrame(function(){document.documentElement.dataset.qaFeedbackMs=String(performance.now()-start)})}});observer.observe(document.getElementById('count'),{childList:true,subtree:true,characterData:true})},true);`
 const server=http.createServer((req,res)=>{
