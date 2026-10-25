@@ -19,6 +19,7 @@ await core.remember({id:'product-session',timestamp:'2026-10-25T10:00:00.000Z',p
     {id:'qa-long',type:'DecisionMade',content:{decision:'中文長標題與 EnglishMixedIdentifier_'.repeat(25),rationale:'完整理由\n'.repeat(1000)}},
     {id:'qa-skill',type:'SkillLearned',content:{skill_name:'以隔離資料驗證介面',pattern:'先建立可判定的資料，再走過尋找、閱讀來源與返回列表三項核心任務。',examples:['淺色與深色','320／768／1440px']}},
 ]})
+await core.markMemory('qa-skill',{retention:'durable'})
 const db=new Database(core.paths.dbPath)
 db.prepare("INSERT INTO repositories(id,name,fingerprint,default_branch,status) VALUES('qa-repo','Memoria','qa-fingerprint','main','active')").run()
 const insert=db.prepare('INSERT INTO events(id,session_id,timestamp,event_type,content,metadata) VALUES(?,?,?,?,?,?)')

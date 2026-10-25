@@ -15,7 +15,10 @@ const request=(port:number,path:string,headers:Record<string,string>={},method='
 })
 try {
     await core.init()
-    await core.remember({id:'ui-sample',project:'alpha',summary:'UI full summary',events:[{id:'ui-decision',type:'DecisionMade',content:{decision:'<script>window.bad=1</script>Decision',rationale:'Full reason'}}]})
+    await core.remember({id:'ui-sample',project:'alpha',summary:'UI full summary',events:[
+        {id:'ui-decision',type:'DecisionMade',content:{decision:'<script>window.bad=1</script>Decision',rationale:'Full reason'}},
+        {id:'ui-skill',type:'SkillLearned',content:{skill_name:'Recovered skill',pattern:'Original skill body'}}
+    ]})
     const db=new Database(core.paths.dbPath)
     const stamp='2026-10-25T00:00:00.000Z'
     db.prepare("INSERT INTO repositories(id,name,fingerprint,default_branch,status,created_at,updated_at) VALUES('repo-alpha','alpha','fp','main','active',?,?)").run(stamp,stamp)
@@ -31,6 +34,12 @@ try {
     assert.equal((await request(port,'/ui/app.js')).headers['content-type'],'text/javascript; charset=utf-8')
     assert.match((await request(port,'/ui/')).headers['content-security-policy'] as string,/default-src 'none'/)
     for(const path of ['/v1/memories','/v1/memory-facets','/v1/memories/ui-decision','/v1/brief'])assert.equal((await request(port,path)).status,200,path)
+    for(const [ref,type] of [['ui-skill','skill'],['ui-sample','session']]) {
+        const resolved=await request(port,`/v1/memories/${ref}`)
+        assert.equal(resolved.status,200,'SCN-005/010 unknown source type must resolve without guessing')
+        assert.equal(JSON.parse(resolved.body).data.type,type)
+        assert.equal((await request(port,`/v1/memories/${ref}?type=decision`)).status,404,'explicit types still disambiguate')
+    }
     assert.equal(snapshot(),before,'SCN-002/006/007 browsing must not mutate data or telemetry')
     await assert.rejects(startServer(port,home,{ui:true}),/in use/)
     assert.equal((await request(port,'/v1/memories?type=bad')).status,400)

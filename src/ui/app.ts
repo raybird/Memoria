@@ -11,7 +11,7 @@ type State = {
     mode: 'keyword' | 'vector';
     include: boolean;
     id: string;
-    detailType: MemoryKind;
+    detailType: MemoryKind | undefined;
 };
 const $ = <T extends Element = HTMLElement>(selector: string): T => {
     const element = document.querySelector<T>(selector);
@@ -55,7 +55,7 @@ function readState(): State {
     return { invalid, view: ['library', 'pinned', 'brief'].includes(view) ? view : 'library', type: Object.hasOwn(names, kind) ? kind : 'decision',
         scope: view === 'brief' && rawScope === 'environment' ? 'all' : validScope ? rawScope : 'all',
         page: Number.isInteger(page) && page > 0 && page <= 1000000 ? page : 1, query: view === 'pinned' || view === 'brief' ? '' : query, mode: p.get('mode') === 'vector' ? 'vector' : 'keyword',
-        include: p.get('include') === 'true', id: (p.get('id') || '').slice(0, 1024), detailType: Object.hasOwn(names, detailKind) ? detailKind : 'decision' };
+        include: p.get('include') === 'true', id: (p.get('id') || '').slice(0, 1024), detailType: Object.hasOwn(names, detailKind) ? detailKind : undefined };
 }
 let state = readState();
 let mobileReading = Boolean(state.id);
@@ -94,7 +94,8 @@ function updateUrl(replace = false): void {
         p.set('q', state.query);
     if (state.id) {
         p.set('id', state.id);
-        p.set('detail_type', state.detailType);
+        if (state.detailType)
+            p.set('detail_type', state.detailType);
     }
     if (state.include)
         p.set('include', 'true');
@@ -220,10 +221,16 @@ async function loadDetail(): Promise<void> {
     }
     reader.innerHTML = '<div class="loading" role="status">正在讀取完整內容…</div>';
     try {
-        const result = await api<MemoryDetail>(`/v1/memories/${encodeURIComponent(state.id)}?type=${state.detailType}`, { signal });
+        const typeQuery = state.detailType ? `?type=${state.detailType}` : '';
+        const result = await api<MemoryDetail>(`/v1/memories/${encodeURIComponent(state.id)}${typeQuery}`, { signal });
         if (sequence !== detailSequence)
             return;
         const d = result.data!, source = d.source;
+        if (!state.detailType) {
+            state.detailType = d.type;
+            updateUrl(true);
+            document.querySelector(`.memory-row[data-id="${CSS.escape(state.id)}"][data-kind="${d.type}"]`)?.setAttribute('aria-pressed', 'true');
+        }
         const sourceMarkup = source ? `<p>${escape(source.repository)} · ${escape(source.type)}</p><p>${escape(source.tag || source.branch || '未記錄分支')}</p><code>${escape(source.base_sha || '起點未記錄')} → ${escape(source.head_sha)}</code><p>摘要 ${escape(source.summary_id)}</p>` : `<p>${d.source_missing ? '原先記錄的 Git 來源已不存在' : '未記錄 Git 來源'}</p>`;
         reader.innerHTML = `<div class="reader-inner"><button class="back" data-action="back">${icon('arrow')}返回記憶列表</button><div class="eyebrow"><span>${escape(d.project)} / ${names[d.type]}</span><span class="badge">${d.retention === 'durable' ? '常駐記憶' : '一般記憶'}</span></div>${d.superseded_by ? `<div class="superseded">這則記憶已被取代。<button data-open="${escape(d.superseded_by)}">查看取代它的記憶 →</button></div>` : ''}<h2>${escape(d.title.slice(0, 160))}${d.title.length > 160 ? '…' : ''}</h2>${d.body !== d.title || d.title.length > 160 ? `<div class="body-text">${escape(d.body)}</div>` : ''}<h4>為什麼記住這件事</h4><div class="rationale ${d.rationale ? '' : 'muted'}">${escape(d.rationale || '未記錄理由')}</div>${d.note ? `<h4>備註</h4><p class="body-text">${escape(d.note)}</p>` : ''}<details class="source"><summary>查看記憶來源</summary><div class="trace"><h4>原始記憶</h4><code>${escape(d.id)}</code><h4>關聯 Session</h4>${d.session ? `<button class="text-button" data-session="${escape(d.session.id)}">${escape(d.session.id)} →</button>` : '<p>來源 Session 已不存在</p>'}<h4>Git 脈絡</h4>${sourceMarkup}</div></details><details class="raw-content"><summary>檢視原始內容</summary><pre>${escape(typeof d.content === 'string' ? d.content : JSON.stringify(d.content, null, 2))}</pre></details><div class="record-meta"><time>${escape(date(d.timestamp, true))}</time><span>${escape(d.sensitivity === 'private' ? '私人記憶' : '本機記憶')}</span></div></div>`;
         reader.scrollTop = 0;
@@ -260,14 +267,15 @@ async function loadBrief(signal: AbortSignal, sequence: number): Promise<void> {
             target.innerHTML = empty('無法取得摘要', '請確認本機服務仍在執行。', '<button class="primary" data-action="retry">重試</button>', true);
     }
 }
-function openMemory(id: string, kind: MemoryKind = state.type): void {
+function openMemory(id: string, kind?: MemoryKind): void {
     cancelSourceLookup();
     listScroll = $('#list').scrollTop;
     windowScroll = window.scrollY;
     returnId = id;
     if (state.view === 'brief') {
         state.view = 'library';
-        state.type = kind;
+        if (kind)
+            state.type = kind;
         void loadList();
     }
     state.id = id;

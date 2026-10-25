@@ -95,6 +95,27 @@ exit 0
 
 補修後依序重跑 `test-ui-http`、`test-npm-install`、`release:package`、`test-no-clone-install` 全部 exit 0；新建 `/tmp/memoria-ui-offline-final-prefix` 安裝最後 npm 包，並對它與最新 tar stage 重跑上述 Docker 斷網案例，兩者再次只有 lo 且 `PASS installed UI`／exit 0。Proof of Test 以 Python 比對核准規格與表格 ID 集合，結果 `13 unique approved scenarios, exact set`。
 
+### 未知來源類型遇斷線
+
+`96b9421` 的 [獨立複審](./review-96b9421.md) 又以原函式與真實 Core 證明：來源 lookup 斷線失敗後，預設 kind 把仍存在的 skill／session 猜為 decision；恢復服務後 typed GET 誤報404。這是 SCN-005／009／010 的紅燈，沒有改需求或放寬後端 enum。
+
+修正使 detailType 可以未確認：未知來源不把 kind 寫入網址或 GET，真正讀到詳情後才以實際 type 替換同一 history entry；已知類型仍保留精確查詢。沿用原有請求序號／取消及 openMemory 導覽，未新增另一套恢復流程。readState／updateUrl／openMemory／loadDetail／renderRows／resolveMemory 的 upstream impact 均 LOW，直接引用分別 1／4／1／3／2／0，沒有新增後端 flow。
+
+Chrome 隔離實測兩種資料：
+
+1. 摘要常駐 Session `note-5e5c41b325f490ee`：先載入摘要，再停止 fixture，點「所有專案共用同一份記憶」。可見「無法讀取記憶／重試」，網址保留 id 而無 detail_type；重新啟動同命令後按重試，顯示 `preferences / Session`、完整原文及「未記錄理由」，網址替換為 `detail_type=session`；重新整理仍正確。
+2. fixture 新增 `core.markMemory('qa-skill',{retention:'durable'})`：同樣在摘要載入後停服務，點「以隔離資料驗證介面」。錯誤可見且網址無 detail_type；重啟後按重試，顯示 `Memoria / 技能`、常駐與完整 pattern，沒有誤報404。
+
+新增 HTTP 字面 fixture：`ui-skill` 無 type 解析為 skill、`ui-sample` 無 type 解析為 session；兩者指定錯誤 `type=decision` 仍404。`test-ui-http` exit 0。check／build／help／release:docs-check、npm-install → release:package → no-clone-install 均 exit 0。最後 npm 包另裝 `/tmp/memoria-ui-offline-unknown-prefix`，與最新 tar stage 分別重跑 network none：Node v22.23.3、只有 lo、`PASS installed UI`、exit 0。此輪變更只涉及前端與 fixture，未改 Core／排名／安全 gate；既有底層回歸與視覺量測仍有效。精煉保留既有導覽與失效機制，其他 no-op。
+
+### 後續 UI 交付的手動邊界矩陣
+
+以下項目列為此 fixture 的可重現交付檢查，補足 reviewer 提醒的手動證據持久力；目前沒有新增 browser 自動化依賴：
+
+- `?scope=project:`、`?q=%20%20`：提示預設值且可讀列表；一般 missing id 顯示404與返回。
+- 摘要先載入、再刪 fixture event、點原連結：404 必須可見；來源 lookup 延遲後改導覽：舊回應不得改網址或選取。
+- 預設 decision → 摘要常駐 skill／session → 停 fixture → 點來源 → 重啟 → 重試 → 重整：讀到實際 kind、原文與正確 detail_type，失敗期間不猜類型。
+
 ## Proof of Test
 
 固定規格為 `31f4a6f:docs/issues/issue-30/README.md`，以下每列對應同名 SCN；最終被測版本以本紀錄雜湊與獨立報告的 HEAD 交叉確認。無豁免及未決需求。
@@ -119,9 +140,9 @@ exit 0
 
 ```text
 a2b7a7adf43e509b71fb895d7102048919436e384469b076c1b92fe91b7e5acb  src/server.ts
-587918be4b53b3f39c7fd4cd9cbd2155dfd253a6d479ce1c4ac007eb4cbd2b72  src/ui/app.ts
+c1f60333566aa5cb88fff5464f868c40267690c45792114e789b1f3015b37424  src/ui/app.ts
 f7a567fae79080d0dc1d18a8a7d5d93cab281bb59024ba6ca0e4cb49b4f7c6b5  src/ui/router.ts
 4f449452321014de0c22212c0539d7d12b7ca8f75aac6bed940890657c960580  src/ui/style.css
-005709ed264e515186662c0e86e316ccfa61de2d85f184614ac616d27d4803af  scripts/ui-http-driver.mts
-752b31e011e81003bb2bfd1c0befa908daed8a3c2560b32f189e0e03e697429a  scripts/ui-browser-fixture.mts
+9e8fb3f57d3482405f44bccbd96bf163b4d04dc4dbf530543bacd126264dcf20  scripts/ui-http-driver.mts
+3eec763d59bfc1db23d9d0a2021c66dff74cdfc1f86e9f606ae536aec6bc7514  scripts/ui-browser-fixture.mts
 ```
