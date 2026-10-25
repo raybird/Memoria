@@ -73,6 +73,8 @@ This repo currently has explicit runtime and wiki test scripts:
 - `scripts/test-npm-install.sh`
 - `scripts/test-service-manager.sh`
 - `scripts/test-mcp-e2e.sh`
+- `scripts/test-memory-browser.sh`: read-only browser Core scopes/markers/detail/legacy DB and 10000-record benchmark.
+- `scripts/test-ui-http.sh`: local UI router, static assets, Host/Origin boundaries and legacy API compatibility.
 - `scripts/test-http-api.sh`
 - `scripts/test-vector-recall.sh`
 - `scripts/test-wiki-ingest.sh`
@@ -565,3 +567,7 @@ This project is indexed by GitNexus as **Memoria** (4160 symbols, 6780 relations
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Local memory workspace
+
+When modifying the UI, browse queries or UI delivery, read `docs/agents/architecture.md` §Local memory UI and `docs/API.md` §UI-mode API. `memoria serve --ui` uses a separate restricted loopback router; ordinary serve retains its existing API contract. Run `bash scripts/test-memory-browser.sh` and `bash scripts/test-ui-http.sh`, plus affected HTTP/recall/brief/install regressions. Browser QA must use real isolated data, not `work/ui-concept/`.

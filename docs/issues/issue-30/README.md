@@ -32,6 +32,8 @@ issue 編號沿用本機 `docs/issues/` 的序列；建檔時最高為 issue-29�
 - `src/core/memoria.ts`、`src/core/types.ts`、`src/core/index.ts`：瀏覽型別與 public Core 方法，維持 `MemoriaResult<T>`。
 - `src/server.ts`、`src/cli/commands/serve.ts`：UI 模式、同源路由與本機存取限制；保留原 API 模式。
 - `scripts/build.mjs`：前端 bundle 與靜態內容內嵌。
+- `scripts/ui-browser-fixture.mts`（新增）：可重現的隔離瀏覽器資料與延遲／畫面回應計時探針，不隨產品發布。
+- `scripts/check-installed-ui.mjs`（新增）：從安裝後 CLI、離開 checkout 驗證 UI 靜態資產與資料路由。
 - `scripts/test-memory-browser.sh`（新增）、`scripts/test-ui-http.sh`（新增）：核心資料契約與 UI HTTP／限制／bundle 端到端驗證。
 - `scripts/test-npm-install.sh`、`scripts/test-no-clone-install.sh`：從安裝產物驗證 UI 可用，避免僅原始碼 checkout 能執行。
 - `README.md`、`README.zh-TW.md`、`docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/API.md`、`docs/API.zh-TW.md`、`docs/INSTALL.md`、`docs/OPERATIONS.md`：啟動方式、瀏覽 API、資料邊界與安裝說明。
@@ -166,7 +168,7 @@ Feature: 商品級本機記憶瀏覽
 
 ## Gherkin 核准紀錄
 
-- **核准 commit**: 待提交（2026-10-25 Q1～Q3 已核准）。
+- **核准 commit**: 31f4a6f（2026-10-25 Q1～Q3 已核准；基線內容未變）。
 - **需求來源**: 2026-10-25 對話原話見概述；已核准的高階目標為「可方便看記憶的 UI」及「專業商品級 UI/UX」。
 - **具體規格來源**: 使用者於 2026-10-25 對 README Q1～Q3 與對應 SCN-001～SCN-013 回覆「全部照建議」；接受唯讀本機、工作台與品質門檻、決策為主與確切範圍的建議。
 

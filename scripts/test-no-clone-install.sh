@@ -157,4 +157,5 @@ echo "[no-clone] recall"
 RECALL_OUTPUT="$(curl -sf -X POST "http://localhost:$PORT/v1/recall" -H "Content-Type: application/json" -d '{"query":"no-clone installer decision","top_k":3}')"
 echo "$RECALL_OUTPUT" | node -e "const fs=require('node:fs');const data=JSON.parse(fs.readFileSync(0,'utf8'));if(!data.ok) process.exit(1)"
 
+node "$ROOT_DIR/scripts/check-installed-ui.mjs" "$INSTALL_DIR/bin/memoria" "$DATA_DIR"
 echo "[no-clone] ok"

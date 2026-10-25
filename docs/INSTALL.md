@@ -305,3 +305,7 @@ docker run --rm -it -v "$(pwd)":/workspace -w /workspace memoria:local bash
 - Base image: `node:22-slim`
 - `pnpm` 透過 `corepack` 啟用
 - Build stage 產出 `dist/cli.mjs`
+
+## UI delivery
+
+`memoria serve --ui` uses assets embedded in `dist/cli.mjs`; npm and release tar installs require no separate frontend directory or dependencies. Rebuild after UI source changes. Use an initialized data root explicitly; the viewer installs no service or hook. See [CLI](CLI.md#local-memory-workspace).

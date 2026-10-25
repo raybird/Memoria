@@ -126,4 +126,5 @@ const d = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
 if (!d.ok || !Array.isArray(d.data) || d.data.length === 0) process.exit(1)
 "
 
+node "$ROOT_DIR/scripts/check-installed-ui.mjs" "$CLI" "$DATA_DIR"
 echo "[npm-install] ok"

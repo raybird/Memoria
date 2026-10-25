@@ -25,8 +25,8 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - 驗收責任：SCN-003、SCN-004、SCN-005；支援 SCN-001、SCN-002、SCN-006。
 - 完成判準：先取得缺少列表／詳情的行為紅燈，完成分頁與篩選矩陣、完整理由與來源、無理由／缺失 ref、舊資料契約；原有記憶語意不變。
 - 驗證：Core fixture 與 HTTP 分別驗證不同失敗面；字面預期不重算被測查詢。
-- 狀態：📝 待實作
-- 證據：執行時回寫。
+- 狀態：✅ 已完成
+- 證據：[驗證紀錄](./verification.md)，Core／HTTP 契約與首要紅燈。
 
 ### Task 1.2 — 本機唯讀 HTTP 與打包入口
 - 產出與範圍：serve --ui、loopback／Host／Origin／固定資產與路由 allowlist、查詢參數驗證及內嵌資產。
@@ -34,8 +34,8 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - 驗收責任：SCN-001、SCN-002；支援 SCN-006、SCN-007、SCN-013。
 - 完成判準：未知 Host／Origin、寫入與任意路徑請求拒絕；未初始化／埠衝突可行動失敗；既有 serve 契約保持。
 - 驗證：真實 HTTP 正負向矩陣與惡意內容 browser 檢查；缺少功能紅燈到綠燈。
-- 狀態：📝 待實作
-- 證據：執行時回寫。
+- 狀態：✅ 已完成
+- 證據：[驗證紀錄](./verification.md)，Core／HTTP 契約與首要紅燈。
 
 ## Phase 2 — 商品介面與閱讀流程
 

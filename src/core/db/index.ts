@@ -69,3 +69,4 @@ export {
 export type { MemoryAttributePatch } from './memory-attributes.js'
 export type { BriefOptions } from './brief.js'
 export { closeAllConnections } from './connection.js'
+export { queryMemoryPage, queryMemoryDetail, queryMemoryFacets } from './memory-browser.js'

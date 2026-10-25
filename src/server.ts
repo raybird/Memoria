@@ -30,7 +30,7 @@
 import http from 'node:http'
 import { z } from 'zod'
 import { MemoriaCore } from './core/index.js'
-import { renderBrief, resolveMemoriaPaths } from './core/index.js'
+import { renderBrief, resolveMemoriaPaths, existsSync } from './core/index.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const DEFAULT_PORT = 3917
@@ -525,14 +525,30 @@ export function createServer(core: MemoriaCore): http.Server {
     })
 }
 
-export async function startServer(port?: number, memoriaHomeOverride?: string): Promise<{ server: http.Server; port: number }> {
+export async function startServer(port?: number, memoriaHomeOverride?: string, options: { ui?: boolean } = {}): Promise<{ server: http.Server; port: number }> {
     const paths = resolveMemoriaPaths(memoriaHomeOverride)
     const core = new MemoriaCore(paths)
     const actualPort = port ?? Number(process.env.MEMORIA_PORT ?? DEFAULT_PORT)
 
-    const server = createServer(core)
-
-    await new Promise<void>((resolve) => server.listen(actualPort, resolve))
+    if (!Number.isInteger(actualPort) || actualPort < 0 || actualPort > 65535) throw new Error('Invalid port; expected 0–65535')
+    let server: http.Server
+    if (options.ui) {
+        if (!existsSync(paths.dbPath)) throw new Error('Memory is not initialized. Run memoria init with the intended MEMORIA_HOME first.')
+        const readiness = await core.memoryFacets()
+        if (!readiness.ok) throw new Error('Memory schema is not initialized or readable. Run memoria doctor, then memoria init with the intended MEMORIA_HOME.')
+        const { createUiRouter } = await import('./ui/router.js')
+        const route = await createUiRouter(core)
+        server = http.createServer((req, res) => { void route(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() }) })
+    } else server = createServer(core)
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject)
+        const ready = () => { server.off('error', reject); resolve() }
+        if (options.ui) server.listen(actualPort, '127.0.0.1', ready)
+        else server.listen(actualPort, ready)
+    }).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'EADDRINUSE') throw new Error(`Port ${actualPort} is in use. Stop that process or choose --port.`)
+        throw error
+    })
 
     return { server, port: (server.address() as { port: number }).port }
 }

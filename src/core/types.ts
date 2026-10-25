@@ -278,6 +278,28 @@ export type RecallHit = {
     superseded_by?: string        // issue-5: set when surfaced via --include-superseded
 }
 
+export type MemoryKind = 'decision' | 'skill' | 'session'
+export type MemoryFilter = {
+    type?: MemoryKind
+    project?: string
+    environment?: boolean
+    durable?: boolean
+    include_superseded?: boolean
+    page?: number
+    page_size?: number
+}
+export type MemoryItem = {
+    id: string; type: MemoryKind; session_id: string; timestamp: string; project: string
+    title: string; snippet: string; retention: MemoryRetention | null; sensitivity: MemorySensitivity | null; superseded_by: string | null
+}
+export type MemoryPage = { items: MemoryItem[]; total: number; page: number; page_size: number }
+export type MemoryFacets = { repositories: string[]; environment_projects: string[] }
+export type MemorySearch = { query: string; mode?: 'keyword' | 'vector'; project?: string; environment?: boolean; include_superseded?: boolean }
+export type MemoryDetail = MemoryItem & {
+    body: string; rationale: string; content: unknown; scope: string; note: string | null
+    session: { id: string; summary: string } | null; source?: RecallHitSource; source_missing: boolean
+}
+
 export type MemoryIndexBuildOptions = {
     project?: string
     scope?: string

@@ -74,3 +74,7 @@ Last verified: 2026-10-23 against v1.31.1 source, CLI help and documentation che
 ## License
 
 MIT
+
+### Browse memory visually
+
+Run `memoria serve --ui` against your initialized data root and open the printed loopback URL. The local, read-only workspace includes lists, full provenance, search and briefs; see [CLI](docs/CLI.md#local-memory-workspace).

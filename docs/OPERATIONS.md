@@ -515,3 +515,7 @@ or place it behind a reverse proxy / firewall that enforces access control.
 Request bodies are capped at **1 MiB** by default to avoid unbounded memory growth; oversized
 requests get `413`. Override with `MEMORIA_MAX_BODY_BYTES` (in bytes) if you legitimately ingest
 larger payloads.
+
+## Read-only memory workspace
+
+Run `MEMORIA_HOME=/path/to/data-root memoria serve --ui`. Missing/unreadable schemas fail before listening: initialize or repair deliberately, never point the viewer at another root to hide an error. Use the exact printed 127.0.0.1 address. Browser history may retain query text and ref IDs; theme preferences stay in localStorage. Browsing does not migrate the DB or write BRIEF.md. Explicit search retains local recall telemetry, but performs no utility feedback. `/v1/health` is not exposed by this restricted router and is not a vector-doctor diagnosis. Stop the foreground process to close the viewer.

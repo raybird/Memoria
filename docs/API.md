@@ -59,3 +59,19 @@ value came from: `lexical_coverage` (query-token coverage of the top hit), `no_h
 matched — `confidence` is `0`), or `unavailable` (the top hit came from the semantic index alone, so
 match quality is not measurable — `confidence` is `null`, which means "cannot judge", not "poor
 match"). Only the opt-in vector route ever produces `null`.
+
+## UI-mode API
+
+These routes are served only by `serve --ui`, on the exact printed loopback origin. All JSON responses retain `MemoriaResult<T>`. Unknown Host/Origin or cross-site data fetches return 403. Only an Origin-free, top-level document GET to `/ui/` may launch from another app; this shell contains no memory. Scripts, frames and data endpoints have no such exception. Non-GET requests return 405 except `POST /v1/ui/search`; no business mutation routes are exposed.
+
+| Method | Route | Contract |
+| --- | --- | --- |
+| GET | `/v1/memory-facets` | `repositories` and `environment_projects`, from registry and all session projects |
+| GET | `/v1/memories` | `type=decision\|skill\|session` (default decision), `project` OR `environment=true`, `durable`, `include_superseded`, `page` (1-based), `page_size` (1–50); returns `{items,total,page,page_size}` |
+| GET | `/v1/memories/:ref` | Full text, rationale, original content, scope, markers, parent session and Git provenance; optional `type` disambiguates IDs; missing ref 404 |
+| POST | `/v1/ui/search` | `{query,mode?:"keyword"\|"vector",project?,environment?,include_superseded?}`; max query 2000 characters, request 16 KiB, up to 50 mixed-type hits with recall routing metadata |
+| GET | `/v1/brief` | Existing structured `BriefData`; optional `project`; skips initialization and does not write BRIEF.md |
+
+Booleans must be `true` or `false`; page values must be positive integers. Invalid filters and malformed JSON return 400. Lists sort by parsed timestamp and stable descending ID; data inserted during pagination may change subsequent pages. Markers belong to each original ref. Decision/skill lists use events, not the aggregated skills table or vector entities. Environment search scopes each unregistered project before top-k, then merges ranked candidates; each scoped recall may record local routing telemetry. The UI performs no automatic utility feedback. Private content is visible to the local owner; this mode is not a multi-user authorization boundary.
+
+Static `/ui/`, `/ui/style.css`, `/ui/app.js` are embedded. CSP restricts resource and data requests to this origin and disables framing. Arbitrary files, the raw DB and other API routes are not served. Assets and data use `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.

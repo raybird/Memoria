@@ -58,6 +58,9 @@ import {
     type MemoryAttributePatch
 } from './db/index.js'
 import { hybridUsedKeyword } from './utils.js'
+import { queryMemoryPage, queryMemoryDetail, queryMemoryFacets } from './db/index.js'
+import type { MemoryFilter, MemoryPage, MemoryDetail, MemoryFacets, MemoryKind, MemorySearch } from './types.js'
+import { memorySearchSchema } from './db/memory-browser.js'
 import { importSourceFile } from './source-import.js'
 import { loadMemoriaConfig } from './config.js'
 import { resolveRepositoryIdentity } from './git/identity.js'
@@ -212,6 +215,45 @@ export class MemoriaCore {
 
     constructor(paths: MemoriaPaths) {
         this.paths = paths
+    }
+
+    async listMemories(filter: MemoryFilter = {}): Promise<MemoriaResult<MemoryPage>> {
+        return withResult('sqlite', async () => {
+            const data = queryMemoryPage(this.paths.dbPath, filter)
+            return { data, evidence: data.items.map(i => i.id), confidence: 1 }
+        })
+    }
+
+    async getMemory(ref: string, kind?: MemoryKind): Promise<MemoriaResult<MemoryDetail>> {
+        return withResult('sqlite', async () => {
+            const data = queryMemoryDetail(this.paths.dbPath, ref, kind)
+            return { data, evidence: [data.id], confidence: 1 }
+        })
+    }
+
+    async memoryFacets(): Promise<MemoriaResult<MemoryFacets>> {
+        return withResult('sqlite', async () => ({ data: queryMemoryFacets(this.paths.dbPath), evidence: [], confidence: 1 }))
+    }
+
+    async searchMemories(filter: MemorySearch): Promise<MemoriaResult<RecallHit[]>> {
+        return withResult('sqlite', async () => {
+            const input = memorySearchSchema.parse(filter)
+            const facets = queryMemoryFacets(this.paths.dbPath)
+            // Scope before top-k: project-heavy corpora cannot starve environment candidates.
+            const projects: Array<string | undefined> = input.environment ? facets.environment_projects : [input.project]
+            const results: MemoriaResult<RecallHit[]>[] = []
+            for (const project of projects) {
+                const result = await this.recall({ query: input.query, project, mode: input.mode, top_k: 50, include_superseded: input.include_superseded }, { initialize: false })
+                if (!result.ok) throw new Error(result.error || 'Search failed')
+                results.push(result)
+            }
+            const hits = [...new Map(results.flatMap(r => r.data ?? []).map(h => [`${h.type}:${h.id}`, h])).values()]
+                .sort((a, b) => b.score - a.score).slice(0, 50)
+            const modes = [...new Set(results.map(r => String(r.meta.route_mode ?? 'keyword')))]
+            return { data: hits, evidence: hits.map(h => h.id), confidence: hits.length ? (hits[0].relevance ?? null) : 0,
+                extra: { confidence_basis: hits.length ? (hits[0].relevance === undefined ? 'unavailable' : 'lexical_coverage') : 'no_hits',
+                    route_mode: modes.join(',') || 'no_hits', fallback_used: results.some(r => r.meta.fallback_used === true) } }
+        })
     }
 
     // ─── Init ────────────────────────────────────────────────────────────────
@@ -482,9 +524,9 @@ export class MemoriaCore {
     // Read-only aggregate over decisions / UFL utility / repository state. The CLI writes it to
     // knowledge/BRIEF.md so CLAUDE.md can `@`-import it — context injection without hooks.
 
-    async brief(options?: BriefOptions): Promise<MemoriaResult<BriefData>> {
+    async brief(options?: BriefOptions, runtime: { initialize?: boolean } = {}): Promise<MemoriaResult<BriefData>> {
         return withResult('sqlite', async () => {
-            await this.init()
+            if (runtime.initialize !== false) await this.init()
             const data = queryBrief(this.paths.dbPath, options ?? {})
             const evidence = [
                 ...data.decisions.map((decision) => decision.id),
@@ -496,12 +538,12 @@ export class MemoriaCore {
 
     // ─── recall() ────────────────────────────────────────────────────────────
 
-    async recall(filter: RecallFilter): Promise<MemoriaResult<RecallHit[]>> {
+    async recall(filter: RecallFilter, runtime: { initialize?: boolean } = {}): Promise<MemoriaResult<RecallHit[]>> {
         return withResult('sqlite', async ({ elapsed }) => {
             if (!existsSync(this.paths.dbPath)) {
                 return { data: [], evidence: [], confidence: 0 }
             }
-            initDatabase(this.paths.dbPath)
+            if (runtime.initialize !== false) initDatabase(this.paths.dbPath)
 
             if (shouldSkipAdaptiveRecall(filter)) {
                 try {

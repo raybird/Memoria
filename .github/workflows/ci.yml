@@ -102,6 +102,8 @@ jobs:
               bash scripts/test-wiki-lint.sh
               ;;
             http-mcp)
+              bash scripts/test-memory-browser.sh
+              bash scripts/test-ui-http.sh
               bash scripts/test-http-api.sh
               bash scripts/test-mcp-e2e.sh
               bash scripts/test-vector-recall.sh

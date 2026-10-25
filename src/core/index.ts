@@ -2,6 +2,7 @@
 // Import from here when consuming MemoriaCore in CLI, HTTP server, or SDK.
 
 export { MemoriaCore } from './memoria.js'
+export type { MemoryKind, MemoryFilter, MemoryItem, MemoryPage, MemoryDetail, MemoryFacets, MemorySearch } from './types.js'
 export { resolveMemoriaPaths, getMemoriaHome, resolveMemoriaHomeInfo, detectLocalMemoriaRoot, existsSync } from './paths.js'
 export type { MemoriaHomeSource, MemoriaHomeResolution, PathResolveContext } from './paths.js'
 export {
@@ -131,3 +132,5 @@ export type {
     GitSummaryType, GitSummaryStatus, GitSummaryContent, GitSummaryRangeRecord, GitSummaryRecord,
     RepoSummarizeOptions, RepoSummarizeData, PendingSummaryRequest, PendingSummariesData, DismissPendingData
 } from './types.js'
+
+export { memoryFilterSchema, memorySearchSchema } from './db/memory-browser.js'

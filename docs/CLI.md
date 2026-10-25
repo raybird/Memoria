@@ -53,3 +53,19 @@ memoria setup [--serve] [--json]       # Automation one-shot install
 `remember`, `recall`, `mark`, `feedback` and `brief` work directly against local storage, so a skill-based setup needs no server. When several repositories share a store, pass `--project` to recall to keep results scoped.
 
 Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Memories whose project is not a registered repository accompany each project's brief. Follow the output to add read instructions to `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the brief path. Regenerate the brief after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).
+
+## Local memory workspace
+
+After initializing the intended data root, run:
+
+```bash
+MEMORIA_HOME=/path/to/data-root memoria serve --ui --port 3917
+```
+
+Open the printed `http://127.0.0.1:3917/ui/` address. UI mode binds only to IPv4 loopback and accepts the exact printed Host and same-origin requests. Use `127.0.0.1`, not a hostname alias. Plain `memoria serve` retains its existing API behavior.
+
+The workspace provides decision, skill-event and session lists, exact project or environment filters, durable and superseded markers, full content and provenance, explicit keyword/semantic search, and the existing brief. The default decision list does not also show a note's wrapper session. Pinned lists are browsed separately; search in the library covers all memory types within the selected scope. Project briefs retain the established inclusion of environment memories.
+
+The interface is read-only. UI mode rejects business writes and arbitrary file reads; explicit searches retain Memoria's local recall telemetry. It installs no service or hook and sends no UI analytics. It uses embedded local assets without CDN fonts or scripts. Memory content renders as text, including Markdown and HTML source. A missing data root is an error; UI mode never initializes or migrates it. Run `doctor` and, when needed, `init` explicitly against the intended root.
+
+Choose light/dark/system appearance locally. URLs preserve scope, list type, page, search text and selected memory; browser history can therefore contain your search text and memory identifiers. Do not share these URLs as public links. Keyboard `/` focuses library search; narrow screens open a reading view with a return action. Semantic degradation is named; no ranking score is presented as a probability.
