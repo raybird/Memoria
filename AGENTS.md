@@ -2,7 +2,7 @@
 
 Shared guidance for coding agents operating in this repository. `CLAUDE.md` imports this file with `@AGENTS.md`; maintain common rules here and Claude-specific additions in `CLAUDE.md`.
 
-Last verified: 2026-10-23 for the shared agent entry, architecture references and test commands against `.github/workflows/ci.yml`.
+Last verified: 2026-10-26 for the CI command list and local UI references against `.github/workflows/ci.yml` and the issue-30 implementation.
 
 ## Project Snapshot
 
@@ -141,7 +141,7 @@ Run each script below with `bash scripts/<name>.sh`:
 | core | `test-pure-functions`, `test-smoke`, `test-cli-memory`, `test-memory-attributes`, `test-brief-scope`, `test-migrations`, `test-prune`, `test-utility-ranking`, `test-bootstrap`, `test-setup-onboarding` |
 | adapters | `test-adapter-runtime`, `test-claude-code-adapter`, `test-codex-adapter`, `test-antigravity-adapter`, `test-utility-shadow` |
 | wiki | `test-wiki-ingest`, `test-wiki-build`, `test-wiki-query-fileback`, `test-wiki-lint` |
-| http-mcp | `test-http-api`, `test-mcp-e2e`, `test-vector-recall` |
+| http-mcp | `test-memory-browser`, `test-ui-http`, `test-http-api`, `test-mcp-e2e`, `test-vector-recall` |
 | repo | `test-repo-git-exec`, `test-repo-registry`, `test-repo-sync`, `test-repo-events`, `test-repo-summary`, `test-repo-promotion`, `test-repo-edge`, `test-repo-noninvasive` |
 
 Additional CI jobs:

@@ -519,3 +519,5 @@ larger payloads.
 ## Read-only memory workspace
 
 Run `MEMORIA_HOME=/path/to/data-root memoria serve --ui`. Missing/unreadable schemas fail before listening: initialize or repair deliberately, never point the viewer at another root to hide an error. Use the exact printed 127.0.0.1 address. Browser history may retain query text and ref IDs; theme preferences stay in localStorage. Browsing does not migrate the DB or write BRIEF.md. Explicit search retains local recall telemetry, but performs no utility feedback. `/v1/health` is not exposed by this restricted router and is not a vector-doctor diagnosis. Stop the foreground process to close the viewer.
+
+Cancelling search immediately stops UI updates from that request; an already running Core recall may continue computing, particularly across multiple environment projects. A semantic fallback message means keyword results remain available; use `memoria doctor --json` against the same root to diagnose vector readiness. Reconnecting from an error preserves the selected memory and resolves its actual type rather than treating a temporary disconnection as deletion.

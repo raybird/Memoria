@@ -65,8 +65,8 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - 驗收支援：SCN-001～SCN-013；各 SCN 責任仍在上列 Task，不新增第二份狀態清單。
 - 完成判準：typecheck／build／smoke／相關回歸通過，精煉與風險限制可追溯，GitNexus detect_changes 完成；不開 PR、不自行合併或發版。
 - 驗證：既有 CI 入口與文件一致性；獨立 reviewer 保存報告。
-- 狀態：實作、精煉、文件與回歸已完成；最後獨立審查 gate 依本目錄最新有效程式報告判定。
-- 證據：[驗證紀錄與 Proof of Test](./verification.md#proof-of-test)；[早期程式審查](./review-code-ca19124.md) 的三項 MUST FIX 已修，新固定 HEAD 必須重新審查，不沿用舊報告。
+- 狀態：✅ 已完成；`f7dfba2` 完整獨立審查 PASS，報告提交 `51ee396` 經 artifact 例外驗證並於 2026-10-26 fast-forward 合併。
+- 證據：[驗證紀錄與 Proof of Test](./verification.md#proof-of-test)、[最終完整審查](./review-f7dfba2.md)；早期 RETURN 均保留為歷史，不沿用為最終判定。
 
 ## 測試策略
 
@@ -98,7 +98,7 @@ HTTP 以 `/v1/memories`、`/v1/memories/:ref` 與 `/v1/memory-facets` 等明確�
 - [x] Large 計畫由 decompose 細化；初始規格提交後回填基線。
 - [x] 各 Task 有有效行為／等價證據與精煉紀錄。
 - [x] 雙語文件、安裝產物、視覺與可及性證據齊備。
-- 最後提交前執行 GitNexus detect_changes；獨立 reviewer 的固定 BASE／HEAD 與結論見本目錄最新有效程式報告，此 gate 不由實作者自評勾選。
+- [x] 提交前已執行 GitNexus detect_changes；獨立 reviewer 的固定 BASE／HEAD 與 PASS 見 [最終完整報告](./review-f7dfba2.md)，合併依據見 README Timeline。
 
 ## 初版規劃檢查
 

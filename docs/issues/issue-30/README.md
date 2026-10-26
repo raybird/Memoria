@@ -14,6 +14,8 @@ issue 編號沿用本機 `docs/issues/` 的序列；建檔時最高為 issue-29�
 - [technical-analysis.md](./technical-analysis.md)
 - [implementation-plan.md](./implementation-plan.md)
 - [verification.md](./verification.md)：13 項 Proof of Test、回歸、瀏覽器與斷網安裝證據。
+- [pre-release.md](./pre-release.md)：實際 fast-forward 合併與發版前文件檢查。
+- [review-f7dfba2.md](./review-f7dfba2.md)：完整產品獨立審查 PASS；`51ee396` 為只加入該報告的有效後繼提交。
 - [review-code-ca19124.md](./review-code-ca19124.md)：早期獨立審查及已修問題；最終審查以後續 `review-<HEAD>.md` 的固定版本為準。
 
 ## 關鍵差異
@@ -217,6 +219,7 @@ Q1～Q3 結論：2026-10-25 使用者「全部照建議」，均採上述建議�
 | 2026-10-25 | 使用者明確啟動 dev-cycle；建立 issue-30 初版調查、驗收提案與實作計畫，待 Q1～Q3 決策 | - |
 | 2026-10-25 | Q1～Q3「全部照建議」核准 SCN-001～SCN-013，開始分解與實作 | - |
 | 2026-10-26 | 正式 UI、13 項驗收與隔離安裝／斷網證據齊備，修正早期審查三項問題；交付固定 HEAD 做最後獨立審查，不開 PR、不合併或發版 | - |
+| 2026-10-26 | 全部審查必修已解，`f7dfba2` 完整獨立審查 PASS；報告提交 `51ee396` 經 verify-artifact 有效。使用者明確要求合併與發版前文件確認，本地 main 已由 `f89d675` fast-forward 至 `51ee396`，沒有 merge commit；產品交付結案，發版尚未執行 | - |
 
 ---
 **建立日期**: 2026-10-25
@@ -225,4 +228,4 @@ Q1～Q3 結論：2026-10-25 使用者「全部照建議」，均採上述建議�
 
 **風險**: High
 
-**狀態**: 實作與驗證完成；獨立審查 gate 以本目錄最新有效程式報告為準，PASS 後等待合併（尚未合併）
+**狀態**: 已完成（2026-10-26 fast-forward 合併；尚未發版）

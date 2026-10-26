@@ -47,6 +47,11 @@ Last verified: 2026-10-23 against v1.31.1 source and CLI help for memory command
 - Memory-quality guardrails during import:
   - exact duplicate events within the same session are suppressed before persistence
   - trivial session summaries are replaced with the first higher-signal event text when available
+- Local memory workspace (issue-30):
+  - opt-in `serve --ui` serves the read-only browser and restricted same-origin API on `127.0.0.1`; ordinary serve remains unchanged
+  - paged original decision/skill events and sessions, exact project/environment scopes, markers, full detail and provenance; explicit keyword/vector search and existing structured brief
+  - embedded offline assets, light/dark/system themes, keyboard/mobile navigation and restorable local URLs; no UI service, schema migration or business-write routes
+  - browsing writes no business data or brief; explicit searches retain existing recall telemetry without automatic utility feedback; see [UI-mode API](docs/API.md#ui-mode-api)
 - Tree memory index build and recall modes:
   - `recall` supports `mode: keyword | tree | hybrid | vector`
   - recall metadata includes `reasoning_path`, `route_mode`, `fallback_used`, `recall_id`
@@ -64,7 +69,7 @@ Last verified: 2026-10-23 against v1.31.1 source and CLI help for memory command
   - fail-open degradation: `route_mode = vector_unavailable | vector_timeout | keyword | hybrid_vector | vector`; `MEMORIA_VECTOR_TIMEOUT_MS` (default 4000) bounds the helper
   - sync-flow ingest step behind `MEMORIA_VECTOR_ENABLE=1` (default off)
   - `setup --vector` installs dependencies/model into the user cache and warms the model; sibling helper dependencies take precedence, otherwise the cache is keyed by the helper lockfile and survives global upgrades
-  - local-model ingest is batched (`MEMORIA_EMBED_BATCH`, default 32); setup does not ingest the corpus
+  - local-model ingest is batched (`MEMORIA_EMBED_BATCH`, default 32); legacy bare `setup --vector` installs/warms only, while complete onboarding (`--scope` and related options, or the wizard) also ingests the corpus and verifies coverage
   - `doctor` reports helper/embedder readiness and local vector coverage; missing coverage gets a runnable full-corpus ingest fix unless a custom database path differs from the builder's data-root database
 - Adaptive retrieval gate:
   - skips trivial/greeting recall requests when no explicit recall mode or memory intent is present

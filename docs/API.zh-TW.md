@@ -71,6 +71,6 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 | POST | `/v1/ui/search` | `{query,mode?:"keyword"\|"vector",project?,environment?,include_superseded?}`；查詢最多 2000 字、請求最多 16 KiB、回傳最多 50 個跨類型結果與 recall 路由 metadata |
 | GET | `/v1/brief` | 既有結構化 `BriefData`，接受 `project`；略過初始化且不寫 BRIEF.md |
 
-布林值限 `true`／`false`；頁碼限正整數。非法篩選或 JSON 回傳 400。列表按實際時間與 ID 倒序，翻頁期間若另有寫入，後續頁面可能變動。標記屬於原始 ref；決策／技能列表讀取原始事件，不把 skills 彙整表或向量實體當成同一計數。共用搜尋先按各未註冊 project 限定範圍再取 top-k，最後合併；每次 scoped recall 可能記錄本地路由遙測，不自動回報效用。
+布林值限 `true`／`false`；頁碼限正整數。非法篩選或 JSON 回傳 400，搜尋請求超過 16 KiB 回傳 413。列表按實際時間與 ID 倒序，翻頁期間若另有寫入，後續頁面可能變動。標記屬於原始 ref；決策／技能列表讀取原始事件，不把 skills 彙整表或向量實體當成同一計數。共用搜尋先按各未註冊 project 限定範圍再取 top-k，最後合併；每次 scoped recall 可能記錄本地路由遙測，不自動回報效用。
 
 `/ui/`、`/ui/style.css`、`/ui/app.js` 為內嵌資產。CSP 限制資源與資料請求為同源並禁止被框架嵌入；不提供任意檔案、原始 DB 或其他 API。資產與資料均使用 `Cache-Control: no-store` 與 `Referrer-Policy: no-referrer`。私人內容可由本機擁有者閱讀；此模式不是多人授權系統。

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Local read-only memory workspace** (issue-30). Run `memoria serve --ui` against an initialized data root to browse original decision and skill events or sessions, filter exact project/environment scopes, inspect durable/replaced markers, and read full content, reasons, parent sessions and Git provenance. Search is explicitly submitted and names semantic fallback; briefs use the existing scope contract. Light/dark/system themes, keyboard navigation, responsive reading, restorable URLs and recoverable errors support daily use.
+- **Restricted UI-mode API and bundled assets.** The viewer binds only to `127.0.0.1`, validates Host/Origin and Fetch Metadata, uses a fixed route/asset allowlist and CSP, and renders memory content as safe text. HTML, CSS and JavaScript ship inside the CLI bundle; npm and release tar installs need no frontend server, CDN or extra runtime dependency.
+
+### Compatibility and upgrade
+- The new viewer is opt-in. Plain `memoria serve`, persisted memory schema and recall ranking retain their existing behavior. Browsing does not initialize/migrate the database or write `BRIEF.md`; explicit search may write existing local recall telemetry, without automatic utility feedback. No hooks or background services are installed.
+- Upgrade the runtime to a version containing this feature, then use the existing initialized data root with `memoria serve --ui`. There is no UI-specific data migration, model download or vector rebuild. Semantic search uses the existing vector setup and falls back to keywords when unavailable. Browser history can retain query text and memory IDs; local URLs are not public sharing links.
+
+### Docs and validation
+- Updated both READMEs and CLI/API guides, installation/operations references, implemented scope and agent CI guidance. Added Core/HTTP regression coverage, isolated browser QA and npm/tar installation checks, including actual offline asset/list/detail verification. Product acceptance and independent review are recorded under `docs/issues/issue-30/`.
+
 ## [1.32.0] - 2026-10-23
 
 ### Added

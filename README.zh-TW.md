@@ -16,6 +16,7 @@ Memoria 將決策、踩坑經驗與學到的技能保存到本地 SQLite，在 a
 | Git 記憶 | 唯讀觀察 repository，增強變更摘要，召回時附上 commit 來源 |
 | 效用回饋 | 回報召回是否有用，讓觀測效用影響排序與保留 |
 | Wiki | 匯入 markdown/text、編譯 wiki 頁面、歸檔有價值的查詢結果 |
+| 記憶工作台 | 透過本機唯讀介面瀏覽、搜尋與閱讀完整記憶、理由及來源 |
 | 整合 | CLI、HTTP API、原始碼層級 Node.js SDK 與 agent adapter 共用核心 |
 
 核心在本地執行，只有 `better-sqlite3`、`commander`、`zod` 三個 runtime 依賴。MCP/libSQL 為選用功能，SQLite 始終是資料真相來源。需要語意索引或跨系統圖譜投射時，請見 [MCP/libSQL 指南](docs/MCP_INTEGRATION.md)。
@@ -38,6 +39,20 @@ memoria brief --project Memoria
 這些命令直接存取本地資料，server 為選用。全域 setup 會將預設資料根目錄（`~/.memoria`）與本地向量設定寫入使用者設定檔（`install.json`），新開的終端機不需要手動 `export MEMORIA_HOME` 或 `LIBSQL_URL` 即可共用同一份記憶庫。專案範圍（`--scope project`）會使用目前專案的 `./memoria`，而顯式傳入的 `MEMORIA_HOME` 或 `--memoria-home` 永遠優先。
 
 `setup` 也會產生初始 brief，並在備份既有檔案後，將受管理區塊（`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`）接進共用的 `AGENTS.md` 與 `CLAUDE.md`。記憶更新後請執行 `memoria brief` 重新產生 brief。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
+
+## 使用介面瀏覽記憶
+
+工作台目前在 main 上，尚未發版。原始碼 checkout 可執行 `pnpm run build` 與 `node dist/cli.mjs serve --ui`；下方安裝版命令需使用包含此功能的新版本套件。
+
+完成 setup 後執行：
+
+```bash
+memoria serve --ui
+```
+
+開啟印出的 `http://127.0.0.1:3917/ui/`。工作台提供決策、技能與 Session 分類、專案篩選、完整理由與來源、搜尋、摘要、淺深色與鍵盤操作。它使用與 CLI 相同的已初始化資料根，也可明確指定 `MEMORIA_HOME=/path/to/data-root memoria serve --ui`。
+
+介面在前景執行，按 Ctrl+C 關閉；資產隨程式內嵌，可離線瀏覽，明確搜尋會保留本地 recall 遙測。範圍、語意搜尋與存取邊界詳見 [本機工作台指南](docs/CLI.zh-TW.md#本機記憶工作台)。
 
 ## 搭配 Agent 使用
 
@@ -69,12 +84,8 @@ Skill 引導 agent 在工作前召回記憶，並在做出決策或完成變更�
 | [規格](SPEC.md) · [路線圖](RFC.md) | 已實作行為與未來方向 |
 | [版本紀錄](CHANGELOG.md) · [發版 SOP](RELEASE.md) | 版本歷史與維護者流程 |
 
-最後驗證：2026-10-23，對照 v1.31.1 原始碼、CLI help 與文件檢查。
+最後驗證：2026-10-26，對照 main 上的 issue-30 實作、CLI help 與文件檢查。工作台目前列於 `[Unreleased]`，待新版本套件發布後提供。
 
 ## 授權
 
 MIT
-
-### 使用介面瀏覽記憶
-
-對已初始化的資料根執行 `memoria serve --ui`，開啟印出的本機網址。唯讀工作台提供記憶列表、完整來源、搜尋與摘要，詳見 [CLI](docs/CLI.zh-TW.md#本機記憶工作台)。

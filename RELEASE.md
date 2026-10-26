@@ -95,6 +95,9 @@ Release should stop immediately if any of these fail (they all run in CI as well
 - `bash scripts/test-installer-platform.sh` — Linux/macOS x64/arm64 URL routing contract
 - `bash scripts/test-service-manager.sh` — mocked systemd user and LaunchAgent lifecycle
 - `bash scripts/test-npm-install.sh` — packed npm layout and installed runtime checks
+- `bash scripts/test-memory-browser.sh` and `bash scripts/test-ui-http.sh` — paged read-only memory contracts, local UI routes and access boundaries (CI `http-mcp` group)
+
+For UI changes, also complete the isolated browser matrix in `docs/issues/issue-30/verification.md`: invalid URLs, stale sources, cross-type reconnection, keyboard/viewport/theme checks and explicit search fallback. npm/tar UI assets are embedded in the CLI bundle; use the existing installed-UI checks rather than a separate frontend deployment. Before publishing, replace README's unreleased-workspace notice with the actual released version and add the real version row to `docs/HANDOVER.md` §2 alongside the CHANGELOG entry.
 
 ## Release Artifacts
 

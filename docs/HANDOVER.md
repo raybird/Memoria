@@ -8,7 +8,14 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-08-14 更新（本節內容含 07-28 起累積的條目;最舊者仍標原日期）
+> 2026-10-26 當前狀態
+
+- **已發布版本**：`v1.32.0`（2026-10-23），出貨內容見 §2；本次沒有執行版本 bump、tag 或發布。
+- **已合併、尚未發版**：issue-30 本機唯讀記憶工作台，使用者授權後由 `f89d675` fast-forward 至 `51ee396`。產品提交 `f7dfba2` 的[完整獨立審查](issues/issue-30/review-f7dfba2.md) PASS，`51ee396` 只新增該報告，artifact 例外已驗證。13 項驗收與 npm／tar 斷網證據見 [verification](issues/issue-30/verification.md)。後續補齊 README、CHANGELOG 與發版前文件，不變更產品程式。
+- **使用入口**：已初始化資料根執行 `memoria serve --ui`；未發版 checkout 先 build，再 `node dist/cli.mjs serve --ui`。本機 IPv4 loopback、前景程序、原始內容與來源閱讀；不安裝服務或修改 schema。CLI／API／安裝／維運文件已說明限制與搜尋遙測。
+- **下一步**：以最終 main 的乾淨 CI 為準；正式發版時依 RELEASE.md 執行 prepare，將 Unreleased 移入實際版本、更新本節與 §2 真實出貨列及 README 的未發版提示，再執行 publish。首次 UI 功能建議 minor；目前不預填尚未發布的版本列。
+
+### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
 - **版本**:`v1.26.0` 已發(2026-08-13,GitHub Release + npm;同日先發 v1.25.1。先前 2026-08-10 同日連發 v1.24.0 → v1.25.0,再前一日連發 v1.22.0 → v1.22.1 → v1.23.0 → v1.23.1)。
 - **v1.21.0 = issue-2 Git-Aware v1.1 可用性改進**(`docs/issues/issue-2/`,實測驅動):(a) `repo summarize --pending` 預設不含 diff(104KB → 2.4KB,`--with-diff`/`--limit` opt-in);(b) **pending 骨架一律不自動 promote**(Phase 2 + R1,不分型別與 importance;`--promote` 仍為明示逃生口);(c) 多 repo 情境 recall 務必帶 `project`(文件化,adapter 本已帶)。
@@ -96,6 +103,8 @@
 
 ## 3. 當前未提交的工作(git status)
 
+> 2026-10-26：`work/ui-concept/` 是本機設計原型，未納入 issue-30 產品提交、npm 或 tar。發版 prepare 前依實際 `git status` 檢查工作區；保留原型時將它移到工作區外的保存位置，不把它放進 release commit。此處只記本機未交付項目，最新狀態以 git 為準。
+>
 > 2026-08-13:無。main 乾淨且與 `origin/main` 同步,v1.25.1 已 tag + release(npm + GitHub Release 皆已確認)。
 >
 > 2026-07-28:無。main 乾淨且與 `origin/main` 同步,所有交付均已 commit + push,v1.21.1 已 tag + release。
@@ -116,6 +125,8 @@
 ---
 
 ## 5. 下一步（接續就從這開始）
+
+2026-10-26：issue-30 已合併，先確認 main 完整 CI 與本次發版前文件審查，再依 §0 的正式發版步驟處理版本及出貨紀錄。產品驗收已完成，不重啟已關閉的需求決策。以下保留過往主線的交接歷史。
 
 > **2026-08-09 更新:以「把 Memoria 當成 coding agent 的永久記憶」視角盤點,產出 issue-4 與 issue-5 兩份規格;issue-4 當日拍板並全數交付。**
 >

@@ -16,6 +16,7 @@ Memoria keeps decisions, pitfalls and learned skills in local SQLite, then recal
 | Git-aware memory | Observe repositories read-only, enrich change summaries and recall decisions with commit provenance |
 | Feedback | Report useful recalls; observed utility informs ranking and retention |
 | Wiki | Import markdown/text sources, compile wiki pages and file useful query results |
+| Memory workspace | Browse, search and read full memories, reasons and sources in a local, read-only UI |
 | Integrations | CLI, HTTP API, source-level Node.js SDK and agent adapters sharing one core |
 
 The core runs locally with three runtime dependencies: `better-sqlite3`, `commander` and `zod`. MCP/libSQL is optional; SQLite remains the source of truth. See the [MCP/libSQL guide](docs/MCP_INTEGRATION.md) when you need semantic indexing or cross-system graph projection.
@@ -38,6 +39,20 @@ memoria brief --project Memoria
 These commands use local storage directly; a server is optional. Global setup saves your default data root (`~/.memoria`) and vector settings to the user config (`install.json`), so new terminals find the same memory store without manually exporting `MEMORIA_HOME` or `LIBSQL_URL`. Project-scoped setup (`--scope project`) keeps `./memoria` in the current project, and an explicit `MEMORIA_HOME` or `--memoria-home` always wins.
 
 `setup` can also generate the initial brief and wire a managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) into shared `AGENTS.md` and `CLAUDE.md` while backing up existing files. Regenerate the brief with `memoria brief` after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
+
+## Browse memory visually
+
+The workspace is currently unreleased on main. From a source checkout, run `pnpm run build` and `node dist/cli.mjs serve --ui`; the installed command below requires a package release containing this feature.
+
+After setup, run:
+
+```bash
+memoria serve --ui
+```
+
+Open the printed `http://127.0.0.1:3917/ui/` address. The workspace includes decision, skill and session lists, project filters, full reasons and provenance, search, briefs, light/dark themes and keyboard navigation. It uses the same initialized data root as the CLI; you can select one explicitly with `MEMORIA_HOME=/path/to/data-root memoria serve --ui`.
+
+The viewer runs in the foreground and closes with Ctrl+C. Assets are bundled for offline browsing; explicit searches keep local recall telemetry. See the [local workspace guide](docs/CLI.md#local-memory-workspace) for scope, semantic search and access boundaries.
 
 ## Use it with an agent
 
@@ -69,12 +84,8 @@ Optional next steps:
 | [Specification](SPEC.md) · [Roadmap](RFC.md) | Implemented behavior and future directions |
 | [Releases](CHANGELOG.md) · [Release SOP](RELEASE.md) | Version history and maintainer workflow |
 
-Last verified: 2026-10-23 against v1.31.1 source, CLI help and documentation checks.
+Last verified: 2026-10-26 against the issue-30 implementation on main, CLI help and documentation checks. The workspace is in `[Unreleased]` until a new package version ships.
 
 ## License
 
 MIT
-
-### Browse memory visually
-
-Run `memoria serve --ui` against your initialized data root and open the printed loopback URL. The local, read-only workspace includes lists, full provenance, search and briefs; see [CLI](docs/CLI.md#local-memory-workspace).
