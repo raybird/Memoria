@@ -173,7 +173,7 @@ $unexpected"
 
     step "Commit + annotated tag"
     git add -A
-    git commit -m "Release $tag"
+    git commit -m "chore(release): 發布 $tag"
     # Annotated on purpose, and pushed by ref below: `--follow-tags` pushes ONLY annotated tags, so a
     # lightweight one is dropped without a word. Naming the ref makes the tag's type stop deciding
     # whether a release happens at all.

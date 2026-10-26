@@ -4,6 +4,8 @@ This document is the source of truth for what Memoria currently implements.
 
 Last verified: 2026-10-23 against v1.31.1 source and CLI help for memory commands, vector setup and summary promotion.
 
+Local UI and complete setup/onboarding notes verified: 2026-10-26 against the issue-30 implementation on main; the UI requires v1.33.0 or later.
+
 ## Implemented Scope
 
 - TypeScript CLI commands:

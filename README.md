@@ -42,7 +42,7 @@ These commands use local storage directly; a server is optional. Global setup sa
 
 ## Browse memory visually
 
-The workspace is currently unreleased on main. From a source checkout, run `pnpm run build` and `node dist/cli.mjs serve --ui`; the installed command below requires a package release containing this feature.
+Requires v1.33.0 or later. From a source checkout, run `pnpm run build` and `node dist/cli.mjs serve --ui`.
 
 After setup, run:
 
@@ -84,7 +84,7 @@ Optional next steps:
 | [Specification](SPEC.md) · [Roadmap](RFC.md) | Implemented behavior and future directions |
 | [Releases](CHANGELOG.md) · [Release SOP](RELEASE.md) | Version history and maintainer workflow |
 
-Last verified: 2026-10-26 against the issue-30 implementation on main, CLI help and documentation checks. The workspace is in `[Unreleased]` until a new package version ships.
+Last verified: 2026-10-26 against the issue-30 implementation, CLI help and documentation checks. The workspace requires v1.33.0 or later.
 
 ## License
 

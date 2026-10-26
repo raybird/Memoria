@@ -42,7 +42,7 @@ memoria brief --project Memoria
 
 ## 使用介面瀏覽記憶
 
-工作台目前在 main 上，尚未發版。原始碼 checkout 可執行 `pnpm run build` 與 `node dist/cli.mjs serve --ui`；下方安裝版命令需使用包含此功能的新版本套件。
+需要 v1.33.0 或更新版本。原始碼 checkout 可執行 `pnpm run build` 與 `node dist/cli.mjs serve --ui`。
 
 完成 setup 後執行：
 
@@ -84,7 +84,7 @@ Skill 引導 agent 在工作前召回記憶，並在做出決策或完成變更�
 | [規格](SPEC.md) · [路線圖](RFC.md) | 已實作行為與未來方向 |
 | [版本紀錄](CHANGELOG.md) · [發版 SOP](RELEASE.md) | 版本歷史與維護者流程 |
 
-最後驗證：2026-10-26，對照 main 上的 issue-30 實作、CLI help 與文件檢查。工作台目前列於 `[Unreleased]`，待新版本套件發布後提供。
+最後驗證：2026-10-26，對照 issue-30 實作、CLI help 與文件檢查。工作台需要 v1.33.0 或更新版本。
 
 ## 授權
 
