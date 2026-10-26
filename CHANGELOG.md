@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.33.0] - 2026-10-26
+
 ### Added
 - **Local read-only memory workspace** (issue-30). Run `memoria serve --ui` against an initialized data root to browse original decision and skill events or sessions, filter exact project/environment scopes, inspect durable/replaced markers, and read full content, reasons, parent sessions and Git provenance. Search is explicitly submitted and names semantic fallback; briefs use the existing scope contract. Light/dark/system themes, keyboard navigation, responsive reading, restorable URLs and recoverable errors support daily use.
 - **Restricted UI-mode API and bundled assets.** The viewer binds only to `127.0.0.1`, validates Host/Origin and Fetch Metadata, uses a fixed route/asset allowlist and CSP, and renders memory content as safe text. HTML, CSS and JavaScript ship inside the CLI bundle; npm and release tar installs need no frontend server, CDN or extra runtime dependency.

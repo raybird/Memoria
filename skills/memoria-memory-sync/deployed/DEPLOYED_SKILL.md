@@ -3,7 +3,7 @@ name: memoria
 description: Use before starting work on an issue or feature, after making a decision with a reason or hitting a pitfall, after a merge to the main branch or a release, and when asked how or why something was decided before — reads and writes Memoria cross-session memory (recall, feedback, remember, repo sync and merge-summary write-back), and sets up memory for a folder that has none yet.
 license: MIT
 compatibility: Designed for filesystem-based coding agents with bash access. Requires Node.js >=18.
-version: "1.32.0"
+version: "1.33.0"
 deployment_mode: installed
 repository: Memoria
 ---

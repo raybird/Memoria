@@ -10,10 +10,10 @@
 
 > 2026-10-26 當前狀態
 
-- **已發布版本**：`v1.32.0`（2026-10-23），出貨內容見 §2；本次沒有執行版本 bump、tag 或發布。
-- **已合併、尚未發版**：issue-30 本機唯讀記憶工作台，使用者授權後由 `f89d675` fast-forward 至 `51ee396`。產品提交 `f7dfba2` 的[完整獨立審查](issues/issue-30/review-f7dfba2.md) PASS，`51ee396` 只新增該報告，artifact 例外已驗證。13 項驗收與 npm／tar 斷網證據見 [verification](issues/issue-30/verification.md)。後續補齊 README、CHANGELOG 與發版前文件，不變更產品程式。
-- **使用入口**：已初始化資料根執行 `memoria serve --ui`；未發版 checkout 先 build，再 `node dist/cli.mjs serve --ui`。本機 IPv4 loopback、前景程序、原始內容與來源閱讀；不安裝服務或修改 schema。CLI／API／安裝／維運文件已說明限制與搜尋遙測。
-- **下一步**：以最終 main 的乾淨 CI 為準；正式發版時依 RELEASE.md 執行 prepare，將 Unreleased 移入實際版本、更新本節與 §2 真實出貨列及 README 的未發版提示，再執行 publish。首次 UI 功能建議 minor；目前不預填尚未發布的版本列。
+- **本次發布版本**：`v1.33.0`（2026-10-26，發布準備）；前一版為 `v1.32.0`（2026-10-23）。正式完成須確認 release workflow、公開 tar parity 與 npm 精確版本，尚未完成時不將版本準備視為已發布。
+- **交付內容**：issue-30 本機唯讀記憶工作台，使用者授權後由 `f89d675` fast-forward 至 `51ee396`。產品提交 `f7dfba2` 的[完整獨立審查](issues/issue-30/review-f7dfba2.md) PASS，`51ee396` 只新增該報告，artifact 例外已驗證。13 項驗收與 npm／tar 斷網證據見 [verification](issues/issue-30/verification.md)。文件補齊及發布前收斂也已分別通過獨立審查；`b0f00b9` 完整 CI 十個 job 成功。
+- **使用入口**：安裝 v1.33.0 或更新版本後，對已初始化資料根執行 `memoria serve --ui`；checkout 先 build，再 `node dist/cli.mjs serve --ui`。本機 IPv4 loopback、前景程序、原始內容與來源閱讀；不安裝服務或修改 schema。CLI／API／安裝／維運文件已說明限制與搜尋遙測。
+- **下一步**：依 RELEASE.md 完成 publish，等待四平台安裝包與 npm、核對已發布產物，再回寫本節與[發布紀錄](issues/issue-30/release.md)。先前產品與文件審查不代替真實發布驗證。
 
 ### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
@@ -56,7 +56,7 @@
 
 ---
 
-## 2. 出貨紀錄（v1.13.0 → v1.32.0）
+## 2. 出貨紀錄（v1.13.0 → v1.33.0，含本次發布準備）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -95,6 +95,8 @@
 
 | v1.32.0 | 一次 setup 完成 agent 記憶接線 | **issue-28**：互動與明確非互動 onboarding、使用者 `install.json` 持久預設、per-root 向量設定、Codex／Claude skill 與 AGENTS／CLAUDE 受管理接線、brief、模型暖機／全量 ingest／coverage 與隔離 probe。預檢涵蓋資料根內部目標與完整祖先鏈，拒絕手寫 skill、衝突與未知 symlink；各輪跨根設定與空向量檔問題已修復。[完整交付審查](issues/issue-28/review-8b6c06d.md) PASS，報告提交 `a24653b` 已驗證 artifact 例外並 fast-forward 合併。乾淨 CI 的向量測試依賴準備順序另於 `7211b81` 修正並經[局部獨立審查](issues/issue-28/review-7211b81.md) PASS。舊 `setup --vector` 保留依賴安裝／暖機語意；完整升級用 `setup --scope global --memoria-home <existing-data-root> --agent both --vector --yes`，依需要選 host／基本模式。schema、recall 預設、helper 路徑與 cache 鎖檔不變。 |
 
+| v1.33.0 | 本機唯讀記憶工作台 | **issue-30**：`serve --ui`、分頁與完整理由／來源、精確 project／environment、標記、明確搜尋與 brief、深淺色／鍵盤／手機／網址恢復。獨立 loopback router、同源與 CSP、內嵌離線資產；schema／recall 排名／普通 serve 行為不變。產品與文件獨立 PASS，既有完整 CI 全綠；本列於發布準備建立，真正發布結果待 workflow、四平台 tar／checksum、公開 Linux tar parity 與 npm@1.33.0 確認後回填。 |
+
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
 > ⚠ **這張表是手動維護的,而它曾經漂移**:v1.27.0 / v1.27.1 / v1.28.0 三版都發完了才被下游指出沒進表(§7 backlog 有標 done,表格沒補)。`release.sh publish` 現在會檢查本表是否已有該版本的列,沒有就擋下發版——與 CHANGELOG 區段同樣的守門。
@@ -103,7 +105,7 @@
 
 ## 3. 當前未提交的工作(git status)
 
-> 2026-10-26：`work/ui-concept/` 是本機設計原型，未納入 issue-30 產品提交、npm 或 tar。發版 prepare 前依實際 `git status` 檢查工作區；保留原型時將它移到工作區外的保存位置，不把它放進 release commit。此處只記本機未交付項目，最新狀態以 git 為準。
+> 2026-10-26：`work/ui-concept/` 本機設計原型已移到 repo 外的個人 artifacts 目錄保存，前後 SHA-256 相同，未納入產品提交、npm 或 tar。prepare 已確認乾淨 main 與 origin 同步；此處只記本機未交付項目，最新狀態以 git 為準。
 >
 > 2026-08-13:無。main 乾淨且與 `origin/main` 同步,v1.25.1 已 tag + release(npm + GitHub Release 皆已確認)。
 >
@@ -126,7 +128,7 @@
 
 ## 5. 下一步（接續就從這開始）
 
-2026-10-26：issue-30 已合併，先確認 main 完整 CI 與本次發版前文件審查，再依 §0 的正式發版步驟處理版本及出貨紀錄。產品驗收已完成，不重啟已關閉的需求決策。以下保留過往主線的交接歷史。
+2026-10-26：issue-30 已合併，產品／文件審查與完整 main CI 已通過，正在依 §0 發布 v1.33.0。完成後確認公開產物及 npm，更新交接與持久記憶。產品驗收已完成，不重啟已關閉的需求決策。以下保留過往主線的交接歷史。
 
 > **2026-08-09 更新:以「把 Memoria 當成 coding agent 的永久記憶」視角盤點,產出 issue-4 與 issue-5 兩份規格;issue-4 當日拍板並全數交付。**
 >
