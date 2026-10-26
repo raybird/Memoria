@@ -15,4 +15,19 @@
 
 ## 發布完成的判準
 
-依既有 `release:prepare minor` → 編輯 CHANGELOG／HANDOVER → `release:publish` 執行，確認 annotated tag、release workflow、四平台 tar／checksum、已發布 Linux tar parity 及 npm 精確版本。公開 tag 不重用；若發布步驟失敗，先確認實際遠端狀態並依失敗階段處理。此檔目前記發布前依據，完成事實由後續固定 tag／workflow 與 HANDOVER 出貨紀錄補明，不預填成功。
+依既有 `release:prepare minor` → 編輯 CHANGELOG／HANDOVER → `release:publish` 執行，確認 annotated tag、release workflow、四平台 tar／checksum、已發布 Linux tar parity 及 npm 精確版本。公開 tag 不重用；若發布步驟失敗，先確認實際遠端狀態並依失敗階段處理。以上為執行前完成判準，實際結果如下。
+
+## 正式發布結果
+
+2026-10-26，已依使用者授權完成，沒有在斷線重連後重用或重建公開 tag：
+
+- `115bcfe` 發布前局部獨立審查 PASS；`c0e4760` 只新增該報告，verify-artifact 輸出 OK。[此基線的完整 CI](https://github.com/raybird/Memoria/actions/runs/40273139538) 也全部成功。
+- `pnpm run release:prepare minor`：exit 0，由乾淨、與 origin 同步的 main 將 1.32.0 升為 1.33.0。CHANGELOG 移入 `## [1.33.0] - 2026-10-26`，HANDOVER 先記發布準備，再依完成事實回填。
+- `pnpm run release:publish`：exit 0。check、build、release:docs-check、release:package／delivery parity 全通過；smoke、bootstrap、installer-platform、service-manager、npm-install、no-clone-install 六項 gate 全部 PASS。
+- 腳本建立並推送提交 `2f0d0cd94291b36d65915ebbca6c074ae0705aac`（`chore(release): 發布 v1.33.0`）及 annotated tag `v1.33.0`。`git cat-file -t v1.33.0` 為 tag，剝除 tag 後與該提交相同；沒有 merge commit 或 force push。[該 release commit 的完整 main CI](https://github.com/raybird/Memoria/actions/runs/40273413079) 成功。
+- [Release workflow 40273418253](https://github.com/raybird/Memoria/actions/runs/40273418253) 綁定相同 SHA，六個 job 全部 success：Validate release、linux-x64、linux-arm64、darwin-x64、darwin-arm64、Publish release。四平台皆完成原生打包與 no-clone 安裝檢查。
+- [GitHub Release v1.33.0](https://github.com/raybird/Memoria/releases/tag/v1.33.0) 為非 draft，publishedAt `2026-10-26T05:19:09Z`。公開資產共九個：install.sh、四個平台 tar.gz 及各自的 sha256 sidecar。
+- 腳本下載公開 Linux tar，`check-delivery-parity.mjs` 回報 `Delivery parity check passed`。另以 `gh release download v1.33.0 --pattern 'memoria-linux-x64-v1.33.0.tar.gz*'` 取得公開 tar 與 checksum，`sha256sum -c` 回報 `memoria-linux-x64-v1.33.0.tar.gz: OK`。
+- 腳本以精確版本輪詢 npm，第 8 次確認 `npm serves 1.33.0`；隨後獨立 `npm view @raybird.chen/memoria@1.33.0 version --fetch-retries=0 --fetch-timeout=20000` 也回傳 1.33.0，registry 為 `https://registry.npmjs.org/`。沒有把 registry 傳播等待誤記成發布失敗或另燒版本。
+
+版本、README／CHANGELOG 與發布內容已同步；全域安裝升級可用 `npm i -g @raybird.chen/memoria@1.33.0`。本次不自行重跑使用者 setup、部署 hooks/service 或遷移真實記憶。此後的交接證據提交僅改文件，不變更已發布的 tag 或產物。
