@@ -101,7 +101,7 @@ When the current folder has no memory yet, give it its own data root:
 "$MEMORIA_BIN" setup --memoria-home "$(pwd)/memoria"
 ```
 
-Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent both` (or `--agent claude-code` / `--agent codex`) additionally installs this skill into `~/.claude/skills/memoria` and `~/.codex/skills/memoria` (or `$CODEX_HOME/skills/memoria`), bound to that data root; an existing deployed copy is backed up under `<data root>/.agents/skill-backups/` first.
+Then re-run `doctor --json` against it: `homeSource` is no longer `fallback` and `sessions.db` is `ok:true`. `memoria setup --agent both` (or `--agent claude-code` / `--agent codex`) additionally links `~/.claude/skills/memoria` and `~/.codex/skills/memoria` (or `$CODEX_HOME/skills/memoria`) to this data root's skill, so a later `setup` refreshes them too; a copy an older `setup` deployed there is backed up under `<data root>/.agents/skill-backups/` once, before it becomes a link.
 
 ## Path & Safety Rules
 

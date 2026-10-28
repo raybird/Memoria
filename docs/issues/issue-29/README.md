@@ -130,9 +130,9 @@ Feature: Host agent skill 統一以 symlink 連結至 canonical skill 目錄
 | SCN-008 | 2026-10-23 | 已核准 |
 
 ## 重構步驟概要
-1. 📝 **S1 首要驗證：未知外部 symlink 拒絕 vs Memoria symlink 放行與舊版實體目錄升級保護** - 待實作
-2. 📝 **S2 Host skill symlink 建立與舊版實體目錄遷移實作** - 待實作
-3. 📝 **S3 端到端回歸測試與常青文件更新** - 待實作
+1. ✅ **S1 首要驗證：未知外部 symlink 拒絕 vs Memoria symlink 放行與舊版實體目錄升級保護** - 已完成
+2. ✅ **S2 Host skill symlink 建立與舊版實體目錄遷移實作** - 已完成
+3. ✅ **S3 端到端回歸測試與常青文件更新** - 已完成
 
 ## 風險與首要驗證
 
@@ -153,4 +153,4 @@ Feature: Host agent skill 統一以 symlink 連結至 canonical skill 目錄
 **建立日期**: 2026-10-23  
 **分級**: Medium  
 **風險**: High
-**狀態**: 待實作
+**狀態**: 待審查

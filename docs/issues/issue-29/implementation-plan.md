@@ -44,7 +44,7 @@ host symlink 的解析目標**必須以三個完整路徑元件 `.agents/skills/
 
 ## 實作步驟
 
-1. 📝 **步驟 1 — 建立安全邊界與遷移的回歸保護網**
+1. ✅ **步驟 1 — 建立安全邊界與遷移的回歸保護網**
    - 產出：更新 `scripts/setup-onboarding-driver.mts`、`scripts/test-setup-onboarding.sh`、`scripts/test-bootstrap.sh`。
    - 相依：無。
    - 驗收編號：SCN-001～SCN-008。
@@ -54,7 +54,7 @@ host symlink 的解析目標**必須以三個完整路徑元件 `.agents/skills/
      - 備份案例使用獨立建立的舊版實體目錄與自訂檔案，逐位元組比對備份；不把首次部署後的 symlink 當成舊實體 fixture 修改。
      - 內圈驗預檢判定，外圈驗 CLI 零寫入／連結／備份／launcher，分別記錄命令、結果與驗收編號；既有拒絕行為不要求人造紅燈。
 
-2. 📝 **步驟 2 — 實作預檢、連結與舊版遷移**
+2. ✅ **步驟 2 — 實作預檢、連結與舊版遷移**
    - 產出：`src/cli/runtime.ts`、`src/cli/setup-plan.ts`。
    - 相依：步驟 1 的風險保護測試已建立，且新行為紅燈原因已確認。
    - 驗收編號：SCN-001～SCN-008。
@@ -63,7 +63,7 @@ host symlink 的解析目標**必須以三個完整路徑元件 `.agents/skills/
      - 重合時在寫入前拒絕，空目錄能成功轉換，舊實體副本先完整備份；重連不新增備份、不修改舊 canonical。
      - SCN-001～SCN-008 的內外圈斷言全綠；完成範圍內精煉並記錄最終驗證，無需精煉則記 no-op 理由。
 
-3. 📝 **步驟 3 — 常青文件與回歸驗證**
+3. ✅ **步驟 3 — 常青文件與回歸驗證**
    - 產出：`README.md`、`README.zh-TW.md`、`docs/INSTALL.md`、`docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/INTEGRATIONS.md`、`docs/INTEGRATIONS.zh-TW.md`、`skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`、`skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md`。
    - 相依：步驟 2。
    - 驗收編號：SCN-001～SCN-008（文件與回歸）。
@@ -88,11 +88,35 @@ host symlink 的解析目標**必須以三個完整路徑元件 `.agents/skills/
 ## 檢查清單
 
 - [x] SCN-001～SCN-008 的核准來源已記於 README；修訂版核准 commit 已回填為 `a60c52a`
-- [ ] 步驟 1 安全保護網與新行為紅燈證據已建立
-- [ ] 各驗收具有效綠燈與精煉／no-op 證據
-- [ ] 修改 symbol 前跑 GitNexus impact，提交前跑 detect_changes
-- [ ] 常青文件與部署主模板已同步並通過驗證
+- [x] 步驟 1 安全保護網與新行為紅燈證據已建立
+- [x] 各驗收具有效綠燈與精煉／no-op 證據
+- [x] 修改 symbol 前跑 GitNexus impact，提交前跑 detect_changes
+- [x] 常青文件與部署主模板已同步並通過驗證
 
 ## 本次規劃修訂查核
 
 2026-10-23，基於 HEAD `4f96a47` 的未提交文件修訂：`git diff --check` exit 0；以 Python 靜態擷取確認 SCN-001～SCN-008 各出現一次，README 核准表與本檔測試表集合完全相等，風險為 High 且兩份文件均列入 DEPLOYED_SKILL.md。此處僅驗證文件一致性，未執行產品測試；原 `review-4f96a47.md` 保留對舊版本的審查結論，不作為本次修訂已通過獨立覆核的證據。
+
+## 執行紀錄（2026-10-28）
+
+被測基線：`main` `a21ba4f` 上的 `issue-29-host-skill-symlink` 分支工作區；Linux（Node 22），隔離 HOME／XDG／CODEX_HOME。
+
+### 步驟 1 — 紅燈（實作前，`pnpm run build` 後以既有程式執行）
+
+- **內圈**：`node --import tsx scripts/setup-onboarding-driver.mts` exit 1，issue-29 段 6 項失敗，原因都是缺少的新行為：SCN-002（絕對／相對 Memoria 連結）與 SCN-008（絕對／相對斷鏈）被既有規則以 symlink 一律拒絕（`expected false, got true`）；SCN-005 兩項（canonical 不存在／已部署）`assertSetupPlanSafe` 未偵測 host 與 canonical 重合。同段 SCN-003 七項拒絕（尾端不符的帶標記目標、尾端相符但無標記／一般檔案／另一層 symlink、`not.agents` 元件邊界、尾端不符的斷鏈、canonical 本身為 symlink）與 SCN-006 空目錄放行為既有行為，維持綠燈，未要求人造紅燈。
+- **外圈**：`test-setup-onboarding.sh` 新增 Step 6（每案自建 Given 狀態、累計失敗後一次結束），單獨執行 exit 1，16 項失敗：SCN-001 三處（含自訂 CODEX_HOME）host 不是 symlink；SCN-002 重跑與切換 root 皆因 `refusing to overwrite …: it exists and is not a directory` 失敗；SCN-004 遷移後 host 不是 symlink（備份內容比對既有行為已通過）；SCN-005 兩種狀態都被接受且寫入資料根；SCN-006 兩 host 不是 symlink；SCN-007 host 讀不到 canonical 的舊內容（非連結）且更新後仍非連結；SCN-008 斷鏈被拒絕。SCN-003 六種外部連結與 canonical symlink 拒絕全數維持綠燈，且目標、外部內容逐位元組不變、資料根未建立。
+- **bootstrap**：`bash scripts/test-bootstrap.sh` exit 1，停在 `✗ SCN-004: ~/.claude/skills/memoria is not a symlink to …/data-scn4/.agents/skills/memoria`；之前的 issue-22 SCN-006 手寫拒絕、SCN-003 不帶 `--agent` 不碰 host 維持綠燈。
+- 備份案例使用獨立手建的舊版實體目錄（帶兩項標記的 SKILL.md 加自訂行、舊 DATA_ROOT、launcher、NOTES.md、內部相對 symlink），以快照（路徑、連結內容、SHA-256）與 `diff -r --no-dereference` 比對備份；不改首次部署後的連結當 fixture。
+
+### 步驟 2 — 綠燈與精煉
+
+- GitNexus impact：`assertHostSkillTarget`、`checkHostSkillTarget` 為 HIGH（上游為 `deployAgentSkill`、`deployHostAgentSkill`、`assertSetupPlanSafe` → `registerSetupCommand`，即 setup 全流程），`deployHostAgentSkill` 為 LOW；與本 issue 已核准的 High 風險範圍一致。canonical 預設模式規則不放寬，host 規則以獨立 `host` 模式加入。
+- 實作：`src/cli/runtime.ts` 新增 `canonicalSkillDir`、`host` 模式（`checkManagedSkillLink` 依連結所在父目錄解析、三個路徑元件尾端比對、目標須為帶標記實體目錄或 ENOENT）、`lstatIfExists`（僅 ENOENT 視為不存在，其他錯誤回報 `cannot be inspected`）、`isSameSkillPath`（不跟隨最後一個元件，父路徑經最近既存祖先 realpath，Windows 比對忽略大小寫）；`deployHostAgentSkill` 刪除前重驗重合與 host 模式，依狀態 unlink／rmdir／完整備份後 rm，再以 `dir`（Windows `junction`）建立連結，JSON 步驟多回報 `link`。`src/cli/setup-plan.ts` 在寫入前拒絕 host 與 canonical 重合，host 以 `host` 模式預檢。
+- 綠燈：driver exit 0（issue-29 段 14 項全過）；Step 6 單獨 exit 0；`test-bootstrap.sh`、`test-setup-onboarding.sh`、`test-smoke.sh` exit 0。手動確認拒絕訊息含路徑與原因（尾端不符：`it is a symlink to …, which is not a <data root>/.agents/skills/memoria directory`；重合：`refusing to deploy the codex skill to …: it is the data root's own skill directory …`）。
+- 精煉：檢視 diff 後為 no-op——各 helper 單一用途；剩下的候選只有兩處重複的 mode 型別字面值與一個可內聯的區域變數，改了也不更清楚。沿用同一份綠燈證據。
+
+### 步驟 3 — 常青文件與最終驗證
+
+- 更新 `README.md`、`README.zh-TW.md`、`docs/INSTALL.md`、`DEPLOYED_SKILL.md`、`DEPLOYED_REFERENCE.md`：canonical／host 分工、首次實體副本遷移備份、重連與斷鏈修復不備份、空目錄、拒絕清單與路徑重合、不帶 `--agent` 更新同步。`docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/INTEGRATIONS.md`、`docs/INTEGRATIONS.zh-TW.md` 經查沒有描述 host skill 的部署形態（只有泛稱的 agent skills／deployed skill），不需修改。
+- 依序執行（文件更新後重跑）：`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n scripts/test-setup-onboarding.sh`、`bash -n scripts/test-bootstrap.sh`、`bash scripts/test-smoke.sh`、`bash scripts/test-bootstrap.sh`、`bash scripts/test-setup-onboarding.sh`、`bash scripts/test-npm-install.sh`、`pnpm run release:docs-check`，全部 exit 0。
+- 限制：結果來自 Linux；Windows junction 與大小寫比對未實機驗證，macOS `/tmp` 別名的重合判定只有 source 層推理。真實宿主（Claude Code／Codex）經 symlink 探索 skill 未實機驗證。

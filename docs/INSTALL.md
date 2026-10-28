@@ -68,7 +68,7 @@ memoria setup --scope global --agent both --vector --yes
 
 ### 部署 Host Skill（Claude Code 與 Codex）
 
-`--agent` 支援 `claude-code`、`codex`、`both` 或 `none`：
+`--agent` 支援 `claude-code`、`codex`、`both` 或 `none`。實體 skill 只有一份，在 `<memoria-home>/.agents/skills/memoria/`；所選 host 的探索目錄是指向它的 symlink（Windows 為 junction）：
 
 - Claude Code：`~/.claude/skills/memoria/`
 - Codex：`~/.codex/skills/memoria/`（設定 `CODEX_HOME` 時為 `$CODEX_HOME/skills/memoria/`）
@@ -77,7 +77,16 @@ memoria setup --scope global --agent both --vector --yes
 memoria setup --scope global --agent both --yes
 ```
 
-目標目錄已存在時，只有 `SKILL.md` 的 frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria` 才會被覆蓋。每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以覆蓋前會先把舊目錄備份到 `<memoria-home>/.agents/skill-backups/<agent>-<時間戳>/` 並印出路徑；手寫的 skill、一般檔案或 symlink 會原封不動，`setup` 在寫入任何目標前就會攔下並以非 0 結束。
+host 目標已存在時，依現況處理：
+
+- **已是 Memoria 的連結**：連結目標路徑以 `.agents/skills/memoria` 結尾，且該目錄的 `SKILL.md` frontmatter 同時帶 `deployment_mode: installed` 與 `repository: Memoria`，或目標已不存在（斷鏈）。直接改連到這次的資料根目錄，不備份，舊連結指向的內容不動；重跑或切換 `--memoria-home` 都走這條。
+- **空目錄**：移除後建立連結，不備份。
+- **帶兩項標記的實體目錄**（舊版 `setup` 複製的副本）：每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以先把整個目錄備份到 `<memoria-home>/.agents/skill-backups/<agent>-<時間戳>/` 並印出路徑，再換成連結。只會發生在第一次升級。
+- **其他一律拒絕**：手寫的 skill、一般檔案、指向其他位置的 symlink（即使目標帶標記）、祖先路徑含使用者 symlink，以及資料根目錄的 `.agents/skills/memoria` 本身是 symlink。`setup` 在寫入任何檔案前就以非 0 結束並印出路徑與原因，原內容不動。
+
+host 路徑與資料根目錄的 skill 是同一個位置時（例如 `CODEX_HOME=<memoria-home>/.agents`），`setup` 同樣在寫入前拒絕，不會建立指向自己的連結。
+
+不帶 `--agent` 重跑 `setup` 只更新資料根目錄那一份；已連結的 host 透過連結直接讀到新內容。
 
 ### 共用規範與 brief 自動接線
 
@@ -90,7 +99,7 @@ memoria setup --scope global --agent both --yes
 
 ### 更新全域安裝
 
-`npm install -g` 更新的是 runtime 套件；資料根目錄與 host skill 目錄中的副本，是上次 `setup` 複製的內容。升級後重跑一次 `setup`，即可刷新已部署的 skill、REFERENCE、wrapper 與 brief：
+`npm install -g` 更新的是 runtime 套件；資料根目錄中的 skill 是上次 `setup` 複製的內容，host skill 目錄連結到它。升級後重跑一次 `setup`，即可刷新已部署的 skill、REFERENCE、wrapper 與 brief：
 
 ```bash
 npm install -g @raybird.chen/memoria@<版本>

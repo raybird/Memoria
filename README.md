@@ -56,7 +56,7 @@ The viewer runs in the foreground and closes with Ctrl+C. Assets are bundled for
 
 ## Use it with an agent
 
-Setup deploys the **memoria** skill to `<memoria-home>/.agents/skills/memoria/SKILL.md`, and when selected, into host discovery directories (`~/.claude/skills/memoria` for Claude Code, `~/.codex/skills/memoria` or `$CODEX_HOME/skills/memoria` for Codex):
+Setup deploys the **memoria** skill to `<memoria-home>/.agents/skills/memoria/SKILL.md` and, when selected, links the host discovery directories to it (`~/.claude/skills/memoria` for Claude Code, `~/.codex/skills/memoria` or `$CODEX_HOME/skills/memoria` for Codex), so rerunning `setup` refreshes every linked host:
 
 ```bash
 memoria setup --scope global --agent both --yes

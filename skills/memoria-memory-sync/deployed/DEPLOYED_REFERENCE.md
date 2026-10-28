@@ -4,7 +4,7 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
 
 ## Layout Contract
 
-`memoria setup` always deploys to `<memoria-home>/.agents/skills/memoria/`; `--agent claude-code`, `--agent codex`, or `--agent both` also deploys an identical copy to `~/.claude/skills/memoria/` and/or `~/.codex/skills/memoria/` (`$CODEX_HOME/skills/memoria/` when `CODEX_HOME` is set), where those host agents discover skills.
+`memoria setup` always deploys to `<memoria-home>/.agents/skills/memoria/`, the one real copy. `--agent claude-code`, `--agent codex`, or `--agent both` also points `~/.claude/skills/memoria/` and/or `~/.codex/skills/memoria/` (`$CODEX_HOME/skills/memoria/` when `CODEX_HOME` is set), where those host agents discover skills, at it with a symlink (a junction on Windows). A `setup` without `--agent` therefore refreshes every linked host as well.
 
 ```text
 <skill-root>/
@@ -17,11 +17,17 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
   resources/mcp/INGEST_PLAYBOOK.md
 ```
 
-`setup --agent <claude-code|codex|both>` replaces an existing host skill directory only when its `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria` — marks every deployed template carries, so a copy made from one by hand and edited since carries them too. The existing directory is therefore copied to `<memoria-home>/.agents/skill-backups/<agent>-<timestamp>/` first, and `setup` prints that path. Anything without both marks (a hand-written skill, a file, a symlink) is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
+`setup --agent <claude-code|codex|both>` replaces an existing host skill target only in these cases:
+
+- **A Memoria link**: a symlink whose target path ends in `.agents/skills/memoria` and is either gone or a real directory whose `SKILL.md` frontmatter carries both `deployment_mode: installed` and `repository: Memoria`. It is relinked to this data root with no backup; the old target is not touched. Reruns and switching `--memoria-home` take this path.
+- **An empty directory**: removed and linked, no backup.
+- **A real directory with both marks** (a copy an older `setup` deployed): every deployed template carries the marks, so a copy made from one by hand and edited since carries them too. It is copied whole to `<memoria-home>/.agents/skill-backups/<agent>-<timestamp>/` first, `setup` prints that path, and then it is replaced by the link. This happens once, on the first upgrade.
+
+Anything else — a hand-written skill, a file, a symlink to anywhere else (even a marked one), a symlinked ancestor, a data-root skill directory that is itself a symlink, or a host path that is the data-root skill directory (e.g. `CODEX_HOME=<memoria-home>/.agents`) — is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
 
 ## Refresh after a runtime upgrade
 
-A global npm upgrade replaces the runtime package. This deployed skill is a copy, so refresh it by running `memoria setup` (interactive) or `memoria setup --scope global --agent both --vector --yes` (or `--memoria-home <existing-data-root>`) with the upgraded runtime. One call refreshes all selected host locations, updates the managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) in shared `AGENTS.md` / `CLAUDE.md` after backing up the file to `<memoria-home>/.agents/instruction-backups/`, and regenerates the brief. GitHub main changes become available through npm only after a release includes them.
+A global npm upgrade replaces the runtime package. The data-root skill is a copy (host directories link to it), so refresh it by running `memoria setup` (interactive) or `memoria setup --scope global --agent both --vector --yes` (or `--memoria-home <existing-data-root>`) with the upgraded runtime. One call refreshes all selected host locations, updates the managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) in shared `AGENTS.md` / `CLAUDE.md` after backing up the file to `<memoria-home>/.agents/instruction-backups/`, and regenerates the brief. GitHub main changes become available through npm only after a release includes them.
 
 ## Summary payload (`repo summarize --submit`)
 

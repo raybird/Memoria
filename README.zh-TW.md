@@ -56,7 +56,7 @@ memoria serve --ui
 
 ## 搭配 Agent 使用
 
-Setup 會將 **memoria** skill 部署到 `<memoria-home>/.agents/skills/memoria/SKILL.md`，並依選擇同步部署到 host 的標準探索目錄（Claude Code 為 `~/.claude/skills/memoria`，Codex 為 `~/.codex/skills/memoria` 或 `$CODEX_HOME/skills/memoria`）：
+Setup 會將 **memoria** skill 部署到 `<memoria-home>/.agents/skills/memoria/SKILL.md`，並依選擇把 host 的標準探索目錄連結到這裡（Claude Code 為 `~/.claude/skills/memoria`，Codex 為 `~/.codex/skills/memoria` 或 `$CODEX_HOME/skills/memoria`），重跑 `setup` 即同步更新所有已連結的 host：
 
 ```bash
 memoria setup --scope global --agent both --yes
