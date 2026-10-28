@@ -645,11 +645,71 @@ async function main(): Promise<void> {
                     overlapMessage = error instanceof Error ? error.message : String(error)
                 }
                 eq(`SCN-005: assertSetupPlanSafe refuses a Codex host path equal to the canonical path (canonical ${label})`, overlapMessage.includes(path.join(overlapRoot, '.agents', 'skills', 'memoria')), true)
+                eq(`SCN-005: that refusal is the overlap guard, not another host check (canonical ${label})`, overlapMessage.includes("the data root's own skill directory"), true)
+                // Review e478053 N-1: a host path INSIDE the canonical directory would put a link into it that the next refresh deletes.
+                process.env.CODEX_HOME = path.join(overlapRoot, '.agents', 'skills', 'memoria')
+                const nestedPlan = await buildSetupPlan({
+                    scope: 'project',
+                    dataRoot: overlapRoot,
+                    hosts: ['codex'],
+                    vector: false,
+                    wireInstructions: false,
+                    saveSettings: false
+                }, runtimeLayout)
+                let nestedMessage = ''
+                try {
+                    await assertSetupPlanSafe(nestedPlan)
+                } catch (error) {
+                    nestedMessage = error instanceof Error ? error.message : String(error)
+                }
+                eq(`SCN-005: assertSetupPlanSafe refuses a Codex host path inside the canonical directory (canonical ${label})`, nestedMessage.includes("the data root's own skill directory"), true)
             }
         } finally {
             if (prevCodexHome === undefined) delete process.env.CODEX_HOME
             else process.env.CODEX_HOME = prevCodexHome
         }
+
+        // Review e478053 S-1 / N-1: overlap is decided by directory identity (dev+ino), not path text, and covers
+        // one directory inside the other. Bind mounts and case-insensitive aliases cannot be created unprivileged
+        // here, so a symlinked ancestor stands in for "two spellings of one directory".
+        const runtimeModule: Record<string, unknown> = await import('../src/cli/runtime.js')
+        const overlaps = async (a: string, b: string): Promise<boolean | string> => {
+            const fn = runtimeModule.skillPathsOverlap as ((x: string, y: string) => Promise<boolean>) | undefined
+            if (typeof fn !== 'function') return 'skillPathsOverlap is not exported'
+            return fn(a, b)
+        }
+        const ov = path.join(i29, 'ov')
+        const ovCanon = path.join(ov, 'root', '.agents', 'skills', 'memoria')
+        await fs.mkdir(ovCanon, { recursive: true })
+        await fs.symlink(path.join(ov, 'root'), path.join(ov, 'alias'))
+        await fs.mkdir(path.join(ov, 'empty-root'), { recursive: true })
+        await fs.symlink(path.join(ov, 'empty-root'), path.join(ov, 'empty-alias'))
+        const ovHostDir = path.join(ov, 'host', '.claude', 'skills', 'memoria')
+        await fs.mkdir(path.join(ovHostDir, 'data'), { recursive: true })
+        await fs.mkdir(path.join(ov, 'link-home', 'skills'), { recursive: true })
+        await fs.symlink(ovCanon, path.join(ov, 'link-home', 'skills', 'memoria'))
+        const overlapCases: Array<[string, string, string, boolean]> = [
+            ['same directory through a symlinked ancestor (canonical exists)', path.join(ov, 'alias', '.agents', 'skills', 'memoria'), ovCanon, true],
+            ['same directory through a symlinked ancestor (canonical absent)', path.join(ov, 'empty-alias', '.agents', 'skills', 'memoria'), path.join(ov, 'empty-root', '.agents', 'skills', 'memoria'), true],
+            ['host inside an existing canonical', path.join(ovCanon, 'skills', 'memoria'), ovCanon, true],
+            ['host inside an absent canonical', path.join(ov, 'absent', '.agents', 'skills', 'memoria', 'skills', 'memoria'), path.join(ov, 'absent', '.agents', 'skills', 'memoria'), true],
+            ['canonical inside an existing host directory', ovHostDir, path.join(ovHostDir, 'data', '.agents', 'skills', 'memoria'), true],
+            ['a host symlink to the canonical (the normal case)', path.join(ov, 'link-home', 'skills', 'memoria'), ovCanon, false],
+            ['a sibling that only shares a name prefix', path.join(ov, 'root', '.agents', 'skills', 'memoria2', 'skills', 'memoria'), ovCanon, false],
+            ['unrelated directories', path.join(ov, 'host', '.codex', 'skills', 'memoria'), ovCanon, false]
+        ]
+        for (const [label, a, b, expected] of overlapCases) {
+            eq(`SCN-005: skillPathsOverlap — ${label}`, await overlaps(a, b), expected)
+        }
+
+        // Review e478053 N-2: a file where an ancestor directory should be keeps the ancestor reason.
+        let notDirMessage = ''
+        try {
+            await assertHostSkillTarget(path.join(blockedCodexHome, '.codex', 'skills', 'memoria'), 'host')
+        } catch (error) {
+            notDirMessage = error instanceof Error ? error.message : String(error)
+        }
+        eq('SCN-003: a plain file at ~/.codex/skills is reported as a non-directory ancestor', notDirMessage.includes('is not a directory'), true)
 
         // F-3: Empty corpus (expected=0) with a pre-existing 0-byte vector DB file initializes memoria_vectors so verifyVectorReadiness succeeds
         const f3Root = path.join(tmp, 'f3-empty-root')

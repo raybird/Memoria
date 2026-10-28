@@ -606,6 +606,7 @@ before_ext="$(snap "$EXT")"
 if setup29 "$H29_3C" "$R29_3C" --agent claude-code >"$I29/refuse-canon.out" 2>&1; then
   fail29 "SCN-003: a symlinked canonical skill directory was accepted"
 else
+  grep -qF "$(canon "$R29_3C")" "$I29/refuse-canon.out" || fail29 "SCN-003: canonical symlink refusal does not name $(canon "$R29_3C")"
   [ "$(snap "$EXT")" = "$before_ext" ] || fail29 "SCN-003: canonical symlink refusal changed the external content"
   [ ! -e "$R29_3C/.memory" ] && [ ! -e "$H29_3C/.claude" ] || fail29 "SCN-003: canonical symlink refusal wrote the data root or host"
 fi
@@ -647,6 +648,37 @@ else
 fi
 [ -d "$(canon "$R29_5B")" ] && [ ! -L "$(canon "$R29_5B")" ] || fail29 "SCN-005: canonical is no longer a real directory"
 snap "$R29_5B" | cmp -s "$I29/scn5b.snap" - || fail29 "SCN-005: overlap run wrote into the data root"
+# Review e478053 N-1: a Codex host path inside the canonical directory is refused the same way.
+R29_5C="$I29/root-5c"
+if (export CODEX_HOME="$(canon "$R29_5C")"; setup29 "$H29_5" "$R29_5C" --agent codex >"$I29/scn5c.out" 2>&1); then
+  fail29 "SCN-005: a host path inside the canonical directory was accepted (canonical absent)"
+else
+  grep -qF "the data root's own skill directory $(canon "$R29_5C")" "$I29/scn5c.out" || fail29 "SCN-005: nested-host refusal is not the overlap guard naming $(canon "$R29_5C")"
+  [ ! -e "$R29_5C" ] || fail29 "SCN-005: nested-host refusal still created the data root"
+fi
+snap "$R29_5B" > "$I29/scn5d.snap"
+if (export CODEX_HOME="$(canon "$R29_5B")"; setup29 "$H29_5" "$R29_5B" --agent codex >"$I29/scn5d.out" 2>&1); then
+  fail29 "SCN-005: a host path inside the canonical directory was accepted (canonical deployed)"
+fi
+snap "$R29_5B" | cmp -s "$I29/scn5d.snap" - || fail29 "SCN-005: nested-host run wrote into the data root"
+
+# Review e478053 N-3: when removing a legacy copy fails after its backup, the error names the backup.
+if [ "$(id -u)" -eq 0 ]; then
+  echo "  - N-3 skipped: running as root, a read-only directory cannot make removal fail"
+else
+  H29_4F="$I29/home-4f"; R29_4F="$I29/root-4f"; LEGACY_F="$H29_4F/.claude/skills/memoria"
+  mkdir -p "$LEGACY_F/locked"
+  cp "$TEMPLATE" "$LEGACY_F/SKILL.md"
+  echo "pinned" > "$LEGACY_F/locked/keep.md"
+  chmod 555 "$LEGACY_F/locked"
+  if setup29 "$H29_4F" "$R29_4F" --agent claude-code >"$I29/scn4f.out" 2>&1; then
+    fail29 "N-3: setup reported success although the legacy copy could not be removed"
+  else
+    grep -qF "$R29_4F/.agents/skill-backups/claude-code-" "$I29/scn4f.out" || fail29 "N-3: removal failure does not name the backup it already made"
+  fi
+  # The backup keeps the read-only mode; restore write access everywhere so cleanup can remove both.
+  chmod -R u+w "$H29_4F" "$R29_4F" 2>/dev/null || true
+fi
 
 # SCN-006: existing empty host directories become links without a backup.
 H29_6="$I29/home-6"; R29_6="$I29/root-6"; mkdir -p "$H29_6/.claude/skills/memoria" "$H29_6/.codex/skills/memoria"
