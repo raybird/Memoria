@@ -142,6 +142,13 @@ Feature: Host agent skill 統一以 symlink 連結至 canonical skill 目錄
 - **選擇理由**：最大風險在路徑判定與刪除邊界；隔離 HOME 的預檢契約與內容比對能直接觀察拒絕前零寫入、備份完整與 canonical 型態。
 - **完成證據**：既有拒絕案例保持綠燈；缺少新行為的案例先取得對應原因的紅燈，實作後 SCN-001～SCN-008 全綠；保留未知目標逐位元組不變、重合路徑零寫入與備份內容完整的斷言。
 
+## 待確認事項
+
+| 編號 | 事項 | 狀態 | 影響 |
+| --- | --- | --- | --- |
+| TBD-1 | 審查 [review-e478053](./review-e478053.md) S-1（需決策）：host 與 canonical 實為同一目錄但路徑字串不同（bind mount、不分大小寫檔案系統上 `CODEX_HOME=<root>/.AGENTS`）時，重合檢查漏判，會備份後刪掉 canonical 並建自循環連結；建議預檢與刪除前加比對 dev＋inode | 已解決 | 2026-10-28 使用者選「補 dev+inode 比對」：預檢與部署刪除前皆以 dev＋inode 判定同一目錄，並一併拒絕 host 位於 canonical 之內（審查 N-1），兩者都屬 SCN-005「不建立自循環連結」範圍，驗收文字不變；回 execute-task 補回歸測試後重新審查 |
+| TBD-2 | 審查 [review-e478053](./review-e478053.md) S-2（需決策）：透過 host 連結修改的內容其實寫進 canonical，下一次 `setup` 會無備份覆蓋；建議只補文件，或改行為（需修訂 SCN-007） | 已解決 | 2026-10-28 使用者選「只補文件提醒」：SCN-007 維持不備份，於 `docs/INSTALL.md` 與 `DEPLOYED_REFERENCE.md` 註明部署的 skill 由 setup 管理、自訂內容放在另一個 skill 目錄 |
+
 ## Timeline
 
 | 日期 | 異動 | 負責人 |
