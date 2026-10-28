@@ -558,6 +558,99 @@ async function main(): Promise<void> {
         }
         eq('F-2d: assertInstructionTargetsSafe rejects deep CODEX_HOME/AGENTS.md under symlinked ancestor (<fixture>/link/a/b/c/d/e/AGENTS.md)', caughtF2DeepInstr, true)
 
+        console.log('[driver] issue-29 host skill symlink pre-check (SCN-002, SCN-003, SCN-005, SCN-008)')
+        const rejects = async (fn: () => Promise<unknown>): Promise<boolean> => {
+            try {
+                await fn()
+                return false
+            } catch {
+                return true
+            }
+        }
+        const template = await fs.readFile(path.join('skills', 'memoria-memory-sync', 'deployed', 'DEPLOYED_SKILL.md'), 'utf8')
+        const i29 = path.join(tmp, 'i29')
+        const markedCanonical = path.join(i29, 'root-a', '.agents', 'skills', 'memoria')
+        await fs.mkdir(markedCanonical, { recursive: true })
+        await fs.writeFile(path.join(markedCanonical, 'SKILL.md'), template, 'utf8')
+        const hostLink = async (name: string, linkTarget: string): Promise<string> => {
+            const dir = path.join(i29, name, '.claude', 'skills')
+            await fs.mkdir(dir, { recursive: true })
+            await fs.symlink(linkTarget, path.join(dir, 'memoria'))
+            return path.join(dir, 'memoria')
+        }
+
+        const absLink = await hostLink('h-abs', markedCanonical)
+        eq('SCN-002: host symlink to a marked <root>/.agents/skills/memoria is accepted in host mode', await rejects(() => assertHostSkillTarget(absLink, 'host')), false)
+        const relLink = await hostLink('h-rel', path.relative(path.join(i29, 'h-rel', '.claude', 'skills'), markedCanonical))
+        eq('SCN-002: relative host symlink resolves against its parent and is accepted', await rejects(() => assertHostSkillTarget(relLink, 'host')), false)
+        const brokenAbs = await hostLink('h-broken-abs', path.join(i29, 'gone', '.agents', 'skills', 'memoria'))
+        eq('SCN-008: absolute broken link ending in .agents/skills/memoria is accepted for repair', await rejects(() => assertHostSkillTarget(brokenAbs, 'host')), false)
+        const brokenRel = await hostLink('h-broken-rel', path.join('..', '..', '..', 'gone-rel', '.agents', 'skills', 'memoria'))
+        eq('SCN-008: relative broken link ending in .agents/skills/memoria is accepted for repair', await rejects(() => assertHostSkillTarget(brokenRel, 'host')), false)
+
+        const markedElsewhere = path.join(i29, 'link-target')
+        await fs.mkdir(markedElsewhere, { recursive: true })
+        await fs.writeFile(path.join(markedElsewhere, 'SKILL.md'), template, 'utf8')
+        const unmarkedCanonical = path.join(i29, 'root-u', '.agents', 'skills', 'memoria')
+        await fs.mkdir(unmarkedCanonical, { recursive: true })
+        await fs.writeFile(path.join(unmarkedCanonical, 'SKILL.md'), '---\nname: memoria\n---\nmine\n', 'utf8')
+        const fileCanonical = path.join(i29, 'root-f', '.agents', 'skills', 'memoria')
+        await fs.mkdir(path.dirname(fileCanonical), { recursive: true })
+        await fs.writeFile(fileCanonical, 'not a directory', 'utf8')
+        const chainedCanonical = path.join(i29, 'root-l', '.agents', 'skills', 'memoria')
+        await fs.mkdir(path.dirname(chainedCanonical), { recursive: true })
+        await fs.symlink(markedCanonical, chainedCanonical)
+        const lookalike = path.join(i29, 'root-x', 'not.agents', 'skills', 'memoria')
+        await fs.mkdir(lookalike, { recursive: true })
+        await fs.writeFile(path.join(lookalike, 'SKILL.md'), template, 'utf8')
+        const refusals: Array<[string, string]> = [
+            ['a marked target whose path does not end in .agents/skills/memoria', markedElsewhere],
+            ['a canonical-tailed target without deployment marks', unmarkedCanonical],
+            ['a canonical-tailed target that is a regular file', fileCanonical],
+            ['a canonical-tailed target that is itself a symlink', chainedCanonical],
+            ['a marked target ending in not.agents/skills/memoria (component boundary)', lookalike],
+            ['a broken link whose path does not end in .agents/skills/memoria', path.join(i29, 'gone', 'memoria')]
+        ]
+        for (const [i, [label, linkTarget]] of refusals.entries()) {
+            const link = await hostLink(`h-refuse-${i}`, linkTarget)
+            eq(`SCN-003: host symlink to ${label} is refused`, await rejects(() => assertHostSkillTarget(link, 'host')), true)
+        }
+        eq('SCN-003: the canonical directory itself may never be a symlink (default mode)', await rejects(() => assertHostSkillTarget(absLink)), true)
+        const emptyHost = path.join(i29, 'h-empty', '.claude', 'skills', 'memoria')
+        await fs.mkdir(emptyHost, { recursive: true })
+        eq('SCN-006: an existing empty host directory is accepted in host mode', await rejects(() => assertHostSkillTarget(emptyHost, 'host')), false)
+
+        // SCN-005: CODEX_HOME=<dataRoot>/.agents makes the Codex host path the canonical path.
+        const prevCodexHome = process.env.CODEX_HOME
+        try {
+            for (const [label, deployed] of [['absent', false], ['already deployed', true]] as const) {
+                const overlapRoot = path.join(i29, `overlap-${deployed ? 'deployed' : 'absent'}`)
+                if (deployed) {
+                    await fs.mkdir(path.join(overlapRoot, '.agents', 'skills', 'memoria'), { recursive: true })
+                    await fs.writeFile(path.join(overlapRoot, '.agents', 'skills', 'memoria', 'SKILL.md'), template, 'utf8')
+                }
+                process.env.CODEX_HOME = path.join(overlapRoot, '.agents')
+                const overlapPlan = await buildSetupPlan({
+                    scope: 'project',
+                    dataRoot: overlapRoot,
+                    hosts: ['codex'],
+                    vector: false,
+                    wireInstructions: false,
+                    saveSettings: false
+                }, runtimeLayout)
+                let overlapMessage = ''
+                try {
+                    await assertSetupPlanSafe(overlapPlan)
+                } catch (error) {
+                    overlapMessage = error instanceof Error ? error.message : String(error)
+                }
+                eq(`SCN-005: assertSetupPlanSafe refuses a Codex host path equal to the canonical path (canonical ${label})`, overlapMessage.includes(path.join(overlapRoot, '.agents', 'skills', 'memoria')), true)
+            }
+        } finally {
+            if (prevCodexHome === undefined) delete process.env.CODEX_HOME
+            else process.env.CODEX_HOME = prevCodexHome
+        }
+
         // F-3: Empty corpus (expected=0) with a pre-existing 0-byte vector DB file initializes memoria_vectors so verifyVectorReadiness succeeds
         const f3Root = path.join(tmp, 'f3-empty-root')
         const f3Paths = resolveMemoriaPaths(f3Root, { env: envBase })

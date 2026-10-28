@@ -113,40 +113,53 @@ fi
 [ ! -e "$H3/.claude" ] || { echo "✗ SCN-003: rejected --agent still wrote ~/.claude"; exit 1; }
 echo "✓ SCN-003: no --agent → ~/.claude untouched; unknown value rejected"
 
-# SCN-004: --agent claude-code deploys the template where Claude Code looks.
+# SCN-004 (issue-29): --agent claude-code links where Claude Code looks to the data root's canonical skill.
 H4="$TMP/home-scn4"; mkdir -p "$H4"
+C4="$TMP/data-scn4/.agents/skills/memoria"
 HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code --json >/dev/null
-cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-004: deployed SKILL.md differs from the template"; exit 1; }
+[ -L "$H4/.claude/skills/memoria" ] && [ "$(cd -P "$H4/.claude/skills/memoria" && pwd)" = "$(cd -P "$C4" && pwd)" ] \
+  || { echo "✗ SCN-004: ~/.claude/skills/memoria is not a symlink to $C4"; exit 1; }
+[ -d "$C4" ] && [ ! -L "$C4" ] || { echo "✗ SCN-004: canonical $C4 is not a real directory"; exit 1; }
+cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-004: SKILL.md read through the link differs from the template"; exit 1; }
 [ "$(cat "$H4/.claude/skills/memoria/DATA_ROOT")" = "$TMP/data-scn4" ] || { echo "✗ SCN-004: DATA_ROOT does not name the data root"; exit 1; }
-[ -x "$H4/.claude/skills/memoria/bin/memoria" ] || { echo "✗ SCN-004: bin/memoria wrapper missing"; exit 1; }
-echo "✓ SCN-004: ~/.claude/skills/memoria deployed from the template, bound to its data root"
+"$H4/.claude/skills/memoria/bin/memoria" --help >/dev/null || { echo "✗ SCN-004: bin/memoria does not run through the link"; exit 1; }
+echo "✓ SCN-004: ~/.claude/skills/memoria links to the canonical skill bound to its data root"
 
-# SCN-005: a copy setup wrote (marker present) is refreshed in place.
-printf '\nstale line from an older deploy\n' >> "$H4/$HOST_SKILL_REL"
+# SCN-005 (issue-29): a rerun relinks in place; a link holds nothing of its own, so nothing is backed up.
+count_backups() { find "$1/.agents/skill-backups" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' '; }
 HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code >"$TMP/scn5.out" 2>&1
-cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: marked copy not refreshed"; exit 1; }
-grep -qF "previous copy backed up to $TMP/data-scn4/.agents/skill-backups/claude-code-" "$TMP/scn5.out" \
-  || { echo "✗ SCN-005: text output does not name the backup path"; cat "$TMP/scn5.out"; exit 1; }
-echo "✓ SCN-005: marked copy refreshed to the current template"
+[ -L "$H4/.claude/skills/memoria" ] && cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: rerun did not keep the link to the canonical skill"; exit 1; }
+[ "$(count_backups "$TMP/data-scn4")" -eq 0 ] || { echo "✗ SCN-005: rerun over a Memoria link created a backup"; exit 1; }
+! grep -q 'previous copy backed up' "$TMP/scn5.out" || { echo "✗ SCN-005: rerun reports a backup"; cat "$TMP/scn5.out"; exit 1; }
+echo "✓ SCN-005: rerun keeps the link and backs nothing up"
 
-# Review 81bb75d M-1: the marks also sit in every copy someone cp'd from a deployed skill and then
-# edited, so a marked target may hold the user's own work. It is backed up — outside the skills
-# directory, where Claude Code would load it as a second "memoria" skill — before being replaced.
-printf '\nmy own trigger notes\n' >> "$H4/$HOST_SKILL_REL"
-echo "keep me" > "$H4/.claude/skills/memoria/NOTES.md"
-cp "$H4/$HOST_SKILL_REL" "$TMP/edited-marked.md"
-# The refresh above already left one backup; directory order is filesystem-dependent (ext4 hashes
-# names), so take this run's backup from setup's own report, never from a listing.
-count_backups() { find "$TMP/data-scn4/.agents/skill-backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
-BACKUPS_BEFORE=$(count_backups)
-HOME="$H4" MEMORIA_HOME="$TMP/data-scn4" "$CLI" setup --agent claude-code --json >"$TMP/scn5b.out" 2>&1
+# Review 81bb75d M-1 / issue-29 SCN-004: a physical copy an older setup wrote carries the marks, and so
+# does every copy someone cp'd from it and edited — it may hold the user's own work. It is backed up
+# whole, outside the skills directory (where Claude Code would load it as a second "memoria" skill),
+# and only then replaced by the link. Built by hand: the link from the first deploy is not a legacy copy.
+legacy_copy() {
+  local dir="$1/.claude/skills/memoria"
+  mkdir -p "$dir/bin"
+  { cat "$TEMPLATE"; printf '\nmy own trigger notes\n'; } > "$dir/SKILL.md"
+  echo "/old/data/root" > "$dir/DATA_ROOT"
+  printf '#!/bin/sh\nexit 0\n' > "$dir/bin/memoria"; chmod +x "$dir/bin/memoria"
+  echo "keep me" > "$dir/NOTES.md"
+  ln -s NOTES.md "$dir/notes-link"
+}
+H5="$TMP/home-scn5-legacy"; legacy_copy "$H5"
+cp -RP "$H5/.claude/skills/memoria" "$TMP/legacy-before"
+HOME="$H5" MEMORIA_HOME="$TMP/data-scn5" "$CLI" setup --agent claude-code --json >"$TMP/scn5b.out" 2>&1
 BACKUP=$(node -e 'for (const l of require("fs").readFileSync(process.argv[1], "utf8").split("\n")) { try { const r = JSON.parse(l); if (r.step === "agent-skill" && r.backup) console.log(r.backup) } catch {} }' "$TMP/scn5b.out")
-[ "$(count_backups)" -eq $((BACKUPS_BEFORE + 1)) ] || { echo "✗ SCN-005: expected exactly one new backup (before: $BACKUPS_BEFORE)"; exit 1; }
-[ -n "$BACKUP" ] && [ -f "$BACKUP/NOTES.md" ] || { echo "✗ SCN-005: replaced copy was not backed up"; cat "$TMP/scn5b.out"; exit 1; }
-case "$BACKUP" in "$TMP/data-scn4/.agents/skill-backups/"*) ;; *) echo "✗ SCN-005: backup outside the data root: $BACKUP"; exit 1 ;; esac
-cmp -s "$TMP/edited-marked.md" "$BACKUP/SKILL.md" || { echo "✗ SCN-005: backup SKILL.md differs from what was replaced"; exit 1; }
-[ ! -e "$H4/.claude/skills/memoria/NOTES.md" ] && cmp -s "$TEMPLATE" "$H4/$HOST_SKILL_REL" || { echo "✗ SCN-005: target not replaced after backup"; exit 1; }
-echo "✓ SCN-005: an edited marked copy is backed up outside ~/.claude/skills, then replaced"
+case "$BACKUP" in "$TMP/data-scn5/.agents/skill-backups/claude-code-"*) ;; *) echo "✗ SCN-005: backup not under the data root: '$BACKUP'"; cat "$TMP/scn5b.out"; exit 1 ;; esac
+[ "$(count_backups "$TMP/data-scn5")" -eq 1 ] || { echo "✗ SCN-005: expected exactly one backup"; exit 1; }
+diff -r --no-dereference "$TMP/legacy-before" "$BACKUP" >/dev/null || { echo "✗ SCN-005: backup differs from the replaced copy"; exit 1; }
+[ "$(readlink "$BACKUP/notes-link")" = "NOTES.md" ] || { echo "✗ SCN-005: backup did not keep the copy's internal symlink"; exit 1; }
+[ -L "$H5/.claude/skills/memoria" ] && cmp -s "$TEMPLATE" "$H5/$HOST_SKILL_REL" || { echo "✗ SCN-005: legacy copy not replaced by the link after backup"; exit 1; }
+H5T="$TMP/home-scn5-legacy-text"; legacy_copy "$H5T"
+HOME="$H5T" MEMORIA_HOME="$TMP/data-scn5t" "$CLI" setup --agent claude-code >"$TMP/scn5t.out" 2>&1
+grep -qF "previous copy backed up to $TMP/data-scn5t/.agents/skill-backups/claude-code-" "$TMP/scn5t.out" \
+  || { echo "✗ SCN-005: text output does not name the backup path"; cat "$TMP/scn5t.out"; exit 1; }
+echo "✓ SCN-005: a legacy marked copy is backed up byte for byte outside ~/.claude/skills, then linked"
 
 # Review 81bb75d S-4: anything short of both marks in the frontmatter of a SKILL.md in a directory is refused.
 refuse_case() {
@@ -168,8 +181,8 @@ refuse_case "a plain file at the target" file
 mkdir -p "$TMP/home-refuse-link/.claude/skills" "$TMP/link-target"
 cp "$TEMPLATE" "$TMP/link-target/SKILL.md"
 ln -s "$TMP/link-target" "$TMP/home-refuse-link/.claude/skills/memoria"
-refuse_case "a symlink at the target" link
-echo "✓ SCN-006: one mark, marks in the body, a file, a symlink — all refused before any write"
+refuse_case "a symlink to a marked target outside <root>/.agents/skills/memoria" link
+echo "✓ SCN-006: one mark, marks in the body, a file, a symlink to a foreign target — all refused before any write"
 
 # SCN-001: the deployed skill states WHEN to use it, with a command and a done criterion per moment.
 DEPLOYED="$TMP/.agents/skills/memoria/SKILL.md"

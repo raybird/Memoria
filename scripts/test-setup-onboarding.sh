@@ -492,4 +492,204 @@ if (!d.ok) throw new Error("F-3: doctor failed after empty-corpus 0-byte vectors
 '
 echo "  ✓ F-3: empty corpus with pre-existing 0-byte vectors.db initializes vector table and passes readiness & doctor"
 
+echo "[setup-onboarding] Step 6: host skills link to the canonical data-root skill (issue-29 SCN-001~SCN-008)"
+# Each case builds its own Given state, so one missing behaviour does not hide the others; the step
+# fails once at the end with every ✗ above it.
+I29="$TMP_DIR/i29"
+mkdir -p "$I29"
+TEMPLATE="$ROOT_DIR/skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md"
+I29_FAILS=0
+fail29() { echo "  ✗ $1"; I29_FAILS=$((I29_FAILS + 1)); }
+canon() { printf '%s/.agents/skills/memoria' "$1"; }
+realdir() { (cd -P "$1" 2>/dev/null && pwd) || true; }
+links_to() { [ -L "$1" ] && [ "$(realdir "$1")" = "$(realdir "$2")" ]; }
+backup_count() { find "$1/.agents/skill-backups" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' '; }
+# Paths, link texts and file hashes: equal snapshots mean nothing under the tree was added, removed or rewritten.
+snap() { (cd "$1" && find . | LC_ALL=C sort | while IFS= read -r p; do
+  if [ -L "$p" ]; then printf '%s -> %s\n' "$p" "$(readlink "$p")"
+  elif [ -f "$p" ]; then printf '%s %s\n' "$p" "$(sha256sum < "$p" | cut -d' ' -f1)"
+  else printf '%s/\n' "$p"; fi
+done); }
+# setup in the bootstrap style (no onboarding flags), from a neutral cwd, isolated HOME and settings.
+setup29() { local home="$1" root="$2"; shift 2; (cd "$OTHER_CWD" && HOME="$home" XDG_CONFIG_HOME="$home/.xdg" MEMORIA_HOME="$root" "$CLI" setup "$@"); }
+# Checks a host path serves the canonical skill of $2: template SKILL.md, DATA_ROOT and a working launcher.
+serves29() {
+  local label="$1" host="$2" root="$3"
+  links_to "$host" "$(canon "$root")" || { fail29 "$label: $host is not a symlink to $(canon "$root")"; return; }
+  cmp -s "$TEMPLATE" "$host/SKILL.md" || fail29 "$label: SKILL.md read through $host differs from the template"
+  [ "$(cat "$host/DATA_ROOT" 2>/dev/null)" = "$root" ] || fail29 "$label: DATA_ROOT read through $host does not name $root"
+  "$host/bin/memoria" --help >/dev/null 2>&1 || fail29 "$label: $host/bin/memoria does not run"
+}
+
+# SCN-001: fresh deployment — canonical is a real directory, both hosts link to it (plus a custom CODEX_HOME).
+H29_1="$I29/home-1"; R29_1="$I29/root-1"; mkdir -p "$H29_1"
+if setup29 "$H29_1" "$R29_1" --agent both --json >"$I29/scn1.out" 2>&1; then
+  [ -d "$(canon "$R29_1")" ] && [ ! -L "$(canon "$R29_1")" ] || fail29 "SCN-001: canonical $(canon "$R29_1") is not a real directory"
+  [ -x "$(canon "$R29_1")/bin/memoria" ] || fail29 "SCN-001: canonical launcher missing"
+  serves29 "SCN-001 claude-code" "$H29_1/.claude/skills/memoria" "$R29_1"
+  serves29 "SCN-001 codex" "$H29_1/.codex/skills/memoria" "$R29_1"
+else
+  fail29 "SCN-001: setup --agent both failed: $(tail -3 "$I29/scn1.out")"
+fi
+H29_1C="$I29/home-1c"; R29_1C="$I29/root-1c"; mkdir -p "$H29_1C"
+if (export CODEX_HOME="$I29/custom-codex"; setup29 "$H29_1C" "$R29_1C" --agent codex --json >"$I29/scn1c.out" 2>&1); then
+  serves29 "SCN-001 custom CODEX_HOME" "$I29/custom-codex/skills/memoria" "$R29_1C"
+else
+  fail29 "SCN-001: setup --agent codex with custom CODEX_HOME failed: $(tail -3 "$I29/scn1c.out")"
+fi
+
+# Given state for SCN-002/SCN-008: a set-up data root and host links pointing where the case needs.
+prepare_root() { setup29 "$1" "$2" --json >"$I29/prepare.out" 2>&1 || fail29 "Given: setup of $2 failed: $(tail -3 "$I29/prepare.out")"; }
+link_hosts() { mkdir -p "$1/.claude/skills" "$1/.codex/skills"; ln -s "$2" "$1/.claude/skills/memoria"; ln -s "$3" "$1/.codex/skills/memoria"; }
+
+# SCN-002a: rerun on the same root relinks without a backup.
+H29_2="$I29/home-2"; RA="$I29/root-a"; mkdir -p "$H29_2"
+prepare_root "$H29_2" "$RA"
+link_hosts "$H29_2" "$(canon "$RA")" "../../../root-a/.agents/skills/memoria"
+if setup29 "$H29_2" "$RA" --agent both --json >"$I29/scn2a.out" 2>&1; then
+  serves29 "SCN-002 rerun claude-code" "$H29_2/.claude/skills/memoria" "$RA"
+  serves29 "SCN-002 rerun codex (was a relative link)" "$H29_2/.codex/skills/memoria" "$RA"
+  [ "$(backup_count "$RA")" -eq 0 ] || fail29 "SCN-002: rerun created a skill backup"
+else
+  fail29 "SCN-002: rerun over Memoria links failed: $(tail -3 "$I29/scn2a.out")"
+fi
+
+# SCN-002b: switching to another root relinks, leaves the old canonical untouched, backs nothing up.
+H29_2B="$I29/home-2b"; RA2="$I29/root-a2"; RB="$I29/root-b"; mkdir -p "$H29_2B"
+prepare_root "$H29_2B" "$RA2"
+link_hosts "$H29_2B" "$(canon "$RA2")" "$(canon "$RA2")"
+snap "$(canon "$RA2")" > "$I29/scn2b-old.snap"
+if setup29 "$H29_2B" "$RB" --agent both --json >"$I29/scn2b.out" 2>&1; then
+  serves29 "SCN-002 switch claude-code" "$H29_2B/.claude/skills/memoria" "$RB"
+  serves29 "SCN-002 switch codex" "$H29_2B/.codex/skills/memoria" "$RB"
+  snap "$(canon "$RA2")" | cmp -s "$I29/scn2b-old.snap" - || fail29 "SCN-002: switching roots changed the old canonical"
+  [ "$(backup_count "$RA2")" -eq 0 ] && [ "$(backup_count "$RB")" -eq 0 ] || fail29 "SCN-002: switching roots created a skill backup"
+else
+  fail29 "SCN-002: switching data roots over Memoria links failed: $(tail -3 "$I29/scn2b.out")"
+fi
+
+# SCN-003: unsafe targets are refused before any write; target and external content stay byte-identical.
+refuse29() {
+  local label="$1" home="$2" agent="$3" target="$4" external="$5" root="$I29/refuse-root-$6"
+  local before_t before_e
+  before_t="$(snap "$(dirname "$target")")"; before_e="$(snap "$external")"
+  if setup29 "$home" "$root" --agent "$agent" >"$I29/refuse-$6.out" 2>&1; then
+    fail29 "SCN-003: $label was accepted (exit 0)"; return
+  fi
+  grep -qF "$target" "$I29/refuse-$6.out" || fail29 "SCN-003: $label refusal does not name $target"
+  [ "$(snap "$(dirname "$target")")" = "$before_t" ] || fail29 "SCN-003: $label target changed"
+  [ "$(snap "$external")" = "$before_e" ] || fail29 "SCN-003: $label external content changed"
+  [ ! -e "$root" ] || fail29 "SCN-003: $label refusal still created the data root"
+}
+EXT="$I29/external"
+mkdir -p "$EXT/marked" "$EXT/plain/.agents/skills/memoria" "$EXT/file/.agents/skills" "$EXT/chain/.agents/skills" "$EXT/canon-src/.agents/skills/memoria"
+cp "$TEMPLATE" "$EXT/marked/SKILL.md"
+printf -- '---\nname: memoria\n---\nmine\n' > "$EXT/plain/.agents/skills/memoria/SKILL.md"
+echo "not a directory" > "$EXT/file/.agents/skills/memoria"
+cp "$TEMPLATE" "$EXT/canon-src/.agents/skills/memoria/SKILL.md"
+ln -s "$EXT/canon-src/.agents/skills/memoria" "$EXT/chain/.agents/skills/memoria"
+n=0
+for spec in "marked target, path not ending in .agents/skills/memoria|$EXT/marked" \
+            "relative link to a marked target, path not ending in .agents/skills/memoria|../../../external/marked" \
+            "canonical-tailed target without deployment marks|$EXT/plain/.agents/skills/memoria" \
+            "canonical-tailed target that is a regular file|$EXT/file/.agents/skills/memoria" \
+            "canonical-tailed target that is another symlink|$EXT/chain/.agents/skills/memoria" \
+            "broken link not ending in .agents/skills/memoria|$EXT/gone/memoria"; do
+  n=$((n + 1)); label="${spec%%|*}"; linkto="${spec#*|}"
+  home="$I29/home-refuse-$n"; mkdir -p "$home/.codex/skills"; ln -s "$linkto" "$home/.codex/skills/memoria"
+  refuse29 "codex host symlink to a $label" "$home" codex "$home/.codex/skills/memoria" "$EXT" "$n"
+done
+# The canonical skill directory itself as a symlink is refused even when it points at a marked canonical.
+H29_3C="$I29/home-refuse-canon"; R29_3C="$I29/refuse-canon-root"; mkdir -p "$H29_3C" "$R29_3C/.agents/skills"
+ln -s "$EXT/canon-src/.agents/skills/memoria" "$(canon "$R29_3C")"
+before_ext="$(snap "$EXT")"
+if setup29 "$H29_3C" "$R29_3C" --agent claude-code >"$I29/refuse-canon.out" 2>&1; then
+  fail29 "SCN-003: a symlinked canonical skill directory was accepted"
+else
+  [ "$(snap "$EXT")" = "$before_ext" ] || fail29 "SCN-003: canonical symlink refusal changed the external content"
+  [ ! -e "$R29_3C/.memory" ] && [ ! -e "$H29_3C/.claude" ] || fail29 "SCN-003: canonical symlink refusal wrote the data root or host"
+fi
+
+# SCN-004: a legacy setup-deployed physical copy with user additions is backed up whole, then linked.
+H29_4="$I29/home-4"; R29_4="$I29/root-4"; LEGACY="$H29_4/.claude/skills/memoria"
+mkdir -p "$LEGACY/bin"
+{ cat "$TEMPLATE"; printf '\nmy own trigger notes\n'; } > "$LEGACY/SKILL.md"
+echo "/old/data/root" > "$LEGACY/DATA_ROOT"
+printf '#!/bin/sh\nexit 0\n' > "$LEGACY/bin/memoria"; chmod +x "$LEGACY/bin/memoria"
+echo "keep me" > "$LEGACY/NOTES.md"
+ln -s NOTES.md "$LEGACY/notes-link"
+snap "$LEGACY" > "$I29/scn4-legacy.snap"
+if setup29 "$H29_4" "$R29_4" --agent claude-code --json >"$I29/scn4.out" 2>&1; then
+  BACKUP4=$(node -e 'for (const l of require("fs").readFileSync(process.argv[1], "utf8").split("\n")) { try { const r = JSON.parse(l); if (r.step === "agent-skill" && r.backup) console.log(r.backup) } catch {} }' "$I29/scn4.out")
+  case "$BACKUP4" in "$R29_4/.agents/skill-backups/claude-code-"*) ;; *) fail29 "SCN-004: backup not reported under $R29_4/.agents/skill-backups/claude-code-* (got '$BACKUP4')" ;; esac
+  [ -n "$BACKUP4" ] && snap "$BACKUP4" | cmp -s "$I29/scn4-legacy.snap" - || fail29 "SCN-004: backup is not a byte-identical copy of the legacy directory (internal symlink included)"
+  [ "$(backup_count "$R29_4")" -eq 1 ] || fail29 "SCN-004: expected exactly one backup"
+  serves29 "SCN-004" "$LEGACY" "$R29_4"
+else
+  fail29 "SCN-004: setup over a legacy marked copy failed: $(tail -3 "$I29/scn4.out")"
+fi
+
+# SCN-005: CODEX_HOME=<dataRoot>/.agents makes the Codex host path the canonical path — refused before any write.
+H29_5="$I29/home-5"; R29_5A="$I29/root-5a"; mkdir -p "$H29_5"
+if (export CODEX_HOME="$R29_5A/.agents"; setup29 "$H29_5" "$R29_5A" --agent codex >"$I29/scn5a.out" 2>&1); then
+  fail29 "SCN-005: overlapping host and canonical paths accepted (canonical absent)"
+else
+  grep -qF "$(canon "$R29_5A")" "$I29/scn5a.out" || fail29 "SCN-005: overlap refusal does not name $(canon "$R29_5A")"
+  [ ! -e "$R29_5A" ] || fail29 "SCN-005: overlap refusal still created the data root"
+fi
+R29_5B="$I29/root-5b"
+prepare_root "$H29_5" "$R29_5B"
+snap "$R29_5B" > "$I29/scn5b.snap"
+if (export CODEX_HOME="$R29_5B/.agents"; setup29 "$H29_5" "$R29_5B" --agent codex >"$I29/scn5b.out" 2>&1); then
+  fail29 "SCN-005: overlapping host and canonical paths accepted (canonical deployed)"
+else
+  grep -qF "$(canon "$R29_5B")" "$I29/scn5b.out" || fail29 "SCN-005: overlap refusal does not name $(canon "$R29_5B")"
+fi
+[ -d "$(canon "$R29_5B")" ] && [ ! -L "$(canon "$R29_5B")" ] || fail29 "SCN-005: canonical is no longer a real directory"
+snap "$R29_5B" | cmp -s "$I29/scn5b.snap" - || fail29 "SCN-005: overlap run wrote into the data root"
+
+# SCN-006: existing empty host directories become links without a backup.
+H29_6="$I29/home-6"; R29_6="$I29/root-6"; mkdir -p "$H29_6/.claude/skills/memoria" "$H29_6/.codex/skills/memoria"
+if setup29 "$H29_6" "$R29_6" --agent both --json >"$I29/scn6.out" 2>&1; then
+  serves29 "SCN-006 claude-code" "$H29_6/.claude/skills/memoria" "$R29_6"
+  serves29 "SCN-006 codex" "$H29_6/.codex/skills/memoria" "$R29_6"
+  [ "$(backup_count "$R29_6")" -eq 0 ] || fail29 "SCN-006: an empty directory was backed up"
+else
+  fail29 "SCN-006: setup over empty host directories failed: $(tail -3 "$I29/scn6.out")"
+fi
+
+# SCN-007: after setup --agent both, a plain setup refreshes the canonical and both hosts see it.
+H29_7="$I29/home-7"; R29_7="$I29/root-7"; mkdir -p "$H29_7"
+if setup29 "$H29_7" "$R29_7" --agent both --json >"$I29/scn7-deploy.out" 2>&1; then
+  C7="$(canon "$R29_7")"
+  printf '\nstale line from an older deploy\n' >> "$C7/SKILL.md"
+  echo "/stale/root" > "$C7/DATA_ROOT"
+  printf '#!/bin/sh\nexit 3\n' > "$C7/bin/memoria"
+  for host in "$H29_7/.claude/skills/memoria" "$H29_7/.codex/skills/memoria"; do
+    grep -qF 'stale line from an older deploy' "$host/SKILL.md" || fail29 "SCN-007: $host does not see the canonical's content (not linked)"
+  done
+  links_before="$(readlink "$H29_7/.claude/skills/memoria" "$H29_7/.codex/skills/memoria" || true)"
+  setup29 "$H29_7" "$R29_7" --json >"$I29/scn7.out" 2>&1 || fail29 "SCN-007: setup without --agent failed: $(tail -3 "$I29/scn7.out")"
+  serves29 "SCN-007 claude-code" "$H29_7/.claude/skills/memoria" "$R29_7"
+  serves29 "SCN-007 codex" "$H29_7/.codex/skills/memoria" "$R29_7"
+  [ "$(readlink "$H29_7/.claude/skills/memoria" "$H29_7/.codex/skills/memoria" || true)" = "$links_before" ] || fail29 "SCN-007: host links changed"
+  [ "$(backup_count "$R29_7")" -eq 0 ] || fail29 "SCN-007: refreshing the canonical created a backup"
+else
+  fail29 "SCN-007: initial setup --agent both failed: $(tail -3 "$I29/scn7-deploy.out")"
+fi
+
+# SCN-008: links ending in .agents/skills/memoria whose target is gone are repaired without a backup.
+H29_8="$I29/home-8"; R29_8="$I29/root-8"; mkdir -p "$H29_8"
+link_hosts "$H29_8" "$I29/gone-root/.agents/skills/memoria" "../../../gone-rel/.agents/skills/memoria"
+if setup29 "$H29_8" "$R29_8" --agent both --json >"$I29/scn8.out" 2>&1; then
+  serves29 "SCN-008 claude-code (absolute)" "$H29_8/.claude/skills/memoria" "$R29_8"
+  serves29 "SCN-008 codex (relative)" "$H29_8/.codex/skills/memoria" "$R29_8"
+  [ "$(backup_count "$R29_8")" -eq 0 ] || fail29 "SCN-008: repairing a broken link created a backup"
+else
+  fail29 "SCN-008: repairing broken canonical-tailed links failed: $(tail -3 "$I29/scn8.out")"
+fi
+
+[ "$I29_FAILS" -eq 0 ] || { echo "  ✗ issue-29: $I29_FAILS host skill link check(s) failed"; exit 1; }
+echo "  ✓ issue-29: hosts link to the canonical skill; reruns, root switches and broken links relink; legacy copies are backed up once; unsafe targets and overlaps are refused before any write"
+
 echo "[setup-onboarding] ok"
