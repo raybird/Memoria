@@ -56,7 +56,7 @@
 
 ---
 
-## 2. 出貨紀錄（v1.13.0 → v1.33.0）
+## 2. 出貨紀錄（v1.13.0 → v1.34.0）
 
 | 版本 | 主題 | 一句話 |
 |------|------|--------|
@@ -96,6 +96,7 @@
 | v1.32.0 | 一次 setup 完成 agent 記憶接線 | **issue-28**：互動與明確非互動 onboarding、使用者 `install.json` 持久預設、per-root 向量設定、Codex／Claude skill 與 AGENTS／CLAUDE 受管理接線、brief、模型暖機／全量 ingest／coverage 與隔離 probe。預檢涵蓋資料根內部目標與完整祖先鏈，拒絕手寫 skill、衝突與未知 symlink；各輪跨根設定與空向量檔問題已修復。[完整交付審查](issues/issue-28/review-8b6c06d.md) PASS，報告提交 `a24653b` 已驗證 artifact 例外並 fast-forward 合併。乾淨 CI 的向量測試依賴準備順序另於 `7211b81` 修正並經[局部獨立審查](issues/issue-28/review-7211b81.md) PASS。舊 `setup --vector` 保留依賴安裝／暖機語意；完整升級用 `setup --scope global --memoria-home <existing-data-root> --agent both --vector --yes`，依需要選 host／基本模式。schema、recall 預設、helper 路徑與 cache 鎖檔不變。 |
 
 | v1.33.0 | 本機唯讀記憶工作台 | **issue-30**：`serve --ui`、分頁與完整理由／來源、精確 project／environment、標記、明確搜尋與 brief、深淺色／鍵盤／手機／網址恢復。獨立 loopback router、同源與 CSP、內嵌離線資產；schema／recall 排名／普通 serve 行為不變。產品／文件獨立 PASS，main 完整 CI 及 Release workflow 全綠；2026-10-26 GitHub Release、四平台 tar／checksum、公開 Linux tar parity／SHA-256、npm@1.33.0 均確認。 |
+| v1.34.0 | host skill 改連結到資料根 | **issue-29**：`setup --agent` 讓 `~/.claude/skills/memoria`、`~/.codex/skills/memoria`（或 `$CODEX_HOME`）以 symlink（Windows junction）指向 `<memoria-home>/.agents/skills/memoria`，不帶 `--agent` 的 setup 即同步所有 host。Memoria 連結（目標尾端 `.agents/skills/memoria` 且為帶兩項標記的實體目錄或已不存在）重連不備份，空目錄直接轉連結，舊版實體副本首次升級時整份備份後轉連結；手寫、他處連結、連鎖／祖先 symlink、canonical 本身為 symlink 皆在寫入前拒絕。host 與 canonical 相同或互相包含以 dev+inode 判定並拒絕（預檢與刪除前各一次）。兩輪獨立審查：[e478053](issues/issue-29/review-e478053.md) PASS（S-1 補 dev+inode、S-2 只補文件，皆使用者決策）、[38a3db3](issues/issue-29/review-38a3db3.md) PASS。⚠ 經 host 路徑的修改會被下次 setup 覆蓋且不備份。Windows junction 與真實宿主經連結探索未實機驗證。schema、recall、helper 路徑不變。 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >

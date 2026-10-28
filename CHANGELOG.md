@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-10-28
+
+### Changed
+- **Host agent skills now link to the data root's skill instead of copying it** (issue-29). `memoria setup --agent claude-code|codex|both` points `~/.claude/skills/memoria` and `~/.codex/skills/memoria` (or `$CODEX_HOME/skills/memoria`) at `<memoria-home>/.agents/skills/memoria` with a symlink (a junction on Windows). That directory is the only real copy, so a plain `memoria setup` for the same data root refreshes every linked host, and each host's binding is visible from the link itself.
+- **Reruns, data-root switches and broken links relink without backups.** A host link whose target path ends in `.agents/skills/memoria` and is either a real directory carrying both deployment marks or no longer exists is relinked in place; the old target is never touched. An empty host directory is replaced by the link. A physical copy deployed by an earlier `setup` (both marks in its `SKILL.md` frontmatter) is backed up whole, internal symlinks included, to `<memoria-home>/.agents/skill-backups/<agent>-<timestamp>/` once, then becomes a link. If that copy cannot be removed after its backup, the error names the backup.
+
+### Fixed
+- **Unsafe host targets are refused before anything is written.** Handwritten skills, plain files, links to any other location (even a marked one), chained links, symlinked ancestors and a data-root skill directory that is itself a symlink exit non-zero naming the path and the reason, leaving the content byte-for-byte unchanged. A host path that is the data-root skill directory, lies inside it or contains it (for example `CODEX_HOME=<memoria-home>/.agents`) is refused as well; overlap is decided by device and inode, and checked again before any removal, so a host can no longer be turned into a link to itself.
+
+### Compatibility and upgrade
+- Upgrade the runtime, then rerun `memoria setup --agent both` (or the host you use) for your existing data root. Each host copy is backed up once and replaced by a link; later runs back up nothing. Edits made through a host path now land in the data-root copy and the next `setup` overwrites them without a backup, so keep customizations in a separate skill directory.
+- The JSON `agent-skill` step additionally reports `link`, the canonical directory the host points at. Setup without `--agent` still never touches host directories. The database schema, recall, brief, HTTP/SDK envelope and helper paths are unchanged.
+
+### Docs and validation
+- Updated both READMEs, the install guide and the deployed skill/reference for the link layout, the replacement and backup rules and the overlap refusal. Added inner pre-check and outer CLI regression coverage for SCN-001–008 in `test-setup-onboarding.sh` and `test-bootstrap.sh`. Two independent reviews passed; acceptance, evidence and reports are under `docs/issues/issue-29/`. Windows junctions and real host discovery through a symlink were not verified on those platforms.
+
 ## [1.33.0] - 2026-10-26
 
 ### Added
