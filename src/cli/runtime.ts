@@ -93,7 +93,7 @@ export async function deployAgentSkill(runtimeLayout: RuntimeLayout, memoriaHome
     const skillSourcePath = getBundledSkillSourcePath(runtimeLayout)
     if (!skillSourcePath) return undefined
 
-    const targetDir = path.join(memoriaHome, '.agents', 'skills', 'memoria')
+    const targetDir = canonicalSkillDir(memoriaHome)
     await assertHostSkillTarget(targetDir)
     await writeSkillCopy(runtimeLayout, skillSourcePath, targetDir, memoriaHome)
     return targetDir
@@ -216,26 +216,83 @@ export async function assertWritableAncestorDir(targetPath: string, actionLabel 
 }
 
 /**
- * `setup` replaces a host skill directory only when it is absent, empty, or a copy `setup` itself wrote —
- * one whose SKILL.md frontmatter carries both deployment marks. Anything else is the user's own skill,
- * and overwriting it would be a silent, irreversible loss (issue-22 SCN-006).
+ * issue-29: `<memoriaHome>/.agents/skills/memoria` is the one real copy of the deployed skill; each
+ * host skill directory is a symlink (Windows: junction) to it, so a plain `setup` refreshes every host.
  */
-export async function assertHostSkillTarget(targetDir: string): Promise<void> {
-    const check = await checkHostSkillTarget(targetDir)
-    if (!check.ok) throw new Error(`refusing to overwrite ${targetDir}: ${check.reason}; move it aside to deploy`)
+export function canonicalSkillDir(memoriaHome: string): string {
+    return path.join(path.resolve(memoriaHome), '.agents', 'skills', 'memoria')
 }
 
-async function checkHostSkillTarget(targetDir: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    const stat = await fs.lstat(targetDir).catch(() => undefined)
-    if (!stat) {
-        return checkWritableAncestorDir(targetDir)
+/** What a host skill target holds now, which decides how `deployHostAgentSkill` replaces it. */
+export type SkillTargetState = 'absent' | 'empty' | 'marked' | 'link'
+
+type SkillTargetCheck = { ok: true; state: SkillTargetState } | { ok: false; reason: string }
+
+/**
+ * `setup` replaces a skill directory only when it is absent, empty, or a copy `setup` itself wrote —
+ * one whose SKILL.md frontmatter carries both deployment marks. Anything else is the user's own skill,
+ * and overwriting it would be a silent, irreversible loss (issue-22 SCN-006).
+ *
+ * `canonical` mode (the default) is for `<memoriaHome>/.agents/skills/memoria`, which must stay a real
+ * directory. `host` mode also accepts a symlink to a Memoria canonical directory (issue-29).
+ */
+export async function assertHostSkillTarget(targetDir: string, mode: 'canonical' | 'host' = 'canonical'): Promise<SkillTargetState> {
+    const check = await checkHostSkillTarget(targetDir, mode).catch((error: unknown): SkillTargetCheck => ({
+        ok: false,
+        reason: `it cannot be inspected (${error instanceof Error ? error.message : String(error)})`
+    }))
+    if (!check.ok) throw new Error(`refusing to overwrite ${targetDir}: ${check.reason}; move it aside to deploy`)
+    return check.state
+}
+
+/** Only ENOENT means "not there"; any other lstat failure is an answer we do not have. */
+async function lstatIfExists(target: string) {
+    try {
+        return await fs.lstat(target)
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        throw error
     }
-    if (!stat.isDirectory()) return { ok: false, reason: 'it exists and is not a directory' }
+}
+
+async function checkHostSkillTarget(targetDir: string, mode: 'canonical' | 'host'): Promise<SkillTargetCheck> {
+    const stat = await lstatIfExists(targetDir)
     const ancestorCheck = await checkWritableAncestorDir(targetDir)
     if (!ancestorCheck.ok) return ancestorCheck
-    if ((await fs.readdir(targetDir)).length === 0) return { ok: true }
+    if (!stat) return { ok: true, state: 'absent' }
+    if (stat.isSymbolicLink()) {
+        return mode === 'host'
+            ? checkManagedSkillLink(targetDir)
+            : { ok: false, reason: 'it is a symlink, and the data-root skill directory must be a real directory' }
+    }
+    if (!stat.isDirectory()) return { ok: false, reason: 'it exists and is not a directory' }
+    if ((await fs.readdir(targetDir)).length === 0) return { ok: true, state: 'empty' }
+    const marks = await checkDeploymentMarks(targetDir)
+    return marks.ok ? { ok: true, state: 'marked' } : marks
+}
 
-    const skill = await fs.readFile(path.join(targetDir, 'SKILL.md'), 'utf8').catch(() => undefined)
+/**
+ * A host link is Memoria's to replace when it resolves to a path ending in `.agents/skills/memoria` that
+ * is either gone (a root that was moved or deleted: repair it) or a real directory with both marks.
+ * Neither proves `setup` made the link — the tail and the marks are public conventions — so anything
+ * short of both is refused, even a marked directory somewhere else.
+ */
+async function checkManagedSkillLink(linkPath: string): Promise<SkillTargetCheck> {
+    const resolved = path.resolve(path.dirname(linkPath), await fs.readlink(linkPath))
+    if (resolved.split(path.sep).slice(-3).join('/') !== '.agents/skills/memoria') {
+        return { ok: false, reason: `it is a symlink to ${resolved}, which is not a <data root>/.agents/skills/memoria directory` }
+    }
+    const stat = await lstatIfExists(resolved)
+    if (!stat) return { ok: true, state: 'link' }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        return { ok: false, reason: `it is a symlink to ${resolved}, which is not a real directory` }
+    }
+    const marks = await checkDeploymentMarks(resolved)
+    return marks.ok ? { ok: true, state: 'link' } : { ok: false, reason: `it is a symlink to ${resolved}, and ${marks.reason}` }
+}
+
+async function checkDeploymentMarks(dir: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const skill = await fs.readFile(path.join(dir, 'SKILL.md'), 'utf8').catch(() => undefined)
     if (skill === undefined) return { ok: false, reason: 'it is not empty and has no SKILL.md written by memoria setup' }
     const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skill)?.[1] ?? ''
     const marked = /^deployment_mode:\s*"?installed"?\s*$/m.test(frontmatter)
@@ -246,29 +303,72 @@ async function checkHostSkillTarget(targetDir: string): Promise<{ ok: true } | {
 }
 
 /**
- * The marks prove a copy descends from a deployed template, not that nobody edited it since — copying a
- * deployed skill by hand and adding to it was the documented workaround before `--agent`. So a non-empty
- * target is copied into `<memoriaHome>/.agents/skill-backups/` first: outside the host's skills directory,
- * where it would otherwise load as a second "memoria" skill (review 81bb75d M-1).
+ * Compares where two skill paths land without following their last component: a host link to the
+ * canonical directory is the normal case, not an overlap. The parent is resolved through its nearest
+ * existing ancestor so platform aliases (macOS `/tmp`) and not-yet-created directories compare alike.
+ */
+export async function isSameSkillPath(a: string, b: string): Promise<boolean> {
+    const comparable = async (target: string): Promise<string> => {
+        const tail = [path.basename(target)]
+        let head = path.dirname(path.resolve(target))
+        for (;;) {
+            const real = await fs.realpath(head).catch(() => undefined)
+            const parent = path.dirname(head)
+            if (real || parent === head) {
+                const joined = path.join(real ?? head, ...tail)
+                return process.platform === 'win32' ? joined.toLowerCase() : joined
+            }
+            tail.unshift(path.basename(head))
+            head = parent
+        }
+    }
+    return (await comparable(a)) === (await comparable(b))
+}
+
+export function skillPathOverlapError(agent: string, targetDir: string, canonicalDir: string): Error {
+    return new Error(
+        `refusing to deploy the ${agent} skill to ${targetDir}: it is the data root's own skill directory ${canonicalDir}, ` +
+        `and linking it to itself would destroy it; point ${agent} at another directory (e.g. a different CODEX_HOME)`
+    )
+}
+
+/**
+ * Points a host skill directory at the canonical copy `deployAgentSkill` wrote. A link holds nothing of
+ * its own and an empty directory nothing at all, so neither is backed up. A marked physical directory —
+ * what `setup` deployed before issue-29, or a copy someone cp'd from it and edited — may hold the user's
+ * own work, so it is copied whole into `<memoriaHome>/.agents/skill-backups/` first: outside the host's
+ * skills directory, where it would otherwise load as a second "memoria" skill (review 81bb75d M-1).
  */
 export async function deployHostAgentSkill(
     runtimeLayout: RuntimeLayout,
     memoriaHome: string,
     agent: string,
     targetDir: string
-): Promise<{ path: string; backup?: string } | undefined> {
-    const skillSourcePath = getBundledSkillSourcePath(runtimeLayout)
-    if (!skillSourcePath) return undefined
+): Promise<{ path: string; link: string; backup?: string } | undefined> {
+    if (!getBundledSkillSourcePath(runtimeLayout)) return undefined
 
-    await assertHostSkillTarget(targetDir)
+    const canonicalDir = canonicalSkillDir(memoriaHome)
+    if (await isSameSkillPath(targetDir, canonicalDir)) throw skillPathOverlapError(agent, targetDir, canonicalDir)
+    const canonicalStat = await lstatIfExists(canonicalDir)
+    if (!canonicalStat?.isDirectory()) {
+        throw new Error(`cannot link ${targetDir}: the data-root skill ${canonicalDir} is not deployed as a real directory`)
+    }
+
+    const state = await assertHostSkillTarget(targetDir, 'host')
     let backup: string | undefined
-    if ((await fs.readdir(targetDir).catch(() => [])).length > 0) {
+    if (state === 'marked') {
         backup = path.join(memoriaHome, '.agents', 'skill-backups', `${agent}-${new Date().toISOString().replace(/[:.]/g, '-')}`)
         await fs.mkdir(path.dirname(backup), { recursive: true })
         await fs.cp(targetDir, backup, { recursive: true, verbatimSymlinks: true })
+        await fs.rm(targetDir, { recursive: true })
+    } else if (state === 'empty') {
+        await fs.rmdir(targetDir)
+    } else if (state === 'link') {
+        await fs.unlink(targetDir)
     }
-    await writeSkillCopy(runtimeLayout, skillSourcePath, targetDir, memoriaHome)
-    return { path: targetDir, ...(backup ? { backup } : {}) }
+    await fs.mkdir(path.dirname(targetDir), { recursive: true })
+    await fs.symlink(canonicalDir, targetDir, process.platform === 'win32' ? 'junction' : 'dir')
+    return { path: targetDir, link: canonicalDir, ...(backup ? { backup } : {}) }
 }
 
 async function writeSkillCopy(runtimeLayout: RuntimeLayout, skillSourcePath: string, targetDir: string, memoriaHome: string): Promise<void> {
