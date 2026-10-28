@@ -4,7 +4,7 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
 
 ## Layout Contract
 
-`memoria setup` always deploys to `<memoria-home>/.agents/skills/memoria/`, the one real copy. `--agent claude-code`, `--agent codex`, or `--agent both` also points `~/.claude/skills/memoria/` and/or `~/.codex/skills/memoria/` (`$CODEX_HOME/skills/memoria/` when `CODEX_HOME` is set), where those host agents discover skills, at it with a symlink (a junction on Windows). A `setup` without `--agent` therefore refreshes every linked host as well.
+`memoria setup` always deploys to `<memoria-home>/.agents/skills/memoria/`, the one real copy. `--agent claude-code`, `--agent codex`, or `--agent both` also points `~/.claude/skills/memoria/` and/or `~/.codex/skills/memoria/` (`$CODEX_HOME/skills/memoria/` when `CODEX_HOME` is set), where those host agents discover skills, at it with a symlink (a junction on Windows). A `setup` without `--agent` therefore refreshes every linked host as well. For the same reason, an edit made through a host path lands in the data-root copy and the next `setup` overwrites it without a backup: these files belong to `setup`, so keep customizations in a separate skill directory.
 
 ```text
 <skill-root>/
@@ -23,7 +23,7 @@ This reference is for installed mode, after `memoria setup` has deployed the ski
 - **An empty directory**: removed and linked, no backup.
 - **A real directory with both marks** (a copy an older `setup` deployed): every deployed template carries the marks, so a copy made from one by hand and edited since carries them too. It is copied whole to `<memoria-home>/.agents/skill-backups/<agent>-<timestamp>/` first, `setup` prints that path, and then it is replaced by the link. This happens once, on the first upgrade.
 
-Anything else — a hand-written skill, a file, a symlink to anywhere else (even a marked one), a symlinked ancestor, a data-root skill directory that is itself a symlink, or a host path that is the data-root skill directory (e.g. `CODEX_HOME=<memoria-home>/.agents`) — is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
+Anything else — a hand-written skill, a file, a symlink to anywhere else (even a marked one), a symlinked ancestor, a data-root skill directory that is itself a symlink, or a host path that is the data-root skill directory or lies inside it, or contains it (e.g. `CODEX_HOME=<memoria-home>/.agents`; compared by device and inode, so a bind mount or a differently cased spelling counts too) — is left byte-for-byte untouched and `setup` exits non-zero naming the path before writing anything; move it aside first if you want the deployed one.
 
 ## Refresh after a runtime upgrade
 

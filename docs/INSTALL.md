@@ -84,9 +84,9 @@ host 目標已存在時，依現況處理：
 - **帶兩項標記的實體目錄**（舊版 `setup` 複製的副本）：每份部署模板都帶這兩個標記，從部署版手動複製再改過的副本也一樣，所以先把整個目錄備份到 `<memoria-home>/.agents/skill-backups/<agent>-<時間戳>/` 並印出路徑，再換成連結。只會發生在第一次升級。
 - **其他一律拒絕**：手寫的 skill、一般檔案、指向其他位置的 symlink（即使目標帶標記）、祖先路徑含使用者 symlink，以及資料根目錄的 `.agents/skills/memoria` 本身是 symlink。`setup` 在寫入任何檔案前就以非 0 結束並印出路徑與原因，原內容不動。
 
-host 路徑與資料根目錄的 skill 是同一個位置時（例如 `CODEX_HOME=<memoria-home>/.agents`），`setup` 同樣在寫入前拒絕，不會建立指向自己的連結。
+host 路徑與資料根目錄的 skill 是同一個目錄，或其中一個位於另一個之內時（例如 `CODEX_HOME=<memoria-home>/.agents`），`setup` 同樣在寫入前拒絕，不會建立指向自己的連結。判斷依據是實際目錄（裝置與 inode），bind mount 或大小寫不同的寫法也算同一個；預檢時還不存在的目錄只能比對路徑，部署刪除前會再以實際目錄確認一次。
 
-不帶 `--agent` 重跑 `setup` 只更新資料根目錄那一份；已連結的 host 透過連結直接讀到新內容。
+不帶 `--agent` 重跑 `setup` 只更新資料根目錄那一份；已連結的 host 透過連結直接讀到新內容。也因為是連結，經 `~/.claude/skills/memoria` 或 `~/.codex/skills/memoria` 改的檔案其實寫進了資料根目錄那一份，下一次 `setup` 會直接覆蓋、不備份。部署的 skill 由 `setup` 管理；要自訂觸發時機或指令，請另外建立一個 skill 目錄。
 
 ### 共用規範與 brief 自動接線
 

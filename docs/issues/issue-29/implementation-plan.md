@@ -120,3 +120,17 @@ host symlink 的解析目標**必須以三個完整路徑元件 `.agents/skills/
 - 更新 `README.md`、`README.zh-TW.md`、`docs/INSTALL.md`、`DEPLOYED_SKILL.md`、`DEPLOYED_REFERENCE.md`：canonical／host 分工、首次實體副本遷移備份、重連與斷鏈修復不備份、空目錄、拒絕清單與路徑重合、不帶 `--agent` 更新同步。`docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/INTEGRATIONS.md`、`docs/INTEGRATIONS.zh-TW.md` 經查沒有描述 host skill 的部署形態（只有泛稱的 agent skills／deployed skill），不需修改。
 - 依序執行（文件更新後重跑）：`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n scripts/test-setup-onboarding.sh`、`bash -n scripts/test-bootstrap.sh`、`bash scripts/test-smoke.sh`、`bash scripts/test-bootstrap.sh`、`bash scripts/test-setup-onboarding.sh`、`bash scripts/test-npm-install.sh`、`pnpm run release:docs-check`，全部 exit 0。
 - 限制：結果來自 Linux；Windows junction 與大小寫比對未實機驗證，macOS `/tmp` 別名的重合判定只有 source 層推理。真實宿主（Claude Code／Codex）經 symlink 探索 skill 未實機驗證。
+
+### 審查 e478053 修正（2026-10-28，回 execute-task）
+
+依 README 待確認事項 TBD-1（S-1 補 dev＋inode 比對，含 N-1）與 TBD-2（S-2 只補文件），順帶處理 N-2～N-5。被測基線：`4fbab3f` 之上的工作區。
+
+- **紅燈**（`pnpm run build` 後以 `4fbab3f` 的程式執行新測試）：
+  - 內圈 driver exit 1，11 項失敗。行為紅燈：host 位於 canonical 之內（canonical 不存在／已部署）被 `assertSetupPlanSafe` 放行（2 項）；ENOTDIR 祖先的拒絕訊息不含 `is not a directory`（N-2）。`skillPathsOverlap` 8 項因尚未匯出而失敗，不算行為證據；同一組 8 案以舊的 `isSameSkillPath` 執行，錯在「host 在已存在／不存在的 canonical 之內」「canonical 在 host 之內」3 案，另 5 案（經 symlink 祖先的同目錄別名兩案、host 連結、名稱前綴相同的兄弟目錄、無關目錄）舊邏輯已正確，作為回歸保護。
+  - 外圈 Step 6 單獨執行 exit 1，4 項失敗：nested host 兩種狀態被接受且寫入資料根（N-1）；舊實體副本備份後刪除失敗時，錯誤訊息未附備份路徑（N-3，以 555 唯讀子目錄觸發，root 執行時略過並印出原因）。canonical symlink 拒絕訊息點名路徑（N-4 補斷言）為既有行為，維持綠燈。
+  - **無法重現的部分**：S-1 原始情境（bind mount、不分大小寫檔案系統）在本機與 CI 無法以非特權建立（`unshare -rm` 回 `write failed /proc/self/uid_map: Operation not permitted`，`kernel.apparmor_restrict_unprivileged_userns = 1`）；改以 symlink 祖先代表「同一目錄的兩種寫法」，該案舊邏輯本來就判對，因此 dev＋inode 路徑沒有對應紅燈，只有 source 層推理。
+- **實作**：`runtime.ts` 以 `skillPathsOverlap` 取代 `isSameSkillPath`：沿路徑取最深既存目錄與其上各層的 dev:ino，不存在的部分保留為路徑元件（Windows 小寫），判定相同或互相包含；最後一個元件用 lstat，host 連結不會被當成 canonical 本身。預檢與部署刪除前都用它，錯誤訊息改為 overlaps …（the same directory, or one inside the other）。`checkHostSkillTarget` 先做祖先檢查再 lstat（N-2）；備份後刪除失敗時拋出含備份路徑的錯誤（N-3）；`SkillTargetMode` 型別、`setup.ts` 改用 `canonicalSkillDir`（N-5）。GitNexus impact：`registerSetupCommand` LOW，其餘符號沿用前次結果。
+- **文件**：`docs/INSTALL.md`、`DEPLOYED_REFERENCE.md` 補上「經 host 路徑的修改會寫進資料根那一份、下次 setup 不備份覆蓋，自訂請另建 skill 目錄」（S-2），以及重合判定涵蓋互相包含、以裝置與 inode 比對、預檢對尚不存在的目錄只能比對路徑。
+- **綠燈**：driver exit 0（新增 11 項全過）；Step 6 單獨 exit 0；依序 `pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、兩支 `bash -n`、`test-smoke`、`test-bootstrap`、`test-setup-onboarding`、`test-npm-install`、`pnpm run release:docs-check` 全部 exit 0。
+- **精煉**：`isSameSkillPath` 的 realpath 字串比對整個由 dev:ino 判定取代，沒有留下兩套重合邏輯；其餘 no-op。
+- **限制**：不分大小寫檔案系統上、預檢時兩邊都還不存在的大小寫別名，只能比對路徑字串而漏判；部署刪除前 canonical 已存在，會以 dev＋inode 攔下，但此時資料根已初始化。
