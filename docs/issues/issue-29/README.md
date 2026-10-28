@@ -155,9 +155,10 @@ Feature: Host agent skill 統一以 symlink 連結至 canonical skill 目錄
 |------|------|--------|
 | 2026-10-23 | 建立並完成 Q1～Q3 規格確認，SCN-001～SCN-004 核准（「照建議」） | - |
 | 2026-10-23 | 依需求規劃審查及「好幫我補上修正」統一辨識規則、補路徑重合／空目錄／同步更新／斷鏈驗收，風險改列 High；補部署主模板責任 | - |
+| 2026-10-28 | 結案：兩輪獨立審查（[review-e478053](./review-e478053.md) PASS 含兩項需決策、[review-38a3db3](./review-38a3db3.md) PASS），fast-forward 併入 `main`（`02debc7`）；剩餘 NICE TO HAVE 未處理 | - |
 
 ---
 **建立日期**: 2026-10-23  
 **分級**: Medium  
 **風險**: High
-**狀態**: 待審查
+**狀態**: 已完成
