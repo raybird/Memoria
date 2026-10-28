@@ -228,6 +228,8 @@ export type SkillTargetState = 'absent' | 'empty' | 'marked' | 'link'
 
 type SkillTargetCheck = { ok: true; state: SkillTargetState } | { ok: false; reason: string }
 
+type SkillTargetMode = 'canonical' | 'host'
+
 /**
  * `setup` replaces a skill directory only when it is absent, empty, or a copy `setup` itself wrote —
  * one whose SKILL.md frontmatter carries both deployment marks. Anything else is the user's own skill,
@@ -236,7 +238,7 @@ type SkillTargetCheck = { ok: true; state: SkillTargetState } | { ok: false; rea
  * `canonical` mode (the default) is for `<memoriaHome>/.agents/skills/memoria`, which must stay a real
  * directory. `host` mode also accepts a symlink to a Memoria canonical directory (issue-29).
  */
-export async function assertHostSkillTarget(targetDir: string, mode: 'canonical' | 'host' = 'canonical'): Promise<SkillTargetState> {
+export async function assertHostSkillTarget(targetDir: string, mode: SkillTargetMode = 'canonical'): Promise<SkillTargetState> {
     const check = await checkHostSkillTarget(targetDir, mode).catch((error: unknown): SkillTargetCheck => ({
         ok: false,
         reason: `it cannot be inspected (${error instanceof Error ? error.message : String(error)})`
@@ -255,10 +257,11 @@ async function lstatIfExists(target: string) {
     }
 }
 
-async function checkHostSkillTarget(targetDir: string, mode: 'canonical' | 'host'): Promise<SkillTargetCheck> {
-    const stat = await lstatIfExists(targetDir)
+async function checkHostSkillTarget(targetDir: string, mode: SkillTargetMode): Promise<SkillTargetCheck> {
+    // Ancestors first: a file where a parent directory should be is an ancestor problem, not an ENOTDIR lstat error.
     const ancestorCheck = await checkWritableAncestorDir(targetDir)
     if (!ancestorCheck.ok) return ancestorCheck
+    const stat = await lstatIfExists(targetDir)
     if (!stat) return { ok: true, state: 'absent' }
     if (stat.isSymbolicLink()) {
         return mode === 'host'
@@ -303,32 +306,43 @@ async function checkDeploymentMarks(dir: string): Promise<{ ok: true } | { ok: f
 }
 
 /**
- * Compares where two skill paths land without following their last component: a host link to the
- * canonical directory is the normal case, not an overlap. The parent is resolved through its nearest
- * existing ancestor so platform aliases (macOS `/tmp`) and not-yet-created directories compare alike.
+ * Where a path sits on disk: the identities (dev:ino) of the deepest existing directory on it and of every
+ * directory above, plus the components below that do not exist yet. Identity, not path text, so a bind
+ * mount or a case-insensitive spelling of the same directory still compares equal. The last component is
+ * lstat'ed: a host link to the canonical directory is the normal case, not the canonical directory itself.
  */
-export async function isSameSkillPath(a: string, b: string): Promise<boolean> {
-    const comparable = async (target: string): Promise<string> => {
-        const tail = [path.basename(target)]
-        let head = path.dirname(path.resolve(target))
-        for (;;) {
-            const real = await fs.realpath(head).catch(() => undefined)
-            const parent = path.dirname(head)
-            if (real || parent === head) {
-                const joined = path.join(real ?? head, ...tail)
-                return process.platform === 'win32' ? joined.toLowerCase() : joined
-            }
-            tail.unshift(path.basename(head))
-            head = parent
-        }
+async function locateSkillPath(target: string): Promise<{ chain: string[]; tail: string[] }> {
+    const resolved = path.resolve(target)
+    const chain: string[] = []
+    const tail: string[] = []
+    for (let curr = resolved; ; curr = path.dirname(curr)) {
+        const stat = await (curr === resolved ? fs.lstat(curr) : fs.stat(curr)).catch(() => undefined)
+        if (stat?.isDirectory()) chain.push(`${stat.dev}:${stat.ino}`)
+        else if (chain.length === 0) tail.unshift(process.platform === 'win32' ? path.basename(curr).toLowerCase() : path.basename(curr))
+        if (path.dirname(curr) === curr) return { chain, tail }
     }
-    return (await comparable(a)) === (await comparable(b))
+}
+
+/**
+ * True when two skill paths are the same directory or one lies inside the other — the states in which
+ * linking a host to the canonical directory would destroy it (host = canonical) or hide the link inside a
+ * directory the next refresh deletes (host below canonical, or the data root below the host).
+ */
+export async function skillPathsOverlap(a: string, b: string): Promise<boolean> {
+    const [la, lb] = await Promise.all([locateSkillPath(a), locateSkillPath(b)])
+    const inside = (inner: typeof la, outer: typeof la): boolean => outer.tail.length === 0
+        // outer exists: inner is it, or anything below it passes through it
+        ? inner.chain.includes(outer.chain[0])
+        // outer does not exist yet: nothing below it exists either, so inner must continue the same missing path
+        : inner.chain[0] === outer.chain[0] && outer.tail.every((part, i) => inner.tail[i] === part)
+    return inside(la, lb) || inside(lb, la)
 }
 
 export function skillPathOverlapError(agent: string, targetDir: string, canonicalDir: string): Error {
     return new Error(
-        `refusing to deploy the ${agent} skill to ${targetDir}: it is the data root's own skill directory ${canonicalDir}, ` +
-        `and linking it to itself would destroy it; point ${agent} at another directory (e.g. a different CODEX_HOME)`
+        `refusing to deploy the ${agent} skill to ${targetDir}: it overlaps the data root's own skill directory ${canonicalDir} ` +
+        `(the same directory, or one inside the other), so linking it would destroy or hide that skill; ` +
+        `point ${agent} at another directory (e.g. a different CODEX_HOME)`
     )
 }
 
@@ -348,7 +362,7 @@ export async function deployHostAgentSkill(
     if (!getBundledSkillSourcePath(runtimeLayout)) return undefined
 
     const canonicalDir = canonicalSkillDir(memoriaHome)
-    if (await isSameSkillPath(targetDir, canonicalDir)) throw skillPathOverlapError(agent, targetDir, canonicalDir)
+    if (await skillPathsOverlap(targetDir, canonicalDir)) throw skillPathOverlapError(agent, targetDir, canonicalDir)
     const canonicalStat = await lstatIfExists(canonicalDir)
     if (!canonicalStat?.isDirectory()) {
         throw new Error(`cannot link ${targetDir}: the data-root skill ${canonicalDir} is not deployed as a real directory`)
@@ -360,7 +374,10 @@ export async function deployHostAgentSkill(
         backup = path.join(memoriaHome, '.agents', 'skill-backups', `${agent}-${new Date().toISOString().replace(/[:.]/g, '-')}`)
         await fs.mkdir(path.dirname(backup), { recursive: true })
         await fs.cp(targetDir, backup, { recursive: true, verbatimSymlinks: true })
-        await fs.rm(targetDir, { recursive: true })
+        await fs.rm(targetDir, { recursive: true }).catch((error: unknown) => {
+            const reason = error instanceof Error ? error.message : String(error)
+            throw new Error(`backed up ${targetDir} to ${backup}, but could not remove it to link the skill: ${reason}`)
+        })
     } else if (state === 'empty') {
         await fs.rmdir(targetDir)
     } else if (state === 'link') {

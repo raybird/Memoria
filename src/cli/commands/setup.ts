@@ -16,6 +16,7 @@ import {
 import type { InstallHostAgent } from '../../core/index.js'
 import { runPreflight } from '../preflight.js'
 import {
+    canonicalSkillDir,
     deployAgentSkill,
     deployHostAgentSkill,
     HOST_AGENTS,
@@ -218,7 +219,7 @@ export function registerSetupCommand(program: Command, runtimeLayout: RuntimeLay
                 await assertSetupPlanSafe(plan)
             } catch (error) {
                 const msg = error instanceof Error ? error.message : String(error)
-                const dataRootSkillDir = path.join(setupPaths.memoriaHome, '.agents', 'skills', 'memoria')
+                const dataRootSkillDir = canonicalSkillDir(setupPaths.memoriaHome)
                 const failedHost = plan.hostSkillTargets.find(
                     (h) => msg.includes(h.dir) || msg.includes(path.dirname(h.dir)) || msg.includes(path.dirname(path.dirname(h.dir)))
                 )

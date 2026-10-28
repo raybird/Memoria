@@ -25,10 +25,10 @@ import {
     assertHostSkillTarget,
     assertWritableAncestorDir,
     canonicalSkillDir,
-    isSameSkillPath,
     resolveHostAgentSkillDir,
     runChild,
-    skillPathOverlapError
+    skillPathOverlapError,
+    skillPathsOverlap
 } from './runtime.js'
 import type { RuntimeLayout } from './runtime.js'
 import {
@@ -351,11 +351,11 @@ export async function assertSetupPlanSafe(plan: SetupPlan): Promise<void> {
     }
 
     // 3. Check the canonical data-root skill (a real directory) and every host skill target up front; a host
-    //    path that IS the canonical one (CODEX_HOME=<dataRoot>/.agents) would be replaced by a link to itself
+    //    path that IS the canonical one (CODEX_HOME=<dataRoot>/.agents) or lies inside it would destroy or hide it
     const canonicalDir = canonicalSkillDir(plan.paths.memoriaHome)
     await assertHostSkillTarget(canonicalDir)
     for (const target of plan.hostSkillTargets) {
-        if (await isSameSkillPath(target.dir, canonicalDir)) throw skillPathOverlapError(target.agent, target.dir, canonicalDir)
+        if (await skillPathsOverlap(target.dir, canonicalDir)) throw skillPathOverlapError(target.agent, target.dir, canonicalDir)
         await assertHostSkillTarget(target.dir, 'host')
     }
 
