@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-10-31
+
+### Changed
+- **Recent decisions in `brief` are now shared across projects.** The `--top-k` slots are dealt one per project, most recently active first, so a burst of writes in one repository no longer evicts every other project from the global brief. Slots left over go round again, and a single-project or scoped brief still lists the newest `--top-k` decisions.
+- **Pinned memories keep their full text.** The pinned block now allows up to 800 characters instead of 180, so a constraint no longer loses the command at its end. The cap only stops a very long memory, such as a pinned git summary, from flooding the file every session loads.
+- **The high-utility block lists fewer, better-supported memories.** An entry now needs at least 2 observations, memories already pinned are skipped, and a git summary is merged with the decisions promoted from it. Recall ranking and `prune` retention keep their existing thresholds.
+
+### Fixed
+- **The brief's decision total now counts the whole window.** `期間決策` and `totals.decisions_in_window` reported the number of listed decisions, which could never exceed `--top-k`. Both now report every live decision in the window; pinned and superseded memories are not counted.
+- **Scoped high-utility lists are no longer diluted.** Out-of-scope and duplicate entries used to consume `--top-k` slots before being dropped, so a project could see fewer memories than it had.
+
+### Compatibility and upgrade
+- Upgrade the runtime, then regenerate the brief with `memoria brief --global` or `memoria brief`. The database schema is unchanged.
+- HTTP `GET /v1/brief` and `brief --json` keep their shape and add `totals.utility_unproven`, the number of memories with a utility signal below the observation threshold. Callers that read `totals.decisions_in_window` as the number of listed decisions should use the length of `decisions` instead, and `high_utility` may be shorter than before.
+
+### Docs and validation
+- Updated the CLI guide (English and Traditional Chinese), operations guide, architecture notes and `AGENTS.md`. `scripts/test-brief-scope.sh` now covers slot allocation, the window total, pinned length and the high-utility rules; `scripts/test-cli-memory.sh` follows the new observation threshold.
+
 ## [1.34.0] - 2026-10-28
 
 ### Changed
