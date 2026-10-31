@@ -4,8 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.35.1] - 2026-10-31
+
 ### Fixed
 - **`memoria setup` no longer deletes instruction text after a quoted marker.** The managed block was located by the first occurrence of its start marker anywhere in the file, so a `CLAUDE.md` or `AGENTS.md` that merely mentioned the marker lost every line between that mention and the real end marker. Only a marker alone on its line and outside a code fence now delimits the block. If an earlier setup removed text, restore it from `<memoria-home>/.agents/instruction-backups/`.
+
+### Compatibility and upgrade
+- Upgrade the runtime, then rerun `memoria setup` for your data root. Files without a quoted marker are rewired exactly as before. A marker line inside a code fence is now treated as an example, so a managed block placed inside a fence is no longer updated and a new block is appended instead. The database schema, recall and brief are unchanged.
 
 ## [1.35.0] - 2026-10-31
 
