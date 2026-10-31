@@ -98,6 +98,9 @@ UPDATED=$("$CLI" feedback rt_does_not_exist --score 0.5 --json | jq_field '.data
 [ "$UPDATED" = "false" ] || { echo "  ✗ expected updated=false, got '$UPDATED'"; exit 1; }
 
 echo "[cli-memory] (F) brief compiles a derived markdown view"
+# The brief lists a memory only after 2 observations, so report the same hits a second time.
+RID2=$("$CLI" recall "pnpm 套件管理器" --project demo --json | jq_field '.meta.recall_id')
+"$CLI" feedback "$RID2" --signal explicit --score 0.9 --hits "$HIT_IDS" >/dev/null
 BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
 "$CLI" brief --project demo >/dev/null
 [ -f "$BRIEF" ] || { echo "  ✗ BRIEF.md not written"; exit 1; }

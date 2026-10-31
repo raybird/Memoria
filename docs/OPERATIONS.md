@@ -200,8 +200,10 @@ Keep shared read instructions in `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGE
   that classification.
 - Durable memories have a separate pinned block, exempt from `--days` and `--top-k`. Superseded
   memories are excluded from all memory sections, including pinned and high-utility entries.
-- The UFL section stays empty until outcomes exist (`effectiveUtility` needs 1 explicit or 2 reuse
-  observations), which is expected on a fresh database.
+- Recent decisions deal their `--top-k` slots one per project, most recently active first. The
+  `期間決策` total counts every live decision in the window, not only the listed ones.
+- The UFL section lists memories with at least 2 observations, skips pinned ones and merges a git
+  summary with its decisions. It stays empty until then, which is expected on a fresh database.
 
 ### Long-term memory markers (issue-5)
 

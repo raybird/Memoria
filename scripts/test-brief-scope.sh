@@ -8,6 +8,9 @@
 #   (E) SCN-012 registering the project as a repo drops the count — the drift is visible
 #   (F) SCN-010 --global restores the pre-issue-17 single-file, all-projects behaviour
 #   (G) SCN-013 a per-project run prints shared AGENTS.md guidance and Claude imports
+#   (H) recent decisions are dealt per project, and the total counts the whole window
+#   (I) pinned text survives at note length; only an outsized memory is cut
+#   (J) high-utility needs 2 observations, merges one source, skips pinned, respects scope
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -20,6 +23,11 @@ TMP_DIR="$(mktemp -d)"
 CLI="$ROOT_DIR/cli"
 field() { node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const j=JSON.parse(d);console.log(eval("j"+process.argv[1]))})' "$1"; }
 MEMORIA_HOME=""
+DB=""
+BSQ="$ROOT_DIR/node_modules/better-sqlite3"
+
+sql() { node -e "const D=require('$BSQ');const db=new D('$DB');db.prepare(process.argv[1]).run()" "$1"; }
+section() { awk -v h="$1" 'index($0,h)==1{f=1;next} /^## /{f=0} f' "$2"; }
 
 cleanup() { rm -rf "$TMP_DIR"; }
 trap cleanup EXIT
@@ -170,5 +178,84 @@ echo "  AGENTS.md 共用入口與 Claude imports 皆明確，保留全域相對�
 "$CLI" brief --global --out "$MEMORIA_HOME/knowledge/Brief With Space.md" > "$TMP_DIR/out-g3.txt"
 grep -qF '@knowledge/Brief\ With\ Space.md' "$TMP_DIR/out-g3.txt" || {
     echo "  ✗ Claude import 未跳脫路徑中的空白:"; cat "$TMP_DIR/out-g3.txt"; exit 1; }
+
+echo "[brief-scope] (H) 近期決策依專案輪流分配,總數是窗口內的真實筆數"
+reset_home home-h
+make_repo "$TMP_DIR/alpha"
+make_repo "$TMP_DIR/beta"
+"$CLI" repo add "$TMP_DIR/alpha" >/dev/null
+"$CLI" repo add "$TMP_DIR/beta" >/dev/null
+"$CLI" remember "beta 的較舊決策" --project beta >/dev/null
+"$CLI" remember "環境紀律：較舊的操作規則" --project ops >/dev/null
+for n in 1 2 3 4; do "$CLI" remember "alpha 的新決策 $n" --project alpha >/dev/null; done
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+"$CLI" brief --global --top-k 3 >/dev/null
+for expected in "beta 的較舊決策" "環境紀律：較舊的操作規則" "alpha 的新決策 4"; do
+    grep -qF "$expected" "$BRIEF" || { echo "  ✗ 專案被擠出近期決策,缺 '$expected':"; cat "$BRIEF"; exit 1; }
+done
+grep -q "期間決策: 6 " "$BRIEF" || { echo "  ✗ 總數不是窗口內的 6 筆:"; sed -n 7,9p "$BRIEF"; exit 1; }
+"$CLI" brief --global --top-k 3 --json | field '.data.decisions.map(d=>d.timestamp).join("\n")' > "$TMP_DIR/ts-h.txt"
+sort -r "$TMP_DIR/ts-h.txt" | cmp -s - "$TMP_DIR/ts-h.txt" || { echo "  ✗ 顯示順序不是新到舊"; exit 1; }
+# 專案數少於 topK 時,剩下的格子要繼續分出去,不能空著。
+"$CLI" brief --global --top-k 5 >/dev/null
+[ "$(grep -c "alpha 的新決策" "$BRIEF")" = "3" ] || { echo "  ✗ 第二輪起未補滿剩餘格數:"; cat "$BRIEF"; exit 1; }
+# 單一專案時等同取最新 topK,與分配前行為相同。
+SCOPED_N=$("$CLI" brief --project alpha --top-k 2 --json | field '.data.decisions.map(d=>d.decision).join("|")')
+[ "$SCOPED_N" = "alpha 的新決策 4|alpha 的新決策 3" ] || { echo "  ✗ 單一專案未取最新兩筆: $SCOPED_N"; exit 1; }
+echo "  每個專案都有一格,總數 6 筆,剩餘格數補滿,單一專案維持最新優先"
+
+echo "[brief-scope] (I) pinned 完整保留常見長度,只擋異常長的內容"
+reset_home home-i
+LONG_TAIL="結尾的操作指令"
+LONG=$(printf '常駐約束%.0s' $(seq 1 100))
+"$CLI" remember "${LONG}${LONG_TAIL}" --project ops --durable >/dev/null
+HUGE=$(printf '超長內容%.0s' $(seq 1 300))
+"$CLI" remember "${HUGE}不該出現的尾端" --project ops --durable >/dev/null
+"$CLI" brief --global >/dev/null
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+grep -qF "$LONG_TAIL" "$BRIEF" || { echo "  ✗ 400 字的 pinned 被截斷"; exit 1; }
+grep -qF "不該出現的尾端" "$BRIEF" && { echo "  ✗ 超長 pinned 未被上限擋下"; exit 1; }
+echo "  400 字完整列出,1200 字才截斷"
+
+echo "[brief-scope] (J) 高效用區塊要 2 次觀察、依來源合併、不重複 pinned"
+reset_home home-j
+make_repo "$TMP_DIR/alpha"
+make_repo "$TMP_DIR/beta"
+"$CLI" repo add "$TMP_DIR/alpha" >/dev/null
+"$CLI" repo add "$TMP_DIR/beta" >/dev/null
+DB="$MEMORIA_HOME/.memory/sessions.db"
+seed_memory() { # $1=session id $2=event id $3=project $4=text
+    sql "INSERT INTO sessions (id, timestamp, project, event_count, summary) VALUES ('$1', '2026-01-01T00:00:00.000Z', '$3', 1, '$4')"
+    sql "INSERT INTO events (id, session_id, timestamp, event_type, content) VALUES ('$2', '$1', '2026-01-01T00:00:00.000Z', 'DecisionMade', '{\"decision\":\"$4\"}')"
+}
+seed_utility() { # $1=ref $2=observations $3=mean
+    sql "INSERT INTO memory_utility (ref_id, observations, utility_sum, explicit_observations, explicit_sum, last_outcome_at) VALUES ('$1', 0, 0, $2, $2 * $3, '2026-01-01T00:00:00.000Z')"
+}
+seed_memory gitsum-sum_aaa gitdec-sum_aaa-0 alpha "同一個合併的摘要"
+seed_utility gitsum-sum_aaa 1 1
+"$CLI" brief --global >/dev/null
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+UFL=$(section "## 高效用記憶（UFL）" "$BRIEF")
+case "$UFL" in *"未累積到 2 次"*) ;; *) echo "  ✗ 只有 1 次觀察時沒有說明原因: $UFL"; exit 1 ;; esac
+sql "UPDATE memory_utility SET explicit_observations=2, explicit_sum=2 WHERE ref_id='gitsum-sum_aaa'"
+seed_utility gitdec-sum_aaa-0 2 0.9
+seed_memory note-once noteev-once alpha "只被回報一次的筆記"
+seed_utility note-once 1 1
+seed_memory note-pin noteev-pin alpha "已經釘選的記憶"
+seed_utility note-pin 2 1
+seed_memory note-other noteev-other beta "另一個專案的高分記憶"
+seed_utility note-other 3 1
+seed_memory note-alpha noteev-alpha alpha "本專案的記憶"
+seed_utility note-alpha 2 0.6
+"$CLI" mark note-pin --durable >/dev/null
+"$CLI" brief --global >/dev/null
+UFL=$(section "## 高效用記憶（UFL）" "$BRIEF")
+[ "$(printf '%s\n' "$UFL" | grep -cF "同一個合併的摘要")" = "1" ] || { echo "  ✗ 同一來源未合併: $UFL"; exit 1; }
+case "$UFL" in *"只被回報一次"*) echo "  ✗ 未達 2 次觀察卻上榜: $UFL"; exit 1 ;; esac
+case "$UFL" in *"已經釘選"*) echo "  ✗ pinned 記憶重複列在高效用區塊: $UFL"; exit 1 ;; esac
+# 範圍外的高分記憶不能占掉 topK 的格子。
+SCOPED_UFL=$("$CLI" brief --project alpha --top-k 1 --json | field '.data.high_utility.map(m=>m.ref_id).join(",")')
+[ "$SCOPED_UFL" = "gitsum-sum_aaa" ] || { echo "  ✗ 範圍內記憶被其他專案擠掉: '$SCOPED_UFL'"; exit 1; }
+echo "  門檻、來源合併、pinned 去重與範圍過濾皆符合預期"
 
 echo "[brief-scope] ✓ all checks passed"

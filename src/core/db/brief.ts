@@ -19,6 +19,14 @@ function tableExists(db: Database.Database, name: string): boolean {
     return Boolean(db.prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`).get(name))
 }
 
+// Long enough for any note a person writes; the cap only stops `mark` on a git summary (thousands
+// of characters) from dumping it into the one file every session loads.
+const PINNED_SNIPPET_MAX = 800
+
+// One explicit observation is enough for recall ranking, but the brief is a claim that a memory
+// earned its keep, and a single report cannot tell that apart from one lucky recall.
+const BRIEF_UTILITY_MIN_OBS = 2
+
 export type BriefOptions = {
     project?: string
     days?: number
@@ -80,6 +88,33 @@ function collapseNotePairs(refs: string[]): string[] {
     return kept
 }
 
+/** A git summary's session and decisions are promoted from one source and attributed by one
+ *  feedback call, so they count as one memory here. */
+function gitSummaryIdOf(ref: string): string | null {
+    return /^(?:gitsum|gitdec)-(sum_[^-]+)/.exec(ref)?.[1] ?? null
+}
+
+/** Deal the slots one per project, most recently active first, so a burst in one repository cannot
+ *  evict the others. `rows` must be newest-first; their order is preserved. With a single project
+ *  this is simply the newest `topK`. */
+function allocateDecisions<T extends { project: string }>(rows: T[], topK: number): T[] {
+    const byProject = new Map<string, T[]>()
+    for (const row of rows) {
+        const queue = byProject.get(row.project)
+        if (queue) queue.push(row)
+        else byProject.set(row.project, [row])
+    }
+
+    const picked = new Set<T>()
+    const limit = Math.min(topK, rows.length)
+    for (let round = 0; picked.size < limit; round += 1) {
+        for (const queue of byProject.values()) {
+            if (picked.size < limit && round < queue.length) picked.add(queue[round])
+        }
+    }
+    return rows.filter((row) => picked.has(row))
+}
+
 export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefData {
     const days = options.days && options.days > 0 ? options.days : 30
     const topK = options.topK && options.topK > 0 ? options.topK : 10
@@ -139,7 +174,7 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
         const noteByRef = new Map(durableRows.map((row) => [row.ref_id, row.note]))
 
         // A pinned memory must not also consume a recent-decisions slot (SCN-004). Filtered in SQL
-        // for the same reason the superseded filter is: LIMIT must still yield topK live rows.
+        // for the same reason the superseded filter is: allocation must only see live rows.
         const pinnedClause = durableRefs.length > 0
             ? `AND e.id NOT IN (${durableRefs.map(() => '?').join(',')})`
             : ''
@@ -151,10 +186,10 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
           WHERE e.event_type = 'DecisionMade' AND e.timestamp >= ? ${projectClause}
           ${supersededClause}
           ${pinnedClause}
-          ORDER BY e.timestamp DESC LIMIT ?
-        `).all(since, ...projectParams, ...durableRefs, topK) as Array<{ id: string; timestamp: string; content: string; project: string }>
+          ORDER BY e.timestamp DESC
+        `).all(since, ...projectParams, ...durableRefs) as Array<{ id: string; timestamp: string; content: string; project: string }>
 
-        const decisions: BriefDecision[] = decisionRows.map((row) => {
+        const decisions: BriefDecision[] = allocateDecisions(decisionRows, topK).map((row) => {
             const parsed = parseDecisionEvent(maybeParseJson(row.content))
             return {
                 id: row.id,
@@ -198,12 +233,13 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                 const found = texts.get(ref)
                 if (!found) continue
                 if (project && found.project !== project && !isEnvironmentProject(found.project)) continue
-                pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text), note: noteByRef.get(ref) ?? null })
+                pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text, PINNED_SNIPPET_MAX), note: noteByRef.get(ref) ?? null })
             }
         }
 
         // Memories with an accrued utility signal — what actually earned its keep (UFL Phase 3).
         const high_utility: BriefMemory[] = []
+        let utility_unproven = 0
         if (tableExists(db, 'memory_utility')) {
             const rows = db.prepare(`
               SELECT ref_id, observations, utility_sum, explicit_observations, explicit_sum
@@ -212,36 +248,51 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
 
             // Same exclusion as the decision list: a memory that earned utility
             // before being replaced must not come back through this section.
-            // Filtered before the slice so a replaced entry does not consume a
-            // topK slot.
             const supersededRefs = hasAttributes
                 ? new Set((db.prepare(
                     `SELECT ref_id FROM memory_attributes WHERE superseded_by IS NOT NULL`
                   ).all() as Array<{ ref_id: string }>).map((r) => r.ref_id))
                 : new Set<string>()
+            const pinnedRefs = new Set(durableRefs)
+
+            const observationsOf = (row: typeof rows[number]): number =>
+                row.explicit_observations > 0 ? row.explicit_observations : row.observations
 
             const scored = rows
                 .map((row) => ({ ref_id: row.ref_id, utility: effectiveUtility(row), row }))
                 .filter((entry): entry is { ref_id: string; utility: number; row: typeof rows[number] } => entry.utility !== null)
-                .filter((entry) => !supersededRefs.has(entry.ref_id))
+                .filter((entry) => !supersededRefs.has(entry.ref_id) && !pinnedRefs.has(entry.ref_id))
                 .sort((a, b) => b.utility - a.utility)
-                .slice(0, topK)
 
             if (scored.length > 0) {
                 const texts = resolveRefTexts(db, scored.map((entry) => entry.ref_id))
-                const keptRefs = new Set(collapseNotePairs(scored.map((entry) => entry.ref_id)))
+                const keptRefs = new Set(collapseNotePairs(scored
+                    .filter((entry) => observationsOf(entry.row) >= BRIEF_UTILITY_MIN_OBS)
+                    .map((entry) => entry.ref_id)))
+                const seenSummaries = new Set<string>()
 
+                // Filtered before the topK cut so a duplicate or out-of-scope entry consumes no slot.
                 for (const entry of scored) {
                     const found = texts.get(entry.ref_id)
                     if (!found) continue
                     if (project && found.project !== project) continue
 
+                    if (observationsOf(entry.row) < BRIEF_UTILITY_MIN_OBS) {
+                        utility_unproven += 1
+                        continue
+                    }
                     if (!keptRefs.has(entry.ref_id)) continue
+                    const summaryId = gitSummaryIdOf(entry.ref_id)
+                    if (summaryId !== null) {
+                        if (seenSummaries.has(summaryId)) continue
+                        seenSummaries.add(summaryId)
+                    }
+                    if (high_utility.length >= topK) continue
                     high_utility.push({
                         ref_id: entry.ref_id,
                         project: found.project,
                         utility: Number(entry.utility.toFixed(3)),
-                        observations: entry.row.explicit_observations > 0 ? entry.row.explicit_observations : entry.row.observations,
+                        observations: observationsOf(entry.row),
                         signal: entry.row.explicit_observations > 0 ? 'explicit' : 'reuse',
                         snippet: truncateText(found.text)
                     })
@@ -295,8 +346,9 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
             repositories,
             totals: {
                 sessions: sessionsTotal,
-                decisions_in_window: decisions.length,
+                decisions_in_window: decisionRows.length,
                 environment_memories,
+                utility_unproven,
                 pending_summaries: repositories.reduce((sum, repo) => sum + repo.pending_summaries, 0)
             }
         }
@@ -357,7 +409,9 @@ export function renderBrief(data: BriefData): string {
     lines.push('## 高效用記憶（UFL）')
     lines.push('')
     if (data.high_utility.length === 0) {
-        lines.push('_(尚無效用觀測)_')
+        lines.push(data.totals.utility_unproven > 0
+            ? `_(已有效用觀測，但都未累積到 ${BRIEF_UTILITY_MIN_OBS} 次)_`
+            : '_(尚無效用觀測)_')
     } else {
         for (const memory of data.high_utility) {
             lines.push(`- [${memory.utility}] ${memory.snippet}`)

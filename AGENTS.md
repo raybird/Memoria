@@ -401,8 +401,10 @@ full envelope. `feedback` on an unknown/pruned `recall_id` exits 0 with `updated
 `<knowledge>/BRIEF.md`. Put a read instruction in the consuming project's `AGENTS.md`; for Claude, import `@AGENTS.md` and the generated brief from `CLAUDE.md`. Use the paths printed by `brief`; see [Operations](docs/OPERATIONS.md#context-injection-via-briefmd) for the shared-entry setup.
 
 Since issue-17 it also emits a **pinned block** for `retention='durable'` memories, which is exempt
-from the `--days` window and `topK` — the recent-decisions block is ordered by time alone, so without
-this a memory whose value is "knowing it prevents an outage" loses its slot to routine ones. Run
+from the `--days` window and `topK` — the recent-decisions block ranks by time, never by severity, so
+without this a memory whose value is "knowing it prevents an outage" loses its slot to routine ones.
+That block deals its `topK` slots one per project, most recently active first, so one busy repository
+cannot evict the others. Run
 inside a registered repository, `brief` scopes to it and writes `<knowledge>/BRIEF-<project>.md`
 instead; memories whose `project` is not a registered repository name are environment-class and ride
 along into every project's file, with their count reported on every run so that classification does

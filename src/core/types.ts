@@ -516,6 +516,8 @@ export type BriefData = {
         decisions_in_window: number
         pending_summaries: number
         environment_memories: number
+        /** Memories with a utility signal below the brief's observation threshold. */
+        utility_unproven: number
     }
 }
 
