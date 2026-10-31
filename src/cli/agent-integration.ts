@@ -12,6 +12,8 @@
 //     `<dataRoot>/.agents/instruction-backups/`.
 //   - Preserve every byte outside the managed block. Re-running with the same inputs produces
 //     byte-identical output (idempotent, no duplicate sections).
+//   - Only a marker alone on its line, outside a code fence, delimits the block. Instruction files
+//     quote the marker when describing it, and everything from a quote to the end marker would go.
 
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -37,18 +39,35 @@ export function escapeClaudeImportPath(targetPath: string): string {
     return targetPath.replace(/ /g, '\\ ')
 }
 
+function findManagedBlock(content: string): { start: number; end: number } | null {
+    let offset = 0
+    let inFence = false
+    let start: number | null = null
+    for (const line of content.split('\n')) {
+        const text = line.trim()
+        if (/^(```|~~~)/.test(text)) {
+            inFence = !inFence
+        } else if (!inFence) {
+            if (start === null && text === MANAGED_START) {
+                start = offset + line.indexOf(MANAGED_START)
+            } else if (start !== null && text === MANAGED_END) {
+                return { start, end: offset + line.indexOf(MANAGED_END) + MANAGED_END.length }
+            }
+        }
+        offset += line.length + 1
+    }
+    return null
+}
+
 export function upsertManagedBlock(existingContent: string | null, managedBody: string): string {
     const block = `${MANAGED_START}\n${managedBody.trim()}\n${MANAGED_END}`
     if (existingContent === null || existingContent.length === 0) {
         return `${block}\n`
     }
 
-    const startIdx = existingContent.indexOf(MANAGED_START)
-    const endIdx = existingContent.indexOf(MANAGED_END)
-    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-        const before = existingContent.slice(0, startIdx)
-        const after = existingContent.slice(endIdx + MANAGED_END.length)
-        return `${before}${block}${after}`
+    const managed = findManagedBlock(existingContent)
+    if (managed !== null) {
+        return `${existingContent.slice(0, managed.start)}${block}${existingContent.slice(managed.end)}`
     }
 
     const sep = existingContent.endsWith('\n\n')

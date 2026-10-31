@@ -22,6 +22,7 @@ import {
 import { computeDecayFactor } from '../src/core/db/recall.js'
 import { parseMergeSourceRef } from '../src/core/git/summary-pipeline.js'
 import { isPromotable } from '../src/core/db/git-promote.js'
+import { MANAGED_END, MANAGED_START, upsertManagedBlock } from '../src/cli/agent-integration.js'
 import type { GitSummaryRecord } from '../src/core/types.js'
 import { embedTexts, setLocalPipelineForTest, DIM } from '../skills/memoria-vector/embed.mjs'
 
@@ -315,6 +316,41 @@ if (savedProvider === undefined) delete process.env.MEMORIA_EMBED_PROVIDER
 else process.env.MEMORIA_EMBED_PROVIDER = savedProvider
 if (savedBatch === undefined) delete process.env.MEMORIA_EMBED_BATCH
 else process.env.MEMORIA_EMBED_BATCH = savedBatch
+
+// upsertManagedBlock: a marker someone merely quotes must never open the replaced range — that
+// deleted every line between the quote and the real end marker of a user's CLAUDE.md.
+{
+    const realBlock = `${MANAGED_START}\nold\n${MANAGED_END}`
+    const newBlock = `${MANAGED_START}\nnew\n${MANAGED_END}`
+
+    const quoted = `the block (\`${MANAGED_START}\`) is at the end\nkeep this rule\n\n${realBlock}\n`
+    eq('an inline quote of the marker keeps the text around it',
+        upsertManagedBlock(quoted, 'new'),
+        `the block (\`${MANAGED_START}\`) is at the end\nkeep this rule\n\n${newBlock}\n`)
+
+    const fenced = `\`\`\`md\n${MANAGED_START}\n\`\`\`\nkeep this rule\n${realBlock}\n`
+    eq('a marker inside a code fence is an example, not the block',
+        upsertManagedBlock(fenced, 'new'),
+        `\`\`\`md\n${MANAGED_START}\n\`\`\`\nkeep this rule\n${newBlock}\n`)
+
+    const quoteOnly = `see \`${MANAGED_START}\` and \`${MANAGED_END}\`\n`
+    eq('quoted markers with no real block append a new one',
+        upsertManagedBlock(quoteOnly, 'new'),
+        `${quoteOnly}\n${newBlock}\n`)
+
+    const crlf = `before\r\n  ${MANAGED_START}\r\nold\r\n  ${MANAGED_END}\r\nafter\r\n`
+    eq('indented CRLF markers are still the block, and outside bytes survive',
+        upsertManagedBlock(crlf, 'new'),
+        `before\r\n  ${newBlock}\r\nafter\r\n`)
+
+    const unclosed = `${MANAGED_START}\nno end marker\n`
+    eq('a start marker with no end marker replaces nothing',
+        upsertManagedBlock(unclosed, 'new'),
+        `${unclosed}\n${newBlock}\n`)
+
+    const rerun = upsertManagedBlock(quoted, 'new')
+    eq('re-running is idempotent', upsertManagedBlock(rerun, 'new'), rerun)
+}
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)
 process.exit(failures === 0 ? 0 : 1)

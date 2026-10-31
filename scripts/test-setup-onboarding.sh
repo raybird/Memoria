@@ -170,6 +170,15 @@ RECALL_RERUN=$(cd "$OTHER_CWD" && HOME="$H_INT" XDG_CONFIG_HOME="$XDG_INT" "$CLI
 echo "$RECALL_RERUN" | node -e 'const d=JSON.parse(require("node:fs").readFileSync(0,"utf8")); if(!d.ok||d.data.length===0) throw new Error("memory lost on rerun");'
 echo "  ✓ SCN-008: rerun preserves existing memories and custom rules without duplicating managed blocks"
 
+# A marker quoted in the user's own prose must not be taken for the block: replacing from it deleted
+# every line up to the real end marker.
+cp "$H_INT/.claude/CLAUDE.md" "$TMP_DIR/quoted-claude.md"
+{ printf '# Rules\nThe block (`%s`) is at the end.\nQuoted marker rule stays.\n\n' '<!-- memoria:managed:start -->'; cat "$TMP_DIR/quoted-claude.md"; } > "$H_INT/.claude/CLAUDE.md"
+(cd "$OTHER_CWD" && HOME="$H_INT" XDG_CONFIG_HOME="$XDG_INT" "$CLI" setup --scope global --agent both --no-vector --yes >/dev/null)
+grep -q "Quoted marker rule stays." "$H_INT/.claude/CLAUDE.md" || { echo "  ✗ setup deleted rules after a quoted managed marker"; exit 1; }
+grep -q "Keep this rule intact." "$H_INT/.claude/CLAUDE.md" || { echo "  ✗ setup deleted the custom rule after the block"; exit 1; }
+echo "  ✓ a quoted managed marker survives setup with the text around it"
+
 echo "[setup-onboarding] Step 5: Vector enablement on empty & populated DB, cursor immunity, failure & retry (SCN-006, SCN-007, SCN-010, SCN-013)"
 # SCN-007 & SCN-013: Empty DB with --vector runs isolated probe, leaves 0 sessions/events/telemetry in real DB
 H_EMPTY="$TMP_DIR/home-empty"
