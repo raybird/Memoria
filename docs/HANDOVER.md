@@ -8,12 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-10-28 當前狀態
+> 2026-10-31 當前狀態
 
-- **已發布版本**：[`v1.34.0`](https://github.com/raybird/Memoria/releases/tag/v1.34.0)（2026-10-28）；前一版為 `v1.33.0`（2026-10-26）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/40648391420) 六個 job 全部成功，四平台 tar／checksum 與 installer 共九個資產已公開，`release.sh publish` 的公開產物 parity 與 npm 精確版本 1.34.0 均確認（`latest` 為 1.34.0，`_npmUser` 為 GitHub Actions）。release commit 為 `0183d5e`，annotated tag 指向相同提交，其 [main CI](https://github.com/raybird/Memoria/actions/runs/40648386469) 亦成功。
-- **交付內容**：issue-29 host skill 改以 symlink 連到 `<memoria-home>/.agents/skills/memoria`，由 `a21ba4f` fast-forward 至 `02debc7`，結案提交 `4281f3c`。兩輪獨立審查 [e478053](issues/issue-29/review-e478053.md)、[38a3db3](issues/issue-29/review-38a3db3.md) 皆 PASS，報告提交均通過 artifact 例外；第一輪 S-1／S-2 依使用者決策處理。`4281f3c` 完整 CI 十個 job 成功。
-- **使用入口**：`npm i -g @raybird.chen/memoria@1.34.0` 後對既有資料根重跑 `memoria setup --agent both`（或所用 host）：舊實體副本備份一次後轉連結，之後不帶 `--agent` 的 setup 即同步所有 host。經 host 路徑改的檔案會被下次 setup 覆蓋且不備份。
-- **下一步**：Windows junction 與真實宿主經連結探索 skill 尚未實機驗證；[review-38a3db3](issues/issue-29/review-38a3db3.md) 的四項 NICE TO HAVE 未處理。
+- **已發布版本**：[`v1.35.0`](https://github.com/raybird/Memoria/releases/tag/v1.35.0)（2026-10-31）；前一版為 `v1.34.0`（2026-10-28）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/41178813427) 成功，四平台安裝包與 `install.sh` 已上傳，npm `latest` 為 1.35.0，registry 確認由 trusted publisher 發布並帶 provenance。
+- **交付內容**：brief 依專案輪流分配近期決策 `7392af8`，發版提交 `af38c9d`。`期間決策` 改報窗口實際筆數、常駐約束上限 800 字、高效用區塊要 2 次觀察並合併來源。真實資料預覽 10 個專案全部露出，brief 由 11.8 KB 降到 10.2 KB。這次未開 issue 文件。
+- **使用入口**：`npm i -g @raybird.chen/memoria@1.35.0` 後重跑 `memoria brief --global` 或 `memoria brief`。schema、recall 排名、prune 門檻不變；`GET /v1/brief` 新增 `totals.utility_unproven`，`totals.decisions_in_window` 改為窗口實際筆數。
+- **下一步**：`brief` 與 `doctor` 顯示 repo 掃描落後的 commit 數；commit range 骨架的清理策略；telemetry 只存 `query_hash`，零效用查詢無法診斷。三項都還沒開 issue。
 
 ### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
@@ -129,6 +129,8 @@
 ---
 
 ## 5. 下一步（接續就從這開始）
+
+2026-10-31：v1.35.0 已公開發布，brief 分配與數字修正併入 main，完整 main CI、四平台安裝包及 npm 驗證完成。
 
 2026-10-28：issue-29 已合併且 v1.34.0 已公開發布，兩輪獨立審查、完整 main CI、四平台安裝包及 npm 驗證完成。接續以升級後 host 連結的實際使用回饋為主。
 
