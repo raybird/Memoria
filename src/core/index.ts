@@ -85,6 +85,8 @@ export {
 } from './db/index.js'
 export { resolveRepositoryIdentity, normalizeRemoteUrl } from './git/identity.js'
 export { getHostId } from './git/host.js'
+export { measureScanLag } from './git/scan-lag.js'
+export type { RepoScanLag } from './git/scan-lag.js'
 export { runGit, GitExecError } from './git/git-exec.js'
 export { parseGitSummaryPayload, gitSummaryPayloadSchema, parseDismissTypes } from './git/summary-schema.js'
 export {

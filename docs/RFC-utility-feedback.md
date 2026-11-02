@@ -123,7 +123,7 @@ reuseScore(pendingRecall, turnText) =
 | reuse 是弱/雜訊訊號,可能被誤當真值 | Phase 0 先量鑑別力(§10)才准進 Phase 1;MVP 只記錄不行動;任何決策都在**聚合**上做,絕不憑單筆 outcome。 |
 | lexical reuse 漏掉「讀了但改寫」 | 已知 false-negative,偏保守;Phase 3 的明確回饋(`outcome_kind='explicit'`)作為高保真補充。 |
 | 跨 process 關聯遺失(pendingRecall 對不上) | 沿用 `hook-state.ts` 既驗證過的磁碟關聯機制;對不上就當沒這筆,無害。 |
-| 隱私 | 只存 `utility_score`(數字)、`outcome_kind`、hit id;**不存原始 turn 文本**,與既有 `query_hash` 的隱私立場一致。 |
+| 隱私 | 只存 `utility_score`(數字)、`outcome_kind`、hit id;**不存原始 turn 文本**,與既有 `query_hash` 的隱私立場一致。(2026-11-02 補充:查詢文字改為 opt-in 的 `telemetry.storeQueryText`,預設仍只存 hash。) |
 | 非 adapter 呼叫者無 outcome | 預期內:utility 只在有標註的列上統計,分母排除未標註列(與 `zeroHitRate` 只算 non-skipped 同精神)。 |
 | Migration 相容 | guarded ALTER,舊 DB 可讀;`test-migrations.sh` 覆蓋 backfill 與冪等。 |
 

@@ -25,6 +25,7 @@ memoria remember "..." --sensitivity private       # Mark for export --redact
 memoria recall "..." --include-superseded          # Include replaced versions
 memoria export --redact                  # Code-name known entities in private memories
 memoria stats [--json]                 # Statistics
+memoria stats --zero-utility [--window P30D] [--limit 20] [--json]  # Recalls reported useless or with no hits
 memoria doctor [--json]                # Local health check
 memoria verify [--json]                # Full verification
 memoria index build [--json]           # Incremental tree-index rebuild
@@ -35,6 +36,7 @@ memoria repo add /path/to/project      # Observe a git repo (read-only)
 memoria repo sync project              # Incremental scan → events → summaries → promotion
 memoria repo summarize project --pending --json  # Summary requests for agent enrichment
 memoria repo summarize project --dismiss-pending --type merge,release  # Skip teammates' skeletons without promoting them
+# Writing back a merge or release summary also dismisses the commit-range skeletons inside it; the result reports dismissed_covered
 memoria wiki build --json              # Rebuild the compiled wiki
 memoria wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 memoria wiki lint --json               # Produce durable wiki governance findings

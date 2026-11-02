@@ -9,6 +9,7 @@
 #   (C) provenance is recorded as source_type='cli_note'
 #   (D) feedback writes explicit utility back into memory_utility, kept apart from the reuse proxy
 #   (E) an unknown recall_id is a graceful no-op, not an error
+#   (N) query text is off by default; opted in it is masked and capped, and stats --zero-utility reads it
 
 set -euo pipefail
 
@@ -159,5 +160,53 @@ if (Math.abs(ru.uplift - 0.35) > 1e-6) fail("uplift should be 0.35");
 '
 MEMORIA_HOME="$FRESH" "$CLI" stats | grep -q "route_utility:" || { echo "  ✗ human-readable stats missing route_utility line"; exit 1; }
 echo "  absent with no outcomes; after 2 routes: best=tree uplift=0.35"
+
+echo "[cli-memory] (N) 查詢文字預設不存，opt-in 後遮罩、限長，stats --zero-utility 可讀"
+TEXT_HOME="$TMP_DIR/home-text"
+DB="$TEXT_HOME/.memory/sessions.db"
+export MEMORIA_HOME="$TEXT_HOME"
+"$CLI" init >/dev/null
+"$CLI" remember "資料庫備份一律走排程 pipeline" --project demo >/dev/null
+last_recall_id() { q "SELECT id FROM recall_telemetry ORDER BY created_at DESC, rowid DESC LIMIT 1"; }
+
+"$CLI" recall "資料庫備份 pipeline" --project demo >/dev/null
+[ "$(q "SELECT COUNT(*) FROM recall_telemetry WHERE query_text IS NOT NULL")" = "0" ] || { echo "  ✗ 預設不該存查詢文字"; exit 1; }
+"$CLI" feedback "$(last_recall_id)" --score 0 >/dev/null
+OUT=$("$CLI" stats --zero-utility)
+case "$OUT" in *"hash:"*"telemetry.storeQueryText"*) ;; *) echo "  ✗ 沒有文字時應顯示 hash 與啟用方式: $OUT"; exit 1 ;; esac
+
+mkdir -p "$TEXT_HOME/configs"
+echo '{"telemetry":{"storeQueryText":true}}' > "$TEXT_HOME/configs/config.json"
+"$CLI" recall "資料庫備份 password=hunter2hunter2 pipeline" --project demo >/dev/null
+SECRET_ID=$(last_recall_id)
+TEXT=$(q "SELECT query_text FROM recall_telemetry WHERE id = '$SECRET_ID'")
+case "$TEXT" in *hunter2*) echo "  ✗ 祕密未遮罩: $TEXT"; exit 1 ;; *"[MASKED]"*) ;; *) echo "  ✗ 查詢文字未寫入: '$TEXT'"; exit 1 ;; esac
+[ -n "$(q "SELECT query_hash FROM recall_telemetry WHERE id = '$SECRET_ID'")" ] || { echo "  ✗ hash 不該因此消失"; exit 1; }
+
+LONG=$(node -e 'console.log("資料庫備份 ".repeat(100))')
+"$CLI" recall "$LONG" --project demo >/dev/null
+[ "$(q "SELECT LENGTH(query_text) FROM recall_telemetry ORDER BY created_at DESC, rowid DESC LIMIT 1")" = "200" ] || { echo "  ✗ 查詢文字未限長"; exit 1; }
+
+"$CLI" recall "這是完全不會命中的查詢 zzqqxx" --project demo >/dev/null
+"$CLI" recall "資料庫備份 排程" --project demo >/dev/null
+"$CLI" feedback "$(last_recall_id)" --score 0.9 --used >/dev/null
+Z_JSON=$("$CLI" stats --zero-utility --json)
+node -e '
+const d = JSON.parse(process.argv[1]).data;
+const fail = (m) => { console.error("  ✗ " + m + ": " + process.argv[1]); process.exit(1); };
+if (d.rows.some((r) => r.utility_score > 0)) fail("有效用的查詢不該列出");
+if (!d.rows.some((r) => r.utility_score === 0)) fail("回報 0 分的查詢應列出");
+if (!d.rows.some((r) => r.hit_count === 0 && r.query_text && r.query_text.includes("zzqqxx"))) fail("零命中的查詢應列出且可讀");
+if (d.calibration || d.routeUtility) fail("只含失敗的清單不該給校準讀數");
+' "$Z_JSON"
+"$CLI" stats --zero-utility --limit 1 --json | jq_field '.data.rows.length' | grep -qx 1 || { echo "  ✗ --limit 無效"; exit 1; }
+if "$CLI" stats --zero-utility --window 30d >/dev/null 2>&1; then echo "  ✗ 無效 --window 應該失敗"; exit 1; fi
+
+# 設定檔壞掉時 recall 照常，而且不能因此開始寫文字。
+BEFORE=$(q "SELECT COUNT(*) FROM recall_telemetry WHERE query_text IS NOT NULL")
+echo '{not json' > "$TEXT_HOME/configs/config.json"
+"$CLI" recall "資料庫備份 pipeline" --project demo >/dev/null
+[ "$(q "SELECT COUNT(*) FROM recall_telemetry WHERE query_text IS NOT NULL")" = "$BEFORE" ] || { echo "  ✗ 設定損毀時不該寫入文字"; exit 1; }
+echo "  預設只存 hash；opt-in 後遮罩、限長並可列出，設定損毀時不寫入"
 
 echo "[cli-memory] ✓ all checks passed"

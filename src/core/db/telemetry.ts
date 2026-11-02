@@ -1,9 +1,13 @@
 import { existsSync } from '../paths.js'
 import { shortHash, normalizeSkillKey, parseCreatedAt, tokenizeQuery, buildCalibration, buildRouteUtility } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
+import { maskSecrets } from '../git/secret-filter.js'
 import { initDatabase } from './schema.js'
 import { withDb } from './connection.js'
 import type { StatsData, RecallTelemetryData, GovernanceReviewData, GovernanceReviewItem, GovernanceReviewOptions } from '../types.js'
+
+// Enough to read what was asked; a pasted document is not a query worth keeping.
+const QUERY_TEXT_MAX = 200
 
 function countQueryTokens(query: string): number {
     return tokenizeQuery(query).length
@@ -14,7 +18,7 @@ export function logRecallTelemetry(
     // topConfidence is nullable (issue-9): a recall whose top hit came from the semantic index has
     // no measurable lexical match quality. Stored as NULL so buildCalibration skips the row rather
     // than bucketing an unmeasurable recall as a low-confidence one.
-    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number; query?: string; topConfidence?: number | null }
+    input: { routeMode: string; fallbackUsed: boolean; hitCount: number; latencyMs: number; query?: string; topConfidence?: number | null; storeQueryText?: boolean }
 ): string | null {
     if (!existsSync(dbPath)) return null
 
@@ -32,7 +36,8 @@ export function logRecallTelemetry(
             top_confidence REAL,
             utility_score REAL,
             outcome_kind TEXT,
-            observed_at DATETIME
+            observed_at DATETIME,
+            query_text TEXT
           );
           CREATE INDEX IF NOT EXISTS idx_recall_telemetry_created ON recall_telemetry(created_at);
           CREATE INDEX IF NOT EXISTS idx_recall_telemetry_route ON recall_telemetry(route_mode, created_at);
@@ -63,6 +68,12 @@ export function logRecallTelemetry(
             tokenCount,
             topConfidence
         )
+        // A separate statement so the default path never names a column that a caller skipping
+        // initDatabase may not have. Masked before the cap: a cut secret would no longer match.
+        if (input.storeQueryText && typeof input.query === 'string' && input.query.trim()) {
+            const queryText = maskSecrets(input.query.trim()).text.slice(0, QUERY_TEXT_MAX)
+            db.prepare(`UPDATE recall_telemetry SET query_text = ? WHERE id = ?`).run(queryText, id)
+        }
         return id
     })
 }
@@ -256,7 +267,7 @@ export function queryStats(dbPath: string): StatsData {
 
 export function queryRecallTelemetry(
     dbPath: string,
-    options?: { window?: string; limit?: number }
+    options?: { window?: string; limit?: number; zeroUtility?: boolean }
 ): RecallTelemetryData {
     return withDb(dbPath, (db) => {
         const window = options?.window && /^P\d+D$/.test(options.window) ? options.window : 'P7D'
@@ -273,12 +284,18 @@ export function queryRecallTelemetry(
             return { window, total: 0, rows: [] }
         }
 
+        // Recalls that helped nobody: reported useless, or found nothing at all. A skipped query
+        // returned nothing on purpose (adaptive gate), so it is not a miss.
+        const zeroUtilityClause = options?.zeroUtility
+            ? `AND (utility_score = 0 OR (hit_count = 0 AND route_mode <> 'skipped'))`
+            : ''
+
         const rows = db
             .prepare(`
-              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at, query_hash, token_count, top_confidence,
+              SELECT id, route_mode, fallback_used, hit_count, latency_ms, created_at, query_hash, query_text, token_count, top_confidence,
                      utility_score, outcome_kind, observed_at
               FROM recall_telemetry
-              WHERE created_at >= ?
+              WHERE created_at >= ? ${zeroUtilityClause}
               ORDER BY created_at DESC
               LIMIT ?
             `)
@@ -290,6 +307,7 @@ export function queryRecallTelemetry(
             latency_ms: number
             created_at: string
             query_hash: string | null
+            query_text: string | null
             token_count: number | null
             top_confidence: number | null
             utility_score: number | null
@@ -298,11 +316,13 @@ export function queryRecallTelemetry(
         }>
 
         // UFL Phase 2: calibration over the returned window. Additive; omitted when nothing is scored.
+        // A filtered list holds only failures, so any aggregate over it would read as a real curve.
+        const scored = options?.zeroUtility ? [] : rows
         const calibration = buildCalibration(
-            rows.map((r) => ({ confidence: r.top_confidence, utility: r.utility_score }))
+            scored.map((r) => ({ confidence: r.top_confidence, utility: r.utility_score }))
         )
         const routeUtility = buildRouteUtility(
-            rows.map((r) => ({ route: r.route_mode, confidence: r.top_confidence, utility: r.utility_score }))
+            scored.map((r) => ({ route: r.route_mode, confidence: r.top_confidence, utility: r.utility_score }))
         )
 
         return {
@@ -318,6 +338,7 @@ export function queryRecallTelemetry(
                 latency_ms: Number(r.latency_ms ?? 0),
                 created_at: r.created_at,
                 query_hash: r.query_hash ?? undefined,
+                query_text: r.query_text ?? undefined,
                 token_count: r.token_count == null ? undefined : Number(r.token_count),
                 top_confidence: r.top_confidence == null ? undefined : Number(r.top_confidence),
                 utility_score: r.utility_score == null ? undefined : Number(r.utility_score),

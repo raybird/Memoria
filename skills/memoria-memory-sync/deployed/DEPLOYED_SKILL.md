@@ -80,7 +80,7 @@ Done when: the text makes sense on its own outside this conversation and include
    MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" repo summarize <repo> --submit <summary id> --file <payload.json> --json
    ```
 
-Sync also creates pending skeletons for other people's merges and releases. Write back only your own; after that, `repo summarize <repo> --dismiss-pending --type merge,release` clears the rest from the brief's pending count without putting them into recall.
+Sync also creates pending skeletons for other people's merges and releases. Write back only your own; after that, `repo summarize <repo> --dismiss-pending --type merge,release` clears the rest from the brief's pending count without putting them into recall. Commit-range skeletons inside a merge or release you write back are dismissed for you (`dismissed_covered` in the result).
 
 Done when: the `--json` submit result shows `status: enriched` and `promoted: true`.
 

@@ -8,6 +8,7 @@
 #   4. summaries carry key_changes/decisions/limitations/risks and trace to base/head SHA
 #   5. sensitive paths are excluded and secrets masked in pending-request context
 #   6. agent write-back enriches the SAME row (no duplicate), validated via Zod
+#   7. enriching a merge dismisses the commit-range skeletons it covers, and only those
 
 set -euo pipefail
 
@@ -312,6 +313,52 @@ FORCED_BATCH=$("$CLI" repo summarize "$REPO_ID" --dismiss-pending --type branch 
 assert_eq "batch skips the promoted one" "$(json_get "$FORCED_BATCH" "d.data.skipped_promoted")" "1"
 assert_eq "batch still dismisses the others" "$(json_get "$FORCED_BATCH" "d.data.dismissed")" "$OTHER_BRANCHES"
 assert_eq "promoted summary stays pending" "$(status_of "$FORCED_ID")" "pending"
+
+echo "[repo-summary] enriching a milestone dismisses the commit-range skeletons it covers"
+COV="$TMP_DIR/covered"
+git init -q -b main "$COV"
+seq 1 30 > "$COV/base.txt"
+git -C "$COV" add . && git -C "$COV" "${GIT_ID[@]}" commit -q -m "base"
+"$CLI" repo add "$COV" --json >/dev/null
+COV_ID=$("$CLI" repo list --json | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).data.find((r)=>r.repository.name==='covered').repository.id)")
+add_commits() { # $1=file prefix — two commits, enough to pass the triviality gate
+    for n in 1 2; do
+        seq 1 40 > "$COV/$1-$n.txt"
+        git -C "$COV" add . && git -C "$COV" "${GIT_ID[@]}" commit -q -m "$1 $n"
+    done
+}
+newest_range() { # the commit_range the last sync created; commits made in one second leave its head unpredictable
+    db_get "SELECT id FROM git_summaries WHERE repository_id = '$COV_ID' AND summary_type = 'commit_range' ORDER BY rowid DESC LIMIT 1"
+}
+
+git -C "$COV" switch -q -c feature
+add_commits feature
+"$CLI" repo sync "$COV_ID" >/dev/null
+INSIDE_ID=$(newest_range)
+git -C "$COV" switch -q main
+add_commits outside
+"$CLI" repo sync "$COV_ID" >/dev/null
+OUTSIDE_ID=$(newest_range)
+assert_eq "both ranges start pending" "$(status_of "$INSIDE_ID")$(status_of "$OUTSIDE_ID")" "pendingpending"
+
+# A commit-range write-back is not a milestone, so it must not sweep anything.
+RANGE_SUBMIT=$("$CLI" repo summarize "$COV_ID" --submit "$OUTSIDE_ID" --file "$TMP_DIR/payload.json" --json)
+assert_eq "a commit-range write-back dismisses nothing" "$(json_get "$RANGE_SUBMIT" "d.data.dismissed_covered")" "0"
+assert_eq "the covered range is still pending" "$(status_of "$INSIDE_ID")" "pending"
+
+add_commits later
+"$CLI" repo sync "$COV_ID" >/dev/null
+LATER_ID=$(newest_range)
+git -C "$COV" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature'" feature
+"$CLI" repo sync "$COV_ID" >/dev/null
+MERGE_ID=$(db_get "SELECT id FROM git_summaries WHERE repository_id = '$COV_ID' AND summary_type = 'merge'")
+MERGE_SUBMIT=$("$CLI" repo summarize "$COV_ID" --submit "$MERGE_ID" --file "$TMP_DIR/payload.json" --json)
+assert_eq "merge write-back reports what it covered" "$(json_get "$MERGE_SUBMIT" "d.data.dismissed_covered")" "1"
+assert_eq "the range inside the merge is dismissed" "$(status_of "$INSIDE_ID")" "dismissed"
+assert_eq "a range outside the merge stays pending" "$(status_of "$LATER_ID")" "pending"
+assert_eq "an enriched range is left alone" "$(status_of "$OUTSIDE_ID")" "enriched"
+"$CLI" repo summarize "$COV_ID" --submit "$INSIDE_ID" --file "$TMP_DIR/payload.json" --json >/dev/null
+assert_eq "a dismissed skeleton can still be written back" "$(status_of "$INSIDE_ID")" "enriched"
 
 echo "[repo-summary] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"

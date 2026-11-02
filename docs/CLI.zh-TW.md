@@ -25,6 +25,7 @@ memoria remember "..." --sensitivity private       # 標記供 export --redact �
 memoria recall "..." --include-superseded          # 一併顯示被取代的版本
 memoria export --redact                  # 對 private 記憶中的已知實體代稱化
 memoria stats [--json]                 # 統計
+memoria stats --zero-utility [--window P30D] [--limit 20] [--json]  # 列出回報無用或零命中的召回
 memoria doctor [--json]                # 本地健康檢查
 memoria verify [--json]                # 完整驗證
 memoria index build [--json]           # 增量重建 tree index
@@ -35,6 +36,7 @@ memoria repo add /path/to/project      # 唯讀觀察 git repo
 memoria repo sync project              # 增量掃描 → 事件 → 摘要 → promotion
 memoria repo summarize project --pending --json  # 待 agent 增強的摘要請求
 memoria repo summarize project --dismiss-pending --type merge,release  # 略過他人的骨架，不寫進記憶
+# 寫回 merge 或 release 摘要時，會一併略過範圍內的 commit range 骨架；結果回報 dismissed_covered
 memoria wiki build --json              # 重建 compiled wiki
 memoria wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 memoria wiki lint --json               # 產生 durable wiki governance findings

@@ -238,6 +238,9 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
                     const s = result.data!.summary
                     console.log(`✓ 已寫回摘要: ${s.id} (generator=${s.generator}, status=${s.status})`)
                     console.log(`- ${s.title}`)
+                    if (result.data!.dismissed_covered > 0) {
+                        console.log(`- 已略過 ${result.data!.dismissed_covered} 筆被已寫回摘要涵蓋的 commit range 骨架`)
+                    }
                 }
                 return
             }

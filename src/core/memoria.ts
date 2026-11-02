@@ -65,6 +65,7 @@ import { importSourceFile } from './source-import.js'
 import { loadMemoriaConfig } from './config.js'
 import { resolveRepositoryIdentity } from './git/identity.js'
 import { getHostId } from './git/host.js'
+import { measureScanLag } from './git/scan-lag.js'
 import { scanSnapshot, listNewCommits, getCommitStats } from './git/scanner.js'
 import { detectChanges } from './git/change-detector.js'
 import { planCommitRanges, classifyTriviality } from './git/range-planner.js'
@@ -77,6 +78,7 @@ import {
     summarizeMergeCommit,
     summarizeTag,
     RELEASE_TAG_PATTERN,
+    dismissCoveredCommitRanges,
     type SummaryPipelineInput
 } from './git/summary-pipeline.js'
 import { recallVector, rrfFuse } from './recall-vector.js'
@@ -528,12 +530,24 @@ export class MemoriaCore {
         return withResult('sqlite', async () => {
             if (runtime.initialize !== false) await this.init()
             const data = queryBrief(this.paths.dbPath, options ?? {})
+            await this.attachScanLag(data)
             const evidence = [
                 ...data.decisions.map((decision) => decision.id),
                 ...data.high_utility.map((memory) => memory.ref_id)
             ]
             return { data, evidence, confidence: 1 }
         })
+    }
+
+    // Measured here rather than in queryBrief, which is a pure read of the database. The brief is
+    // complete without this, so a git failure leaves the counts unknown instead of failing it.
+    private async attachScanLag(data: BriefData): Promise<void> {
+        if (data.repositories.length === 0) return
+        try {
+            const lags = await measureScanLag(this.paths.dbPath, this.paths.memoryDir)
+            const byName = new Map(lags.map((lag) => [lag.repository, lag.unscanned_commits]))
+            for (const repo of data.repositories) repo.unscanned_commits = byName.get(repo.repository) ?? null
+        } catch { /* stays null */ }
     }
 
     // ─── recall() ────────────────────────────────────────────────────────────
@@ -730,6 +744,7 @@ export class MemoriaCore {
                     hitCount: hits.length,
                     latencyMs: elapsed(),
                     query: filter.query,
+                    storeQueryText: await this.shouldStoreQueryText(),
                     // Stored as NULL, which buildCalibration already skips — so an unjudgeable
                     // recall drops out of the calibration table instead of piling into its lowest
                     // confidence bucket and faking a "low confidence, high utility" pattern.
@@ -819,7 +834,16 @@ export class MemoriaCore {
 
     // ─── recallTelemetry() ────────────────────────────────────────────────────
 
-    async recallTelemetry(options?: { window?: string; limit?: number }): Promise<MemoriaResult<RecallTelemetryData>> {
+    // Fail closed: an unreadable config must not turn on writing query text.
+    private async shouldStoreQueryText(): Promise<boolean> {
+        try {
+            return (await loadMemoriaConfig(this.paths)).telemetry.storeQueryText
+        } catch {
+            return false
+        }
+    }
+
+    async recallTelemetry(options?: { window?: string; limit?: number; zeroUtility?: boolean }): Promise<MemoriaResult<RecallTelemetryData>> {
         return withResult('sqlite', async () => {
             if (!existsSync(this.paths.dbPath)) {
                 throw new Error('Database not found. Run init first.')
@@ -1230,10 +1254,10 @@ export class MemoriaCore {
     }
 
     /** Agent write-back (D1): validate the §7.5 payload, enrich in place, auto-promote if eligible. */
-    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean }>> {
+    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean; dismissed_covered: number }>> {
         return withResult('sqlite', async () => {
             await this.init()
-            const { repositoryId, repositoryName } = await this.resolveManagedRepo(ref)
+            const { repositoryId, repositoryName, root } = await this.resolveManagedRepo(ref)
             const parsed = parseGitSummaryPayload(payload)
             const existing = getSummaryById(this.paths.dbPath, summaryId)
             if (!existing || existing.repository_id !== repositoryId) {
@@ -1265,7 +1289,15 @@ export class MemoriaCore {
                     if (promoted) this.indexPromotedSession(outcome.memoryIds[0])
                 }
             } catch { /* summary stays enriched; next sync retries promotion */ }
-            return { data: { summary, promoted }, evidence: [summary.id], confidence: 1 }
+            // Housekeeping after the write that mattered: a failure leaves skeletons pending, and the
+            // next milestone written back sweeps the whole repository again.
+            let dismissedCovered = 0
+            if (summary.summary_type === 'merge' || summary.summary_type === 'release') {
+                try {
+                    dismissedCovered = (await dismissCoveredCommitRanges(this.paths.dbPath, root, repositoryId)).length
+                } catch { /* stays pending */ }
+            }
+            return { data: { summary, promoted, dismissed_covered: dismissedCovered }, evidence: [summary.id], confidence: 1 }
         })
     }
 

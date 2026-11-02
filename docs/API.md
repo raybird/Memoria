@@ -31,7 +31,7 @@ Launch: `memoria serve` (port 3917, override via `MEMORIA_PORT`).
 |--------|------|-------------|
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Statistics |
-| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (query: `window`, `limit`) |
+| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (query: `window`, `limit`, `zero_utility=true` to list only recalls reported useless or with no hits; that list carries no calibration). Rows carry `query_text` only with `telemetry.storeQueryText` on |
 | `GET`  | `/v1/brief` | Compiled brief — structured data **and** rendered markdown (query: `project`, `days`, `top_k`); never writes `BRIEF.md` |
 | `POST` | `/v1/remember` | Write memory (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | Recall memories (body: `{query, top_k?, project?, scope?, mode?}`; `mode:'vector'` = opt-in semantic recall, needs `LIBSQL_URL` + `skills/memoria-vector`, degrades to lexical) |
@@ -48,7 +48,7 @@ Launch: `memoria serve` (port 3917, override via `MEMORIA_PORT`).
 | `POST` | `/v1/repos/:ref/sync` | Incremental git scan (`{generate_summaries?, dry_run?, ...}`) |
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summaries awaiting agent enrichment |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back. A merge or release write-back also dismisses the pending commit-range skeletons it covers and reports `dismissed_covered` |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Skip a pending summary (not auto-promoted; a later `--submit` or an explicit `--promote` can still put it in recall; `409` if it is enriched or already in recall) |
 | `POST` | `/v1/repos/:ref/summaries/dismiss` | Skip pending summaries by `{types}`; ones already in recall are skipped (`skipped_promoted`) |
 

@@ -84,17 +84,19 @@ assert_eq "high-importance skeleton not promoted either (R1)" \
     "$(db_get "SELECT COUNT(*) FROM memory_sources")" "0"
 MERGE_ID=$(json_get "$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")" "d.data.requests.find(r => r.summary_type === 'merge').summary_id")
 assert_eq "merge skeleton still pending" "$(test -n "$MERGE_ID" && echo yes)" "yes"
+PENDING=$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")
+SUM_ID=$(json_get "$PENDING" "d.data.requests.find(r => r.summary_type === 'commit_range').summary_id")
+assert_eq "pending commit_range request found" "$(test -n "$SUM_ID" && echo yes)" "yes"
 MERGE_SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$MERGE_ID" -H 'Content-Type: application/json' -d '{
   "title": "合併預訂衝突驗證分支", "summary": "把 feature/reservation 併回 main。",
   "decisions": [{"decision": "以資料庫唯一約束為最終防線", "reason": "應用層檢查有 race window"}],
   "importance": 0.5, "confidence": 0.8
 }')
 assert_eq "merge promoted after enrichment" "$(json_get "$MERGE_SUBMIT" "d.data.promoted")" "true"
+assert_eq "merge write-back dismisses the range it covers" "$(json_get "$MERGE_SUBMIT" "d.data.dismissed_covered")" "1"
+assert_eq "covered range left pending" "$(db_get "SELECT status FROM git_summaries WHERE id = '$SUM_ID'")" "dismissed"
 
-PENDING=$(curl -sf "$URL/v1/repos/$REPO_ID/summaries/pending")
-SUM_ID=$(json_get "$PENDING" "d.data.requests.find(r => r.summary_type === 'commit_range').summary_id")
-assert_eq "pending commit_range request found" "$(test -n "$SUM_ID" && echo yes)" "yes"
-
+# Dismissed by coverage, not closed: an agent with more to say can still write the range back.
 SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$SUM_ID" -H 'Content-Type: application/json' -d '{
   "title": "完成預訂衝突驗證流程",
   "summary": "預訂建立流程的衝突判斷與資料庫唯一約束防護完成。",

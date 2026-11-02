@@ -45,9 +45,9 @@ db.prepare('INSERT INTO recall_telemetry VALUES (?,?,?,?,?,?)').run('rt_legacy',
 db.exec('DROP TABLE IF EXISTS memory_utility');
 db.exec('CREATE TABLE memory_utility (ref_id TEXT PRIMARY KEY, observations INTEGER NOT NULL DEFAULT 0, utility_sum REAL NOT NULL DEFAULT 0, last_outcome_at DATETIME)');
 db.prepare('INSERT INTO memory_utility (ref_id, observations, utility_sum, last_outcome_at) VALUES (?,?,?,?)').run('mu_legacy', 2, 1.4, new Date().toISOString());
-db.prepare('DELETE FROM schema_migrations WHERE id IN (4,5,6,7,8)').run();
+db.prepare('DELETE FROM schema_migrations WHERE id IN (4,5,6,7,8,16)').run();
 db.close();
-console.log('  downgraded: dropped recall_fts + telemetry columns + explicit memory_utility cols, removed migrations 4,5,6,7,8 (data kept)');
+console.log('  downgraded: dropped recall_fts + telemetry columns + explicit memory_utility cols, removed migrations 4,5,6,7,8,16 (data kept)');
 "
 
 echo "[migrations] run verify (triggers initDatabase -> re-applies migrations with backfill)"
@@ -59,11 +59,11 @@ const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
 const base = JSON.parse(require('fs').readFileSync('$TMP_DIR/base.json', 'utf8'));
 const fail = (m) => { console.error('  ✗ ' + m); process.exit(1); };
 const migs = db.prepare('SELECT id FROM schema_migrations').all().map((r) => r.id);
-if (!migs.includes(4) || !migs.includes(5) || !migs.includes(6) || !migs.includes(7) || !migs.includes(8)) fail('migrations 4/5/6/7/8 not re-applied: ' + migs);
+if (![4, 5, 6, 7, 8, 16].every((id) => migs.includes(id))) fail('migrations 4/5/6/7/8/16 not re-applied: ' + migs);
 const fts = db.prepare('SELECT count(*) c FROM recall_fts').get().c;
 if (fts !== base.fts) fail('recall_fts not backfilled (' + fts + ' vs ' + base.fts + ')');
 const cols = new Set(db.prepare('PRAGMA table_info(recall_telemetry)').all().map((c) => c.name));
-for (const c of ['query_hash','token_count','top_confidence','utility_score','outcome_kind','observed_at']) if (!cols.has(c)) fail('telemetry missing column ' + c);
+for (const c of ['query_hash','token_count','top_confidence','utility_score','outcome_kind','observed_at','query_text']) if (!cols.has(c)) fail('telemetry missing column ' + c);
 const muCols = new Set(db.prepare('PRAGMA table_info(memory_utility)').all().map((c) => c.name));
 for (const c of ['ref_id','observations','utility_sum','explicit_observations','explicit_sum','last_outcome_at']) if (!muCols.has(c)) fail('memory_utility missing column ' + c);
 const muLegacy = db.prepare(\"SELECT observations, utility_sum, explicit_observations, explicit_sum FROM memory_utility WHERE ref_id='mu_legacy'\").get();

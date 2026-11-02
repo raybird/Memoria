@@ -132,6 +132,11 @@ const row=d.data.rows.find(r=>r.id==='$RID');
 if(!row) throw new Error('telemetry row missing for $RID');
 if(row.utility_score!==0.75||row.outcome_kind!=='reuse'||!row.observed_at) throw new Error('utility not persisted: '+JSON.stringify(row));
 "
+curl -sf "$SERVER_URL/v1/telemetry/recall?window=P7D&limit=50&zero_utility=true" | node -e "
+const d=JSON.parse(require('fs').readFileSync(0,'utf8'));
+if(d.data.rows.some(r=>r.id==='$RID')) throw new Error('zero_utility listed a recall scored 0.75');
+if(d.data.calibration) throw new Error('zero_utility must not report calibration over failures only');
+"
 echo "  outcome persisted (utility_score=0.75)"
 echo "[http] telemetry exposes confidence×utility calibration (UFL Phase 2)"
 curl -sf "$SERVER_URL/v1/telemetry/recall?window=P7D&limit=50" | node -e "

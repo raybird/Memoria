@@ -3,11 +3,12 @@ import type { Command } from 'commander'
 import {
     existsSync,
     inspectVectorLayer,
+    measureScanLag,
     resolveMemoriaHomeInfo,
     resolveInstallSettingsPath,
     loadInstallSettingsSync
 } from '../../core/index.js'
-import type { MemoriaPaths, VectorLayerReport } from '../../core/index.js'
+import type { MemoriaPaths, RepoScanLag, VectorLayerReport } from '../../core/index.js'
 import { quoteShellArg } from '../runtime.js'
 
 type DoctorCheck = { name: string; ok: boolean; value: string; fix?: string }
@@ -131,6 +132,36 @@ function vectorChecks(report: VectorLayerReport, paths: MemoriaPaths): DoctorChe
     return checks
 }
 
+/** Always ok: unscanned commits are normal between syncs, and any repository being worked on has
+ *  some. Failing here would leave doctor red most of the time, which is how a check stops being
+ *  read — same judgement as issue-7's on a lagging tree index. The remedy therefore lives in the
+ *  value, because `fix` only prints on a failing check. */
+function repoScanCheck(lags: RepoScanLag[]): DoctorCheck[] {
+    if (lags.length === 0) return []
+    const behind = lags
+        .filter((lag): lag is RepoScanLag & { unscanned_commits: number } => (lag.unscanned_commits ?? 0) > 0)
+        .sort((a, b) => b.unscanned_commits - a.unscanned_commits)
+    const unknown = lags.filter((lag) => lag.unscanned_commits === null).map((lag) => lag.repository)
+
+    const parts = [behind.length === 0
+        ? `${lags.length - unknown.length} of ${lags.length} repositories up to date`
+        : `${behind.length} of ${lags.length} repositories have unscanned commits: ` +
+          `${behind.map((lag) => `${lag.repository} ${lag.unscanned_commits}`).join(', ')} ` +
+          '(run: memoria repo sync <name>)']
+    // Named rather than omitted, for the same reason the vector checks name what they skipped.
+    if (unknown.length > 0) parts.push(`not measured: ${unknown.join(', ')}`)
+    return [{ name: 'repo scan', ok: true, value: parts.join('; ') }]
+}
+
+async function readScanLag(paths: MemoriaPaths): Promise<RepoScanLag[]> {
+    if (!existsSync(paths.dbPath)) return []
+    try {
+        return await measureScanLag(paths.dbPath, paths.memoryDir)
+    } catch {
+        return [] // A database that predates the git tables has nothing to report.
+    }
+}
+
 /** issue-27: the coverage fix is followed by an agent, which can only run what is printed. So it is one
  *  command with real paths, not a description: the payload goes to a temporary directory, not the data
  *  root (the builder's default), and the exit status is ingest's, so a failure is not hidden by the
@@ -191,7 +222,8 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
                 { name: 'sessions path', ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
                 { name: 'config path', ok: existsSync(paths.configPath), value: paths.configPath },
                 { name: 'sessions.db', ok: existsSync(paths.dbPath), value: paths.dbPath },
-                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths)
+                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths),
+                ...repoScanCheck(await readScanLag(paths))
             ]
 
             if (opts.json) {

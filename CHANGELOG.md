@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`brief` and `doctor` show how far each repository is past its last `repo sync`.** A repository that stops being synced used to look the same as one with nothing new. `brief` appends `未掃描 commit: N`, `doctor` adds a `repo scan` line, and N equals what a sync would discover. `doctor` stays green: unscanned commits are normal between syncs. Brief JSON gains `repositories[].unscanned_commits` (`null` when it cannot be measured).
+- **`memoria stats --zero-utility` lists recalls that helped nobody**, reported useless or with no hits, one row each. `GET /v1/telemetry/recall` takes `zero_utility=true` for the same list.
+- **`telemetry.storeQueryText` in `config.json` (off by default)** keeps the query text of later recalls, with likely secrets masked and capped at 200 characters, so those rows can be read back. Without it telemetry stores the hash, as before. Rows written earlier stay hashed, and turning it off stops new writes without erasing stored text.
+
+### Changed
+- **Writing back a merge or release summary dismisses the commit-range skeletons it covers.** Those skeletons only repeat commit subjects, so nothing else ever resolved them and they stayed in 待增強 forever. Any enriched milestone in the repository counts, so the first write-back after upgrading clears the backlog; `dismissed_covered` reports how many. Skeletons no milestone covers stay pending, and a dismissed one can still be written back.
+
+### Compatibility and upgrade
+- Migration 16 adds a nullable `recall_telemetry.query_text`. The default telemetry write path is unchanged.
+
 ## [1.35.1] - 2026-10-31
 
 ### Fixed

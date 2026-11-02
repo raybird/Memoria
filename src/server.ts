@@ -6,7 +6,7 @@
 // drifted to "12" while listing 19):
 //   GET  /v1/health
 //   GET  /v1/stats
-//   GET  /v1/telemetry/recall?window=P7D&limit=100
+//   GET  /v1/telemetry/recall?window=P7D&limit=100&zero_utility=true
 //   GET  /v1/brief?project=&days=30&top_k=10   → BriefData + rendered markdown; never writes BRIEF.md
 //   POST /v1/remember              body: SessionData JSON
 //   POST /v1/recall                body: RecallFilter JSON
@@ -282,7 +282,8 @@ export function createServer(core: MemoriaCore): http.Server {
                     sendError(res, 400, 'Invalid limit query param; expected number')
                     return
                 }
-                const result = await core.recallTelemetry({ window, limit })
+                const zeroUtility = parsedUrl.searchParams.get('zero_utility') === 'true'
+                const result = await core.recallTelemetry({ window, limit, zeroUtility })
                 send(res, result.ok ? 200 : 500, result)
                 return
             }

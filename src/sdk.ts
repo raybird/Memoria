@@ -114,10 +114,11 @@ export class MemoriaClient {
     }
 
     /** Get recall routing telemetry for observability */
-    async recallTelemetry(opts?: { window?: string; limit?: number }): Promise<MemoriaResult<RecallTelemetryData>> {
+    async recallTelemetry(opts?: { window?: string; limit?: number; zeroUtility?: boolean }): Promise<MemoriaResult<RecallTelemetryData>> {
         const params = new URLSearchParams()
         if (opts?.window) params.set('window', opts.window)
         if (typeof opts?.limit === 'number') params.set('limit', String(opts.limit))
+        if (opts?.zeroUtility) params.set('zero_utility', 'true')
         const suffix = params.toString() ? `?${params.toString()}` : ''
         return this.get(`/v1/telemetry/recall${suffix}`)
     }
@@ -165,7 +166,7 @@ export class MemoriaClient {
     }
 
     /** Write back an agent-generated §7.5 summary payload */
-    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean }>> {
+    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean; dismissed_covered: number }>> {
         return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/${encodeURIComponent(summaryId)}`, payload)
     }
 

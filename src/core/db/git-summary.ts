@@ -357,6 +357,34 @@ export function dismissPendingSummaries(
     })())
 }
 
+/** Pending commit-range skeletons that nothing has put into recall, with the commit each ends on. */
+export function listPendingCommitRanges(dbPath: string, repositoryId: string): Array<{ id: string; head_sha: string }> {
+    return withDb(dbPath, (db) => db.prepare(`
+      SELECT s.id, r.head_sha
+      FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id
+      WHERE s.repository_id = ? AND s.status = 'pending' AND s.summary_type = 'commit_range'
+        AND NOT EXISTS(SELECT 1 FROM memory_sources m WHERE m.source_id = s.id)
+    `).all(repositoryId) as Array<{ id: string; head_sha: string }>)
+}
+
+/** Ranges of the merge and release summaries an agent has written. */
+export function listEnrichedMilestoneRanges(dbPath: string, repositoryId: string): Array<{ summary_type: GitSummaryType; base_sha: string | null; head_sha: string }> {
+    return withDb(dbPath, (db) => db.prepare(`
+      SELECT s.summary_type, r.base_sha, r.head_sha
+      FROM git_summaries s JOIN git_summary_ranges r ON r.id = s.summary_range_id
+      WHERE s.repository_id = ? AND s.status = 'enriched' AND s.summary_type IN ('merge', 'release')
+    `).all(repositoryId) as Array<{ summary_type: GitSummaryType; base_sha: string | null; head_sha: string }>)
+}
+
+export function markSummariesDismissed(dbPath: string, ids: string[]): void {
+    if (ids.length === 0) return
+    withDb(dbPath, (db) => db.transaction(() => {
+        const update = db.prepare(`UPDATE git_summaries SET status = 'dismissed', updated_at = ? WHERE id = ? AND status = 'pending'`)
+        const now = nowIso()
+        for (const id of ids) update.run(now, id)
+    })())
+}
+
 /** Agent write-back (D1): enrich the deterministic row in place — same idempotency key. */
 export function submitAgentSummary(dbPath: string, summaryId: string, submission: AgentSummarySubmission): GitSummaryRecord {
     return withDb(dbPath, (db) => db.transaction(() => {

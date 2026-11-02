@@ -21,7 +21,10 @@ import {
     loadCommitFacts,
     listCurrentTags,
     upsertSummaryRange,
-    insertSummaryIfMissing
+    insertSummaryIfMissing,
+    listPendingCommitRanges,
+    listEnrichedMilestoneRanges,
+    markSummariesDismissed
 } from '../db/git-summary.js'
 import type { MemoriaGitConfig } from '../config.js'
 import type { GitSummaryRecord, GitSummaryType } from '../types.js'
@@ -153,6 +156,45 @@ function previousReleaseTag(tags: Array<{ name: string; commitSha: string }>, cu
         .sort((a, b) =>
             (a.version[0] - b.version[0]) || (a.version[1] - b.version[1]) || (a.version[2] - b.version[2]))
     return older.length > 0 ? older[older.length - 1].tag : null
+}
+
+/**
+ * Dismiss pending commit-range skeletons whose work an enriched merge or release summary already
+ * tells. A skeleton holds only commit subjects, so once the milestone is written nobody will return
+ * to enrich it, and it would otherwise sit in 待增強 forever: `isPromotable` keeps it out of recall,
+ * and nothing else ever resolves it.
+ *
+ * Decided by the range's head alone. base..head is unreliable here: the planner orders commits by
+ * committer time, so rebased or cross-branch groups yield an empty or inflated range. The cost of
+ * head-only is a group that straddles a milestone boundary; dismissing it loses no information,
+ * since the subjects stay in git and `--submit` still accepts a dismissed summary.
+ *
+ * Age is deliberately not a rule: a skeleton no milestone covers may be work still unwritten, and
+ * keeping it counted is what makes the number honest.
+ */
+export async function dismissCoveredCommitRanges(
+    dbPath: string,
+    repositoryRoot: string,
+    repositoryId: string
+): Promise<string[]> {
+    const pending = listPendingCommitRanges(dbPath, repositoryId)
+    if (pending.length === 0) return []
+
+    const covered = new Set<string>()
+    for (const milestone of listEnrichedMilestoneRanges(dbPath, repositoryId)) {
+        // A merge's stored base is the merge-base, so base..head also holds what the target branch
+        // did meanwhile. Only the commits this merge brought in are told by its summary.
+        const range = milestone.summary_type === 'merge'
+            ? `${milestone.head_sha}^1..${milestone.head_sha}`
+            : milestone.base_sha ? `${milestone.base_sha}..${milestone.head_sha}` : milestone.head_sha
+        // A range rewritten out of history simply covers nothing.
+        const out = await runGit(repositoryRoot, ['rev-list', range]).catch(() => null)
+        for (const sha of out?.stdout.split('\n') ?? []) if (sha) covered.add(sha)
+    }
+
+    const ids = pending.filter((range) => covered.has(range.head_sha)).map((range) => range.id)
+    markSummariesDismissed(dbPath, ids)
+    return ids
 }
 
 export async function runSummaryPipeline(input: SummaryPipelineInput): Promise<SummaryPipelineResult> {

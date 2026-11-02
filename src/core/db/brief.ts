@@ -328,7 +328,8 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                     default_branch: repo.default_branch,
                     latest_summary: latest ? { id: latest.id, title: truncateText(latest.title, 120), type: latest.summary_type, created_at: latest.created_at } : null,
                     pending_summaries: pending,
-                    dismissed_summaries: dismissed
+                    dismissed_summaries: dismissed,
+                    unscanned_commits: null
                 })
             }
         }
@@ -426,7 +427,9 @@ export function renderBrief(data: BriefData): string {
         for (const repo of data.repositories) {
             const branch = repo.default_branch ? ` (${repo.default_branch})` : ''
             const dismissed = repo.dismissed_summaries > 0 ? ` ｜ 已略過: ${repo.dismissed_summaries}` : ''
-            lines.push(`- **${repo.repository}**${branch} ｜ 待增強: ${repo.pending_summaries}${dismissed}`)
+            // Only when behind, so a caught-up repository renders as it always has.
+            const unscanned = repo.unscanned_commits ? ` ｜ 未掃描 commit: ${repo.unscanned_commits}` : ''
+            lines.push(`- **${repo.repository}**${branch} ｜ 待增強: ${repo.pending_summaries}${dismissed}${unscanned}`)
             if (repo.latest_summary) {
                 lines.push(`  - 最新摘要: ${repo.latest_summary.title} [${repo.latest_summary.type}] ｜ ${repo.latest_summary.created_at}`)
             }

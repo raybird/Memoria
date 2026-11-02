@@ -9,15 +9,21 @@ import { randomUUID } from 'node:crypto'
 
 export const HOST_ID_FILE_NAME = 'host-id'
 
-/** Return this machine's stable host id, creating `<memoryDir>/host-id` on first use. */
-export async function getHostId(memoryDir: string): Promise<string> {
-    const file = path.join(memoryDir, HOST_ID_FILE_NAME)
+/** This machine's host id if one exists yet; null when nothing has created it. */
+export async function readHostId(memoryDir: string): Promise<string | null> {
     try {
-        const existing = (await fs.readFile(file, 'utf8')).trim()
-        if (existing) return existing
+        return (await fs.readFile(path.join(memoryDir, HOST_ID_FILE_NAME), 'utf8')).trim() || null
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        return null
     }
+}
+
+/** Return this machine's stable host id, creating `<memoryDir>/host-id` on first use. */
+export async function getHostId(memoryDir: string): Promise<string> {
+    const existing = await readHostId(memoryDir)
+    if (existing) return existing
+    const file = path.join(memoryDir, HOST_ID_FILE_NAME)
     const hostId = randomUUID()
     await fs.mkdir(memoryDir, { recursive: true })
     await fs.writeFile(file, `${hostId}\n`, 'utf8')

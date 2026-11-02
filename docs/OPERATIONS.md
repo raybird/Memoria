@@ -291,6 +291,20 @@ For raw recall telemetry rows (HTTP; rows carry `utility_score` / `outcome_kind`
 curl -sS "http://localhost:3917/v1/telemetry/recall?window=P7D&limit=50"
 ```
 
+To see which recalls helped nobody, without a server:
+
+```bash
+./cli stats --zero-utility --window P30D --limit 20
+```
+
+It lists recalls reported with utility 0 or that found nothing; skipped queries are left out. Telemetry stores a query hash by default, so such a row can only be grouped with repeats of the same query. To read later queries back, set this in `<configPath>/config.json`:
+
+```json
+{ "telemetry": { "storeQueryText": true } }
+```
+
+The text is masked with the same best-effort patterns as git summaries and capped at 200 characters, in `recall_telemetry.query_text`, and it appears in `GET /v1/telemetry/recall` rows. Turning the setting off stops new writes; rows already written keep their text, and no command clears them yet.
+
 ## Semantic Recall Operations (optional)
 
 `mode:'vector'` is gated by `LIBSQL_URL` and the `skills/memoria-vector` helper. The helper ships as
@@ -408,6 +422,8 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
 
 - **Sync cadence**: run `repo sync` at session start/end or on demand; unchanged repos complete
   fast (incremental `--not <previous tips>` walk) and insert nothing.
+- **Scan lag**: `brief` shows `未掃描 commit: N` on a repository with commits past its last `repo sync`, and `doctor` lists them under `repo scan`. N is what a sync would discover (same as `repo sync --dry-run`'s `new_commits`). It never fails `doctor`: unscanned commits are normal between syncs. An unmeasurable repository is named as `not measured` and stays `null` in brief JSON.
+- **Commit-range skeletons**: writing back a merge or release summary dismisses every pending commit-range skeleton whose head falls inside any enriched milestone in that repository (a merge counts only the commits it brought in, `<merge>^1..<merge>`). Skeletons no milestone covers stay pending on purpose; there is no age limit, because one may be work still unwritten. Use `--dismiss-pending --type commit_range` to clear those by hand.
 - **Config**: `<configPath>/config.json`, `git.*` block (optional; Zod-validated). Tunables:
   `summarization.{minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes,maxContextCommits,maxContextFiles}`,
   `filters.{excludePaths,sensitivePaths}`. `maxContextCommits` (200) / `maxContextFiles` (500) cap

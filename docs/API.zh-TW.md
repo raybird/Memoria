@@ -31,7 +31,7 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 |--------|------|------|
 | `GET`  | `/v1/health` | 健康檢查 |
 | `GET`  | `/v1/stats` | 統計 |
-| `GET`  | `/v1/telemetry/recall` | Recall 路由遙測 + confidence×utility 校準（query: `window`, `limit`） |
+| `GET`  | `/v1/telemetry/recall` | Recall 路由遙測 + confidence×utility 校準（query: `window`、`limit`；`zero_utility=true` 只列回報無用或零命中的召回，這份清單不含校準）。列上的 `query_text` 只在開啟 `telemetry.storeQueryText` 時出現 |
 | `GET`  | `/v1/brief` | 編譯 brief：結構化資料與已渲染 markdown（query: `project`, `days`, `top_k`）；不寫入 `BRIEF.md` |
 | `POST` | `/v1/remember` | 寫入記憶 (body: SessionData; optional `scope`) |
 | `POST` | `/v1/recall` | 檢索記憶 (body: `{query, top_k?, project?, scope?, mode?}`；`mode:'vector'` = 選用語意召回，需 `LIBSQL_URL` + `skills/memoria-vector`，不可用時降級字面召回) |
@@ -48,7 +48,7 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 | `POST` | `/v1/repos/:ref/sync` | 增量掃描（`{generate_summaries?, dry_run?, ...}`） |
 | `POST` | `/v1/repos/:ref/summarize` | 摘要 branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | 等待 agent 增強的摘要請求 |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫 |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫。寫回 merge 或 release 時，一併略過它涵蓋的 pending commit range 骨架，並回報 `dismissed_covered` |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | 略過一筆 pending 摘要（不自動促升；之後 `--submit` 或明確的 `--promote` 仍可讓它進 recall；已是 enriched 或已在 recall 時回 `409`） |
 | `POST` | `/v1/repos/:ref/summaries/dismiss` | 依 `{types}` 批次略過 pending 摘要；已在 recall 的會跳過（`skipped_promoted`） |
 

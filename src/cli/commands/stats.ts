@@ -1,12 +1,50 @@
 import type { Command } from 'commander'
+import path from 'node:path'
+import { CONFIG_FILE_NAME } from '../../core/index.js'
 import type { MemoriaCore, MemoriaPaths } from '../../core/index.js'
+
+type StatsCommandOptions = { json?: boolean; zeroUtility?: boolean; window?: string; limit?: string }
+
+/** The readout `stats` aggregates away: which recalls helped nobody, one row each. */
+async function printZeroUtility(paths: MemoriaPaths, core: MemoriaCore, opts: StatsCommandOptions): Promise<void> {
+    const window = opts.window ?? 'P30D'
+    if (!/^P\d+D$/.test(window)) throw new Error(`Invalid --window '${window}'. Use P<n>D, e.g. P30D`)
+    const limit = Number(opts.limit ?? '20')
+    if (!Number.isFinite(limit) || limit <= 0) throw new Error(`Invalid --limit '${opts.limit}'. Use a positive number`)
+
+    const result = await core.recallTelemetry({ window, limit, zeroUtility: true })
+    if (!result.ok) throw new Error(result.error)
+    if (opts.json) {
+        console.log(JSON.stringify(result))
+        return
+    }
+
+    const rows = result.data!.rows
+    console.log(`🔎 Zero-utility recalls (${window}): ${rows.length}${rows.length === limit ? ' (limit reached)' : ''}`)
+    for (const row of rows) {
+        const query = row.query_text ?? `hash:${row.query_hash ?? 'n/a'} (tokens=${row.token_count ?? '?'})`
+        console.log(`- ${row.created_at} | ${row.route_mode} | hits=${row.hit_count} | utility=${row.utility_score ?? 'n/a'} | ${query}`)
+    }
+    // Rows written before opting in stay hashed, so this also explains a mixed list.
+    if (rows.some((row) => row.query_text === undefined)) {
+        const configFile = path.join(paths.configPath, CONFIG_FILE_NAME)
+        console.log(`↳ 只有 hash 的列無法還原查詢；要記錄之後的查詢，在 ${configFile} 設 telemetry.storeQueryText 為 true`)
+    }
+}
 
 export function registerStatsCommand(program: Command, paths: MemoriaPaths, core: MemoriaCore): void {
     program
         .command('stats')
         .description('Show session, event, and skill statistics')
         .option('--json', 'Machine-readable JSON output')
-        .action(async (opts: { json?: boolean }) => {
+        .option('--zero-utility', 'List recalls reported useless or with no hits, instead of the totals')
+        .option('--window <duration>', 'Time window for --zero-utility, as P<n>D', 'P30D')
+        .option('--limit <n>', 'Max rows for --zero-utility', '20')
+        .action(async (opts: StatsCommandOptions) => {
+            if (opts.zeroUtility) {
+                await printZeroUtility(paths, core, opts)
+                return
+            }
             const result = await core.stats()
             if (!result.ok) throw new Error(result.error)
             const s = result.data!

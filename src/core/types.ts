@@ -423,6 +423,7 @@ export type RecallTelemetryPoint = {
     latency_ms: number
     created_at: string
     query_hash?: string       // privacy-preserving hash of the normalized query (not raw text)
+    query_text?: string       // masked, capped query; only with telemetry.storeQueryText (opt-in)
     token_count?: number      // number of distinct query tokens
     top_confidence?: number   // calibrated top-hit confidence for this query
     utility_score?: number    // observed lexical-reuse utility of this recall [0,1] (UFL), if reported
@@ -500,6 +501,8 @@ export type BriefRepository = {
     latest_summary: { id: string; title: string; type: string; created_at: string } | null
     pending_summaries: number
     dismissed_summaries: number
+    /** Commits a `repo sync` would discover; null when it cannot be measured here. */
+    unscanned_commits: number | null
 }
 
 export type BriefData = {

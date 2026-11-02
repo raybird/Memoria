@@ -507,6 +507,15 @@ const MIGRATIONS: Migration[] = [
               WHERE event_type IN ('DecisionMade', 'SkillLearned');
             `)
         }
+    },
+    {
+        id: 16,
+        name: 'recall_telemetry_add_query_text',
+        up: (db) => {
+            // Stays NULL unless telemetry.storeQueryText is on, so the hash remains the default.
+            const cols = new Set((db.prepare('PRAGMA table_info(recall_telemetry)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('query_text')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN query_text TEXT`)
+        }
     }
 ]
 
@@ -604,7 +613,8 @@ export function initDatabase(dbPath: string): void {
         top_confidence REAL,
         utility_score REAL,
         outcome_kind TEXT,
-        observed_at DATETIME
+        observed_at DATETIME,
+        query_text TEXT
       );
 
       CREATE TABLE IF NOT EXISTS memory_utility (

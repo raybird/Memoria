@@ -11,6 +11,7 @@
 #   (H) recent decisions are dealt per project, and the total counts the whole window
 #   (I) pinned text survives at note length; only an outsized memory is cut
 #   (J) high-utility needs 2 observations, merges one source, skips pinned, respects scope
+#   (K) unscanned commits appear in brief and doctor without turning doctor red, and clear on sync
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -257,5 +258,35 @@ case "$UFL" in *"已經釘選"*) echo "  ✗ pinned 記憶重複列在高效用�
 SCOPED_UFL=$("$CLI" brief --project alpha --top-k 1 --json | field '.data.high_utility.map(m=>m.ref_id).join(",")')
 [ "$SCOPED_UFL" = "gitsum-sum_aaa" ] || { echo "  ✗ 範圍內記憶被其他專案擠掉: '$SCOPED_UFL'"; exit 1; }
 echo "  門檻、來源合併、pinned 去重與範圍過濾皆符合預期"
+
+echo "[brief-scope] (K) 未掃描 commit 顯示在 brief 與 doctor，sync 後消失"
+reset_home home-k
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+LAG_REPO="$TMP_DIR/lagging"
+make_repo "$LAG_REPO"
+"$CLI" repo add "$LAG_REPO" >/dev/null
+repo_scan() { "$CLI" doctor --json | node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")).checks.find(x=>x.name==="repo scan");console.log((c?c.ok:"missing")+" "+(c?c.value:""))'; }
+case "$(repo_scan)" in "true 1 of 1 repositories up to date") ;; *) echo "  ✗ 無落後時的 doctor: $(repo_scan)"; exit 1 ;; esac
+"$CLI" brief --global >/dev/null
+if grep -q "未掃描" "$BRIEF"; then echo "  ✗ 沒有落後卻顯示未掃描"; exit 1; fi
+
+for n in 1 2 3; do git -C "$LAG_REPO" -c user.name=memoria-test -c user.email=test@memoria.local commit -q --allow-empty -m "more $n"; done
+"$CLI" brief --global >/dev/null
+grep -qF "未掃描 commit: 3" "$BRIEF" || { echo "  ✗ brief 未顯示 3 筆未掃描:"; cat "$BRIEF"; exit 1; }
+[ "$("$CLI" brief --global --json | field '.data.repositories[0].unscanned_commits')" = "3" ] || { echo "  ✗ --json 欄位不對"; exit 1; }
+case "$(repo_scan)" in "true 1 of 1 repositories have unscanned commits: lagging 3"*) ;; *) echo "  ✗ doctor 未回報落後或亮紅燈: $(repo_scan)"; exit 1 ;; esac
+
+# 數字必須等於 sync 實際會發現的量，否則它回答的就不是「sync 一次會多什麼」。
+[ "$("$CLI" repo sync lagging --dry-run --json | field '.data.new_commits')" = "3" ] || { echo "  ✗ 與 dry-run 的 new_commits 不一致"; exit 1; }
+"$CLI" repo sync lagging >/dev/null
+"$CLI" brief --global >/dev/null
+if grep -q "未掃描" "$BRIEF"; then echo "  ✗ sync 後仍顯示未掃描"; exit 1; fi
+
+# 路徑失效是「量不到」，不是「沒有落後」，也不能讓 brief 失敗。
+mv "$LAG_REPO" "$LAG_REPO-moved"
+"$CLI" brief --global >/dev/null
+case "$(repo_scan)" in "true "*"not measured: lagging") ;; *) echo "  ✗ 路徑失效未標示: $(repo_scan)"; exit 1 ;; esac
+[ "$("$CLI" brief --global --json | field '.data.repositories[0].unscanned_commits')" = "null" ] || { echo "  ✗ 量不到時應為 null"; exit 1; }
+echo "  brief 與 doctor 顯示落後、與 dry-run 一致、sync 後消失、路徑失效標示為量不到"
 
 echo "[brief-scope] ✓ all checks passed"

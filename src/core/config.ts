@@ -1,7 +1,7 @@
 // Memoria config file loader (Git-Aware Memory spec §27, docs/issues/issue-1).
 //
-// First config-file surface in the repo — everything predating it stays env-var driven. Only the
-// `git` block is parsed for now; unknown top-level keys are ignored so future blocks can land
+// First config-file surface in the repo — everything predating it stays env-var driven. The `git`
+// and `telemetry` blocks are parsed; unknown top-level keys are ignored so future blocks can land
 // without breaking older binaries. A missing config.json yields pure defaults: the file is
 // entirely optional.
 
@@ -50,8 +50,17 @@ const gitConfigSchema = z
     })
     .prefault({})
 
+const telemetryConfigSchema = z
+    .object({
+        // Recall telemetry stores a hash by default, and that stance is documented. This writes the
+        // query itself, masked and capped, so a recall that helped nobody can be read back.
+        storeQueryText: z.boolean().default(false)
+    })
+    .prefault({})
+
 const memoriaConfigSchema = z.object({
-    git: gitConfigSchema
+    git: gitConfigSchema,
+    telemetry: telemetryConfigSchema
 })
 
 export type MemoriaGitConfig = z.infer<typeof gitConfigSchema>

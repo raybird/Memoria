@@ -202,12 +202,12 @@ All business logic lives in `src/core/`; CLI, HTTP server and SDK share that cor
 - `summarizeSession(id)` – structured session + decisions + skills
 - `health()` – verify DB + dirs
 - `stats()` – session/event/skill counts
-- `recallTelemetry({ window, limit })` – raw recall routing telemetry rows
+- `recallTelemetry({ window, limit, zeroUtility })` – raw recall routing telemetry rows; `zeroUtility` keeps only recalls reported useless or with no hits
 - `governanceReview({ project, scope, limit })` – deterministic governance candidate review
 - `repoAdd(input)` / `repoList()` / `repoStatus(ref)` / `repoRelocate(ref, path)` / `repoRemove(ref, opts)` – git repository registry (read-only observation; fingerprint identity)
 - `repoSync(ref, opts)` – incremental scan → events → deterministic summaries → promotion (`dryRun` writes nothing; serialized per repository in-process)
 - `repoSummarize(ref, opts)` – branch/range/merge/tag summaries; `promote` forces promotion
-- `repoPendingSummaries(ref)` / `repoSubmitSummary(ref, summaryId, payload)` – agent enrichment loop (deterministic skeleton → validated write-back → auto-promotion); recall hits from promoted summaries carry `hit.source`
+- `repoPendingSummaries(ref)` / `repoSubmitSummary(ref, summaryId, payload)` – agent enrichment loop (deterministic skeleton → validated write-back → auto-promotion); a merge or release write-back also dismisses the commit-range skeletons it covers; recall hits from promoted summaries carry `hit.source`
 
 ## HTTP API (Phase 1)
 
@@ -217,7 +217,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 |--------|------|-------------|
 | `GET`  | `/v1/health` | Health check |
 | `GET`  | `/v1/stats` | Stats |
-| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration |
+| `GET`  | `/v1/telemetry/recall` | Recall routing telemetry + confidence×utility calibration (`zero_utility=true` lists failed recalls only) |
 | `GET`  | `/v1/brief` | Compiled brief (query: `project`, `days`, `top_k`). Returns `BriefData` **plus** the rendered `markdown`, so a caller never re-implements `renderBrief`. Unlike the CLI it **never writes** `<knowledge>/BRIEF.md` — in a sidecar deployment that path is the server's filesystem, not the caller's (issue-13) |
 | `POST` | `/v1/remember` | Write session memory |
 | `POST` | `/v1/recall` | Recall memories (`mode`: `keyword\|tree\|hybrid\|vector`) |
