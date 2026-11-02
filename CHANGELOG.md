@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.36.0] - 2026-11-02
+
 ### Added
 - **`brief` and `doctor` show how far each repository is past its last `repo sync`.** A repository that stops being synced used to look the same as one with nothing new. `brief` appends `未掃描 commit: N`, `doctor` adds a `repo scan` line, and N equals what a sync would discover. `doctor` stays green: unscanned commits are normal between syncs. Brief JSON gains `repositories[].unscanned_commits` (`null` when it cannot be measured).
 - **`memoria stats --zero-utility` lists recalls that helped nobody**, reported useless or with no hits, one row each. `GET /v1/telemetry/recall` takes `zero_utility=true` for the same list.
