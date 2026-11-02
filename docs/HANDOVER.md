@@ -8,12 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-10-31 當前狀態
+> 2026-11-02 當前狀態
 
-- **已發布版本**：[`v1.35.1`](https://github.com/raybird/Memoria/releases/tag/v1.35.1)（2026-10-31）；前一版為 `v1.35.0`（2026-10-31）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/41182862888) 成功，四平台安裝包與 `install.sh` 已上傳，npm `latest` 為 1.35.1，registry 確認由 trusted publisher 發布並帶 provenance。
-- **交付內容**：`365418b` 修正 setup 誤刪引用標記後內容的問題，只接受獨占一行且不在 code fence 內的標記；上一版 v1.35.0 為 brief 依專案分配（`7392af8`）。兩版都未開 issue 文件。
-- **使用入口**：`npm i -g @raybird.chen/memoria@1.35.1` 後重跑 `memoria setup`，再跑 `memoria brief --global` 或 `memoria brief`。曾被誤刪內容的檔案從 `<memoria-home>/.agents/instruction-backups/` 還原。schema、recall、prune 門檻不變。
-- **下一步**：上一版列的三項已實作、尚未發布（見 `CHANGELOG.md` `[Unreleased]`）：`brief`／`doctor` 顯示未掃描 commit 數；寫回 merge／release 時略過其涵蓋的 commit range 骨架；`stats --zero-utility` 與 opt-in 的 `telemetry.storeQueryText`。查詢文字目前沒有清除指令。已知問題：規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大，未修。
+- **已發布版本**：[`v1.36.0`](https://github.com/raybird/Memoria/releases/tag/v1.36.0)（2026-11-02）；前一版為 `v1.35.1`（2026-10-31）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/41385274339) 成功，四平台安裝包與 `install.sh` 已上傳，npm `latest` 為 1.36.0，registry 確認由 trusted publisher 發布並帶 provenance。
+- **交付內容**：`1f0928b` 依真實 `agy` 1.4.4 重寫 Antigravity adapter（§6）；`88d4c79` tokenizer 納入片假名與韓文，平假名維持分隔符；`7437866` 掃描落後、commit range 骨架清理、零效用查詢診斷與 opt-in 查詢文字。發版提交 `3527ef2`。這次未開 issue 文件。
+- **使用入口**：`npm i -g @raybird.chen/memoria@1.36.0` 後重跑 `memoria setup`。migration 16 在下次開 DB 時自動套用，韓文與片假名不需重建索引。接過 Antigravity 舊範本的使用者要換成 `docs/INTEGRATIONS.md` 的扁平寫法。
+- **下一步**：`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
 
 ### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
@@ -132,7 +132,7 @@
 
 ## 5. 下一步（接續就從這開始）
 
-2026-11-02：掃描落後、commit range 骨架清理、零效用查詢診斷三項已實作，等待發版。
+2026-11-02：v1.36.0 已公開發布，Antigravity 契約校準、韓文與片假名召回、掃描落後與零效用查詢診斷併入 main，完整 main CI、四平台安裝包及 npm 驗證完成。
 
 2026-10-31：v1.35.1 已公開發布，修正 setup 的受管理區塊比對，完整 main CI、四平台安裝包及 npm 驗證完成。
 
