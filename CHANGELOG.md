@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Vector ingest no longer fails with `SQLITE_BUSY` when another session is using the local store.** Two ingests at once used to kill the second one immediately, leaving memories out of semantic recall until someone reran it. Ingests now wait for each other, up to 5 minutes per write.
+- **Semantic recall keeps working during an ingest.** A query that arrived during an ingest's commit fell back to lexical results with no error: 52 of 134 queries in a test on 1600 rows. Recall now waits up to 1.5 seconds for the lock, and the same test had no failures in 129 queries.
+
+### Compatibility and upgrade
+- The helper's dependencies are unchanged, so `memoria setup --vector` does not need rerunning. Remote libSQL stores behave as before.
+
 ## [1.36.0] - 2026-11-02
 
 ### Added

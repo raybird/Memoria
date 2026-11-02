@@ -364,6 +364,12 @@ uses a dedicated sync target without a cursor so the whole corpus is covered, an
 status. Keep the same `LIBSQL_URL` and `MEMORIA_EMBED_PROVIDER` as the doctor invocation, then run
 doctor again to verify `missing=0`.
 
+Several sessions can run this at once. Ingests into a local store queue for the file lock, up to 5
+minutes per write, so overlap costs time rather than failing: every ingest still embeds and writes
+the whole corpus, and four at once on 1577 rows took 131s against 44s for one. An ingest that still
+ends in `SQLITE_BUSY` has lost those 5 minutes to a process holding the lock; rerun it after that
+process finishes.
+
 With `MEMORIA_DB_PATH` pointing outside `<home>/.memory/sessions.db`, doctor names the path mismatch
 and prints no ingest command: the payload builder reads the data root's default database. Use a data
 root whose `.memory/sessions.db` is the intended database. Remote libSQL and overridden helpers report

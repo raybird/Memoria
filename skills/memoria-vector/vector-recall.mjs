@@ -14,6 +14,11 @@ import { embedTexts } from './embed.mjs'
 
 const { createClient } = await importDep('@libsql/client')
 
+// An ingest takes the exclusive lock at every commit, and failing there drops the query to the
+// lexical floor with no error shown. Kept well inside the caller's 4s budget for the whole helper,
+// which the model's cold load also spends. Remote clients ignore it.
+const BUSY_TIMEOUT_MS = 1_500
+
 const raw = await new Promise((resolve) => {
   let buf = ''
   process.stdin.on('data', (c) => { buf += c })
@@ -33,7 +38,7 @@ if (!url) {
 }
 
 const [qvec] = await embedTexts([query], 'query')
-const db = createClient({ url, authToken: process.env.LIBSQL_AUTH_TOKEN })
+const db = createClient({ url, authToken: process.env.LIBSQL_AUTH_TOKEN, timeout: BUSY_TIMEOUT_MS })
 try {
   const table = await db.execute(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memoria_vectors' LIMIT 1`)
   if (table.rows.length === 0) {

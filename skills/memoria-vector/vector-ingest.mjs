@@ -19,6 +19,13 @@ const { createClient } = await importDep('@libsql/client')
 
 const EMBEDDABLE_TYPES = new Set(['session', 'decision', 'skill', 'memory_node'])
 
+// Without this a local store fails with SQLITE_BUSY the moment another process holds the lock.
+// One row can wait out most of a competing ingest, because that writer commits row after row with
+// almost no gap: at 1577 rows, 44s alone, a single statement waited 53s among four ingests. So this
+// is sized for whole ingests rather than one row, and stays under setup's 10-minute child limit.
+// Remote clients ignore it.
+const BUSY_TIMEOUT_MS = 300_000
+
 const payloadPath = process.argv[2]
 if (!payloadPath || !fs.existsSync(payloadPath)) {
   console.error('Usage: node vector-ingest.mjs <bridge-payload.json>')
@@ -43,7 +50,7 @@ if (entities.length === 0) {
 const texts = entities.map((e) => [e.name, e.text].filter(Boolean).join('\n').slice(0, 2000) || String(e.id))
 const vectors = await embedTexts(texts, 'passage')
 
-const db = createClient({ url, authToken: process.env.LIBSQL_AUTH_TOKEN })
+const db = createClient({ url, authToken: process.env.LIBSQL_AUTH_TOKEN, timeout: BUSY_TIMEOUT_MS })
 try {
   await db.execute(
     `CREATE TABLE IF NOT EXISTS memoria_vectors (name TEXT PRIMARY KEY, kind TEXT, text TEXT, updated_at TEXT, v F32_BLOB(${DIM}))`

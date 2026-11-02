@@ -107,6 +107,45 @@ INGEST=$(LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/
 node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==3||d.skipped!==1) throw new Error('ingest counts wrong: '+process.argv[1])" "$INGEST"
 echo "  embedded=3 skipped=1 ok"
 
+# Ingest commits row by row, and another session's ingest or recall reaches the same file meanwhile.
+# Both helpers must wait for the lock: the lock is taken before each one starts, so without a busy
+# timeout they fail with SQLITE_BUSY every time rather than only when a real race lines up.
+hold_vector_lock() { # $1 = BEGIN statement, $2 = hold time in ms
+    rm -f "$TMP_DIR/lock-held"
+    (cd "$HELPER_DIR" && LIBSQL_URL="file:$VECDB" HELD_MARKER="$TMP_DIR/lock-held" node --input-type=module -e "
+import fs from 'node:fs'
+const { importDep } = await import('./deps.mjs')
+const { createClient } = await importDep('@libsql/client')
+const db = createClient({ url: process.env.LIBSQL_URL })
+await db.execute('$1')
+fs.writeFileSync(process.env.HELD_MARKER, '')
+await new Promise((r) => setTimeout(r, $2))
+await db.execute('ROLLBACK')
+db.close()
+") &
+    HOLD_PID=$!
+    for _ in $(seq 1 200); do [ -f "$TMP_DIR/lock-held" ] && return 0; sleep 0.05; done
+    echo "  ✗ lock holder never took the lock"; exit 1
+}
+
+echo "[vector] ingest waits for a lock held by another process"
+hold_vector_lock "BEGIN IMMEDIATE" 1500
+if ! INGEST_LOCKED=$(LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload.json" 2>&1); then
+    echo "  ✗ ingest failed behind a held lock: $INGEST_LOCKED"; exit 1
+fi
+wait "$HOLD_PID"
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==3) throw new Error('ingest counts wrong: '+process.argv[1])" "$INGEST_LOCKED"
+echo "  ingest finished after the lock was released"
+
+echo "[vector] recall waits out the exclusive lock of a commit"
+hold_vector_lock "BEGIN EXCLUSIVE" 700
+if ! RECALL_LOCKED=$(echo '{"query":"quantum flux capacitor","topK":3}' | LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-recall.mjs" 2>&1); then
+    echo "  ✗ recall failed behind a commit's lock: $RECALL_LOCKED"; exit 1
+fi
+wait "$HOLD_PID"
+node -e "const d=JSON.parse(process.argv[1]); if(!d.hits||d.hits.length===0) throw new Error('no hits: '+process.argv[1])" "$RECALL_LOCKED"
+echo "  recall answered after the lock was released"
+
 echo "[vector] mode:'vector' fuses semantic + lexical; authoritative fields from local SQLite"
 RES=$(curl -sf -X POST "$URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"quantum flux capacitor","mode":"vector"}')
 node -e "
