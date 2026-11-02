@@ -9,18 +9,20 @@ export function safeDate(raw?: string): Date {
     return Number.isNaN(d.getTime()) ? new Date() : d
 }
 
-// Word-token pattern for recall/telemetry tokenization: ASCII alphanumerics plus CJK
-// unified ideographs (U+4E00–U+9FFF); everything else is a delimiter.
-//
-// NOTE: this range is intentionally NARROWER than the adaptive-gate CJK class in
-// memoria.ts (CJK_CHAR, which also spans kana U+3040–U+30FF and hangul U+AC00–U+D7A3).
-// A short pure-kana/hangul query can therefore pass the length gate yet yield no tokens
-// here. Unifying the two ranges is a deliberate open decision (up: index kana/hangul in
-// the keyword path; down: stop weighting scripts the tokenizer drops) — see
-// docs/HANDOVER-improvements.md P5. Kept behaviour-preserving for now.
-export const TOKEN_SPLIT_PATTERN = /[^a-z0-9一-鿿]+/
+// Scripts the tokenizer reads as words: katakana U+30A0–U+30FF, ideographs U+3400–U+9FFF, hangul
+// syllables U+AC00–U+D7A3. Hiragana U+3040–U+309F stays a delimiter on purpose: it mostly writes
+// Japanese particles and verb endings, so its n-grams (`ます`, `ている`) match nearly every Japanese
+// memory and outrank the content words. A hiragana-only query still matches verbatim through the
+// whole-query term of the LIKE path, which is why the adaptive gate may admit it (CJK_CHAR).
+const CJK_WORD_RANGE = '\\u30a0-\\u30ff\\u3400-\\u9fff\\uac00-\\ud7a3'
 
-const CJK_RUN_PATTERN = /[一-鿿]+/g
+export const CJK_CHAR = new RegExp(`[\\u3040-\\u309f${CJK_WORD_RANGE}]`)
+
+// Word-token pattern for recall/telemetry tokenization: ASCII alphanumerics plus the scripts above;
+// everything else is a delimiter.
+export const TOKEN_SPLIT_PATTERN = new RegExp(`[^a-z0-9${CJK_WORD_RANGE}]+`)
+
+const CJK_RUN_PATTERN = new RegExp(`[${CJK_WORD_RANGE}]+`, 'g')
 
 /** Split a token into overlapping n-grams across its CJK runs, leaving latin/digit runs whole
  *  (issue-15).

@@ -130,6 +130,13 @@ eqList('a CJK run shorter than n is kept whole, then judged by the length filter
     tokenizeQuery('停掉', 3), [])
 eqList('latin-only queries are untouched by the windowing',
     tokenizeQuery('pnpm lockfile wins', 2), ['pnpm', 'lockfile', 'wins'])
+eqList('katakana is windowed the same way, across a katakana/ideograph boundary',
+    tokenizeQuery('デプロイ手順', 3), ['デプロ', 'プロイ', 'ロイ手', 'イ手順'])
+eqList('hiragana stays a delimiter, so grammatical endings produce no tokens',
+    tokenizeQuery('保存していますか', 2), ['保存'])
+eqList('hangul 2-grams reach the stem of a word that carries a particle',
+    tokenizeQuery('절차가', 2), ['절차', '차가'])
+near('a katakana query that is present scores full coverage', tokenCoverage('デプロイ', 'デプロイ手順を確認する'), 1)
 
 // The user-visible consequence, taken from the real corpus this was measured on: the question and
 // the memory share plenty of Chinese, but not as one contiguous string — so the whole query being a

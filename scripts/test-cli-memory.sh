@@ -209,4 +209,24 @@ echo '{not json' > "$TEXT_HOME/configs/config.json"
 [ "$(q "SELECT COUNT(*) FROM recall_telemetry WHERE query_text IS NOT NULL")" = "$BEFORE" ] || { echo "  ✗ 設定損毀時不該寫入文字"; exit 1; }
 echo "  預設只存 hash；opt-in 後遮罩、限長並可列出，設定損毀時不寫入"
 
+echo "[cli-memory] 日文與韓文的完整句子查得回記憶，平假名語尾不搶排序"
+SCRIPT_HOME="$TMP_DIR/script-home"
+script_cli() { MEMORIA_HOME="$SCRIPT_HOME" "$ROOT_DIR/cli" "$@"; }
+script_cli init >/dev/null
+script_cli remember "デプロイ手順はステージングで確認してから本番へ反映する" --project demo >/dev/null
+script_cli remember "배포 절차는 스테이징 환경에서 확인한 뒤 운영에 반영한다" --project demo >/dev/null
+script_cli remember "部署流程要先在測試環境確認再上線" --project demo >/dev/null
+script_cli remember "ログの保存期間は三十日に設定しています" --project demo >/dev/null
+script_cli remember "キャッシュの有効期限は一時間にしています" --project demo >/dev/null
+for pair in "배포 절차가 뭐야|배포 절차는" "배포절차|배포 절차는" "デプロイのやりかたをおしえて|デプロイ手順は" "ログをどのくらい保存していますか|ログの保存期間" "部署流程是什麼|部署流程要先"; do
+    QUERY="${pair%%|*}"; EXPECT="${pair##*|}"
+    TOP=$(script_cli recall "$QUERY" --project demo --json | node -e '
+const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
+process.stdout.write((d.data[0] && d.data[0].snippet) || "");')
+    case "$TOP" in *"$EXPECT"*) ;; *) echo "  ✗ 查詢 $QUERY 的首筆不對: '$TOP'"; exit 1 ;; esac
+done
+[ "$(script_cli recall "ましたか" --project demo --json | jq_field '.data.length')" = "0" ] || { echo "  ✗ 只有語尾的查詢不該命中不相干的記憶"; exit 1; }
+[ "$(script_cli recall "しています" --project demo --json | jq_field '.data.length')" != "0" ] || { echo "  ✗ 逐字出現的平假名應由整句比對命中"; exit 1; }
+echo "  日文、韓文與中文的句子都取回對應語言的記憶"
+
 echo "[cli-memory] ✓ all checks passed"

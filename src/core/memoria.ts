@@ -57,7 +57,7 @@ import {
     type BriefOptions,
     type MemoryAttributePatch
 } from './db/index.js'
-import { hybridUsedKeyword } from './utils.js'
+import { CJK_CHAR, hybridUsedKeyword } from './utils.js'
 import { queryMemoryPage, queryMemoryDetail, queryMemoryFacets } from './db/index.js'
 import type { MemoryFilter, MemoryPage, MemoryDetail, MemoryFacets, MemoryKind, MemorySearch } from './types.js'
 import { memorySearchSchema } from './db/memory-browser.js'
@@ -1437,11 +1437,6 @@ function isEmojiOnlyQuery(query: string): boolean {
 // usually a real question, whereas a 2–4 character ASCII query is often a fragment. Weight CJK
 // characters so the length gate treats "連線池設定" (meaningful) differently from "next" (noise).
 // ASCII-only queries keep their original character-count behaviour (weight 1 → no regression).
-//
-// NOTE: this class is WIDER than utils.TOKEN_SPLIT_PATTERN (ideographs only). A short pure-kana/
-// hangul query can pass this gate but produce no keyword tokens downstream. Aligning the two is a
-// deliberate open decision — see docs/HANDOVER-improvements.md P5. Left unchanged for now.
-const CJK_CHAR = /[぀-ヿ㐀-鿿가-힣]/
 const CJK_WEIGHT = 4
 
 function weightedQueryLength(text: string): number {

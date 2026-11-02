@@ -12,8 +12,12 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **Writing back a merge or release summary dismisses the commit-range skeletons it covers.** Those skeletons only repeat commit subjects, so nothing else ever resolved them and they stayed in 待增強 forever. Any enriched milestone in the repository counts, so the first write-back after upgrading clears the backlog; `dismissed_covered` reports how many. Skeletons no milestone covers stay pending, and a dismissed one can still be written back.
 
+### Fixed
+- **Natural-language Korean and katakana queries find their memories.** Whole sentences such as `배포 절차가 뭐야` used to return nothing unless the query appeared verbatim. Queries with no katakana, hangul or rare ideographs from Extension A tokenize exactly as before, and hiragana stays a separator so grammatical endings cannot outrank content words.
+
 ### Compatibility and upgrade
 - Migration 16 adds a nullable `recall_telemetry.query_text`. The default telemetry write path is unchanged.
+- No reindex is needed for the Korean and katakana change.
 
 ## [1.35.1] - 2026-10-31
 
