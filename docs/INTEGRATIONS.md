@@ -106,20 +106,21 @@ Codex CLI's hook system mirrors Claude Code's (JSON on stdin, JSON on stdout). W
 
 ### Antigravity CLI (zero-code integration via hooks)
 
-Antigravity CLI (`agy`) exposes agent lifecycle hooks (JSON on stdin/stdout). Register the handler in your `hooks.json` under the customization directory:
+Antigravity CLI (`agy`) exposes agent lifecycle hooks (JSON on stdin/stdout). Register the handler in `<project>/.agents/hooks.json`, or in `~/.gemini/config/hooks.json` for every project:
 
 ```jsonc
-// .agents/hooks/hooks.json (or settings.json "hooks")
 {
   "memoria": {
     "PreInvocation": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+      { "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }
     ],
     "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+      { "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }
     ]
   }
 }
 ```
 
-`PreInvocation` recalls memory and injects it before the model runs, emitted as **flat** top-level `additionalContext` (the Antigravity output schema rejects a nested `hookSpecificOutput` wrapper); `Stop` persists the completed turn. Antigravity delivers the conversation via `transcript_path` rather than payload fields, so the adapter reads the transcript (like Claude Code). The transcript line format is assumed to match Claude Code's JSONL — set `MEMORIA_ADAPTER_DEBUG=<file>` to capture a real payload from your `agy` build and confirm it.
+List the handlers directly under these two events: `agy` drops the whole file when one entry uses the `matcher`/`hooks` group, and it logs the failure only to its own `cli.log`. Wire `PreInvocation` and `Stop` only, because `PostInvocation` sends the same payload as `PreInvocation` and the adapter cannot tell them apart.
+
+`PreInvocation` runs before every model call in a turn; the adapter recalls once per user message, on the first call, and injects the result as a `systemMessage` step that stays available through the tool loop. `Stop` persists the turn from `lastUserInput` and the model's final answer in the transcript. Verified against `agy` 1.4.4 on 2026-11-02; if a later build behaves differently, set `MEMORIA_ADAPTER_DEBUG=<file>` to capture its payloads.

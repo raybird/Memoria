@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end test for the Antigravity CLI adapter hook handler.
 #
-# Antigravity delivers the conversation via `transcript_path` (not payload fields)
-# and requires FLAT injection output (`additionalContext`, no hookSpecificOutput).
-# Spawns a Memoria HTTP server, drives PreInvocation + Stop with a synthetic
-# transcript, and verifies the round trip.
+# Spawns a Memoria HTTP server, drives PreInvocation + Stop with payloads and
+# transcript steps shaped like real agy 1.4.4 output, and verifies the round trip.
 
 set -euo pipefail
 
@@ -34,69 +32,114 @@ curl -sf -X POST "$SERVER_URL/v1/remember" -H 'Content-Type: application/json' \
     -d '{"timestamp":"2026-05-20T10:00:00Z","project":"antigravity","summary":"用 npm publish 取代 install.sh","events":[{"event_type":"DecisionMade","timestamp":"2026-05-20T10:00:00Z","content":{"decision":"用 npm publish 取代 install.sh"}}]}' \
     >/dev/null
 
-# Antigravity recovers user/assistant text from the transcript, not payload fields.
-TRANSCRIPT="$TMP_DIR/transcript.jsonl"
+# Fixtures below follow what agy 1.4.4 actually sends. Its payload names no event, so
+# the adapter infers one, and the turn text comes from `lastUserInput` plus step-format
+# transcript lines.
+LOGS="$TMP_DIR/logs"
+mkdir -p "$LOGS"
+TRANSCRIPT="$LOGS/transcript.jsonl"
 cat >"$TRANSCRIPT" <<'EOF'
-{"type":"user","message":{"role":"user","content":[{"type":"text","text":"npm publish 要怎麼設定？"}]}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"設定 NPM_TOKEN secret 並在 tag push 觸發 release。"}]}}
+{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"<USER_REQUEST>\nnpm publish 要怎麼設定？\n</USER_REQUEST>"}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","tool_calls":[{"name":"read_file","args":{"AbsolutePath":"/tmp/x"}}]}
+{"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","content":"工具輸出 NOT-THE-ANSWER"}
+{"step_index":3,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"設定 NPM_TOKEN secret 並在 tag push 觸發 release。"}
 EOF
 
-echo "[antigravity] PreInvocation -> FLAT additionalContext (no hookSpecificOutput) referencing seeded memory"
-PRE_JSON="$(node -e "console.log(JSON.stringify({hook_event_name:'PreInvocation', session_id:'sess-agy-1', transcript_path: '${TRANSCRIPT}'}))")"
-OUT=$(echo "$PRE_JSON" | "$ROOT_DIR/cli" adapter antigravity --server "$SERVER_URL" --project antigravity)
-echo "$OUT" | node -e "
-const out = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-if (typeof out?.additionalContext !== 'string') { console.error('missing top-level additionalContext: ' + JSON.stringify(out)); process.exit(1); }
-if ('hookSpecificOutput' in out) { console.error('output must be flat (no hookSpecificOutput): ' + JSON.stringify(out)); process.exit(1); }
-if (!out.additionalContext.includes('npm publish')) { console.error('additionalContext did not contain seed text: ' + out.additionalContext); process.exit(1); }
-console.log('  flat additionalContext ok');
+payload() { # <extra-json-fields> [transcript]
+    node -e "
+const [extra, transcript] = process.argv.slice(1);
+console.log(JSON.stringify({ conversationId: 'conv-agy-1', workspacePaths: ['/w'], transcriptPath: transcript, modelName: 'auto', lastUserInput: 'npm publish 要怎麼設定？', ...JSON.parse(extra) }));
+" "$1" "${2:-$TRANSCRIPT}"
+}
+adapter() { "$ROOT_DIR/cli" adapter antigravity --server "$SERVER_URL" --project antigravity; }
+event_count() {
+    curl -sf "$SERVER_URL/v1/stats" | node -e "
+const r = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+process.stdout.write(String(r?.data?.events ?? 0));
+"
+}
+last_turn() {
+    node -e "
+const D = require('$ROOT_DIR/node_modules/better-sqlite3');
+const db = new D('$TMP_DIR/home/.memory/sessions.db', { readonly: true });
+const row = db.prepare(\"SELECT content FROM events WHERE event_type='ConversationTurn' ORDER BY timestamp DESC, rowid DESC LIMIT 1\").get();
+db.close();
+process.stdout.write(row ? row.content : '');
+"
+}
+
+echo "[antigravity] hook template uses the flat handlers agy requires"
+node -e "
+const t = JSON.parse(require('fs').readFileSync('$ROOT_DIR/skills/memoria-memory-sync/resources/hooks/antigravity.hooks.json', 'utf8'));
+for (const event of ['PreInvocation', 'Stop']) {
+  const handlers = t.memoria[event];
+  if (!handlers.length || !handlers.every((h) => typeof h.command === 'string' && !('hooks' in h))) {
+    console.error('  ✗ ' + event + ' must list handlers directly: ' + JSON.stringify(handlers)); process.exit(1);
+  }
+}
+console.log('  template ok');
 "
 
-echo "[antigravity] Stop hook with transcript -> writes ConversationTurn"
-BEFORE=$(curl -sf "$SERVER_URL/v1/stats" | node -e "
-const r = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(String(r?.data?.events ?? 0));
-")
+echo "[antigravity] first model call -> injectSteps systemMessage referencing seeded memory"
+OUT=$(payload '{"invocationNum":0,"initialNumSteps":1}' | adapter)
+echo "$OUT" | node -e "
+const out = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+const text = out?.injectSteps?.[0]?.systemMessage?.systemMessage;
+if (typeof text !== 'string' || !text.includes('npm publish')) { console.error('  ✗ missing injected memory: ' + JSON.stringify(out)); process.exit(1); }
+if ('additionalContext' in out) { console.error('  ✗ agy ignores additionalContext: ' + JSON.stringify(out)); process.exit(1); }
+console.log('  injectSteps ok');
+"
 
-STOP_JSON="$(node -e "console.log(JSON.stringify({hook_event_name:'Stop', session_id:'sess-agy-1', transcript_path: '${TRANSCRIPT}'}))")"
-echo "$STOP_JSON" | "$ROOT_DIR/cli" adapter antigravity --server "$SERVER_URL" --project antigravity >/dev/null
+echo "[antigravity] later model call in the same turn injects nothing"
+OUT=$(payload '{"invocationNum":1,"initialNumSteps":4}' | adapter)
+[ "$OUT" = "{}" ] || { echo "  ✗ expected {}, got $OUT"; exit 1; }
+echo "  repeat call skipped"
+
+echo "[antigravity] Stop -> writes the answer, skipping tool calls and tool output"
+STOP_FIELDS='{"executionNum":0,"terminationReason":"NO_TOOL_CALL","error":"","fullyIdle":true}'
+BEFORE=$(event_count)
+payload "$STOP_FIELDS" | adapter >/dev/null
 sleep 0.3
-
-AFTER=$(curl -sf "$SERVER_URL/v1/stats" | node -e "
-const r = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(String(r?.data?.events ?? 0));
-")
-
+AFTER=$(event_count)
 if [ "$AFTER" -le "$BEFORE" ]; then
     echo "  ✗ event count did not grow (before=$BEFORE, after=$AFTER)"
     exit 1
 fi
-echo "  Stop hook wrote events ($BEFORE -> $AFTER)"
-
-echo "[antigravity] Stop turn carries the transcript's user + assistant text"
-node -e "
-const D = require('$ROOT_DIR/node_modules/better-sqlite3');
-const db = new D('$TMP_DIR/home/.memory/sessions.db', { readonly: true });
-const row = db.prepare(\"SELECT content FROM events WHERE event_type='ConversationTurn' ORDER BY timestamp DESC LIMIT 1\").get();
-db.close();
-if (!row) { console.error('  ✗ no ConversationTurn event written'); process.exit(1); }
-const c = JSON.parse(row.content);
-if (!String(c.user || '').includes('npm publish')) { console.error('  ✗ user text not recovered from transcript: ' + row.content); process.exit(1); }
-if (!String(c.assistant || '').includes('NPM_TOKEN')) { console.error('  ✗ assistant text not recovered from transcript: ' + row.content); process.exit(1); }
-console.log('  turn carries transcript user + assistant');
-"
+TURN=$(last_turn)
+case "$TURN" in *"npm publish 要怎麼設定"*) ;; *) echo "  ✗ user text missing: $TURN"; exit 1 ;; esac
+case "$TURN" in *USER_REQUEST*) echo "  ✗ transcript wrapper leaked: $TURN"; exit 1 ;; esac
+case "$TURN" in *NPM_TOKEN*) ;; *) echo "  ✗ assistant text missing: $TURN"; exit 1 ;; esac
+case "$TURN" in *NOT-THE-ANSWER*) echo "  ✗ tool output stored as the answer: $TURN"; exit 1 ;; esac
+echo "  Stop wrote the turn ($BEFORE -> $AFTER)"
 
 echo "[antigravity] duplicate Stop is deduped (no double write)"
-echo "$STOP_JSON" | "$ROOT_DIR/cli" adapter antigravity --server "$SERVER_URL" --project antigravity >/dev/null
+payload "$STOP_FIELDS" | adapter >/dev/null
 sleep 0.3
-AFTER2=$(curl -sf "$SERVER_URL/v1/stats" | node -e "
-const r = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-process.stdout.write(String(r?.data?.events ?? 0));
-")
+AFTER2=$(event_count)
 if [ "$AFTER2" -ne "$AFTER" ]; then
     echo "  ✗ duplicate Stop wrote again (after=$AFTER, after2=$AFTER2)"
     exit 1
 fi
 echo "  duplicate Stop deduped (events stayed $AFTER2)"
+
+echo "[antigravity] a turn with no answer is not paired with the previous reply"
+FAILED="$LOGS/failed.jsonl"
+cp "$TRANSCRIPT" "$FAILED"
+echo '{"step_index":4,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"<USER_REQUEST>\n第二題\n</USER_REQUEST>"}' >>"$FAILED"
+echo '{"step_index":5,"source":"SYSTEM","type":"ERROR_MESSAGE","status":"DONE","content":"model failed"}' >>"$FAILED"
+payload '{"executionNum":1,"terminationReason":"ERROR","error":"boom","fullyIdle":true,"lastUserInput":"第二題"}' "$FAILED" | adapter >/dev/null
+sleep 0.3
+[ "$(event_count)" -eq "$AFTER" ] || { echo "  ✗ unanswered turn was written"; exit 1; }
+echo "  unanswered turn skipped"
+
+echo "[antigravity] a truncated answer is read back from transcript_full.jsonl"
+CUT="$TMP_DIR/cut"
+mkdir -p "$CUT"
+echo '{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"長回答前段","truncated_fields":["content"]}' >"$CUT/transcript.jsonl"
+echo '{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","content":"長回答前段與完整後段"}' >"$CUT/transcript_full.jsonl"
+payload '{"executionNum":0,"terminationReason":"NO_TOOL_CALL","conversationId":"conv-agy-2","lastUserInput":"長回答"}' "$CUT/transcript.jsonl" | adapter >/dev/null
+sleep 0.3
+case "$(last_turn)" in *"完整後段"*) ;; *) echo "  ✗ full answer not recovered: $(last_turn)"; exit 1 ;; esac
+echo "  full answer recovered"
 
 echo "[antigravity] ok"

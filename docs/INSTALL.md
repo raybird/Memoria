@@ -233,7 +233,7 @@ MEMORIA_HOME=$(pwd) ./cli index build
 |----------|----------|------|
 | Claude Code | `~/.claude/settings.json` 的 `hooks` | `memoria adapter claude-code` |
 | Codex CLI | `~/.codex/hooks.json`（或 `config.toml` 的 `[hooks]`） | `memoria adapter codex` |
-| Antigravity CLI | 客製目錄的 `hooks.json`（或 `settings.json` 的 `hooks`） | `memoria adapter antigravity` |
+| Antigravity CLI | `<project>/.agents/hooks.json` 或 `~/.gemini/config/hooks.json` | `memoria adapter antigravity` |
 
 可直接複製部署好的範本（`setup` 後位於 `<memoria-home>/.agents/skills/memoria/resources/hooks/`，repo 內為 `skills/memoria-memory-sync/resources/hooks/`）：
 

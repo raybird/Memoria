@@ -13,10 +13,12 @@ All notable changes to this project will be documented in this file.
 - **Writing back a merge or release summary dismisses the commit-range skeletons it covers.** Those skeletons only repeat commit subjects, so nothing else ever resolved them and they stayed in 待增強 forever. Any enriched milestone in the repository counts, so the first write-back after upgrading clears the backlog; `dismissed_covered` reports how many. Skeletons no milestone covers stay pending, and a dismissed one can still be written back.
 
 ### Fixed
+- **The Antigravity CLI integration now works against a real `agy`.** Checked against `agy` 1.4.4, it never had: the shipped `hooks.json` template was rejected outright, the payload names no event so every hook did nothing, and neither the injected context nor the transcript parsing matched what `agy` uses. Recall now runs once per user message and stays available through the tool loop, and `Stop` stores the model's full final answer.
 - **Natural-language Korean and katakana queries find their memories.** Whole sentences such as `배포 절차가 뭐야` used to return nothing unless the query appeared verbatim. Queries with no katakana, hangul or rare ideographs from Extension A tokenize exactly as before, and hiragana stays a separator so grammatical endings cannot outrank content words.
 
 ### Compatibility and upgrade
 - Migration 16 adds a nullable `recall_telemetry.query_text`. The default telemetry write path is unchanged.
+- If you wired `memoria adapter antigravity` from an earlier template, replace that `hooks.json` with the new flat form in `docs/INTEGRATIONS.md`; the old form makes `agy` discard every hook in the file. The documented path is now `.agents/hooks.json`.
 - No reindex is needed for the Korean and katakana change.
 
 ## [1.35.1] - 2026-10-31

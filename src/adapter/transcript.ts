@@ -1,11 +1,9 @@
-// Shared JSONL transcript parsing for hook adapters whose host CLI delivers the
-// conversation via a `transcript_path` rather than payload fields (Claude Code and
-// Antigravity). Each transcript line is a message envelope like:
+// JSONL transcript parsing for the Claude Code hook adapter, whose host delivers the
+// conversation via a `transcript_path` rather than payload fields. Each transcript line
+// is a message envelope like:
 //   {"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}
 //
-// NOTE: The Claude Code transcript format is confirmed. The Antigravity (`agy`)
-// transcript line format is assumed to match this shape and is the one remaining
-// item to verify against a real payload (capture with MEMORIA_ADAPTER_DEBUG).
+// Antigravity transcripts use a different step format; antigravity-adapter.ts reads them.
 
 import { readFile } from 'node:fs/promises'
 import type { HookTurn } from './stdin-hook-adapter.js'
@@ -33,18 +31,6 @@ export async function readLastTurn(transcriptPath: string, scanLimit = DEFAULT_S
     }
     if (!lastUser || !lastAssistant) return null
     return { user: lastUser, assistant: lastAssistant }
-}
-
-/** The most recent user message text in the transcript ('' if none). */
-export async function readLatestUserMessage(transcriptPath: string, scanLimit = DEFAULT_SCAN_LIMIT): Promise<string> {
-    const lines = await readLines(transcriptPath, scanLimit)
-    for (let i = lines.length - 1; i >= 0; i--) {
-        if (extractRoleFromTranscriptLine(lines[i]) === 'user') {
-            const text = extractTextFromTranscriptLine(lines[i])
-            if (text) return text
-        }
-    }
-    return ''
 }
 
 function extractRoleFromTranscriptLine(line: string): 'user' | 'assistant' | null {

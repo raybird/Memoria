@@ -38,7 +38,7 @@
 - **v1.26.0 = 語意召回交付鏈補完(issue-10 + issue-12)**(2026-08-13):(a) **release tarball 終於帶上 `skills/memoria-vector`**——`install.sh` 裝出來的 Memoria 先前**不可能**跑語意召回,而且是靜默的(helper 找不到 → `unavailable` → fail-open 退回字面召回,無錯誤無警告)。v1.23.1 用 `files` 修好了 npm 那半邊,這半邊被留下,同一個症狀換一個成因活了下來。逐檔複製而非 `cp -R`(helper 的 `node_modules` 是 ~850MB devDeps,必須維持 opt-in),打包腳本**雙向斷言**:該有的三個檔要在、`node_modules` 不准在。(b) **`doctor` 開始報向量層**——`inspectVectorLayer()` 放在 `core/recall-vector.ts`(純加法)而非 doctor 命令裡,因為重寫一份解析順序會漂移,然後自信地診斷一個 recall 從不載入的 helper。**未設 `LIBSQL_URL` 算通過**(opt-in 沒開 ≠ 不健康),`DoctorCheck` 型別與 `--json` 契約都沒動。實作中補掉一個規格漏寫的坑:`resolveHelperScript()` 對 override 原樣回傳不驗存在性,照抄會把打錯字的 override 報成健康。
 - **⚠ 2026-08-13 由下游回報開出兩個新 issue,其中一個影響本機日常使用**:[issue-15](issues/issue-15/README.md) 自然語言中文查詢召不回(整句成單一 token,要求逐字出現;實測使用者真實 `~/.memoria` 確認)、[issue-14](issues/issue-14/README.md) `db_integrity` 誤報且訊息不帶證據(根因未定位,本 issue 只修可診斷性)。**issue-15 優先於 issue-14**:前者影響使用者本人每天的召回品質,後者只影響一個下游的健康訊號可讀性。
 - **下一步**:(a) **讓真實 recall/outcome 資料累積**——四種 route 都可用了,現在純粹缺使用量,且 issue-9 修好後 calibration 讀數才有意義;(b) **語意召回交付鏈已補完**——issue-10/12 於 v1.26.0、issue-11 於 v1.26.1 交付,三段(沒交付 / 交付了跑不動 / 壞了沒人說)全數收斂;剩下的 [issue-13](issues/issue-13/README.md) 是能力缺口而非交付缺口,且有下游在等第一階段;(c) **[issue-8](issues/issue-8/README.md) 待評估**:vector helper 每次 spawn 吃 624MB 且無並行上限(潛在風險,非已發生事故;優先序理由見上);(d) 工程債:`repo-facade` 抽取(等下次動 repo 邏輯)。
-- **一個待收尾的外部驗證**:Antigravity transcript 行格式(見 §6)。
+- **Antigravity 契約已於 2026-11-02 用真實 `agy` 1.4.4 校準**(見 §6)。
 
 ---
 
@@ -192,17 +192,20 @@
 
 ---
 
-## 6. 一個待收尾的外部驗證（低優先、但要記得）
+## 6. Antigravity 契約校準（2026-11-02 完成）
 
-Antigravity adapter 已對齊「驗證過的契約」(欄位來源、事件名、扁平輸出都正確),**唯一未證實的是 transcript 逐行格式**(目前照 Claude Code JSONL 格式假設)。收尾方式:
+原本以為只差 transcript 逐行格式，實測 `agy` 1.4.4 後發現 adapter 從未真正運作，v1.17.0 記的「欄位來源、事件名、扁平輸出都正確」不成立：
 
-```bash
-memoria serve                                   # 開著 server
-MEMORIA_ADAPTER_DEBUG=/tmp/agy-capture.jsonl memoria adapter antigravity
-# 用 agy 跑一輪,把 /tmp/agy-capture.jsonl 貼回來 → 100% 校準 src/adapter/transcript.ts
-```
+| 項目 | 舊假設 | 實測 |
+|------|--------|------|
+| hooks.json | 事件底下用 `matcher`／`hooks` 群組 | `PreInvocation`、`Stop` 要直接列 handler，寫錯整個檔案被丟棄 |
+| 事件 | payload 帶 `hook_event_name` | payload 不帶事件名，只能從 `terminationReason`、`invocationNum` 推斷；`PostInvocation` 與 `PreInvocation` 無法區分 |
+| 對話 id | `session_id` | `conversationId` |
+| 注入 | 扁平 `additionalContext` | `injectSteps`；`additionalContext` 被忽略，`ephemeralMessage` 撐不到工具呼叫後的下一次模型呼叫，`systemMessage` 才撐得過 |
+| 使用者訊息 | 從 transcript 讀 | payload 的 `lastUserInput` |
+| transcript | Claude Code 的 `message.content` | `USER_INPUT`、`PLANNER_RESPONSE` 等 step；長回答在 `transcript.jsonl` 約 3000 字被截斷且無標記，完整內容在 `transcript_full.jsonl` |
 
-拿到真實 payload 前,adapter 功能已可用;這只是把最後一個假設坐實。
+驗收方式：以隔離的 `.agents/hooks.json` 接內建範本跑真實 `agy`，一輪含工具呼叫的對話得到 `Pre#0 Pre#1 Stop`，只 recall 一次，模型答出種子記憶，回合寫入一筆，UFL 回報 reuse。契約來源是 `agy` 執行檔內嵌的 hooks 文件與實際擷取的 payload；本機依既有決策仍不接 hook。
 
 ---
 

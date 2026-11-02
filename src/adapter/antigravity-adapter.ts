@@ -1,94 +1,158 @@
 // Antigravity CLI Adapter
 //
-// Integrates Memoria into Google's Antigravity CLI (`agy`) via its agent hook
-// system. Hooks receive one JSON object on stdin and return JSON on stdout to
-// inject context or gate actions. Wire the adapter into a hooks.json under the
-// project agents dir (`<project>/.agents/hooks.json`); the top-level key is an
-// arbitrary hook-group name (we use "memoria"):
+// Integrates Memoria into Google's Antigravity CLI (`agy`) via its lifecycle hooks.
+// Hooks receive one JSON object on stdin and return JSON on stdout. Wire the adapter
+// into `<project>/.agents/hooks.json` or `~/.gemini/config/hooks.json`; the top-level
+// key is an arbitrary hook name:
 //
 //   {
 //     "memoria": {
-//       "PreInvocation": [
-//         { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
-//       ],
-//       "Stop": [
-//         { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
-//       ]
+//       "PreInvocation": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }],
+//       "Stop": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }]
 //     }
 //   }
 //
-// Contract (verified against Antigravity hook docs, July 2026):
-//   - `PreInvocation` injects context before the model runs; `Stop` marks turn end.
-//   - Antigravity does NOT deliver the user prompt or assistant message as payload
-//     fields — both are recovered from `transcript_path`, so this adapter is
-//     transcript-based (like Claude Code), not payload-field-based (like Codex).
-//   - Injection output MUST be flat `{ "additionalContext": "..." }`; wrapping it
-//     under `hookSpecificOutput` fails Antigravity's schema validation.
-// The remaining unverified detail is the transcript line FORMAT (assumed to match
-// the Claude Code JSONL envelope); capture a real payload with MEMORIA_ADAPTER_DEBUG
-// to confirm.
+// Handlers sit directly under these two events. The `matcher`/`hooks` group belongs to
+// the tool events only, and one invalid entry makes agy drop the whole file.
+//
+// Contract, verified against agy 1.4.4 runs and the hook reference it embeds (2026-11-02):
+//   - The payload names no event, so it is inferred: `terminationReason` marks Stop and
+//     `invocationNum` marks PreInvocation. PostInvocation carries the same payload as
+//     PreInvocation, so wire only the two events above.
+//   - PreInvocation fires before EVERY model call in a turn; `invocationNum` restarts at
+//     0 for each user message, so recall runs once per user message.
+//   - Keys are camelCase. The prompt arrives as `lastUserInput`; the assistant text
+//     comes from `transcriptPath`, whose lines are agy steps rather than Claude messages.
+//   - Context goes out through `injectSteps`. A `systemMessage` step lasts through the
+//     tool loop, whereas an `ephemeralMessage` step is gone by the next model call and
+//     a flat `additionalContext` is ignored.
 
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { StdinHookAdapter } from './stdin-hook-adapter.js'
 import type { HookInput, HookTurn } from './stdin-hook-adapter.js'
 import type { MemoriaAdapterConfig } from './adapter.js'
-import { readLastTurn, readLatestUserMessage } from './transcript.js'
+
+const DEFAULT_SCAN_LIMIT = 200
 
 export interface AntigravityAdapterConfig extends MemoriaAdapterConfig {
-    /** Max transcript lines to scan backwards when locating the turn (default: 50) */
+    /** Max transcript steps to scan backwards when locating the answer (default: 200) */
     transcriptScanLimit?: number
 }
 
-/** Shape of the JSON Antigravity writes to a hook's stdin. Fields are optional because they vary by event. */
+/** The agy fields this adapter reads. Which ones are present depends on the event. */
 export interface AntigravityHookInput {
-    hook_event_name?: string
-    session_id?: string
-    /** Path to the session transcript log (both spellings observed across builds). */
-    transcript_path?: string
+    conversationId?: string
     transcriptPath?: string
-    cwd?: string
+    lastUserInput?: string
+    /** PreInvocation / PostInvocation only. */
+    invocationNum?: number
+    /** Stop only. */
+    terminationReason?: string
 }
 
-/** Hook response Antigravity accepts on stdout (flat — no legacy hookSpecificOutput wrapper). */
+/** Hook response agy accepts on stdout for a PreInvocation hook. */
 export interface AntigravityHookOutput {
-    additionalContext?: string
+    injectSteps?: Array<{ systemMessage: { systemMessage: string } }>
+}
+
+interface TranscriptStep {
+    step_index?: number
+    type?: string
+    content?: unknown
+    truncated_fields?: unknown
+}
+
+async function readSteps(path: string): Promise<TranscriptStep[]> {
+    const raw = await readFile(path, 'utf8').catch(() => '')
+    const steps: TranscriptStep[] = []
+    for (const line of raw.split('\n')) {
+        if (!line) continue
+        try {
+            steps.push(JSON.parse(line) as TranscriptStep)
+        } catch {
+            // A line still being written: the rest of the transcript remains usable.
+        }
+    }
+    return steps
+}
+
+function stepText(step: TranscriptStep | undefined): string {
+    return typeof step?.content === 'string' ? step.content.trim() : ''
+}
+
+/**
+ * The model's final text in the latest turn ('' if it produced none).
+ *
+ * The scan stops at USER_INPUT so a turn that ended without an answer, such as one that
+ * failed, is never paired with the previous turn's reply. `transcript.jsonl` cuts long
+ * answers at about 3000 characters with no marker in the text, so a step flagged as
+ * truncated is read back from `transcript_full.jsonl` beside it.
+ */
+async function readLatestAnswer(transcriptPath: string, scanLimit: number): Promise<string> {
+    const steps = (await readSteps(transcriptPath)).slice(-scanLimit)
+    for (let i = steps.length - 1; i >= 0; i--) {
+        const step = steps[i]
+        if (step.type === 'USER_INPUT') return ''
+        if (step.type !== 'PLANNER_RESPONSE') continue
+        const text = stepText(step)
+        if (!text) continue
+        if (!Array.isArray(step.truncated_fields) || !step.truncated_fields.includes('content')) return text
+        const full = await readSteps(join(dirname(transcriptPath), 'transcript_full.jsonl'))
+        return stepText(full.find((candidate) => candidate.step_index === step.step_index)) || text
+    }
+    return ''
+}
+
+function inferEvent(input: HookInput): string {
+    if (typeof input.terminationReason === 'string') return 'Stop'
+    if (typeof input.invocationNum === 'number') return 'PreInvocation'
+    return ''
+}
+
+function lastUserInput(input: HookInput): string {
+    return typeof input.lastUserInput === 'string' ? input.lastUserInput : ''
 }
 
 export class AntigravityAdapter extends StdinHookAdapter {
-    // PreInvocation is Antigravity's context-injection point; UserPromptSubmit is a Claude-compatible alias.
-    protected readonly injectEvents = ['PreInvocation', 'UserPromptSubmit'] as const
-    // Stop / PostInvocation mark turn completion.
-    protected readonly stopEvents = ['Stop', 'PostInvocation'] as const
+    protected readonly injectEvents = ['PreInvocation'] as const
+    protected readonly stopEvents = ['Stop'] as const
     protected readonly defaultConversationId = 'antigravity-session'
 
     private readonly transcriptScanLimit: number
 
     constructor(config: AntigravityAdapterConfig) {
         super(config)
-        this.transcriptScanLimit = config.transcriptScanLimit ?? 50
+        this.transcriptScanLimit = config.transcriptScanLimit ?? DEFAULT_SCAN_LIMIT
     }
 
-    private transcriptPath(input: HookInput): string {
-        if (typeof input.transcript_path === 'string' && input.transcript_path) return input.transcript_path
-        if (typeof input.transcriptPath === 'string' && input.transcriptPath) return input.transcriptPath
-        return ''
+    override handleHookEvent(input: HookInput): Promise<unknown> {
+        return super.handleHookEvent({ ...input, hook_event_name: inferEvent(input) })
     }
 
-    /** Antigravity has no `prompt` field; read the latest user message from the transcript. */
-    protected override async extractUserMessage(input: HookInput): Promise<string> {
-        const path = this.transcriptPath(input)
-        if (!path) return ''
-        return readLatestUserMessage(path, this.transcriptScanLimit)
+    protected override conversationId(input: HookInput): string {
+        return (typeof input.conversationId === 'string' && input.conversationId.trim()) || this.defaultConversationId
     }
 
-    /** Antigravity has no `last_assistant_message` field; read the last turn from the transcript. */
+    protected override extractUserMessage(input: HookInput): string {
+        return lastUserInput(input)
+    }
+
+    /** The injected step lasts for the rest of the conversation, so later model calls need no new recall. */
+    protected override async handleInject(input: HookInput, event: string): Promise<unknown> {
+        if (input.invocationNum !== 0) return this.buildInjectOutput(event)
+        return super.handleInject(input, event)
+    }
+
     protected async extractTurn(input: HookInput): Promise<HookTurn | null> {
-        const path = this.transcriptPath(input)
-        if (!path) return null
-        return readLastTurn(path, this.transcriptScanLimit)
+        const user = lastUserInput(input)
+        const path = typeof input.transcriptPath === 'string' ? input.transcriptPath : ''
+        if (!user || !path) return null
+        const assistant = await readLatestAnswer(path, this.transcriptScanLimit)
+        return assistant ? { user, assistant } : null
     }
 
     protected buildInjectOutput(_eventName: string, text?: string): AntigravityHookOutput {
-        // Flat output only — a nested hookSpecificOutput copy fails Antigravity schema validation.
-        return text ? { additionalContext: text } : {}
+        return text ? { injectSteps: [{ systemMessage: { systemMessage: text } }] } : {}
     }
 }

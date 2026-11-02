@@ -106,20 +106,21 @@ Codex CLI 的 hook 系統與 Claude Code 相同（stdin 收 JSON、stdout 回 JS
 
 ### Antigravity CLI（透過 hook 零程式碼整合）
 
-Antigravity CLI（`agy`）提供 agent 生命週期 hook（stdin/stdout 走 JSON）。在客製目錄的 `hooks.json` 註冊 handler：
+Antigravity CLI（`agy`）提供 agent 生命週期 hook（stdin/stdout 走 JSON）。把 handler 註冊在 `<project>/.agents/hooks.json`，要套用到所有專案則放 `~/.gemini/config/hooks.json`：
 
 ```jsonc
-// .agents/hooks/hooks.json（或 settings.json 的 "hooks"）
 {
   "memoria": {
     "PreInvocation": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+      { "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }
     ],
     "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }] }
+      { "type": "command", "command": "memoria adapter antigravity", "timeout": 30 }
     ]
   }
 }
 ```
 
-`PreInvocation` 在模型執行前 recall 並注入記憶，輸出為**扁平**的 top-level `additionalContext`（Antigravity 的輸出 schema 會拒絕巢狀 `hookSpecificOutput` 包裝）；`Stop` 寫回完成的這一輪。Antigravity 透過 `transcript_path` 傳遞對話（而非 payload 欄位），因此 adapter 改讀 transcript（如同 Claude Code）。transcript 行格式假設與 Claude Code 的 JSONL 相同——設 `MEMORIA_ADAPTER_DEBUG=<file>` 擷取你 `agy` 版本的真實 payload 來確認。
+handler 要直接列在這兩個事件底下：只要有一筆用了 `matcher`／`hooks` 群組，`agy` 就會丟棄整個檔案，而且只記在它自己的 `cli.log`。只接 `PreInvocation` 與 `Stop`，因為 `PostInvocation` 的 payload 與 `PreInvocation` 相同，adapter 無法分辨。
+
+`PreInvocation` 在一輪裡的每次模型呼叫前都會觸發；adapter 只在每則使用者訊息的第一次呼叫 recall 一次，並以 `systemMessage` step 注入，整個工具迴圈都看得到。`Stop` 用 `lastUserInput` 與 transcript 裡模型的最後回答寫回這一輪。以上於 2026-11-02 對 `agy` 1.4.4 實測；之後的版本若行為不同，設 `MEMORIA_ADAPTER_DEBUG=<file>` 擷取 payload 比對。
