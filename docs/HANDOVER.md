@@ -100,6 +100,7 @@
 | v1.35.0 | brief 依專案分配與數字修正 | 近期決策的 `--top-k` 格數依專案輪流分配（固定上限 2、3 實測只露出 4～5 個專案）；`期間決策` 改報窗口內實際筆數；常駐約束上限 180 → 800 字；高效用區塊要 2 次觀察、略過已釘選、合併同一 git 摘要並在 topK 前過濾範圍；`totals.utility_unproven` 為新增欄位。schema、recall 排名與 prune 門檻不變。main 完整 CI 通過後發版。 |
 | v1.35.1 | setup 不再誤刪引用標記後的內容 | `upsertManagedBlock` 原以 `indexOf` 找標記，內文引用開始標記時，從該處到真正結束標記之間全被刪除。新增 `findManagedBlock`，只接受獨占一行且不在 code fence 內的標記。不成對時在檔尾新增區塊。schema、recall、brief 不變。main 完整 CI 通過後發版。 |
 | v1.36.0 | Antigravity 契約校準與韓文、片假名召回 | 以真實 `agy` 1.4.4 重寫 adapter，舊範本會讓 agy 丟棄整個 `hooks.json`（見 §6）。tokenizer 納入片假名與韓文，平假名維持分隔符。`brief`、`doctor` 顯示掃描落後；merge／release 寫回時自動略過已涵蓋的 commit range 骨架；`stats --zero-utility` 與 opt-in 的 `telemetry.storeQueryText`。migration 16 新增可為空的 `recall_telemetry.query_text`。main 完整 CI 通過後發版。 |
+| v1.36.1 | 向量庫遇鎖改為等待 | `@libsql/client` 預設不等鎖，兩個 session 同時 ingest 時第二個立刻 `SQLITE_BUSY`，ingest 期間的語意召回也會靜默退回字面查詢（1600 筆實測 52/134 失敗）。`vector-ingest` 設 300 秒（四個並行時單一語句最久等 53 秒），`vector-recall` 設 1.5 秒（留在 helper 的 4 秒預算內）。不動 helper 的 lockfile，不必重跑 `setup --vector`。main 完整 CI 通過後發版。 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
