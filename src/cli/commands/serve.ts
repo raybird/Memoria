@@ -4,7 +4,7 @@ import { closeAllConnections } from '../../core/index.js'
 export function registerServeCommand(program: Command): void {
     program
         .command('serve')
-        .description('Start Memoria HTTP API server')
+        .description('Start Memoria HTTP API server (--ui opens the local memory workspace)')
         .option('--port <port>', 'Port to listen on (default: 3917 or MEMORIA_PORT)')
         .option('--ui', 'Open the local read-only memory workspace (127.0.0.1 only)')
         .option('--json', 'Emit JSON status line on startup')
