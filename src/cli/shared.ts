@@ -4,6 +4,7 @@ import { z } from 'zod'
 import {
     safeDate,
     slugify,
+    skillFileStem,
     resolveSessionId,
     resolveEventId,
     getEventType,
@@ -91,7 +92,7 @@ export function previewSync(paths: MemoriaPaths, sessionFile: string, sessionDat
                 typeof content.skill_name === 'string' && content.skill_name.trim()
                     ? content.skill_name.trim()
                     : 'Untitled Skill'
-            return path.join(paths.knowledgeDir, 'Skills', `${slugify(skillName)}.md`)
+            return path.join(paths.knowledgeDir, 'Skills', `${skillFileStem(skillName)}.md`)
         })
 
     console.log('🧪 Dry run (no files written)')

@@ -252,6 +252,27 @@ export function slugify(input: string): string {
     return cleaned || 'untitled'
 }
 
+const SKILL_STEM_MAX_BYTES = 200
+
+/** File-name stem for a skill page (issue-31). A skill note's title is its whole note text, and a
+ *  file name over 255 bytes fails with ENAMETOOLONG after the note is already in the DB. Stems up to
+ *  SKILL_STEM_MAX_BYTES stay exactly `slugify(title)` so every existing page keeps its name; longer
+ *  ones are cut on a character boundary and carry a hash of the full slug, so two long titles that
+ *  share a prefix do not overwrite each other's page. */
+export function skillFileStem(title: string): string {
+    const slug = slugify(title)
+    if (Buffer.byteLength(slug, 'utf8') <= SKILL_STEM_MAX_BYTES) return slug
+    let cut = ''
+    let bytes = 0
+    for (const ch of slug) {
+        const size = Buffer.byteLength(ch, 'utf8')
+        if (bytes + size > SKILL_STEM_MAX_BYTES) break
+        cut += ch
+        bytes += size
+    }
+    return `${cut}_${createHash('sha256').update(slug).digest('hex').slice(0, 8)}`
+}
+
 export function stableStringify(value: unknown): string {
     if (value === null || typeof value !== 'object') {
         return JSON.stringify(value)

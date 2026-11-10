@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { existsSync } from '../paths.js'
-import { safeDate, slugify } from '../utils.js'
+import { safeDate, skillFileStem, slugify } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { withDb } from './connection.js'
 
@@ -98,7 +98,7 @@ export async function extractSkills(memoriaHome: string, dbPath: string, session
             const fields = parseSkillEvent(row.content)
             const date = safeDate(row.timestamp).toISOString().slice(0, 10)
 
-            const filename = `${slugify(fields.title)}.md`
+            const filename = `${skillFileStem(fields.title)}.md`
             const filePath = path.join(memoriaHome, 'knowledge', 'Skills', filename)
 
             const examples = fields.examples.length > 0

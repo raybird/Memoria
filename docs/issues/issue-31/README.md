@@ -114,7 +114,7 @@ Feature: 多個 agent 寫記憶並收尾時不會卡住
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: f1a4b8c
 - **核准來源**: 使用者 2026-11-10 對話。修正方向：選「開 issue 再實作」，接受三處修法表（檔名限制長度並加雜湊後綴、先寫檔失敗就不留 DB 記錄；跳過 name 與 text 都沒變的列、寫入包成一個交易；有缺漏時先建記憶節點）。Q1「撤回這次新建的 note」；Q2「只寫進文件」（換模型要先刪 vectors.db 再 ingest，不加旗標或 schema）；Q3「修法前面加 index build」（含「doctor 多一行 tree index 檢查」）；Q4「缺 2 筆 30 秒；4 支並行 60 秒」。TBD-1（ingest 輸出新增 `unchanged`、`embedded` 改為本次實際寫入數）：使用者 2026-11-10 回覆「那麼可以開始修，修好再寫」。
 
 | Scenario | 核准日期 | 狀態 |

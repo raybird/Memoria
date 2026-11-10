@@ -107,6 +107,42 @@ INGEST=$(LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/
 node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==3||d.skipped!==1) throw new Error('ingest counts wrong: '+process.argv[1])" "$INGEST"
 echo "  embedded=3 skipped=1 ok"
 
+# issue-31 SCN-004: every repair used to re-embed the whole corpus — 2183 rows, ~3.5 min, 2.6GB — to
+# fill 2 gaps, and several agents wrapping up at once each did it. Its own store keeps this case
+# away from $VECDB, which the recall assertions below read.
+echo "[vector] SCN-004 ingest embeds only new or changed rows"
+VEC31="$TMP_DIR/vectors-31.db"
+ingest31() { LIBSQL_URL="file:$VEC31" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$1"; }
+stamps31() { (cd "$HELPER_DIR" && LIBSQL_URL="file:$VEC31" node --input-type=module -e "
+const { importDep } = await import('./deps.mjs')
+const { createClient } = await importDep('@libsql/client')
+const db = createClient({ url: process.env.LIBSQL_URL })
+const r = await db.execute('SELECT name, updated_at, text FROM memoria_vectors ORDER BY name')
+console.log(JSON.stringify(r.rows.map((x) => [x.name, x.updated_at, x.text])))
+db.close()
+"); }
+ingest31 "$TMP_DIR/payload.json" >/dev/null
+BEFORE31=$(stamps31)
+sleep 0.01
+AGAIN31=$(ingest31 "$TMP_DIR/payload.json")
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==0||d.unchanged!==3||d.skipped!==1) throw new Error('re-ingest of the same payload must embed nothing: '+process.argv[1])" "$AGAIN31"
+[ "$(stamps31)" = "$BEFORE31" ] || { echo "  ✗ unchanged rows were rewritten"; exit 1; }
+sed -e 's/quantum flux capacitor ghost/quantum flux capacitor ghost revised/' \
+    -e 's/"type":"project","name":"vec","text":"should be skipped"}/&,\n  {"id":"session:brand-new-31","type":"session","name":"new","text":"freshly added entity"}/' \
+    "$TMP_DIR/payload.json" > "$TMP_DIR/payload-31.json"
+grep -q 'ghost revised' "$TMP_DIR/payload-31.json" && grep -q 'brand-new-31' "$TMP_DIR/payload-31.json" \
+    || { echo "  ✗ payload-31 fixture was not built"; exit 1; }
+DELTA31=$(ingest31 "$TMP_DIR/payload-31.json")
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==2||d.unchanged!==2||d.skipped!==1) throw new Error('one changed + one new must embed exactly 2: '+process.argv[1])" "$DELTA31"
+node -e "
+const rows=new Map(JSON.parse(process.argv[1]).map(([n,u,t])=>[n,{u,t}]));
+const before=new Map(JSON.parse(process.argv[2]).map(([n,u,t])=>[n,{u,t}]));
+if(rows.get('session:does-not-exist-xyz')?.t!=='ghost\nquantum flux capacitor ghost revised') throw new Error('changed row keeps its old text');
+if(rows.get('session:brand-new-31')?.t!=='new\nfreshly added entity') throw new Error('new row missing');
+if(rows.get('session:$SID_A').u!==before.get('session:$SID_A').u) throw new Error('unchanged row A was rewritten');
+" "$(stamps31)" "$BEFORE31"
+echo "  same payload -> embedded=0 unchanged=3; one changed + one new -> embedded=2 unchanged=2"
+
 # Ingest commits row by row, and another session's ingest or recall reaches the same file meanwhile.
 # Both helpers must wait for the lock: the lock is taken before each one starts, so without a busy
 # timeout they fail with SQLITE_BUSY every time rather than only when a real race lines up.
@@ -129,12 +165,21 @@ db.close()
 }
 
 echo "[vector] ingest waits for a lock held by another process"
+# Since issue-31 an ingest with nothing new writes nothing and never reaches the lock, so this case
+# would pass without testing a wait. Dropping one row first gives it exactly one write to queue.
+(cd "$HELPER_DIR" && LIBSQL_URL="file:$VECDB" node --input-type=module -e "
+const { importDep } = await import('./deps.mjs')
+const { createClient } = await importDep('@libsql/client')
+const db = createClient({ url: process.env.LIBSQL_URL })
+await db.execute(\"DELETE FROM memoria_vectors WHERE name = 'session:does-not-exist-xyz'\")
+db.close()
+")
 hold_vector_lock "BEGIN IMMEDIATE" 1500
 if ! INGEST_LOCKED=$(LIBSQL_URL="file:$VECDB" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload.json" 2>&1); then
     echo "  ✗ ingest failed behind a held lock: $INGEST_LOCKED"; exit 1
 fi
 wait "$HOLD_PID"
-node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==3) throw new Error('ingest counts wrong: '+process.argv[1])" "$INGEST_LOCKED"
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==1||d.unchanged!==2) throw new Error('ingest counts wrong: '+process.argv[1])" "$INGEST_LOCKED"
 echo "  ingest finished after the lock was released"
 
 echo "[vector] recall waits out the exclusive lock of a commit"
@@ -610,5 +655,55 @@ if(/Run: /.test(cov.fix||'')) throw new Error('MEMORIA_DB_PATH 與資料根不�
 if(!/MEMORIA_DB_PATH/.test(cov.fix||'')) throw new Error('fix 必須說明是 MEMORIA_DB_PATH 的緣故: '+cov.fix);
 " "$DOC_DBP"
 echo "  MEMORIA_DB_PATH 指向別處 -> 不印可執行命令，改為說明"
+
+# issue-31 SCN-005：payload 產生器只帶有記憶節點的 session，沒有節點的 session 永遠進不了向量庫。
+# doctor 原本只印 ingest 修法，照做永遠補不完，各 agent 收尾就一直重跑。
+echo "[vector] SCN-005 doctor 對沒有記憶節點的 session 給出補得齊的修法"
+H31V="$TMP_DIR/home-31v"
+VEC31V="$TMP_DIR/vectors-31v.db"
+cli31v() { env MEMORIA_HOME="$H31V" LIBSQL_URL="file:$VEC31V" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" "$@"; }
+cli31v init >/dev/null
+cli31v remember "有節點的決策 alpha" --project vec >/dev/null
+MEMORIA_INDEX_AUTOBUILD=0 cli31v remember "沒有節點的決策 beta" --project vec >/dev/null
+DOC31=$(cli31v doctor --json || true)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const tree=d.checks.find(c=>c.name==='tree index');
+if(!tree) throw new Error('沒有 tree index 這一項: '+d.checks.map(c=>c.name).join(', '));
+if(tree.ok!==false||!/missing=1\b/.test(tree.value)) throw new Error('tree index 應失敗且 missing=1: '+JSON.stringify(tree));
+const cov=d.checks.find(c=>c.name==='vector coverage');
+const i=(cov.fix||'').lastIndexOf('Run: ');
+const cmd=(cov.fix||'').slice(i+5);
+if(i<0||!/^\(?MEMORIA_HOME=.* index build && /.test(cmd)) throw new Error('vector coverage 修法應以 index build 開頭: '+cov.fix);
+if(cmd.indexOf('index build')>cmd.indexOf('vector-ingest')) throw new Error('index build 必須在 ingest 之前: '+cmd);
+" "$DOC31"
+FIX31=$(fix_cmd "$DOC31")
+(cd "$TMP_DIR" && env -u MEMORIA_HOME LIBSQL_URL="file:$VEC31V" MEMORIA_EMBED_PROVIDER=stub sh -c "$FIX31") >/dev/null \
+    || { echo "  ✗ SCN-005 修法執行失敗: $FIX31"; exit 1; }
+DOC31_FIXED=$(cli31v doctor --json || true)
+node -e "
+const d=JSON.parse(process.argv[1]);
+const tree=d.checks.find(c=>c.name==='tree index');
+if(tree&&tree.ok!==true) throw new Error('照修法執行後 tree index 仍有缺口: '+tree.value);
+const cov=d.checks.find(c=>c.name==='vector coverage');
+if(!/missing=0\$/.test(cov.value)||cov.ok!==true) throw new Error('照修法執行後 vector coverage 仍有缺口: '+cov.value);
+" "$DOC31_FIXED"
+# 沒有 tree index 缺口、只缺向量時，修法與變更前相同：不帶 index build。
+(cd "$HELPER_DIR" && LIBSQL_URL="file:$VEC31V" node --input-type=module -e "
+const { importDep } = await import('./deps.mjs')
+const { createClient } = await importDep('@libsql/client')
+const db = createClient({ url: process.env.LIBSQL_URL })
+await db.execute(\"DELETE FROM memoria_vectors WHERE name LIKE 'session:%'\")
+db.close()
+")
+DOC31_VEC=$(cli31v doctor --json || true)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.checks.some(c=>c.name==='tree index')) throw new Error('沒有缺口時不應出現 tree index 失敗項');
+const cov=d.checks.find(c=>c.name==='vector coverage');
+if(cov.ok!==false) throw new Error('前提：應有向量缺口: '+cov.value);
+if(/index build/.test(cov.fix||'')) throw new Error('沒有 tree index 缺口時修法不應帶 index build: '+cov.fix);
+" "$DOC31_VEC"
+echo "  有缺口 -> tree index 失敗、修法先 index build，執行後兩者 missing=0；只缺向量 -> 修法不變"
 
 echo "[vector] ok"

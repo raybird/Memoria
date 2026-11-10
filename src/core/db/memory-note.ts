@@ -32,6 +32,20 @@ export function noteExists(dbPath: string, sessionId: string): boolean {
         Boolean(db.prepare('SELECT id FROM sessions WHERE id = ? LIMIT 1').get(sessionId)))
 }
 
+/** Undo a note this call just created whose remember() failed partway (issue-31). importSession had
+ *  already committed its session and event, so a later failure — a skill page that cannot be written —
+ *  left a note with no tree node: invisible to the vector repair forever, and a retry with the same
+ *  text answered created:false over it. Events go first, as prune does; the recall_fts rows follow
+ *  through the delete triggers. Callers must only pass an id that did not exist before the call. */
+export function discardNewNote(dbPath: string, sessionId: string): void {
+    withDb(dbPath, (db) => {
+        db.transaction(() => {
+            db.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId)
+            db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
+        })()
+    })
+}
+
 /** Record provenance for a note's session + event ids. Idempotent via UNIQUE(memory_id, source_type, source_id). */
 export function recordNoteProvenance(dbPath: string, memoryIds: string[], noteId: string): void {
     if (memoryIds.length === 0) return

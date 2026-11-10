@@ -43,12 +43,17 @@ const entities = (Array.isArray(payload.entities) ? payload.entities : []).filte
 )
 
 if (entities.length === 0) {
-  console.log(JSON.stringify({ ok: true, embedded: 0, skipped: 0 }))
+  console.log(JSON.stringify({ ok: true, embedded: 0, unchanged: 0, skipped: 0 }))
   process.exit(0)
 }
 
 const texts = entities.map((e) => [e.name, e.text].filter(Boolean).join('\n').slice(0, 2000) || String(e.id))
-const vectors = await embedTexts(texts, 'passage')
+
+// issue-31: the doctor repair has no cursor and hands over the whole corpus, so embedding every row
+// cost ~3.5 min and 2.6GB to fill 2 gaps — per agent, and several agents wrap up at once. A row whose
+// kind and text match what is stored already holds that text's vector; only the rest are embedded.
+// A model swap (MEMORIA_EMBED_MODEL) leaves the text unchanged, so it needs a fresh store (README).
+const LOOKUP_CHUNK = 500
 
 const db = createClient({ url, authToken: process.env.LIBSQL_AUTH_TOKEN, timeout: BUSY_TIMEOUT_MS })
 try {
@@ -56,15 +61,39 @@ try {
     `CREATE TABLE IF NOT EXISTS memoria_vectors (name TEXT PRIMARY KEY, kind TEXT, text TEXT, updated_at TEXT, v F32_BLOB(${DIM}))`
   )
   await db.execute(`CREATE INDEX IF NOT EXISTS memoria_vectors_idx ON memoria_vectors (libsql_vector_idx(v))`)
-  const now = new Date().toISOString()
+
+  const stored = new Map()
+  for (let start = 0; start < entities.length; start += LOOKUP_CHUNK) {
+    const names = entities.slice(start, start + LOOKUP_CHUNK).map((e) => e.id)
+    const rows = await db.execute({
+      sql: `SELECT name, kind, text FROM memoria_vectors WHERE name IN (${names.map(() => '?').join(', ')})`,
+      args: names
+    })
+    for (const row of rows.rows) stored.set(String(row.name), row)
+  }
+  const pending = []
   for (let i = 0; i < entities.length; i++) {
-    await db.execute({
+    const row = stored.get(entities[i].id)
+    if (!row || row.kind !== String(entities[i].type) || row.text !== texts[i]) pending.push(i)
+  }
+
+  if (pending.length > 0) {
+    const vectors = await embedTexts(pending.map((i) => texts[i]), 'passage')
+    const now = new Date().toISOString()
+    // One write transaction instead of a commit per row, so a competing ingest or recall waits for
+    // one lock hold rather than interleaving with thousands of them.
+    await db.batch(pending.map((i, k) => ({
       sql: `INSERT INTO memoria_vectors (name, kind, text, updated_at, v) VALUES (?, ?, ?, ?, vector32(?))
             ON CONFLICT(name) DO UPDATE SET kind = excluded.kind, text = excluded.text, updated_at = excluded.updated_at, v = excluded.v`,
-      args: [entities[i].id, String(entities[i].type), texts[i], now, JSON.stringify(vectors[i])]
-    })
+      args: [entities[i].id, String(entities[i].type), texts[i], now, JSON.stringify(vectors[k])]
+    })), 'write')
   }
-  console.log(JSON.stringify({ ok: true, embedded: entities.length, skipped: (payload.entities?.length ?? 0) - entities.length }))
+  console.log(JSON.stringify({
+    ok: true,
+    embedded: pending.length,
+    unchanged: entities.length - pending.length,
+    skipped: (payload.entities?.length ?? 0) - entities.length
+  }))
 } finally {
   db.close()
 }

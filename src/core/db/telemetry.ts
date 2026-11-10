@@ -139,6 +139,20 @@ export function recordRecallOutcome(
     })
 }
 
+/** Tree-index coverage alone, read-only, for `doctor` (issue-31). Same counts as `queryStats`'s
+ *  `memoryIndex`. A session with no node never reaches the bridge payload, so the vector repair
+ *  cannot close its gap until `index build` runs; doctor has to say so instead of handing out an
+ *  ingest that succeeds and leaves `missing` where it was. */
+export function readMemoryIndexCoverage(dbPath: string): StatsData['memoryIndex'] {
+    return withDb(dbPath, { readonly: true }, (db) => {
+        const sessions = Number((db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c)
+        const indexed = Number((db
+            .prepare('SELECT COUNT(DISTINCT session_id) AS c FROM memory_node_sources')
+            .get() as { c: number }).c)
+        return { sessions, indexed, missing: Math.max(0, sessions - indexed) }
+    })
+}
+
 export function queryStats(dbPath: string): StatsData {
     return withDb(dbPath, (db) => {
         const sessions = Number((db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c)

@@ -47,6 +47,7 @@ import {
     lookupGitSources,
     noteFingerprint,
     noteExists,
+    discardNewNote,
     recordNoteProvenance,
     CLI_NOTE_SOURCE_TYPE,
     queryBrief,
@@ -438,7 +439,11 @@ export class MemoriaCore {
                     metadata: { source: CLI_NOTE_SOURCE_TYPE, note_id: noteId }
                 }]
             })
-            if (!result.ok) throw new Error(result.error ?? 'remember failed')
+            if (!result.ok) {
+                // issue-31: noteExists() was false above, so this session is ours alone to undo.
+                discardNewNote(this.paths.dbPath, sessionId)
+                throw new Error(result.error ?? 'remember failed')
+            }
 
             recordNoteProvenance(this.paths.dbPath, [sessionId, eventId], noteId)
 

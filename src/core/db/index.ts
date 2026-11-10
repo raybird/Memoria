@@ -14,7 +14,7 @@ export {
 } from './wiki.js'
 export { upsertWikiLintRun, getWikiLintRun, upsertWikiLintFinding, listWikiLintFindings } from './lint.js'
 export { syncDailyNote, extractDecisions, extractSkills } from './sync.js'
-export { logRecallTelemetry, recordRecallOutcome, queryStats, queryRecallTelemetry, queryGovernanceReview } from './telemetry.js'
+export { logRecallTelemetry, recordRecallOutcome, queryStats, readMemoryIndexCoverage, queryRecallTelemetry, queryGovernanceReview } from './telemetry.js'
 export { runVerify } from './verify.js'
 export { runPrune, exportMemory } from './prune-export.js'
 export { buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting } from './recall.js'
@@ -55,7 +55,7 @@ export {
     promoteSummary,
     lookupGitSources
 } from './git-promote.js'
-export { noteFingerprint, noteExists, recordNoteProvenance, CLI_NOTE_SOURCE_TYPE } from './memory-note.js'
+export { noteFingerprint, noteExists, discardNewNote, recordNoteProvenance, CLI_NOTE_SOURCE_TYPE } from './memory-note.js'
 export { queryBrief, renderBrief } from './brief.js'
 export {
     upsertMemoryAttributes,

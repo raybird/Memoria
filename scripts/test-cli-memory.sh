@@ -229,4 +229,61 @@ done
 [ "$(script_cli recall "しています" --project demo --json | jq_field '.data.length')" != "0" ] || { echo "  ✗ 逐字出現的平假名應由整句比對命中"; exit 1; }
 echo "  日文、韓文與中文的句子都取回對應語言的記憶"
 
+# issue-31: a skill note's file name came straight from the whole note text, so a long note died with
+# ENAMETOOLONG AFTER its session and event were in the DB — no tree node, a vector coverage gap no
+# repair could close, and a retry that answered created:false over the wreck.
+H31="$TMP_DIR/home-31"
+cli31() { MEMORIA_HOME="$H31" "$ROOT_DIR/cli" "$@"; }
+q31() { node -e "
+  const D=require('$BSQ'); const db=new D('$H31/.memory/sessions.db',{readonly:true});
+  const r=db.prepare(process.argv[1]).get(...process.argv.slice(2)); console.log(r ? Object.values(r)[0] : '');
+" "$@"; }
+index_missing31() { cli31 stats --json | jq_field '.data.memoryIndex.missing'; }
+cli31 init >/dev/null
+
+echo "[cli-memory] SCN-001 長名稱 skill 筆記完整寫入，檔名有上限"
+LONG_SKILL="$(printf '雙分頁對打實測時在主控端擺位再派發事件%.0s' $(seq 1 12))"
+if ! OUT=$(cli31 remember "$LONG_SKILL" --type skill --project demo --json 2>&1); then
+    echo "  ✗ 長名稱 skill 筆記寫入失敗: $OUT"; exit 1
+fi
+[ "$(echo "$OUT" | jq_field '.data.created')" = "true" ] || { echo "  ✗ 應回 created:true: $OUT"; exit 1; }
+LONG_FILE=$(cd "$H31/knowledge/Skills" && ls | grep '^雙分頁對打' || true)
+[ -n "$LONG_FILE" ] || { echo "  ✗ 找不到長名稱 skill 的檔案"; exit 1; }
+LONG_BYTES=$(printf '%s' "$LONG_FILE" | wc -c)
+[ "$LONG_BYTES" -le 255 ] || { echo "  ✗ 檔名 $LONG_BYTES bytes 超過 255"; exit 1; }
+echo "$LONG_FILE" | grep -Eq '_[0-9a-f]{8}\.md$' || { echo "  ✗ 截斷後的檔名缺少 8 碼雜湊後綴: $LONG_FILE"; exit 1; }
+[ "$(index_missing31)" = "0" ] || { echo "  ✗ 長名稱筆記沒有記憶節點"; exit 1; }
+cli31 remember "短名稱技巧 pnpm 優先" --type skill --project demo >/dev/null
+[ -f "$H31/knowledge/Skills/短名稱技巧_pnpm_優先.md" ] || { echo "  ✗ 短名稱的檔名不應改變"; ls "$H31/knowledge/Skills"; exit 1; }
+echo "  長名稱截斷為 $LONG_BYTES bytes 並帶雜湊，短名稱檔名不變"
+
+echo "[cli-memory] SCN-002/003 新筆記寫衍生檔失敗時撤回，既有筆記不受影響"
+if [ "$(id -u)" = "0" ]; then
+    echo "  - 略過：以 root 執行時 chmod 擋不住寫入，無法製造 I/O 失敗（不算通過）"
+else
+    KEPT_TEXT="既有技巧 A：先跑 check 再 build"
+    KEPT_SID="note-$(cli31 remember "$KEPT_TEXT" --type skill --project demo --json | jq_field '.data.noteId')"
+    chmod 555 "$H31/knowledge/Skills"
+    NEW_TEXT="新技巧 B：失敗時不應留下殘骸"
+    if FAIL_OUT=$(cli31 remember "$NEW_TEXT" --type skill --project demo --json 2>&1); then
+        chmod 755 "$H31/knowledge/Skills"; echo "  ✗ Skills 目錄不可寫時 remember 應失敗: $FAIL_OUT"; exit 1
+    fi
+    [ "$(q31 "SELECT COUNT(*) FROM sessions WHERE summary = ?" "$NEW_TEXT")" = "0" ] || {
+        chmod 755 "$H31/knowledge/Skills"; echo "  ✗ 失敗的新筆記仍留在 sessions"; exit 1; }
+    [ "$(q31 "SELECT COUNT(*) FROM events WHERE content LIKE ?" "%新技巧 B%")" = "0" ] || {
+        chmod 755 "$H31/knowledge/Skills"; echo "  ✗ 失敗的新筆記仍留在 events"; exit 1; }
+    [ "$(cli31 recall "失敗時不應留下殘骸" --json | jq_field '.data.length')" = "0" ] || {
+        chmod 755 "$H31/knowledge/Skills"; echo "  ✗ recall 仍查得到被撤回的筆記"; exit 1; }
+    RERUN_A=$(cli31 remember "$KEPT_TEXT" --type skill --project demo --json)
+    chmod 755 "$H31/knowledge/Skills"
+    [ "$(echo "$RERUN_A" | jq_field '.data.created')" = "false" ] || { echo "  ✗ 既有筆記 A 重跑應回 created:false: $RERUN_A"; exit 1; }
+    [ "$(q31 "SELECT COUNT(*) FROM sessions WHERE id = ?" "$KEPT_SID")" = "1" ] || { echo "  ✗ 既有筆記 A 被刪除"; exit 1; }
+    [ "$(q31 "SELECT COUNT(*) FROM memory_node_sources WHERE session_id = ?" "$KEPT_SID")" != "0" ] || { echo "  ✗ 既有筆記 A 的記憶節點不見了"; exit 1; }
+    [ "$(cli31 recall "先跑 check 再 build" --json | jq_field '.data.length')" != "0" ] || { echo "  ✗ recall 查不到既有筆記 A"; exit 1; }
+    RETRY=$(cli31 remember "$NEW_TEXT" --type skill --project demo --json)
+    [ "$(echo "$RETRY" | jq_field '.data.created')" = "true" ] || { echo "  ✗ 恢復權限後重試應回 created:true: $RETRY"; exit 1; }
+    [ "$(index_missing31)" = "0" ] || { echo "  ✗ 重試後的筆記沒有記憶節點"; exit 1; }
+    echo "  失敗的新筆記已撤回，重試完整寫入；既有筆記 A 保留"
+fi
+
 echo "[cli-memory] ✓ all checks passed"

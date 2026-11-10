@@ -44,6 +44,7 @@ export {
     extractDecisions,
     extractSkills,
     queryStats,
+    readMemoryIndexCoverage,
     queryRecallTelemetry,
     queryGovernanceReview,
     logRecallTelemetry,
@@ -98,7 +99,7 @@ export {
     RELEASE_TAG_PATTERN
 } from './git/summary-pipeline.js'
 export {
-    safeDate, slugify, stableStringify, shortHash, deriveScope,
+    safeDate, slugify, skillFileStem, stableStringify, shortHash, deriveScope,
     resolveSessionId, resolveEventId,
     getEventType, getEventContentObject,
     maybeParseJson, normalizeSkillKey,

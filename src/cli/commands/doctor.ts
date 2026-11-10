@@ -4,12 +4,13 @@ import {
     existsSync,
     inspectVectorLayer,
     measureScanLag,
+    readMemoryIndexCoverage,
     resolveMemoriaHomeInfo,
     resolveInstallSettingsPath,
     loadInstallSettingsSync
 } from '../../core/index.js'
 import type { MemoriaPaths, RepoScanLag, VectorLayerReport } from '../../core/index.js'
-import { quoteShellArg } from '../runtime.js'
+import { getRuntimeInvocation, getRuntimeLayout, quoteShellArg } from '../runtime.js'
 
 type DoctorCheck = { name: string; ok: boolean; value: string; fix?: string }
 
@@ -22,7 +23,7 @@ type DoctorCheck = { name: string; ok: boolean; value: string; fix?: string }
  * user who never wanted semantic recall — which trains people to ignore doctor, and that is worse
  * than not checking at all. Same judgement as issue-7's on `verify`.
  */
-function vectorChecks(report: VectorLayerReport, paths: MemoriaPaths): DoctorCheck[] {
+function vectorChecks(report: VectorLayerReport, paths: MemoriaPaths, treeMissing: number): DoctorCheck[] {
     if (!report.enabled) {
         return [{ name: 'vector recall', ok: true, value: 'not enabled (LIBSQL_URL unset)' }]
     }
@@ -106,7 +107,7 @@ function vectorChecks(report: VectorLayerReport, paths: MemoriaPaths): DoctorChe
             value: `embedded=${embedded} expected=${expected} missing=${missing}`,
             fix: missing === 0 ? undefined :
                 `${missing} memories are not in the vector index, so semantic recall cannot see them — ` +
-                'and that degrades silently (the helper answers "ok" with zero rows). ' + ingestFix(report.helperPath, paths)
+                'and that degrades silently (the helper answers "ok" with zero rows). ' + ingestFix(report.helperPath, paths, treeMissing)
         })
     } else if (report.coverageUnknownReason === 'remote_libsql') {
         // Named rather than omitted, for the same reason the overridden-helper skip is named.
@@ -171,7 +172,7 @@ async function readScanLag(paths: MemoriaPaths): Promise<RepoScanLag[]> {
  *  than its target's cursor, and run-sync-with-enhancement.sh advances the default target's cursor after
  *  an MCP ingest whether or not the vector ingest kept up — so with the default, this command would exit
  *  0, embed nothing, and leave `missing` where it was (review d22e5cb S-1). */
-function ingestFix(helperPath: string | null, paths: MemoriaPaths): string {
+function ingestFix(helperPath: string | null, paths: MemoriaPaths, treeMissing: number): string {
     if (!helperPath) return 'Re-run the ingest two-step once the vector helper resolves (see "vector helper" above).'
     // The builder always reads <home>/.memory/sessions.db. Under a MEMORIA_DB_PATH pointing elsewhere a
     // runnable command would embed a different corpus — and, if the counts happen to match, turn this
@@ -186,10 +187,46 @@ function ingestFix(helperPath: string | null, paths: MemoriaPaths): string {
     const skillsRoot = path.dirname(path.dirname(helperPath))
     const build = quoteShellArg(path.join(skillsRoot, 'memoria-memory-sync', 'scripts', 'build-mcp-bridge-payload.mjs'))
     const ingest = quoteShellArg(path.join(skillsRoot, 'memoria-vector', 'vector-ingest.mjs'))
+    // issue-31: the payload only carries sessions that have a tree node, so with a tree-index gap the
+    // ingest alone succeeds and leaves `missing` where it was — and every agent wrapping up reruns it.
+    const indexFirst = treeMissing > 0
+        ? `MEMORIA_HOME=${quoteShellArg(paths.memoriaHome)} ${selfCommand()} index build && `
+        : ''
     return 'Run it in the same environment as this doctor (LIBSQL_URL, MEMORIA_EMBED_PROVIDER). ' +
-        'Run: (D=$(mktemp -d) && ' +
+        (treeMissing > 0 ? `${treeMissing} sessions have no tree node yet, so the command indexes them first. ` : '') +
+        `Run: ${indexFirst}(D=$(mktemp -d) && ` +
         `node ${build} --memoria-home ${quoteShellArg(paths.memoriaHome)} --sync-target memoria-doctor-repair --out "$D" >/dev/null && ` +
         `node ${ingest} "$D"/*.json; S=$?; rm -rf "$D"; exit $S)`
+}
+
+/** This CLI as a pasteable command: the bundle under the running node, else the launcher. */
+function selfCommand(): string {
+    const invocation = getRuntimeInvocation(getRuntimeLayout())
+    return [invocation.command, ...invocation.args].map(quoteShellArg).join(' ')
+}
+
+/** Shown only when there is a gap (issue-31), so a healthy doctor prints exactly what it did before. */
+function treeIndexCheck(paths: MemoriaPaths): { checks: DoctorCheck[]; missing: number } {
+    if (!existsSync(paths.dbPath)) return { checks: [], missing: 0 }
+    let coverage: ReturnType<typeof readMemoryIndexCoverage>
+    try {
+        coverage = readMemoryIndexCoverage(paths.dbPath)
+    } catch {
+        // An older or damaged DB without these tables: the vector checks below still run and report
+        // what they can measure; inventing a tree-index failure here would point at the wrong fix.
+        return { checks: [], missing: 0 }
+    }
+    if (coverage.missing === 0) return { checks: [], missing: 0 }
+    return {
+        missing: coverage.missing,
+        checks: [{
+            name: 'tree index',
+            ok: false,
+            value: `sessions=${coverage.sessions} indexed=${coverage.indexed} missing=${coverage.missing}`,
+            fix: `${coverage.missing} sessions have no tree node, so tree recall and the vector repair cannot see them. ` +
+                `Run: MEMORIA_HOME=${quoteShellArg(paths.memoriaHome)} ${selfCommand()} index build`
+        }]
+    }
 }
 
 export function registerDoctorCommand(program: Command, paths: MemoriaPaths): void {
@@ -215,6 +252,7 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
                 `before syncing — otherwise writes land in the runtime root.`
             const homeOk = homeInfo.source !== 'fallback'
 
+            const tree = treeIndexCheck(paths)
             const checks: DoctorCheck[] = [
                 { name: 'MEMORIA_HOME', ok: homeOk, value: `${paths.memoriaHome} (${homeInfo.source})`, fix: homeOk ? undefined : homeFix },
                 { name: 'memory dir', ok: existsSync(paths.memoryDir), value: paths.memoryDir },
@@ -222,7 +260,8 @@ export function registerDoctorCommand(program: Command, paths: MemoriaPaths): vo
                 { name: 'sessions path', ok: existsSync(paths.sessionsPath), value: paths.sessionsPath },
                 { name: 'config path', ok: existsSync(paths.configPath), value: paths.configPath },
                 { name: 'sessions.db', ok: existsSync(paths.dbPath), value: paths.dbPath },
-                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths),
+                ...tree.checks,
+                ...vectorChecks(inspectVectorLayer(paths.dbPath), paths, tree.missing),
                 ...repoScanCheck(await readScanLag(paths))
             ]
 
