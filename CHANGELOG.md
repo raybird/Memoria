@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Several agents wrapping up at once no longer stall for minutes.** A `remember --type skill` note whose text was long enough failed with `ENAMETOOLONG` after its session was already in the database, leaving a memory with no tree node. The ingest command `doctor` printed could never reach it, so vector coverage stayed short and every agent's wrap-up reran a full re-embed (2183 rows: 135s and 2.6GB each). Long skill notes now get a shortened file name with a hash suffix (short names are unchanged), and a new note whose files fail to write is undone, so retrying it writes it in full.
+- **Vector ingest only embeds rows that are new or changed.** Filling 2 gaps in a 2183-row corpus took 1.3s instead of 135s, and four repairs at once took 1.8s each. Rows are still committed one at a time, so semantic recall keeps answering during a large ingest.
+- **`doctor` reports sessions missing from the tree index.** A `tree index` line appears only when there is a gap, and the vector coverage fix then runs `memoria index build` first. A healthy `doctor` prints what it did before.
+
+### Compatibility and upgrade
+- **`vector-ingest.mjs` output changed.** `embedded` is now the number of rows written in this run, not the number of embeddable entities in the payload; a new `unchanged` field counts rows that were already current. `skipped` is unchanged. Code that read `embedded` as the payload size must add `unchanged`. Exit codes are unchanged.
+- Switching `MEMORIA_EMBED_MODEL` or `MEMORIA_EMBED_PROVIDER` no longer re-embeds anything by itself: delete the vector store and ingest the full corpus again.
+- The helper's dependencies are unchanged, so `memoria setup --vector` does not need rerunning.
+
 ## [1.36.1] - 2026-11-02
 
 ### Fixed

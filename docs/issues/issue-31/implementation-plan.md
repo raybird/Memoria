@@ -48,7 +48,8 @@ slug = slugify(title)
 1. 先組出每個實體的 `texts[i]`（組法不變），開啟 client 並 `CREATE TABLE/INDEX IF NOT EXISTS`。
 2. `SELECT name, kind, text FROM memoria_vectors WHERE name IN (...)`，分批查，每批最多 500 個參數。name、kind、text 三者都相同的列計入 `unchanged`。
 3. 剩下的列才呼叫 `embedTexts`。沒有剩下的列時不載入模型、不寫入。
-4. 用 `db.batch([...upserts], 'write')` 一次寫完。
+4. 逐列 `db.execute` 提交，不包成一個交易。
+   > NOTE（2026-11-10）：原設計用 `db.batch([...], 'write')` 一次寫完。獨立審查 review-1d86717 M-1 實測發現：local store 用 rollback journal，交易期間讀者全被擋住，大批寫入時語意召回超過 1.5 秒等待上限而失敗。使用者選擇改回逐列提交（README TBD-3）。
 5. 輸出 `{ ok, embedded: <實際寫入數>, unchanged, skipped }`，欄位語意見 README TBD-1。
 
 換模型（`MEMORIA_EMBED_MODEL`）時舊向量不會自動重算，依使用者 Q2 決定只寫進文件：先刪 `vectors.db` 再 ingest。

@@ -191,6 +191,34 @@ wait "$HOLD_PID"
 node -e "const d=JSON.parse(process.argv[1]); if(!d.hits||d.hits.length===0) throw new Error('no hits: '+process.argv[1])" "$RECALL_LOCKED"
 echo "  recall answered after the lock was released"
 
+# issue-31 review M-1: wrapping a large ingest in one write transaction kept readers out for its whole
+# length, so semantic recall during it ran past its 1.5s busy timeout and fell back to lexical
+# (2500 rows: 7 of 9 recalls failed). Row-by-row commits leave gaps a recall can get through.
+echo "[vector] recall keeps answering while a large ingest writes"
+VECBIG="$TMP_DIR/vectors-big.db"
+LIBSQL_URL="file:$VECBIG" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload.json" >/dev/null
+node -e '
+const n = Number(process.argv[2]); const e = []
+for (let i = 0; i < n; i++) e.push({ id: `session:bulk-${i}`, type: "session", name: `bulk ${i}`, text: `bulk entity number ${i} about topic ${i % 37}` })
+require("fs").writeFileSync(process.argv[1], JSON.stringify({ entities: e }))
+' "$TMP_DIR/payload-big.json" 1500
+LIBSQL_URL="file:$VECBIG" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload-big.json" >"$TMP_DIR/ingest-big.out" 2>&1 &
+BIG_PID=$!
+BIG_OK=0; BIG_FAIL=0
+while kill -0 "$BIG_PID" 2>/dev/null; do
+    if echo '{"query":"bulk entity topic","topK":3}' | LIBSQL_URL="file:$VECBIG" MEMORIA_EMBED_PROVIDER=stub \
+        node "$HELPER_DIR/vector-recall.mjs" 2>/dev/null | grep -q '"hits"'; then
+        BIG_OK=$((BIG_OK + 1))
+    else
+        BIG_FAIL=$((BIG_FAIL + 1))
+    fi
+done
+wait "$BIG_PID" || { echo "  ✗ large ingest failed: $(cat "$TMP_DIR/ingest-big.out")"; exit 1; }
+node -e "const d=JSON.parse(process.argv[1]); if(!d.ok||d.embedded!==1500) throw new Error('large ingest counts wrong: '+process.argv[1])" "$(cat "$TMP_DIR/ingest-big.out")"
+[ $((BIG_OK + BIG_FAIL)) -ge 2 ] || { echo "  ✗ the ingest ended before recall could overlap it ($BIG_OK ok, $BIG_FAIL failed); the case tested nothing"; exit 1; }
+[ "$BIG_FAIL" -eq 0 ] || { echo "  ✗ $BIG_FAIL of $((BIG_OK + BIG_FAIL)) recalls failed during a large ingest"; exit 1; }
+echo "  $BIG_OK recalls during a 1500-row ingest, none failed"
+
 echo "[vector] mode:'vector' fuses semantic + lexical; authoritative fields from local SQLite"
 RES=$(curl -sf -X POST "$URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"quantum flux capacitor","mode":"vector"}')
 node -e "

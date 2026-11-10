@@ -52,7 +52,8 @@ const texts = entities.map((e) => [e.name, e.text].filter(Boolean).join('\n').sl
 // issue-31: the doctor repair has no cursor and hands over the whole corpus, so embedding every row
 // cost ~3.5 min and 2.6GB to fill 2 gaps — per agent, and several agents wrap up at once. A row whose
 // kind and text match what is stored already holds that text's vector; only the rest are embedded.
-// A model swap (MEMORIA_EMBED_MODEL) leaves the text unchanged, so it needs a fresh store (README).
+// Switching MEMORIA_EMBED_MODEL or MEMORIA_EMBED_PROVIDER leaves the text unchanged, so either
+// needs a fresh store (README).
 const LOOKUP_CHUNK = 500
 
 const db = createClient({ url, authToken: process.env.LIBSQL_AUTH_TOKEN, timeout: BUSY_TIMEOUT_MS })
@@ -80,13 +81,18 @@ try {
   if (pending.length > 0) {
     const vectors = await embedTexts(pending.map((i) => texts[i]), 'passage')
     const now = new Date().toISOString()
-    // One write transaction instead of a commit per row, so a competing ingest or recall waits for
-    // one lock hold rather than interleaving with thousands of them.
-    await db.batch(pending.map((i, k) => ({
-      sql: `INSERT INTO memoria_vectors (name, kind, text, updated_at, v) VALUES (?, ?, ?, ?, vector32(?))
-            ON CONFLICT(name) DO UPDATE SET kind = excluded.kind, text = excluded.text, updated_at = excluded.updated_at, v = excluded.v`,
-      args: [entities[i].id, String(entities[i].type), texts[i], now, JSON.stringify(vectors[k])]
-    })), 'write')
+    // One commit per row, never one transaction around them all: a local store uses a rollback
+    // journal, so readers are locked out for a whole write transaction. Wrapping 2500 rows kept
+    // semantic recall waiting past its 1.5s timeout, and 7 of 9 recalls fell back to lexical
+    // (issue-31 review M-1). The gaps between row commits are what a recall gets through.
+    for (let k = 0; k < pending.length; k++) {
+      const i = pending[k]
+      await db.execute({
+        sql: `INSERT INTO memoria_vectors (name, kind, text, updated_at, v) VALUES (?, ?, ?, ?, vector32(?))
+              ON CONFLICT(name) DO UPDATE SET kind = excluded.kind, text = excluded.text, updated_at = excluded.updated_at, v = excluded.v`,
+        args: [entities[i].id, String(entities[i].type), texts[i], now, JSON.stringify(vectors[k])]
+      })
+    }
   }
   console.log(JSON.stringify({
     ok: true,

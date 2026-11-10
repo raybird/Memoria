@@ -17,7 +17,8 @@ import {
     buildCalibration,
     buildRouteUtility,
     REUSE_UTILITY_MIN_OBS,
-    EXPLICIT_UTILITY_MIN_OBS
+    EXPLICIT_UTILITY_MIN_OBS,
+    skillFileStem
 } from '../src/core/utils.js'
 import { computeDecayFactor } from '../src/core/db/recall.js'
 import { parseMergeSourceRef } from '../src/core/git/summary-pipeline.js'
@@ -357,6 +358,17 @@ else process.env.MEMORIA_EMBED_BATCH = savedBatch
 
     const rerun = upsertManagedBlock(quoted, 'new')
     eq('re-running is idempotent', upsertManagedBlock(rerun, 'new'), rerun)
+}
+
+// issue-31: a skill page's file name is its whole note text. The expected hashes below come from
+// Python's hashlib (sha256 of the full slug, first 8 hex), not from re-running this implementation.
+{
+    eq('a 200-byte stem is left exactly as slugify made it', skillFileStem('a'.repeat(200)), 'a'.repeat(200))
+    eq('a 201-byte ASCII stem is cut to 200 bytes plus a hash of the full slug',
+        skillFileStem('a'.repeat(201)), `${'a'.repeat(200)}_a92efd82`)
+    eq('a 198-byte CJK stem (66 three-byte chars) is unchanged', skillFileStem('中'.repeat(66)), '中'.repeat(66))
+    eq('a 201-byte CJK stem is cut on a character boundary, never mid-character',
+        skillFileStem('中'.repeat(67)), `${'中'.repeat(66)}_5ab93f89`)
 }
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)

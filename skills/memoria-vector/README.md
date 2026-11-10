@@ -60,14 +60,14 @@ CI installs with `--omit=dev` and runs the deterministic `stub` provider instead
 |--------|------|
 | `deps.mjs` | Where the dependencies load from: a sibling `node_modules`, else the user cache `setup --vector` fills (keyed by `package-lock.json`); `node deps.mjs` prints the resolution |
 | `embed.mjs` | Provider abstraction: `local` (default, `Xenova/multilingual-e5-small` q8) or `stub` (deterministic, tests) |
-| `vector-ingest.mjs <bridge-payload.json>` | Embed a MCP-bridge payload's new or changed entities → upsert `memoria_vectors` in libSQL in one write transaction (offline path). An entity whose kind and text match its stored row is not re-embedded, and an ingest with nothing new loads no model and writes nothing. Prints `{ok, embedded, unchanged, skipped}`: rows written this run, rows already current, and entities of a type that is never embedded (issue-31) |
+| `vector-ingest.mjs <bridge-payload.json>` | Embed a MCP-bridge payload's new or changed entities → upsert `memoria_vectors` in libSQL, committing row by row (offline path). An entity whose kind and text match its stored row is not re-embedded, and an ingest with nothing new loads no model and writes nothing. Prints `{ok, embedded, unchanged, skipped}`: rows written this run, rows already current, and entities of a type that is never embedded (issue-31) |
 | `vector-recall.mjs` | stdin `{query, topK}` → embed query → `vector_top_k` → stdout `{hits:[{name,kind,distance}]}` |
 
 ## Env
 
 - `LIBSQL_URL` (required) / `LIBSQL_AUTH_TOKEN` — same gate as the MCP/libSQL enhancement layer
 - `MEMORIA_EMBED_PROVIDER` — `local` (default) | `stub`
-- `MEMORIA_EMBED_MODEL` — override the local model (must emit 384-dim vectors). Ingest skips rows whose text is unchanged, so switching models keeps the old model's vectors: delete the vector store (for example `<memoria-home>/.memory/vectors.db`) and ingest the full corpus again
+- `MEMORIA_EMBED_MODEL` — override the local model (must emit 384-dim vectors). Ingest skips rows whose text is unchanged, so switching models — or switching `MEMORIA_EMBED_PROVIDER` between `stub` and `local` — keeps the old vectors: delete the vector store (for example `<memoria-home>/.memory/vectors.db`) and ingest the full corpus again
 - `MEMORIA_EMBED_BATCH` — texts per local-model call during ingest (default 32). Peak memory follows the batch, not the corpus: at 32 one ingest process peaked at ~2.5GB for 400 to 1600 entities alike, while one call over 771 entities reached 21.9GB and was OOM-killed (issue-19). Lower it on small machines. Only multi-text calls read it — a single recall query is unaffected, even by an invalid value
 - `MEMORIA_VECTOR_ENABLE=1` — lets `run-sync-with-enhancement.sh` embed each sync's payload
 - `MEMORIA_VECTOR_TIMEOUT_MS` — recall-side helper timeout (default 4000; spawn-per-query measured ~1s warm-cache)

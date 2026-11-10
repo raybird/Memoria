@@ -19,7 +19,7 @@
 長名稱 skill 筆記 → DB 寫入 → 寫 Skills 檔 `ENAMETOOLONG` → 命令失敗、DB 留下沒有節點的 session → doctor 回報 `missing>0` → 修法全量 embed 約 3.5 分 → 仍是 `missing>0` → 下一個 agent 再跑一次
 
 ### 修正後流程
-長名稱 skill 筆記 → 檔名截斷並加雜湊 → 寫入完成。其他 I/O 失敗時撤回這次新建的筆記。doctor 發現沒有節點的 session 時，修法先跑 `memoria index build`。ingest 只 embed 新增或內容有變的列，缺 2 筆就只 embed 2 筆。
+長名稱 skill 筆記 → 檔名截斷並加雜湊 → 寫入完成。其他 I/O 失敗時撤回這次新建的筆記。doctor 發現沒有節點的 session 時，修法先跑 `memoria index build`。ingest 只 embed 新增或內容有變的列，缺 2 筆就只 embed 2 筆；寫入維持逐列提交，大批寫入期間語意召回照常。
 
 ## 關鍵差異
 
@@ -27,7 +27,7 @@
 |------|--------|--------|
 | Skills 檔名 | 完整 slug，可能超過 255 bytes | slug 超過 200 bytes 時截斷在字元邊界，加 `_<8 碼雜湊>` |
 | 新筆記寫衍生檔失敗 | DB 留下半寫入的 session／事件，重試回報假成功 | 撤回這次新建的 session 與事件，命令失敗，重試會完整寫入 |
-| `vector-ingest.mjs` | 每列都重 embed、逐列提交 | 跳過 name／kind／text 都沒變的列，沒有要寫的列時不載入模型，寫入包成單一交易 |
+| `vector-ingest.mjs` | 每列都重 embed、逐列提交 | 跳過 name／kind／text 都沒變的列，沒有要寫的列時不載入模型；寫入維持逐列提交（2026-11-10 依審查 M-1 修訂，原為單一交易） |
 | doctor | 只看 vector coverage | tree index 有缺口時多一行 `tree index`，向量修法前面串上 `memoria index build` |
 
 ## 涉及檔案
@@ -44,7 +44,7 @@ src/core/
 src/cli/commands/doctor.ts    # 可改：tree index 檢查與修法前綴
 src/cli/shared.ts             # 可改：sync --dry-run 預覽的 Skills 路徑用同一套檔名規則
 skills/memoria-vector/
-├── vector-ingest.mjs     # 可改：跳過未變更列、單一交易
+├── vector-ingest.mjs     # 可改：跳過未變更列，維持逐列提交
 ├── embed.mjs             # 不可觸及
 └── vector-recall.mjs     # 不可觸及：recall 契約不變
 skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs  # 不可觸及
@@ -93,6 +93,8 @@ Feature: 多個 agent 寫記憶並收尾時不會卡住
     When payload 中一筆實體的文字改變，另新增一筆實體後再 ingest
     Then 輸出 embedded 為 2，其餘列計入 unchanged，兩筆的向量與文字更新為新內容
     And 有其他行程持有寫入鎖時，有列要寫的 ingest 仍會等鎖並成功
+    When 一次 ingest 要寫入 1500 筆，期間反覆執行語意召回
+    Then 每次召回都成功回應，沒有因 SQLITE_BUSY 退回字面查詢
 
   @SCN-005
   Scenario: doctor 對沒有記憶節點的 session 給出可補齊的修法
@@ -114,8 +116,8 @@ Feature: 多個 agent 寫記憶並收尾時不會卡住
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: f1a4b8c
-- **核准來源**: 使用者 2026-11-10 對話。修正方向：選「開 issue 再實作」，接受三處修法表（檔名限制長度並加雜湊後綴、先寫檔失敗就不留 DB 記錄；跳過 name 與 text 都沒變的列、寫入包成一個交易；有缺漏時先建記憶節點）。Q1「撤回這次新建的 note」；Q2「只寫進文件」（換模型要先刪 vectors.db 再 ingest，不加旗標或 schema）；Q3「修法前面加 index build」（含「doctor 多一行 tree index 檢查」）；Q4「缺 2 筆 30 秒；4 支並行 60 秒」。TBD-1（ingest 輸出新增 `unchanged`、`embedded` 改為本次實際寫入數）：使用者 2026-11-10 回覆「那麼可以開始修，修好再寫」。
+- **核准 commit**: 待提交
+- **核准來源**: 使用者 2026-11-10 對話。修正方向：選「開 issue 再實作」，接受三處修法表（檔名限制長度並加雜湊後綴、先寫檔失敗就不留 DB 記錄；跳過 name 與 text 都沒變的列、寫入包成一個交易；有缺漏時先建記憶節點）。Q1「撤回這次新建的 note」；Q2「只寫進文件」（換模型要先刪 vectors.db 再 ingest，不加旗標或 schema）；Q3「修法前面加 index build」（含「doctor 多一行 tree index 檢查」）；Q4「缺 2 筆 30 秒；4 支並行 60 秒」。TBD-1（ingest 輸出新增 `unchanged`、`embedded` 改為本次實際寫入數）：使用者 2026-11-10 回覆「那麼可以開始修，修好再寫」。規格修訂（SCN-004 新增大批 ingest 期間召回不失敗；寫入由單一交易改回逐列提交）：使用者 2026-11-10 對審查 M-1 選「改回逐列提交」（TBD-3）。
 
 | Scenario | 核准日期 | 狀態 |
 |----------|---------|------|
@@ -153,6 +155,7 @@ Feature: 多個 agent 寫記憶並收尾時不會卡住
 | 2026-11-10 | 建立；SCN-001～003、005、006 依對話核准，SCN-004 待確認輸出格式 | - |
 | 2026-11-10 | TBD-1 解決，SCN-004 核准，開始實作 | - |
 | 2026-11-10 | 獨立審查 review-1d86717：RETURN TO execute-task（M-1 需決策）；使用者決定改回逐列提交（TBD-3） | - |
+| 2026-11-10 | 規格修訂：SCN-004 新增大批 ingest 期間召回不失敗，同日重新核准；寫入改回逐列提交 | - |
 
 ---
 **建立日期**: 2026-11-10  

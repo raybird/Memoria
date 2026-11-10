@@ -441,8 +441,15 @@ export class MemoriaCore {
             })
             if (!result.ok) {
                 // issue-31: noteExists() was false above, so this session is ours alone to undo.
-                discardNewNote(this.paths.dbPath, sessionId)
-                throw new Error(result.error ?? 'remember failed')
+                // The write failure is the cause; a failed undo must not replace it in the message.
+                const cause = result.error ?? 'remember failed'
+                try {
+                    discardNewNote(this.paths.dbPath, sessionId)
+                } catch (undoError) {
+                    throw new Error(`${cause} (and undoing the partial note ${sessionId} failed: ` +
+                        `${undoError instanceof Error ? undoError.message : String(undoError)})`)
+                }
+                throw new Error(cause)
             }
 
             recordNoteProvenance(this.paths.dbPath, [sessionId, eventId], noteId)

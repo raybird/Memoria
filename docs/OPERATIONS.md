@@ -366,7 +366,9 @@ doctor again to verify `missing=0`.
 
 The payload is the whole corpus, but ingest only embeds rows that are new or whose text changed;
 the rest are counted as `unchanged`. On a 2183-row corpus with 2 rows missing, the repair took 1.3s
-where it used to re-embed everything (issue-31). Its writes go in one transaction.
+where it used to re-embed everything (issue-31). Rows are committed one at a time on purpose: a
+local store uses a rollback journal, so one transaction around a large write would lock semantic
+recall out for its whole length and push it past its 1.5s wait.
 
 When a session has no tree node yet, doctor also reports `tree index` as failing, and the vector
 fix starts with `memoria index build`: the payload only carries sessions that have a node, so an
@@ -377,8 +379,9 @@ minutes per write, so overlap costs time rather than failing; four repairs at on
 each finished in 1.8s. An ingest that still ends in `SQLITE_BUSY` has lost those 5 minutes to a
 process holding the lock; rerun it after that process finishes.
 
-Switching `MEMORIA_EMBED_MODEL` leaves every text unchanged, so ingest would keep the old model's
-vectors. Delete the vector store and ingest the full corpus again after a model change.
+Switching `MEMORIA_EMBED_MODEL`, or `MEMORIA_EMBED_PROVIDER` between `stub` and `local`, leaves every
+text unchanged, so ingest would keep the old vectors. Delete the vector store and ingest the full
+corpus again after either change.
 
 With `MEMORIA_DB_PATH` pointing outside `<home>/.memory/sessions.db`, doctor names the path mismatch
 and prints no ingest command: the payload builder reads the data root's default database. Use a data
