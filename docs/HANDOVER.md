@@ -101,6 +101,7 @@
 | v1.35.1 | setup 不再誤刪引用標記後的內容 | `upsertManagedBlock` 原以 `indexOf` 找標記，內文引用開始標記時，從該處到真正結束標記之間全被刪除。新增 `findManagedBlock`，只接受獨占一行且不在 code fence 內的標記。不成對時在檔尾新增區塊。schema、recall、brief 不變。main 完整 CI 通過後發版。 |
 | v1.36.0 | Antigravity 契約校準與韓文、片假名召回 | 以真實 `agy` 1.4.4 重寫 adapter，舊範本會讓 agy 丟棄整個 `hooks.json`（見 §6）。tokenizer 納入片假名與韓文，平假名維持分隔符。`brief`、`doctor` 顯示掃描落後；merge／release 寫回時自動略過已涵蓋的 commit range 骨架；`stats --zero-utility` 與 opt-in 的 `telemetry.storeQueryText`。migration 16 新增可為空的 `recall_telemetry.query_text`。main 完整 CI 通過後發版。 |
 | v1.36.1 | 向量庫遇鎖改為等待 | `@libsql/client` 預設不等鎖，兩個 session 同時 ingest 時第二個立刻 `SQLITE_BUSY`，ingest 期間的語意召回也會靜默退回字面查詢（1600 筆實測 52/134 失敗）。`vector-ingest` 設 300 秒（四個並行時單一語句最久等 53 秒），`vector-recall` 設 1.5 秒（留在 helper 的 4 秒預算內）。不動 helper 的 lockfile，不必重跑 `setup --vector`。main 完整 CI 通過後發版。 |
+| v1.37.0 | 收尾補向量只嵌入變更列（issue-31） | 多個 agent 收尾一起卡住：半寫入的長名稱 skill 筆記沒有記憶節點，doctor 修法補不到它而永遠 `missing>0`，每次又全量重 embed（2183 筆 135 秒、2.6GB）。Skills 檔名超過 200 bytes 截斷加雜湊；新筆記寫檔失敗時撤回；`vector-ingest` 只 embed 新增或變更的列並維持逐列提交（單一交易會讓大批 ingest 期間的 recall 超時，審查 M-1），輸出 `embedded` 改為本次寫入數並新增 `unchanged`；doctor 有 tree index 缺口時回報並讓修法先 `index build`。缺 2 筆修法 1.2 秒，4 支並行各 1.8 秒。helper lockfile 不變，不必重跑 `setup --vector`。兩輪獨立審查，第二輪 PASS；main 完整 CI 通過後發版。 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
