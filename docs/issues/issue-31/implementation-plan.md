@@ -110,6 +110,14 @@ slug = slugify(title)
    - 環境注意：第一次跑時繼承了維護者 shell 的 `LIBSQL_URL=file:~/.memoria/.memory/vectors.db`，`test-ui-http` 因此 FAIL（`ui-http-driver.mts:68`，vector 模式讀到真實向量庫，`fallback_used` 為 false）。拿掉變數後 PASS，這次沒有改到 recall 路徑。真實資料根的兩個 DB 最後修改時間仍是測試前的 12:04／12:05，doctor `missing=0`。
    - `detect_changes`（scope all）：risk 顯示 critical。實際改到的 symbol 是 `extractSkills`（只改檔名那一行）、`rememberNote`、doctor 的 `vectorChecks`／`ingestFix`／`registerDoctorCommand`、`previewSync`、`vector-ingest.mjs`。`queryStats`、`stableStringify`、`shortHash`、`resolveSessionId`、`recordNoteProvenance` 被列為 touched，是新函式插在相鄰位置造成的行號位移；`git diff -U0` 顯示 `utils.ts`、`telemetry.ts`、`memory-note.ts` 都只有新增、沒有刪除。範圍與 README「涉及檔案」一致。
 
+9. ✅ **審查 review-1d86717 修正**（README TBD-3）— 相依：步驟 4
+   - 產出：`vector-ingest.mjs` 改回逐列提交；`test-vector-recall.sh` 新增「recall keeps answering while a large ingest writes」；`memoria.ts` 撤回失敗時保留原始錯誤（N-1）；`pure-fn-driver.mts` 新增 `skillFileStem` 200／201 bytes 與 CJK 字元邊界斷言（N-4）；CHANGELOG `[Unreleased]` 記錄 ingest 輸出變更（S-1）；README 與 OPERATIONS 補上換 provider 也要重建向量庫（N-2）。S-2 的 `BUSY_TIMEOUT_MS` 註解在改回逐列提交後又與行為一致，維持原狀。
+   - M-1 紅燈（單一交易版，工作區，2026-11-10）：`bash scripts/test-vector-recall.sh` exit 1，`✗ 4 of 6 recalls failed during a large ingest`。綠燈（改回逐列提交）：`env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER bash scripts/test-vector-recall.sh` exit 0，`116 recalls during a 1500-row ingest, none failed`。案例會檢查 recall 至少有 2 次和 ingest 重疊，避免 ingest 太快結束而沒測到。
+   - N-4：實作原本就正確，這些是核准行為的特性斷言，所以沒有紅燈。期望的雜湊由 Python `hashlib.sha256` 獨立算出（`a`×201 → `a92efd82`，`中`×67 → `5ab93f89`），`bash scripts/test-pure-functions.sh` exit 0。
+   - 未處理：N-3（部署版 skill 收尾段沒有提到 `tree index`）。doctor 的 vector coverage 修法已自帶 `index build`，`tree index` 那一行也印出自己的修法，agent 照 doctor 輸出就會補齊；改部署版 skill 會觸發 INSTALL 與交付清單的同步，不放進本 issue。N-5（以 root 執行時 SCN-002／003 印出略過但 exit 0）：CI 與維護者機器都不是 root，略過時會明確印出「不算通過」。
+   - SCN-006 在提交版 `4cfd0e2` 上重新量測（同一份真實語料副本，local provider）：缺 2 筆時單次修法 1.22 s、maxrss 633MB，`embedded=2`；4 支並行各 1.73～1.82 s、rc=0；兩次之後 doctor `missing=0`。另在副本上拿掉一個 session 的記憶節點、再刪掉一筆向量，doctor 回報 `tree index … missing=1`，修法以 `index build &&` 開頭，1.38 s 完成，之後 tree index 與 vector coverage 都沒有缺口。
+   - CI 對齊（`4cfd0e2`，`env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_HOME`）：5 項靜態檢查加 35 支 `scripts/test-*.sh` 全數 PASS。
+
 ## 使用方式對照
 
 | 情境 | 變更前 | 變更後 |
