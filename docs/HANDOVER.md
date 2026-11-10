@@ -8,12 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-11-02 當前狀態
+> 2026-11-10 當前狀態
 
-- **已發布版本**：[`v1.36.1`](https://github.com/raybird/Memoria/releases/tag/v1.36.1)（2026-11-02）；前一版為 `v1.36.0`（2026-11-02）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/41401342201) 成功，四平台安裝包與 `install.sh` 已上傳，npm `latest` 為 1.36.1，registry 確認由 trusted publisher 發布並帶 provenance。
-- **交付內容**：`d684327` 讓 `vector-ingest` 與 `vector-recall` 遇鎖時等待，修掉併發 ingest 的 `SQLITE_BUSY`，以及 ingest 期間語意召回靜默退回字面查詢。發版提交 `1730389`。這次未開 issue 文件。
-- **使用入口**：`npm i -g @raybird.chen/memoria@1.36.1` 後重跑 `memoria setup`。helper 的 lockfile 沒變，不必重跑 `setup --vector`。從 v1.35.x 升上來的 Antigravity 使用者仍要依 v1.36.0 的說明換成 `docs/INTEGRATIONS.md` 的扁平寫法。
-- **下一步**：`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
+- **已發布版本**：[`v1.37.0`](https://github.com/raybird/Memoria/releases/tag/v1.37.0)（2026-11-10）；前一版為 `v1.36.1`（2026-11-02）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/42760259337) 成功，四平台安裝包與 `install.sh` 已上傳，交付一致性檢查通過，npm `latest` 為 1.37.0，registry 確認由 trusted publisher 發布並帶 provenance。
+- **交付內容**：issue-31（`docs/issues/issue-31/`）。多個 agent 收尾時卡住數分鐘的原因是半寫入的長名稱 skill 筆記：它沒有記憶節點，doctor 的修法補不到，每次又全量重 embed。修正 Skills 檔名上限、新筆記失敗撤回、`vector-ingest` 只 embed 變更列（維持逐列提交）、doctor 回報 tree index 缺口並讓修法先 `index build`。兩輪獨立審查，第二輪 PASS；發版提交 `1e5c6d3`。
+- **使用入口**：`npm i -g @raybird.chen/memoria@1.37.0` 後重跑 `memoria setup`。helper 的 lockfile 沒變，不必重跑 `setup --vector`。讀 `vector-ingest.mjs` 輸出的下游要改用 `embedded + unchanged` 取得 payload 的可 embed 數（見 CHANGELOG Compatibility）。
+- **下一步**：issue-31 審查留下兩個不阻擋的項目：部署版 skill 收尾段沒有提到 `tree index`（N-3）；以 root 執行時 SCN-002／003 只印略過（N-5）。`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
 
 ### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
