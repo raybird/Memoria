@@ -27,6 +27,8 @@
 #   (S) SCN-003 brief adds "as of <date>; re-check with `<command>`" under a state memory in the
 #       recent-decisions, high-utility and environment blocks — whole command, backticks intact
 #   (T) SCN-006 Memoria never runs a verify command — on write, recall, brief, doctor, stats or mark
+#   (U) SCN-011 a brief that shows any verify line also carries one fixed note on when to run it
+#   (V) SCN-012 a durable memory that carries a verify command shows it in the pinned block too
 #
 # issue-18 — mark marks both halves of a note (docs/issues/issue-18 AC-3).
 #
@@ -375,7 +377,9 @@ echo "  三條寫入路徑都拒絕，資料與標記不變，狀態類不進常
 echo "[attributes] (Q/issue-32 SCN-005) 空白或多行的 --verify 被拒絕"
 reset_home home-q
 BEFORE=$(counts)
-for bad in "" "   " $'git status\nrm -rf /tmp/x'; do
+# SCN-005（2026-11-11 擴充）：其他會換行的字元與控制字元也拒絕，Tab 除外。
+for bad in "" "   " $'git status\nrm -rf /tmp/x' $'git status\u2028rm -rf /tmp/x' $'git status\u2029rm -rf /tmp/x' \
+           $'git status\u0085rm -rf /tmp/x' $'git status\e[2Krm -rf /tmp/x' $'git status\rrm -rf /tmp/x'; do
     set +e
     ERR=$("$CLI" remember "某個會變的狀態" --project demo --verify "$bad" 2>&1)
     CODE=$?
@@ -384,7 +388,9 @@ for bad in "" "   " $'git status\nrm -rf /tmp/x'; do
     case "$ERR" in *--verify*) ;; *) echo "  ✗ 錯誤沒有指出 --verify: $ERR"; exit 1 ;; esac
 done
 [ "$(counts)" = "$BEFORE" ] || { echo "  ✗ 被拒絕的命令仍寫入了資料 ($BEFORE→$(counts))"; exit 1; }
-echo "  空字串、空白、多行都拒絕，沒有寫入"
+"$CLI" remember "Tab 分隔的查證命令可以寫入" --project demo --verify $'git\tstatus' >/dev/null \
+    || { echo "  ✗ 含 Tab 的 --verify 不該被拒絕"; exit 1; }
+echo "  空字串、空白、多行、U+2028／U+2029／U+0085、控制字元都拒絕，沒有寫入；Tab 可以"
 
 echo "[attributes] (R/issue-32 SCN-001, SCN-002) recall 顯示截至日期與查證命令"
 reset_home home-r
@@ -470,6 +476,43 @@ const ufl = d.high_utility.find((x) => x.snippet.includes('已併入 main'));
 if (!ufl || ufl.verify !== want || typeof ufl.verify_as_of !== 'string') { console.error('  ✗ 高效用項沒有 verify／verify_as_of: ' + JSON.stringify(ufl)); process.exit(1); }
 " "$VERIFY_S"
 echo "  近期決策、高效用、環境紀律都附上完整命令（含反引號），一般決策沒有；--json 帶 verify"
+
+echo "[attributes] (U/issue-32 SCN-011) 有查證行時，brief 在統計行之後帶一行固定說明"
+NOTE_U='- 查證行：「截至…；據以行動前先跑 `<命令>`」只列出命令，Memoria 不執行；只在命令是唯讀檢查時才跑，並以它的輸出為準'
+AFTER_STATS=$(awk 'f{print; exit} /^- sessions: /{f=1}' "$BRIEF_S")
+[ "$AFTER_STATS" = "$NOTE_U" ] || { echo "  ✗ 統計行之後不是固定說明: [$AFTER_STATS]"; exit 1; }
+[ "$(grep -cxF -- "$NOTE_U" "$BRIEF_S")" = "1" ] || { echo "  ✗ 固定說明不是剛好一行"; exit 1; }
+# 沒有查證行的 brief 不出現這一行（零標記的 golden 由 (J) 逐位元組守著）
+reset_home home-u
+"$CLI" remember "demo 的 release 流程改用 release.sh" --project demo >/dev/null
+"$CLI" brief >/dev/null
+grep -qF -- '- 查證行：' "$MEMORIA_HOME/knowledge/BRIEF.md" && { echo "  ✗ 沒有查證行的 brief 出現了固定說明"; exit 1; }
+echo "  有查證行時說明緊接在統計行之後且只有一行；沒有查證行時不出現"
+
+echo "[attributes] (V/issue-32 SCN-012) 常駐區的狀態類記憶也顯示查證行"
+reset_home home-v
+"$CLI" remember "demo 的 helper 雜湊目錄是 abc123" --project demo --verify "ls ~/.cache/demo" >/dev/null
+"$CLI" remember "demo 一律用 pnpm" --project demo --durable >/dev/null
+SID_V=$(q "SELECT id FROM sessions WHERE summary='demo 的 helper 雜湊目錄是 abc123'")
+DAY_V=$(q "SELECT substr(timestamp,1,10) FROM sessions WHERE id='$SID_V'")
+# 本 issue 之前的 runtime 不擋互斥，能把狀態類記憶標成 durable；這裡直接寫出那個狀態。
+sql "UPDATE memory_attributes SET retention='durable' WHERE ref_id IN ('$SID_V','noteev-${SID_V#note-}')"
+"$CLI" brief >/dev/null
+BRIEF_V="$MEMORIA_HOME/knowledge/BRIEF.md"
+PIN_STATE=$(section "## 常駐約束（pinned）" "$BRIEF_V" | grep -A1 -F "helper 雜湊目錄是 abc123")
+printf '%s\n' "$PIN_STATE" | sed -n 2p | grep -qxF "  - 截至 ${DAY_V}；據以行動前先跑 \`ls ~/.cache/demo\`" || {
+    echo "  ✗ 常駐區的狀態類記憶沒有查證行:"; echo "$PIN_STATE"; exit 1; }
+PIN_PLAIN=$(section "## 常駐約束（pinned）" "$BRIEF_V" | grep -A1 -F "demo 一律用 pnpm")
+case "$(printf '%s\n' "$PIN_PLAIN" | sed -n 2p)" in *截至*) echo "  ✗ 一般常駐約束多了查證行:"; echo "$PIN_PLAIN"; exit 1 ;; esac
+grep -qxF -- "$NOTE_U" "$BRIEF_V" || { echo "  ✗ 只有常駐區有查證行時，缺少固定說明"; exit 1; }
+"$CLI" brief --json | node -e "
+const d = JSON.parse(require('fs').readFileSync(0, 'utf8')).data;
+const pin = d.pinned.find((x) => x.snippet.includes('abc123'));
+if (!pin || pin.verify !== 'ls ~/.cache/demo' || typeof pin.verify_as_of !== 'string') { console.error('  ✗ pinned 項沒有 verify／verify_as_of: ' + JSON.stringify(pin)); process.exit(1); }
+const plain = d.pinned.find((x) => x.snippet.includes('pnpm'));
+if (!plain || 'verify' in plain) { console.error('  ✗ 一般 pinned 項不該帶 verify: ' + JSON.stringify(plain)); process.exit(1); }
+"
+echo "  常駐區的狀態類記憶附查證行，一般常駐約束不變；--json 的 pinned 項帶 verify"
 
 echo "[attributes] (T/issue-32 SCN-006) Memoria 不執行查證命令"
 reset_home home-t

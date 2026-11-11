@@ -110,13 +110,18 @@ export const VERIFY_DURABLE_CONFLICT =
     '--verify marks a state memory, which goes stale, so it cannot be --durable. ' +
     'Split it into two notes: the lasting constraint with --durable, and the snapshot with --verify.'
 
+/** Any character that can start a new line or drive a terminal: CR/LF, NEL, the Unicode line and
+ *  paragraph separators, and the remaining C0/C1 controls. Tab is the one control a command may hold. */
+const VERIFY_FORBIDDEN = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/
+
 /** Validate a `--verify` value. undefined stays undefined (no marker requested). The command is
- *  rendered on one line of the brief, so a multi-line value is refused rather than mangled. */
+ *  rendered on one line of the brief, so a value that could break or forge a line is refused
+ *  rather than mangled. */
 export function normalizeVerifyCommand(raw: string | undefined): string | undefined {
     if (raw === undefined) return undefined
     const command = raw.trim()
-    if (!command || /[\r\n]/.test(command)) {
-        throw new Error('--verify must be a non-empty, single-line command')
+    if (!command || VERIFY_FORBIDDEN.test(command)) {
+        throw new Error('--verify must be a non-empty, single-line command without control characters')
     }
     return command
 }

@@ -48,7 +48,7 @@ MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" recall "<issue id or topic>" --mode 
 
 A hit or brief line that reads `截至 <date>；據以行動前先跑 <command>` is a snapshot of a state that may have changed since. Before you state it as current or act on it, read the command; run it only if it is a read-only check, and go by its output rather than the memory text. Memoria never runs it for you.
 
-Done when: the relevant decisions and pitfalls among the hits are reflected in your plan or answer, and every snapshot you relied on was re-checked with its command. No hits also counts.
+Done when: the relevant decisions and pitfalls among the hits are reflected in your plan or answer, and every snapshot you relied on was either re-checked with its command or, when the command is not read-only, reported as not re-checked. No hits also counts.
 
 ### After using (or ruling out) recall results — feedback
 

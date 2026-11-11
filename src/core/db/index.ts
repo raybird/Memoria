@@ -65,7 +65,6 @@ export {
     applyMemoryAttributes,
     attributesTableExists,
     memoryRefExists,
-    verifyColumnExists,
     normalizeVerifyCommand,
     hasVerifyDurableConflict,
     VERIFY_DURABLE_CONFLICT

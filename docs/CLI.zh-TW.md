@@ -55,7 +55,7 @@ memoria setup [--serve] [--json]       # 自動化一鍵安裝
 
 `remember`、`recall`、`mark`、`feedback`、`brief` 直接存取本地資料，skill 型部署不需要 server。多個 repository 共用記憶庫時，recall 請帶 `--project` 限定範圍。
 
-以 `--verify` 寫入的是狀態類記憶，也就是可能過時的快照。recall 會在該 hit 下方印出 `⟳ 截至 <日期>；據以行動前先跑：<命令>`，`--json` 與 `/v1/recall` 以 `verify` 欄位帶出；brief 在列出它的每個區塊、該項下方加一行 `截至 <日期>；據以行動前先跑 <命令>`。命令完整顯示、從不執行，由讀到的 agent 決定要不要跑。`--verify` 必須是單行、非空的命令，且不能與 `--durable` 並用，寫入時與之後用 `mark` 都一樣（把長期約束與快照拆成兩則）。
+以 `--verify` 寫入的是狀態類記憶，也就是可能過時的快照。recall 會在該 hit 下方印出 `⟳ 截至 <日期>；據以行動前先跑：<命令>`，`--json` 與 `/v1/recall` 以 `verify` 欄位帶出；brief 在列出它的每個區塊、該項下方加一行 `截至 <日期>；據以行動前先跑 <命令>`，並在統計行之後加一行固定說明：Memoria 不執行命令，只有唯讀檢查才該跑。命令完整顯示、從不執行，由讀到的 agent 決定要不要跑。截至日期是該記憶的 UTC 日期。`--verify` 必須是單行、非空、不含控制字元的命令（Tab 可以，Unicode 換行字元會被拒絕），且不能與 `--durable` 並用，寫入時與之後用 `mark` 都一樣（把長期約束與快照拆成兩則）。
 
 在已註冊 repository 內執行 `brief`，會自動辨識專案並寫入 `knowledge/BRIEF-<project>.md`；明確指定 `--project` 仍寫 `BRIEF.md`，`--global` 則選取所有專案。正文的範圍行會顯示產生時間，因為以 `@` 引入 brief 的 host 看不到開頭的註解。Durable 記憶會列在不受 `--days`、`--top-k` 限制的固定區塊，被取代的記憶會排除。近期決策的 `--top-k` 格數由各專案輪流分配，最近活躍的專案優先。project 不屬於任何已註冊 repository 的記憶會隨各專案的 brief 載入。依 `brief` 輸出，在 `AGENTS.md` 設定讀取指令；Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 與 brief 路徑載入。記憶更新後重新產生 brief。詳見 [Operations](OPERATIONS.md#context-injection-via-briefmd)。
 

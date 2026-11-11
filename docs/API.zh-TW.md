@@ -60,9 +60,10 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 「無法評估」，不是「匹配很差」）。只有 opt-in 的 vector route 會產生 `null`。
 
 狀態類記憶（以 `remember --verify` 寫入）的 hit 帶 `verify`：重新查證它的唯讀命令，原樣保留；截至日期
-就是該 hit 自己的 `timestamp`。`/v1/brief` 的決策項帶同樣的 `verify`，高效用項帶 `verify` 與
-`verify_as_of`，渲染出的 `markdown` 在這些項目下方加一行 `截至 <日期>；據以行動前先跑 <命令>`。
-其他記憶都沒有這個欄位。伺服器只儲存與回傳命令，從不執行。
+就是該 hit 自己的 `timestamp`。`/v1/brief` 的決策項帶同樣的 `verify`，高效用項與常駐項帶 `verify`
+與 `verify_as_of`，渲染出的 `markdown` 在這些項目下方加一行 `截至 <日期>；據以行動前先跑 <命令>`，
+並在統計行之後加一行固定說明何時該跑（至少有一行查證行時才出現）。其他記憶都沒有這個欄位。
+伺服器只儲存與回傳命令，從不執行。
 
 ## UI 模式 API
 

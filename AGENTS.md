@@ -240,6 +240,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 
 All responses are `MemoriaResult<T>` JSON with `evidence[]`, `confidence`, `latency_ms`. Preserve this envelope when adding endpoints or public core methods.
 Recall hits promoted from git summaries additionally carry `hit.source` (`{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`).
+A hit from a state memory (`remember --verify`, issue-32) carries `verify`, the re-check command verbatim; its as-of date is the hit's `timestamp`, and the server never runs it. `/v1/brief` items carry the same `verify` (high-utility and pinned items add `verify_as_of`).
 
 `confidence` is `number | null`, and recall adds `confidence_basis` — `lexical_coverage` |
 `no_hits` | `unavailable` — so a caller never has to infer the scale from `route_mode`. A hit found

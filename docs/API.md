@@ -62,9 +62,11 @@ match"). Only the opt-in vector route ever produces `null`.
 
 A hit from a state memory (written with `remember --verify`) carries `verify`: the read-only command
 that re-checks it, verbatim. Its as-of date is the hit's own `timestamp`. In `/v1/brief`, decision
-items carry the same `verify`, high-utility items carry `verify` plus `verify_as_of`, and the
-rendered `markdown` adds `截至 <date>；據以行動前先跑 <command>` under each such entry. The field
-is absent on every other memory. The server stores and returns the command and never runs it.
+items carry the same `verify`, high-utility and pinned items carry `verify` plus `verify_as_of`,
+and the rendered `markdown` adds `截至 <date>；據以行動前先跑 <command>` under each such entry,
+plus one fixed note after the totals line on when to run it (only when at least one such line is
+present). The field is absent on every other memory. The server stores and returns the command
+and never runs it.
 
 ## UI-mode API
 

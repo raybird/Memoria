@@ -504,6 +504,10 @@ export type BriefPinned = {
     /** issue-18: the marker's own note — the "scope / symptom / self-check" text, when one was
      *  recorded. null keeps the entry a single line: a pinned block earns its place by being cheap. */
     note: string | null
+    /** issue-32: present only when the pinned memory carries a verify command — something a
+     *  pre-issue-32 runtime could still mark durable — together with the memory's own timestamp. */
+    verify?: string
+    verify_as_of?: string
 }
 
 export type BriefRepository = {

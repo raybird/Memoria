@@ -64,6 +64,37 @@ try {
     assert.equal((await oldCore.listMemories()).data?.total,1)
     assert.deepEqual((await oldCore.memoryFacets()).data,{repositories:[],environment_projects:[]})
     assert.deepEqual(await readFile(oldPath),oldBytes,'legacy browsing does not migrate or write')
+    // issue-32 (review S-1): a pre-migration-17 database opened without initializing — the UI path —
+    // must keep its markers. Selecting the missing verify_cmd column would throw, and the fail-open
+    // recall path would then silently drop every marker, durable included.
+    const pre17Home=await mkdtemp(join(tmpdir(),'memoria-pre17-'))
+    try {
+        const pre17=new MemoriaCore(resolveMemoriaPaths(pre17Home))
+        await pre17.init()
+        assert.equal((await pre17.rememberNote({text:'pre17 durable rule',project:'alpha',retention:'durable'})).ok,true)
+        closeAllConnections()
+        const raw=new Database(pre17.paths.dbPath)
+        raw.exec('ALTER TABLE memory_attributes DROP COLUMN verify_cmd')
+        raw.prepare('DELETE FROM schema_migrations WHERE id = 17').run()
+        raw.close()
+        const reader=new MemoriaCore(resolveMemoriaPaths(pre17Home))
+        const hits=await reader.recall({query:'pre17 durable rule',project:'alpha'},{initialize:false})
+        assert.equal(hits.ok,true,JSON.stringify(hits))
+        assert.ok((hits.data??[]).length>0,'pre-17 recall finds the note')
+        assert.ok((hits.data??[]).every(h=>h.retention==='durable'),'pre-17 recall keeps durable: '+JSON.stringify(hits.data))
+        const pre17Brief=await reader.brief({},{initialize:false})
+        assert.equal(pre17Brief.ok,true,JSON.stringify(pre17Brief))
+        assert.deepEqual(pre17Brief.data?.pinned.map(p=>p.snippet),['pre17 durable rule'])
+        closeAllConnections()
+        // recall may still record local routing telemetry here (docs/API.md §UI-mode API), so the
+        // bytes can change; what must not happen is a migration on this read path.
+        const check=new Database(pre17.paths.dbPath,{readonly:true})
+        const cols=(check.prepare('PRAGMA table_info(memory_attributes)').all() as Array<{name:string}>).map(c=>c.name)
+        const mig17=check.prepare('SELECT COUNT(*) AS c FROM schema_migrations WHERE id = 17').get() as {c:number}
+        check.close()
+        assert.ok(!cols.includes('verify_cmd'),'pre-17 read path must not add verify_cmd')
+        assert.equal(mig17.c,0,'pre-17 read path must not record migration 17')
+    } finally {closeAllConnections();await rm(pre17Home,{recursive:true,force:true})}
     // SCN-003/012: independent fixed fixture, same timestamps and long rationale.
     const bulk = new Database(core.paths.dbPath)
     const insert = bulk.prepare('INSERT INTO events(id,session_id,timestamp,event_type,content,metadata) VALUES(?,?,?,?,?,?)')

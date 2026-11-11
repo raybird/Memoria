@@ -227,6 +227,7 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
             }
         }
 
+        const timestampOf = new Map<string, string>()   // issue-32: as-of date for a state memory
         const pinned: BriefPinned[] = []
         if (durableRefs.length > 0) {
             const texts = resolveRefTexts(db, durableRefs)
@@ -235,12 +236,12 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                 if (!found) continue
                 if (project && found.project !== project && !isEnvironmentProject(found.project)) continue
                 pinned.push({ ref_id: ref, project: found.project, snippet: truncateText(found.text, PINNED_SNIPPET_MAX), note: noteByRef.get(ref) ?? null })
+                timestampOf.set(ref, found.timestamp)
             }
         }
 
         // Memories with an accrued utility signal — what actually earned its keep (UFL Phase 3).
         const high_utility: BriefMemory[] = []
-        const timestampOf = new Map<string, string>()   // issue-32: as-of date for a state memory
         let utility_unproven = 0
         if (tableExists(db, 'memory_utility')) {
             const rows = db.prepare(`
@@ -308,7 +309,10 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
         // database without state memories yields exactly the data it did before.
         const verifyByRef = new Map<string, string>()
         if (hasAttributes) {
-            const listed = [...decisions.map((d) => d.id), ...environment.map((d) => d.id), ...high_utility.map((m) => m.ref_id)]
+            const listed = [
+                ...decisions.map((d) => d.id), ...environment.map((d) => d.id),
+                ...high_utility.map((m) => m.ref_id), ...pinned.map((p) => p.ref_id)
+            ]
             for (const [ref, attribute] of loadAttributes(db, [...new Set(listed)])) {
                 if (attribute.verify) verifyByRef.set(ref, attribute.verify)
             }
@@ -320,7 +324,7 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                     if (verify) decision.verify = verify
                 }
             }
-            for (const memory of high_utility) {
+            for (const memory of [...high_utility, ...pinned]) {
                 const verify = verifyByRef.get(memory.ref_id)
                 const timestamp = timestampOf.get(memory.ref_id)
                 if (verify && timestamp) {
@@ -396,6 +400,13 @@ function verifyLine(timestamp: string, command: string): string {
     return `  - 截至 ${timestamp.slice(0, 10)}；據以行動前先跑 ${fence}${pad}${command}${pad}${fence}`
 }
 
+const VERIFY_NOTE = '- 查證行：「截至…；據以行動前先跑 `<命令>`」只列出命令，Memoria 不執行；只在命令是唯讀檢查時才跑，並以它的輸出為準'
+
+function hasVerifyLine(data: BriefData): boolean {
+    return [...data.pinned, ...data.decisions, ...data.environment, ...data.high_utility]
+        .some((item) => Boolean(item.verify))
+}
+
 /** Deterministic markdown rendering — same data in, same bytes out apart from `generated_at`. */
 export function renderBrief(data: BriefData): string {
     const lines: string[] = []
@@ -409,6 +420,10 @@ export function renderBrief(data: BriefData): string {
     // a snapshot that cannot say how old it is gets read as current.
     lines.push(`- 範圍: ${data.project ?? '(all projects)'} ｜ 近 ${data.days} 天 ｜ 產生於 ${data.generated_at}`)
     lines.push(`- sessions: ${data.totals.sessions} ｜ 期間決策: ${data.totals.decisions_in_window} ｜ 待增強摘要: ${data.totals.pending_summaries}`)
+    // issue-32 (SCN-011): this file is auto-loaded, often by a reader that never opened the skill, so
+    // a brief that carries any verify line also says when to run one. Absent otherwise, which keeps
+    // a database without state memories rendering exactly as before.
+    if (hasVerifyLine(data)) lines.push(VERIFY_NOTE)
     lines.push('')
 
     // Pinned first: these are the constraints that must survive rotation, so they must also survive
@@ -422,6 +437,7 @@ export function renderBrief(data: BriefData): string {
             // Only when a note exists: an empty placeholder would spend context on nothing and
             // break the one-line-each economy the block depends on.
             if (item.note) lines.push(`  - ${item.note}`)
+            if (item.verify && item.verify_as_of) lines.push(verifyLine(item.verify_as_of, item.verify))
         }
         lines.push('')
     }

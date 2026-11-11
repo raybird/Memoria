@@ -152,6 +152,30 @@
      - GitNexus `detect_changes`（unstaged）：22 個變更檔都在涉及檔案清單或常青文件內；risk 為 critical，來源是 `runMigrations` 在每條讀寫流程上（migration 17，已列於風險）。另列出的 `MemoriaCore.recall`、`MemoriaCore.brief`、`loadDurableRefs`、`collapseNotePairs` 經 `git diff` 核對沒有修改，是上方插入程式碼後索引行號偏移造成的誤判；`MemoriaCore` 實際只改了 `rememberNote`、`applyNoteAttributes`、`markMemory`。
      - 相依說明：步驟 8 只產生觀測紀錄，不改程式。若觀測結果需要修改 skill 指引或程式，須重跑本步驟。
 
+10. ✅ **步驟 10：審查修正（review-5657988；SCN-005、SCN-011、SCN-012）**
+   - 產出：
+     - S-3／SCN-011：`renderBrief` 在有任何查證行時，於統計行之後加一行固定說明；零查證命令時輸出不變。
+     - N-2／SCN-012：`BriefPinned` 帶 `verify`／`verify_as_of`，常駐約束區的狀態類記憶附查證行。
+     - N-1／SCN-005：`normalizeVerifyCommand` 另外拒絕 U+2028、U+2029、U+0085 與控制字元（Tab 除外）。
+     - S-1：`test-memory-browser` 補一個 migration 17 之前的資料庫，以 `initialize: false` 執行 recall 與 brief，durable 標記與常駐區都保留、檔案不被改寫。
+     - S-2：`DEPLOYED_SKILL.md` recall 段的完成判準改成「依賴的快照都已用命令重查；命令不是唯讀時，標明尚未查證」。
+     - N-5：`AGENTS.md` HTTP API 段補上 hit 的 `verify`；N-6：拿掉沒人用的 `verifyColumnExists` 匯出。
+   - 相依：步驟 9、使用者 2026-11-11 審查決策。
+   - 完成判準：新增斷言先紅後綠（S-1 以拿掉欄位探測的變異證明測試抓得到）；步驟 9 的 CI 對齊重跑全綠；真實副本對比與基線只差產生時間；重新獨立審查。
+   - 證據（2026-11-11）：
+     - 紅燈：
+       - SCN-005：`test-memory-attributes.sh` 在 HEAD `5657988` 的程式上 exit 1，`✗ --verify 'git status rm -rf /tmp/x' 應該失敗`（U+2028 被接受）。
+       - SCN-011：scratch 副本把 `brief.ts`、`types.ts` 換回 HEAD 版，`✗ 統計行之後不是固定說明: []`。
+       - SCN-012：scratch 副本只拿掉常駐區那一行 `verifyLine`，`✗ 常駐區的狀態類記憶沒有查證行`。
+       - S-1：新測試在現有程式上本來就綠（程式本來正確）；scratch 副本把欄位探測改成固定 `SELECT verify_cmd`，`test-memory-browser.sh` 以 `AssertionError: pre-17 recall keeps durable` 失敗，hit 的 `retention` 被丟掉，證明測試抓得到 reviewer 描述的失敗。
+       - 第一次寫的「讀取路徑不改檔案位元組」斷言是錯的：recall 在 UI 路徑會記錄本地 telemetry（`docs/API.md` §UI-mode API），所以改成斷言 `verify_cmd` 欄位沒被加上、migration 17 沒被記錄。
+     - 實作：`normalizeVerifyCommand` 拒絕 U+0000–U+0008、U+000A–U+001F、U+007F–U+009F、U+2028、U+2029（保留 Tab），錯誤訊息改為 `--verify must be a non-empty, single-line command without control characters`；`BriefPinned.verify`／`verify_as_of`；`queryBrief` 一併替常駐項取查證命令與時間；`renderBrief` 在常駐項附查證行，有任何查證行時在統計行之後加 `VERIFY_NOTE`；`DEPLOYED_SKILL.md` 完成判準改成「重查過，或命令不是唯讀時標明尚未查證」；`AGENTS.md` HTTP API 段補 `verify`；`src/core/db/index.ts` 拿掉 `verifyColumnExists` 匯出（函式仍在模組內使用）。CLI／API 中英文、架構文件同步；CLI 文件註明截至日期是 UTC（N-3 維持 UTC，僅說明）。
+     - 綠燈：`test-memory-attributes.sh` exit 0（(Q) 新增的 5 種字元都拒絕且不寫入、Tab 可寫入；(U) 固定說明緊接統計行且只一行、沒有查證行時不出現；(V) 常駐區狀態類記憶附查證行、一般常駐約束不變、`brief --json` 的 pinned 項帶 `verify` 與 `verify_as_of`；(J) 零標記 golden 不變）；`test-memory-browser.sh` exit 0（migration 16 的資料庫以 `initialize: false` recall 保留 durable、brief 常駐區保留，沒有被遷移）。
+     - CI 對齊（修改後的工作區）：靜態檢查 6 項與五組 E2E、npm-install job，41 項中 40 項 exit 0；`test-antigravity-adapter` 第一次失敗，原因是 `Port 24282 is in use`（隨機 port 被一個無關的 python 行程 pid 8144 佔用），單獨重跑 exit 0。node18-smoke（scratch 副本，Node v18.18.2）與 release（`release:package` + `test-no-clone-install.sh`）都 exit 0。CI 前後 `~/.memoria` 兩個資料庫的修改時間不變。
+     - 真實副本：scratch 原本的對比腳本與快照被清掉（原因不明，scratch 只放暫存檔），從對話紀錄取回 `run-set.sh`、`normalize.mjs` 重建，重新唯讀取快照（schema 16）。1.37.0 跑兩次 diff 0 行；開發版對 1.37.0 只差 `- 範圍:` 行的 `｜ 產生於 <TS>`。真實資料沒有狀態類記憶，所以不出現固定說明。
+     - 範圍：`git diff --stat main -- src/adapter src/cli/commands/service.ts src/ui` 為空。
+     - 精煉：新增的是一個常數、一個判斷函式與兩處沿用既有 `verifyLine`，no-op。
+
 ## 使用方式對照
 
 ```bash
@@ -186,6 +210,8 @@ recall 與 brief 會在第二則下方顯示：
 | SCN-008 | migration 回歸 + 真實副本對比 | `test-migrations.sh`、步驟 1 腳本 | 升級前的輸出 |
 | SCN-009 | 真實副本對比（手動） | 步驟 1 腳本 + 1.37.0 發布版 | 未升級副本的輸出 |
 | SCN-010 | 觀測（手動） | 步驟 8 紀錄 | 查證命令的實際結果 |
+| SCN-011 | CLI 端到端 + golden | `test-memory-attributes.sh`、`fixtures/brief-zero-marker.golden.md` | 固定說明字面值；零查證時 golden |
+| SCN-012 | CLI 端到端 | `test-memory-attributes.sh` | 寫入時用的命令字面值 |
 
 ## 檢查清單
 
