@@ -214,9 +214,10 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 | 2026-11-11 | 審查 review-5657988 PASS；依使用者決策新增 SCN-011、SCN-012，擴大 SCN-005，進入審查修正 | - |
 | 2026-11-11 | 步驟 10 審查修正完成（4e78e45）；第二輪審查 review-4e78e45 RETURN（M-1 核准紀錄未展開），依使用者決定展開核准表、核准 commit 改為待提交；TBD-9 記為已知限制 | - |
 | 2026-11-11 | 第三輪審查 review-95eeb7c PASS；核准 commit 回填 `95eeb7c` | - |
+| 2026-11-11 | fast-forward 併入 main（0ed04a5） | - |
 
 ---
 **建立日期**: 2026-11-10  
 **分級**: Medium（migration 加 1 欄 + remember 旗標 + recall／brief 顯示 + skill 指引；零新依賴，不新增命令）  
 **風險**: High — recall 與 brief 共用函式的影響分析為 HIGH，且會把可執行命令放進自動載入的 context\
-**狀態**: 審查通過，待併入 main
+**狀態**: 已完成
