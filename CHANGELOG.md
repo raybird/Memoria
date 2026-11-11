@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.38.0] - 2026-11-11
+
+### Added
+- **State memories carry the command that re-checks them.** `remember "<state>" --verify "<command>"` records a snapshot such as "the release branch is not merged yet" together with a read-only command that confirms it. `recall` prints `⟳ 截至 <date>；據以行動前先跑：<command>` under the hit, and `brief` adds `截至 <date>；據以行動前先跑 <command>`, with the command in a code span, under the entry in the pinned, decision, environment and high-utility blocks, with the command in full. A state memory used to read exactly like a fact, so an agent acted on a branch status or cache size that had long since changed. The date is the memory's UTC date.
+- **Memoria never runs the command.** It only stores and prints the string; recall, brief, doctor, stats, mark and the HTTP endpoints were checked not to execute it. When a brief lists any such line, one fixed note after the totals line says the command is only listed, should be run only when it is a read-only check, and its output wins over the memory. A brief with no state memories has no note.
+- **JSON and HTTP carry the command.** A recall hit from a state memory has `verify`; `GET /v1/brief` items have `verify` (pinned and high-utility items add `verify_as_of`). Memories without one have no such field.
+- **The deployed skill tells agents when to add `--verify` and to re-check before acting.** Its completion criterion: a state the answer relies on was either re-checked with its command or, when the command is not read-only, reported as not re-checked.
+- **`BRIEF.md` shows when it was generated in the body**, on the `- 範圍:` line (`｜ 產生於 <timestamp>`). The first-line `generated-by` comment is unchanged.
+
+### Changed
+- **`--verify` and `--durable` are mutually exclusive.** A durable memory stays pinned and never fades, which is wrong for a snapshot: `remember --durable --verify`, adding `--verify` to an already-durable note, and `mark <state memory> --durable` all fail and write nothing. Split a constraint and its current state into two memories.
+- `--verify` rejects an empty or blank command and any line break or control character (including U+2028, U+2029 and U+0085); Tab is allowed.
+
+### Compatibility and upgrade
+- **Migration 17 adds a nullable `memory_attributes.verify_cmd`.** Databases with no state memories recall and brief exactly as before, apart from the visible generation time. A database opened read-only before migration 17 keeps its existing markers.
+- **The `- 範圍:` line of `BRIEF.md` changed format** (it gains `｜ 產生於 <timestamp>`). Anything that compared or parsed that line must allow the suffix.
+- The previous release can still read and write an upgraded database, but it ignores `verify_cmd` and does not enforce the mutual exclusion, so it can mark a state memory durable. Such a memory shows its verify line in the pinned block.
+- Rerun `memoria setup` for your data root to refresh the deployed skill. The helper's dependencies are unchanged, so `--vector` does not need reinstalling.
+
 ## [1.37.0] - 2026-11-10
 
 ### Fixed
