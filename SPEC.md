@@ -2,7 +2,7 @@
 
 This document is the source of truth for what Memoria currently implements.
 
-Last verified: 2026-10-23 against v1.31.1 source and CLI help for memory commands, vector setup and summary promotion.
+Last verified: 2026-11-11 against v1.38.0 source and CLI help (setup onboarding, host skill links, brief, state memories, vector ingest, telemetry and summary write-back). Other sections were last checked against v1.31.1.
 
 Local UI and complete setup/onboarding notes verified: 2026-10-26 against the issue-30 implementation on main; the UI requires v1.33.0 or later.
 
@@ -13,9 +13,9 @@ Local UI and complete setup/onboarding notes verified: 2026-10-26 against the is
   - `sync` (`--dry-run`)
   - `recall`, `remember`, `mark`, `feedback`, `brief` (local, no server required)
   - `source add/list`, `wiki build/file-query/lint`
-  - `serve`, `preflight`, `setup` (including `--vector` and `--agent claude-code`)
+  - `serve`, `preflight`, `setup` (`--scope global|project`, `--agent claude-code|codex|both|none`, `--vector`/`--no-vector`, `--yes`, `--interactive`; see *Setup and agent wiring* below)
   - `service install/start/stop/status/uninstall`, `adapter claude-code/codex/antigravity`
-  - `stats`
+  - `stats` (`--zero-utility`)
   - `doctor`
   - `verify` (`--json`)
   - `index build`
@@ -23,7 +23,7 @@ Local UI and complete setup/onboarding notes verified: 2026-10-26 against the is
   - `prune`
   - `export`
   - `repo add/list/status/sync/summarize/relocate/remove` (Git-Aware Memory, see below)
-- SQLite persistence (`sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`, `memory_utility`, plus Git-Aware Memory tables: `repositories`, `repository_instances`, `git_worktrees`, `git_commits`, `git_refs`, `git_scan_runs`, `git_events`, `git_summary_ranges`, `git_summaries`, `memory_checkpoints`, `memory_sources`)
+- SQLite persistence (`schema_migrations`, `sessions`, `events`, `skills`, `memory_nodes`, `memory_node_sources`, `memory_sync_state`, `recall_telemetry`, `memory_utility`, `memory_attributes`; wiki tables `sources`, `wiki_pages`, `wiki_page_sources`, `wiki_page_links`, `wiki_lint_runs`, `wiki_lint_findings`, `wiki_query_artifacts`; plus Git-Aware Memory tables: `repositories`, `repository_instances`, `git_worktrees`, `git_commits`, `git_refs`, `git_scan_runs`, `git_events`, `git_summary_ranges`, `git_summaries`, `memory_checkpoints`, `memory_sources`)
 - Lightweight scope isolation:
   - `SessionData.scope` optional at write time
   - if omitted, scope defaults to `project:<project>` or `global`
@@ -32,11 +32,21 @@ Local UI and complete setup/onboarding notes verified: 2026-10-26 against the is
   - `remember` writes one content-addressed note; identical text is idempotent, and can apply markers without rewriting it
   - `memory_attributes` stores retention, supersession and sensitivity; `mark <ref_id>` updates retention/sensitivity on an existing session or event, including git-promoted decisions
   - durable memories bypass time-decay and stale pruning; superseded memories leave default recall and brief; `export --redact` code-names known entities in private memories
+  - state memories (issue-32, migration 17 `memory_attributes.verify_cmd`): `remember --verify "<command>"` stores a read-only re-check command; recall hits carry `verify` and print `⟳ 截至 <UTC date>；據以行動前先跑：<command>`. Memoria only stores and prints the command and never runs it on any path. `--verify` and `--durable` are mutually exclusive (`remember` and `mark` both refuse); an empty or blank command, a line break (including U+2028, U+2029, U+0085) or a control character other than Tab is rejected and nothing is written
+  - a skill note whose file name would exceed 200 bytes is shortened with a hash suffix; a new note whose markdown files fail to write is undone, so retrying writes it in full (issue-31)
 - Compiled brief:
   - recent decisions, high-utility memories and repository state, plus durable memories pinned outside the `days`/`topK` limits
+  - recent-decision and pinned `topK` slots are dealt one per project, most recently active first; pinned entries keep up to 800 characters; a high-utility entry needs at least 2 observations, skips memories already pinned and merges a git summary with the decisions promoted from it
+  - repository lines append `未掃描 commit: N` (commits a `repo sync` would discover; JSON `repositories[].unscanned_commits`, `null` when unmeasurable)
+  - state memories add `截至 <date>；據以行動前先跑 <command>` (command in a code span, never truncated) under their entry in the pinned, decision, environment and high-utility blocks, and one fixed note after the totals line when any such line is present; JSON items carry `verify` (pinned and high-utility items add `verify_as_of`)
+  - the body shows the generation time on the `- 範圍:` line (`｜ 產生於 <timestamp>`), alongside the unchanged first-line `generated-by` comment
   - cwd detection scopes a registered repository to `BRIEF-<project>.md`; explicit `--project` keeps `BRIEF.md`, and `--global` selects all projects
   - environment-class memories (project not a registered repository name) accompany project briefs; superseded memories are excluded
   - CLI generation is manual and overwrites the derived file; `GET /v1/brief` returns structured data and rendered markdown without writing a file
+- Setup and agent wiring (issue-28, issue-29):
+  - complete onboarding (interactive wizard, or explicit `--scope` with `--yes`) initializes the data root, deploys the skill, compiles the brief, wires agent instructions and, with `--vector`, installs, warms, ingests and verifies coverage; global setup saves the default data root and vector settings to the user `install.json`
+  - the one real skill copy is `<memoria-home>/.agents/skills/memoria`; `--agent` links `~/.claude/skills/memoria` and `~/.codex/skills/memoria` (or `$CODEX_HOME/skills/memoria`) to it, so later setups refresh every linked host. An older deployed copy is backed up once under `<memoria-home>/.agents/skill-backups/` before it becomes a link; hand-written skills, foreign links and a host directory that is or contains the canonical copy are refused before any write
+  - shared `AGENTS.md` and `CLAUDE.md` receive a `memoria:managed` block after backup under `<memoria-home>/.agents/instruction-backups/`; only a marker alone on its line and outside a code fence delimits the block (v1.35.1)
 - Markdown sync outputs:
   - `knowledge/Daily/`
   - `knowledge/Decisions/`
@@ -72,7 +82,8 @@ Local UI and complete setup/onboarding notes verified: 2026-10-26 against the is
   - sync-flow ingest step behind `MEMORIA_VECTOR_ENABLE=1` (default off)
   - `setup --vector` installs dependencies/model into the user cache and warms the model; sibling helper dependencies take precedence, otherwise the cache is keyed by the helper lockfile and survives global upgrades
   - local-model ingest is batched (`MEMORIA_EMBED_BATCH`, default 32); legacy bare `setup --vector` installs/warms only, while complete onboarding (`--scope` and related options, or the wizard) also ingests the corpus and verifies coverage
-  - `doctor` reports helper/embedder readiness and local vector coverage; missing coverage gets a runnable full-corpus ingest fix unless a custom database path differs from the builder's data-root database
+  - `doctor` reports helper/embedder readiness and local vector coverage; missing coverage gets a runnable one-line ingest fix unless a custom database path differs from the builder's data-root database. When sessions are missing from the tree index, a `tree index` line appears and the fix runs `memoria index build` first
+  - `vector-ingest` embeds only rows whose kind or text changed (`embedded` = rows written this run, `unchanged` = rows already current) and commits row by row; ingest waits up to 300 seconds for a busy store and semantic recall up to 1.5 seconds, inside the helper timeout
 - Adaptive retrieval gate:
   - skips trivial/greeting recall requests when no explicit recall mode or memory intent is present
   - telemetry records skipped requests with `route_mode=skipped`
@@ -82,6 +93,7 @@ Local UI and complete setup/onboarding notes verified: 2026-10-26 against the is
 - Time-decay recall scoring:
   - `scoreNode()` applies `1 / (1 + ageDays / halfLife)` decay (halfLife=90 days)
   - `recallKeyword()` ranks with SQLite FTS5 + `bm25()` over a `trigram`-indexed corpus (× decay), falling back to a `LIKE` scan for sub-trigram / CJK-short queries and any FTS miss
+  - CJK runs are split into overlapping n-grams sized by the caller (3 for FTS, 2 for coverage and tree); katakana and hangul are tokenized, while hiragana stays a separator
   - recall hit tracking: `recallTree` updates `last_synced_at` on matched nodes
 - Prune memory management:
   - `--consolidate-days <N>`: merges old session nodes under same topic
@@ -100,14 +112,17 @@ Local UI and complete setup/onboarding notes verified: 2026-10-26 against the is
   - memory promotion: only `enriched` summaries automatically qualify; merge/release summaries, importance ≥ `promoteImportanceThreshold` (default 0.7), or substantive decisions/limitations/risks promote into the existing recall corpus (synthetic session + `DecisionMade` events → FTS, followed by best-effort tree indexing); `memory_sources` keeps SHA-level provenance, `memory_checkpoints` records milestones; the same summary never promotes twice
   - `repo summarize --dismiss <id>` or `--dismiss-pending --type <list>` skips unpromoted pending skeletons; enriched/promoted rows cannot be individually dismissed (batch skips promoted rows). Dismissed rows leave the pending queue and can later be submitted; explicit `--promote` bypasses the automatic eligibility gate
   - explicit `repo summarize --merge` and sync reuse the same merge summary range
+  - writing back a merge or release summary dismisses the pending commit-range skeletons it covers (`dismissed_covered` in the result)
   - recall provenance: hits from promoted summaries carry `hit.source` = `{type, repository, branch?, tag?, base_sha?, head_sha, summary_id}`
   - HTTP: `POST/GET /v1/repos`, `GET /v1/repos/:ref/status`, `POST /v1/repos/:ref/sync|summarize`, `GET /v1/repos/:ref/summaries/pending`, `POST /v1/repos/:ref/summaries/:summaryId`; SDK: `repoAdd/repoList/repoStatus/repoSync/repoSummarize/repoPendingSummaries/repoSubmitSummary`
-  - configuration: `<configPath>/config.json` (`git.*` block, Zod-validated, optional; the repo's only config file) — `summarization.{enabled,minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes}`, `filters.{excludePaths,sensitivePaths}`
+  - configuration: `<configPath>/config.json` (`git.*` and `telemetry.*` blocks, Zod-validated, optional; the repo's only config file) — `summarization.{enabled,minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes}`, `filters.{excludePaths,sensitivePaths}`
   - in-process syncs are serialized per repository; cross-process concurrency is a documented v1 limitation
   - deferred to v1.1 by decision: fast-forward merge inference, agent-session integration (spec §22), MCP `repo_*` tools (HTTP endpoints ship instead)
 - Recall routing observability:
   - aggregated in `stats.recallRouting`
   - raw endpoint: `GET /v1/telemetry/recall?window=P7D&limit=100`
+  - `stats --zero-utility` (HTTP `zero_utility=true`) lists recalls reported useless or with no hits
+  - telemetry stores a query hash by default; opt-in `telemetry.storeQueryText` in `config.json` keeps masked query text up to 200 characters for later recalls (migration 16 `recall_telemetry.query_text`)
 - Optional MCP/libSQL enhancement flow:
   - bridge payload generation
   - request bundle generation
