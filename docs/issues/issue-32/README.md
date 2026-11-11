@@ -158,7 +158,7 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: `95eeb7c`
 - **核准來源**: 使用者 2026-11-10 對話。方向：「那這邊開 verify 的 issue 前先確認不要深入 hooks 的方式，走 skill 方式才不會與特定 agent 深度綁定」，指的是同一則對話中的提議（`remember --verify` 附查證命令與記錄日期、標成狀態類；recall 與 brief 顯示「截至 YYYY-MM-DD；據以行動前先跑 <命令>」；Memoria 不替 agent 執行命令）。逐題確認：Q1 --verify 與 --durable「互斥」（SCN-004）；Q2 BRIEF「完整顯示命令」（SCN-003）；Q3 範圍只納入「BRIEF 產生時間移到正文」（SCN-007），其餘三項不納入（TBD-2～4）。SCN-008 的來源是 [project.md](../../agents/project.md) 本地 gate「schema 向後相容：只加 migration，舊 DB 必須可讀」。SCN-002、005、009、010 是規劃時推導出的行為（TBD-1），使用者 2026-11-10 對這四項回覆「核准，提交文件」。2026-11-11 審查 [review-5657988](./review-5657988.md) 後的修訂，使用者 2026-11-11 對話中逐題選擇：S-3 選「B 加一行固定說明」（新增 SCN-011）、N-1「擋其他換行字元」（擴大 SCN-005）、N-2「常駐區也印查證行」（新增 SCN-012）。原規格的核准 commit 為 `ccc4b7a`。
 
 | Scenario | 核准日期 | 狀態 |
@@ -213,9 +213,10 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 | 2026-11-11 | TBD-7 選 A；步驟 8 SCN-010 實測，Claude Code 與 Codex 都先跑查證命令再依結果回答，全部步驟完成 | - |
 | 2026-11-11 | 審查 review-5657988 PASS；依使用者決策新增 SCN-011、SCN-012，擴大 SCN-005，進入審查修正 | - |
 | 2026-11-11 | 步驟 10 審查修正完成（4e78e45）；第二輪審查 review-4e78e45 RETURN（M-1 核准紀錄未展開），依使用者決定展開核准表、核准 commit 改為待提交；TBD-9 記為已知限制 | - |
+| 2026-11-11 | 第三輪審查 review-95eeb7c PASS；核准 commit 回填 `95eeb7c` | - |
 
 ---
 **建立日期**: 2026-11-10  
 **分級**: Medium（migration 加 1 欄 + remember 旗標 + recall／brief 顯示 + skill 指引；零新依賴，不新增命令）  
 **風險**: High — recall 與 brief 共用函式的影響分析為 HIGH，且會把可執行命令放進自動載入的 context\
-**狀態**: 審查修正完成，待第三輪審查
+**狀態**: 審查通過，待併入 main
