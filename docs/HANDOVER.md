@@ -8,12 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-11-10 當前狀態
+> 2026-11-11 當前狀態
 
-- **已發布版本**：[`v1.37.0`](https://github.com/raybird/Memoria/releases/tag/v1.37.0)（2026-11-10）；前一版為 `v1.36.1`（2026-11-02）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/42760259337) 成功，四平台安裝包與 `install.sh` 已上傳，交付一致性檢查通過，npm `latest` 為 1.37.0，registry 確認由 trusted publisher 發布並帶 provenance。
-- **交付內容**：issue-31（`docs/issues/issue-31/`）。多個 agent 收尾時卡住數分鐘的原因是半寫入的長名稱 skill 筆記：它沒有記憶節點，doctor 的修法補不到，每次又全量重 embed。修正 Skills 檔名上限、新筆記失敗撤回、`vector-ingest` 只 embed 變更列（維持逐列提交）、doctor 回報 tree index 缺口並讓修法先 `index build`。兩輪獨立審查，第二輪 PASS；發版提交 `1e5c6d3`。
-- **使用入口**：`npm i -g @raybird.chen/memoria@1.37.0` 後重跑 `memoria setup`。helper 的 lockfile 沒變，不必重跑 `setup --vector`。讀 `vector-ingest.mjs` 輸出的下游要改用 `embedded + unchanged` 取得 payload 的可 embed 數（見 CHANGELOG Compatibility）。
-- **下一步**：issue-31 審查留下兩個不阻擋的項目：部署版 skill 收尾段沒有提到 `tree index`（N-3）；以 root 執行時 SCN-002／003 只印略過（N-5）。`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
+- **已發布版本**：[`v1.38.0`](https://github.com/raybird/Memoria/releases/tag/v1.38.0)（2026-11-11）；前一版為 `v1.37.0`（2026-11-10）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/42970165449) 成功，四平台安裝包與 `install.sh` 已上傳，交付一致性檢查通過，npm `latest` 為 1.38.0，registry 確認由 trusted publisher 發布並帶 provenance。
+- **交付內容**：issue-32（`docs/issues/issue-32/`）。`remember --verify "<命令>"` 把快照類記憶標成狀態類，recall 與 brief 顯示「截至 <UTC 日期>；據以行動前先跑 <命令>」，brief 有查證行時加一行固定說明；Memoria 只存、只顯示，不執行命令。與 `--durable` 互斥，`--verify` 拒絕換行與控制字元。BRIEF 正文顯示產生時間。migration 17 新增 `memory_attributes.verify_cmd`。三輪獨立審查，第三輪 PASS；發版提交 `3a5feae`。
+- **使用入口**：`npm i -g @raybird.chen/memoria@1.38.0` 後重跑 `memoria setup` 刷新部署的 skill（含何時加 `--verify` 的指引）。helper 的 lockfile 沒變，不必重跑 `setup --vector`。比對或解析 BRIEF `- 範圍:` 行的下游要容許新增的 `｜ 產生於 <時間>`。
+- **下一步**：issue-32 留下的已知限制：`--verify` 仍接受 Unicode 格式字元（U+202E、U+200B 等）與前後換行 trim 後的值（TBD-9）；前一版 runtime 不擋 `--verify` 與 `--durable` 互斥。issue-31 審查留下兩個不阻擋的項目：部署版 skill 收尾段沒有提到 `tree index`（N-3）；以 root 執行時 SCN-002／003 只印略過（N-5）。`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
 
 ### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
