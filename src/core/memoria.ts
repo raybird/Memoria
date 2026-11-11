@@ -54,6 +54,9 @@ import {
     applyMemoryAttributes,
     upsertMemoryAttributes,
     memoryRefExists,
+    normalizeVerifyCommand,
+    hasVerifyDurableConflict,
+    VERIFY_DURABLE_CONFLICT,
     resolveProjectForPath,
     type BriefOptions,
     type MemoryAttributePatch
@@ -383,6 +386,9 @@ export class MemoriaCore {
             const text = input.text.trim()
             if (!text) throw new Error('note text is empty')
             const type = input.type ?? 'decision'
+            // issue-32: refuse an invalid or durable state memory before anything is written.
+            const verify = normalizeVerifyCommand(input.verify)
+            if (verify !== undefined && input.retention === 'durable') throw new Error(VERIFY_DURABLE_CONFLICT)
 
             const noteId = noteFingerprint({ text, type, project: input.project, scope: input.scope })
             const sessionId = `note-${noteId}`
@@ -411,11 +417,17 @@ export class MemoriaCore {
             // DELETE does not fire the recall_fts delete trigger, so a rewrite leaves a duplicate FTS
             // row and the note comes back twice from recall. (That trigger gap predates this command
             // and also affects re-running `sync` on the same session; tracked separately.)
+            // issue-32: an identical re-run is the marking path, so it must also refuse to make an
+            // existing durable note a state memory (or an existing state memory durable).
+            if (hasVerifyDurableConflict(this.paths.dbPath, [sessionId, eventId], { retention: input.retention, verify })) {
+                throw new Error(VERIFY_DURABLE_CONFLICT)
+            }
+
             if (noteExists(this.paths.dbPath, sessionId)) {
                 // The write is skipped, but markers still apply — re-running an identical note with
                 // `--durable` / `--sensitivity` / `--supersedes` is how an EXISTING memory gets
                 // marked, so this doubles as the marking entry point (issue-5, no extra command).
-                this.applyNoteAttributes(input, sessionId, eventId, supersedeTargets)
+                this.applyNoteAttributes({ ...input, verify }, sessionId, eventId, supersedeTargets)
                 const existing: RememberNoteData = {
                     noteId, sessionId, eventId, type, created: false,
                     ...(supersedeTargets.length > 0 ? { superseded: supersedeTargets } : {})
@@ -454,7 +466,7 @@ export class MemoriaCore {
 
             recordNoteProvenance(this.paths.dbPath, [sessionId, eventId], noteId)
 
-            this.applyNoteAttributes(input, sessionId, eventId, supersedeTargets)
+            this.applyNoteAttributes({ ...input, verify }, sessionId, eventId, supersedeTargets)
 
             const created: RememberNoteData = {
                 noteId, sessionId, eventId, type, created: true,
@@ -472,11 +484,12 @@ export class MemoriaCore {
         eventId: string,
         supersedeTargets: string[]
     ): void {
-        if (input.retention || input.sensitivity) {
+        if (input.retention || input.sensitivity || input.verify) {
             for (const ref of [sessionId, eventId]) {
                 upsertMemoryAttributes(this.paths.dbPath, ref, {
                     retention: input.retention,
-                    sensitivity: input.sensitivity
+                    sensitivity: input.sensitivity,
+                    verify: input.verify
                 })
             }
         }
@@ -528,6 +541,8 @@ export class MemoriaCore {
             // U-4). Refs with no counterpart (a git-promoted `gitdec-*`) get exactly one row: the
             // pair is written only when it actually names an existing memory.
             const refs = [target, ...notePairOf(target).filter((pair) => memoryRefExists(this.paths.dbPath, pair))]
+            // issue-32: a state memory (one carrying a verify command) cannot be pinned as durable.
+            if (hasVerifyDurableConflict(this.paths.dbPath, refs, patch)) throw new Error(VERIFY_DURABLE_CONFLICT)
             for (const ref of refs) upsertMemoryAttributes(this.paths.dbPath, ref, patch)
             return { data: { refId: target, applied: patch }, evidence: refs, confidence: 1 }
         })

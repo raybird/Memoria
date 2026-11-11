@@ -1,6 +1,6 @@
 # Architecture and Memory Contracts
 
-Last verified: 2026-10-23 against v1.31.1 source and the shared agent-entry migration. Paths below are repository-relative.
+Last verified: 2026-11-10 against the issue-32 source (state-memory verify marker). Paths below are repository-relative.
 
 Read when changing core modules, recall, markers, brief generation, Git memory or their downstream contracts. Common development rules and validation commands live in [AGENTS.md](../../AGENTS.md).
 
@@ -62,13 +62,14 @@ Adapters (`src/adapter/`) extend `BaseAdapter` to wire Memoria into specific age
 
 **CLI access (issue-4 Phase 1)**: `memoria recall <query>`, `memoria remember <text>` and `memoria feedback <recall_id>` are the CLI counterparts of `POST /v1/recall`, `/v1/remember` and `/v1/recall/:id/outcome` — they exist because a skill-style deployment has no server running. `remember` writes ONE atomic note (a synthetic session + one `DecisionMade`/`SkillLearned` event, provenance `source_type='cli_note'`); its ids are content fingerprints, so an identical re-run is a no-op rather than a rewrite. Human-readable `recall` output prints `relevance` (0–1), not the raw bm25-derived `score` that drives ordering; `--json` carries the full envelope including `meta.recall_id`.
 
-**Long-term memory semantics (issue-5)**: one sparse side table `memory_attributes` (migration 14) keyed by `ref_id` — the same id space as `memory_utility` (a `RecallHit.id`, i.e. a session or event id) — carries three markers, each with one consumer:
+**Long-term memory semantics (issue-5)**: one sparse side table `memory_attributes` (migration 14) keyed by `ref_id` — the same id space as `memory_utility` (a `RecallHit.id`, i.e. a session or event id) — carries four markers, each with one consumer:
 
 | marker | set by | effect |
 |---|---|---|
 | `retention='durable'` | `remember --durable`, `mark <ref> --durable` | time-decay is undone at recall (score ÷ its own decay factor), the memory is spared by `prune --stale-days`, **and** it is pinned in `brief` (issue-17) — listed in its own block, exempt from the `--days` window and `topK`, so severity stops competing with recency |
 | `superseded_by` | `remember --supersedes <ref>` | dropped from recall **and from `brief`** by default; `--include-superseded` (HTTP `include_superseded`) brings it back with the field attached (no such flag on `brief` — a derived view that gets auto-loaded must show one version). Data is never deleted and `export` never applies the filter |
 | `sensitivity='private'` | `remember --sensitivity private`, `mark <ref> --sensitivity private` | `export --redact` replaces known entities (repository names, project tags) with deterministic code names |
+| `verify_cmd` (issue-32, migration 17) | `remember --verify "<command>"` | marks a **state memory**: the hit carries `verify`, recall prints `⟳ 截至 <date>；據以行動前先跑：<command>`, and `brief` adds the same line under the entry in the decision, environment and high-utility blocks. Stored and shown verbatim, **never executed** by any Memoria path, and never truncated. Cannot coexist with `retention='durable'` on any write path (`remember`, identical re-run, `mark --durable`): a snapshot that never fades and is pinned in every brief is how a stale state stays loaded long after it stopped being true |
 
 Two rules to preserve when touching this: **(1) zero markers must stay byte-identical** — every reader probes the table first and returns input untouched when nothing is marked (the discipline `applyUtilityWeighting` set); **(2) `applyMemoryAttributes` runs BEFORE `applyUtilityWeighting`** so utility stays the final arbiter and a mis-marked durable memory can still be pushed down by poor observed utility. Re-running `remember` with identical text applies markers without rewriting — that is how a note marks **itself**. It structurally cannot reach a git-promoted decision, whose id is `gitdec-<summary>-<n>` and which no note text produces, so the memories most worth pinning were the ones nothing could mark. **`memoria mark <refId>` (issue-17) is the surface for marking any existing memory**; it verifies the ref names something first, for the same reason `--supersedes` does — a marker on a ref that names nothing is a silent no-op that still reads as success.
 

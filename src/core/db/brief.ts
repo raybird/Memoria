@@ -13,6 +13,7 @@ import { withDb } from './connection.js'
 import { effectiveUtility, maybeParseJson } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { truncateText } from './mappers.js'
+import { loadAttributes } from './memory-attributes.js'
 import type { BriefData, BriefDecision, BriefMemory, BriefPinned, BriefRepository } from '../types.js'
 
 function tableExists(db: Database.Database, name: string): boolean {
@@ -46,26 +47,26 @@ function noteFingerprintOf(ref: string): string | null {
 function resolveRefTexts(
     db: Database.Database,
     ids: string[]
-): Map<string, { text: string; project: string }> {
-    const texts = new Map<string, { text: string; project: string }>()
+): Map<string, { text: string; project: string; timestamp: string }> {
+    const texts = new Map<string, { text: string; project: string; timestamp: string }>()
     if (ids.length === 0) return texts
     const placeholders = ids.map(() => '?').join(',')
     for (const row of db.prepare(`
-      SELECT id, summary AS text, project FROM sessions WHERE id IN (${placeholders})
-    `).all(...ids) as Array<{ id: string; text: string; project: string }>) {
-        texts.set(row.id, { text: row.text ?? '', project: row.project })
+      SELECT id, summary AS text, project, timestamp FROM sessions WHERE id IN (${placeholders})
+    `).all(...ids) as Array<{ id: string; text: string; project: string; timestamp: string }>) {
+        texts.set(row.id, { text: row.text ?? '', project: row.project, timestamp: row.timestamp })
     }
     for (const row of db.prepare(`
-      SELECT e.id, e.content AS text, e.event_type, s.project
+      SELECT e.id, e.content AS text, e.event_type, s.project, e.timestamp
       FROM events e JOIN sessions s ON s.id = e.session_id WHERE e.id IN (${placeholders})
-    `).all(...ids) as Array<{ id: string; text: string; event_type: string; project: string }>) {
+    `).all(...ids) as Array<{ id: string; text: string; event_type: string; project: string; timestamp: string }>) {
         const parsed = maybeParseJson(row.text ?? '')
         const readable = row.event_type === 'DecisionMade'
             ? parseDecisionEvent(parsed).decision
             : row.event_type === 'SkillLearned'
                 ? parseSkillEvent(parsed).skill_name
                 : String(row.text ?? '')
-        texts.set(row.id, { text: readable || String(row.text ?? ''), project: row.project })
+        texts.set(row.id, { text: readable || String(row.text ?? ''), project: row.project, timestamp: row.timestamp })
     }
     return texts
 }
@@ -239,6 +240,7 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
 
         // Memories with an accrued utility signal — what actually earned its keep (UFL Phase 3).
         const high_utility: BriefMemory[] = []
+        const timestampOf = new Map<string, string>()   // issue-32: as-of date for a state memory
         let utility_unproven = 0
         if (tableExists(db, 'memory_utility')) {
             const rows = db.prepare(`
@@ -296,6 +298,34 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                         signal: entry.row.explicit_observations > 0 ? 'explicit' : 'reuse',
                         snippet: truncateText(found.text)
                     })
+                    timestampOf.set(entry.ref_id, found.timestamp)
+                }
+            }
+        }
+
+        // issue-32: a state memory carries its re-check command into every block that lists it.
+        // One lookup for every listed ref; with no command stored nothing is attached, so a
+        // database without state memories yields exactly the data it did before.
+        const verifyByRef = new Map<string, string>()
+        if (hasAttributes) {
+            const listed = [...decisions.map((d) => d.id), ...environment.map((d) => d.id), ...high_utility.map((m) => m.ref_id)]
+            for (const [ref, attribute] of loadAttributes(db, [...new Set(listed)])) {
+                if (attribute.verify) verifyByRef.set(ref, attribute.verify)
+            }
+        }
+        if (verifyByRef.size > 0) {
+            for (const list of [decisions, environment]) {
+                for (const decision of list) {
+                    const verify = verifyByRef.get(decision.id)
+                    if (verify) decision.verify = verify
+                }
+            }
+            for (const memory of high_utility) {
+                const verify = verifyByRef.get(memory.ref_id)
+                const timestamp = timestampOf.get(memory.ref_id)
+                if (verify && timestamp) {
+                    memory.verify = verify
+                    memory.verify_as_of = timestamp
                 }
             }
         }
@@ -356,6 +386,16 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
     })
 }
 
+/** issue-32: the line under a state memory. The command is never truncated — a cut-off command
+ *  that someone runs is worse than none — and sits in a code span fenced one backtick longer than
+ *  its longest backtick run, padded when it starts or ends with one, so any command renders intact. */
+function verifyLine(timestamp: string, command: string): string {
+    const longestRun = Math.max(0, ...(command.match(/`+/g) ?? []).map((run) => run.length))
+    const fence = '`'.repeat(longestRun + 1)
+    const pad = command.startsWith('`') || command.endsWith('`') ? ' ' : ''
+    return `  - 截至 ${timestamp.slice(0, 10)}；據以行動前先跑 ${fence}${pad}${command}${pad}${fence}`
+}
+
 /** Deterministic markdown rendering — same data in, same bytes out apart from `generated_at`. */
 export function renderBrief(data: BriefData): string {
     const lines: string[] = []
@@ -365,7 +405,9 @@ export function renderBrief(data: BriefData): string {
     lines.push('')
     lines.push('# Memoria Brief')
     lines.push('')
-    lines.push(`- 範圍: ${data.project ?? '(all projects)'} ｜ 近 ${data.days} 天`)
+    // issue-32: also in the body — hosts that `@`-import this file drop the HTML comment above, and
+    // a snapshot that cannot say how old it is gets read as current.
+    lines.push(`- 範圍: ${data.project ?? '(all projects)'} ｜ 近 ${data.days} 天 ｜ 產生於 ${data.generated_at}`)
     lines.push(`- sessions: ${data.totals.sessions} ｜ 期間決策: ${data.totals.decisions_in_window} ｜ 待增強摘要: ${data.totals.pending_summaries}`)
     lines.push('')
 
@@ -392,6 +434,7 @@ export function renderBrief(data: BriefData): string {
         for (const decision of data.decisions) {
             lines.push(`- **${decision.decision}** — ${decision.project} ｜ ${decision.timestamp}`)
             if (decision.rationale) lines.push(`  - why: ${decision.rationale}`)
+            if (decision.verify) lines.push(verifyLine(decision.timestamp, decision.verify))
         }
     }
     lines.push('')
@@ -403,6 +446,7 @@ export function renderBrief(data: BriefData): string {
         for (const item of data.environment) {
             lines.push(`- **${item.decision}** — ${item.project} ｜ ${item.timestamp}`)
             if (item.rationale) lines.push(`  - why: ${item.rationale}`)
+            if (item.verify) lines.push(verifyLine(item.timestamp, item.verify))
         }
         lines.push('')
     }
@@ -417,6 +461,7 @@ export function renderBrief(data: BriefData): string {
         for (const memory of data.high_utility) {
             lines.push(`- [${memory.utility}] ${memory.snippet}`)
             lines.push(`  - ${memory.project} ｜ ${memory.signal} ×${memory.observations} ｜ id: \`${memory.ref_id}\``)
+            if (memory.verify && memory.verify_as_of) lines.push(verifyLine(memory.verify_as_of, memory.verify))
         }
     }
     lines.push('')

@@ -2,7 +2,7 @@
 
 [English](API.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-10-23，對照 v1.31.1 原始碼、CLI help 與文件檢查。
+最後驗證：2026-11-10，對照 issue-32 原始碼（recall hit 與 brief 項目的 `verify`）、CLI help 與文件檢查。
 
 這是本地 HTTP 介面；啟動與背景服務設定見 [安裝指南](INSTALL.md)。
 
@@ -58,6 +58,11 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 `lexical_coverage`（查詢 token 在首位命中的覆蓋率）、`no_hits`（沒有任何命中，`confidence` 為 `0`）、
 `unavailable`（首位命中僅來自語意索引，字面匹配品質無從衡量，`confidence` 為 `null`——意思是
 「無法評估」，不是「匹配很差」）。只有 opt-in 的 vector route 會產生 `null`。
+
+狀態類記憶（以 `remember --verify` 寫入）的 hit 帶 `verify`：重新查證它的唯讀命令，原樣保留；截至日期
+就是該 hit 自己的 `timestamp`。`/v1/brief` 的決策項帶同樣的 `verify`，高效用項帶 `verify` 與
+`verify_as_of`，渲染出的 `markdown` 在這些項目下方加一行 `截至 <日期>；據以行動前先跑 <命令>`。
+其他記憶都沒有這個欄位。伺服器只儲存與回傳命令，從不執行。
 
 ## UI 模式 API
 

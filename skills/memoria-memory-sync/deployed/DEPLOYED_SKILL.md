@@ -46,7 +46,9 @@ MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" recall "<issue id or topic>" --mode 
 
 `--mode vector` fuses semantic and lexical hits; the default keyword mode misses anything phrased differently. Without a vector index it falls back to lexical on its own (`route_mode: vector_unavailable`). Keep the `recall_id` from the output for feedback.
 
-Done when: the relevant decisions and pitfalls among the hits are reflected in your plan or answer. No hits also counts.
+A hit or brief line that reads `截至 <date>；據以行動前先跑 <command>` is a snapshot of a state that may have changed since. Before you state it as current or act on it, read the command; run it only if it is a read-only check, and go by its output rather than the memory text. Memoria never runs it for you.
+
+Done when: the relevant decisions and pitfalls among the hits are reflected in your plan or answer, and every snapshot you relied on was re-checked with its command. No hits also counts.
 
 ### After using (or ruling out) recall results — feedback
 
@@ -67,6 +69,7 @@ MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" remember "<one-sentence fact>" --pro
 Worth remembering is what the code and git history cannot tell: the reason behind a trade-off, a pitfall found by checking, a premise that turned out wrong.
 
 - `--durable` for a constraint that must not fade; it is pinned in the brief.
+- `--verify "<read-only command>"` when the fact is a current state that someone else or a later release can change: merged, deployed, an installed version, a count, a platform setting. Phrase it as of today and give the command that re-checks it; recall and the brief show both. A state note cannot be `--durable`, so write the lasting constraint and the snapshot as two notes.
 - `--supersedes <old id>` corrects an older memory (the id comes from a recall hit); the old one leaves recall and the brief.
 
 Done when: the text makes sense on its own outside this conversation and includes the why.

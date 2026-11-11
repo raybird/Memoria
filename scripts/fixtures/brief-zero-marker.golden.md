@@ -3,7 +3,7 @@
 
 # Memoria Brief
 
-- 範圍: (all projects) ｜ 近 30 天
+- 範圍: (all projects) ｜ 近 30 天 ｜ 產生於 <TS>
 - sessions: 2 ｜ 期間決策: 2 ｜ 待增強摘要: 0
 
 ## 近期決策

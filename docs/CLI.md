@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](CLI.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-10-23 against v1.31.1 source, CLI help and documentation checks.
+Last verified: 2026-11-10 against the issue-32 source (`remember --verify`, recall and brief output), CLI help and documentation checks.
 
 These examples use the npm-installed `memoria` command. From a repository checkout, use `./cli` instead. Run `memoria <command> --help` for all flags. Square brackets denote optional arguments; replace values inside `<…>`.
 
@@ -22,6 +22,7 @@ memoria mark <ref_id> --durable         # Pin an existing memory, including a gi
 memoria brief --global                 # Write one all-projects knowledge/BRIEF.md
 memoria remember "..." --supersedes <ref_id>       # Old memory drops out of recall (data kept)
 memoria remember "..." --sensitivity private       # Mark for export --redact
+memoria remember "release branch merged into main" --verify "git log main --oneline -1"  # State memory: recall/brief show the as-of date and the command; Memoria never runs it
 memoria recall "..." --include-superseded          # Include replaced versions
 memoria export --redact                  # Code-name known entities in private memories
 memoria stats [--json]                 # Statistics
@@ -54,7 +55,9 @@ memoria setup [--serve] [--json]       # Automation one-shot install
 
 `remember`, `recall`, `mark`, `feedback` and `brief` work directly against local storage, so a skill-based setup needs no server. When several repositories share a store, pass `--project` to recall to keep results scoped.
 
-Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Recent decisions share their `--top-k` slots across projects, most recently active first. Memories whose project is not a registered repository accompany each project's brief. Follow the output to add read instructions to `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the brief path. Regenerate the brief after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).
+A memory written with `--verify` is a state memory, a snapshot that can go stale. recall prints `⟳ 截至 <date>；據以行動前先跑：<command>` under the hit, and `--json` and `/v1/recall` carry it as `verify`. The brief adds `截至 <date>；據以行動前先跑 <command>` under the entry in every block that lists it. The command is shown whole and never executed; the agent reading it decides whether to run it. `--verify` must be a single non-empty line and cannot be combined with `--durable`, either at write time or later through `mark` (split the lasting constraint and the snapshot into two notes).
+
+Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. The body shows the generation time on the scope line, because hosts that `@`-import the brief drop the header comment. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Recent decisions share their `--top-k` slots across projects, most recently active first. Memories whose project is not a registered repository accompany each project's brief. Follow the output to add read instructions to `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the brief path. Regenerate the brief after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).
 
 ## Local memory workspace
 

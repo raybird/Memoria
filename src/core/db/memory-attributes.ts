@@ -25,6 +25,7 @@ export type MemoryAttributePatch = {
     sensitivity?: MemorySensitivity
     superseded_by?: string
     note?: string
+    verify?: string   // issue-32: stored verbatim, never executed
 }
 
 /** Upsert the marker(s) on one memory. Only the fields present in `patch` are written — the rest of
@@ -34,13 +35,14 @@ export function upsertMemoryAttributes(dbPath: string, refId: string, patch: Mem
     withDb(dbPath, (db) => {
         const now = nowIso()
         db.prepare(`
-          INSERT INTO memory_attributes (ref_id, retention, sensitivity, superseded_by, note, created_at, updated_at)
-          VALUES (@ref_id, @retention, @sensitivity, @superseded_by, @note, @now, @now)
+          INSERT INTO memory_attributes (ref_id, retention, sensitivity, superseded_by, note, verify_cmd, created_at, updated_at)
+          VALUES (@ref_id, @retention, @sensitivity, @superseded_by, @note, @verify_cmd, @now, @now)
           ON CONFLICT(ref_id) DO UPDATE SET
             retention     = COALESCE(excluded.retention, memory_attributes.retention),
             sensitivity   = COALESCE(excluded.sensitivity, memory_attributes.sensitivity),
             superseded_by = COALESCE(excluded.superseded_by, memory_attributes.superseded_by),
             note          = COALESCE(excluded.note, memory_attributes.note),
+            verify_cmd    = COALESCE(excluded.verify_cmd, memory_attributes.verify_cmd),
             updated_at    = @now
         `).run({
             ref_id: refId,
@@ -48,6 +50,7 @@ export function upsertMemoryAttributes(dbPath: string, refId: string, patch: Mem
             sensitivity: patch.sensitivity ?? null,
             superseded_by: patch.superseded_by ?? null,
             note: patch.note ?? null,
+            verify_cmd: patch.verify ?? null,
             now
         })
     })
@@ -62,16 +65,25 @@ export function getMemoryAttributes(dbPath: string, refIds: string[]): Map<strin
     })
 }
 
+/** Does this database carry migration 17's column? Readonly handles never run migrations, so a
+ *  reader can meet a pre-issue-32 file; selecting a missing column there would throw, and the
+ *  fail-open recall path would then silently drop every marker — durable included. */
+export function verifyColumnExists(db: Database.Database): boolean {
+    return (db.prepare('PRAGMA table_info(memory_attributes)').all() as Array<{ name: string }>)
+        .some((column) => column.name === 'verify_cmd')
+}
+
 export function loadAttributes(db: Database.Database, refIds: string[]): Map<string, MemoryAttributes> {
     const map = new Map<string, MemoryAttributes>()
     if (refIds.length === 0 || !attributesTableExists(db)) return map
     const placeholders = refIds.map(() => '?').join(',')
+    const verifySelect = verifyColumnExists(db) ? 'verify_cmd' : 'NULL AS verify_cmd'
     const rows = db.prepare(`
-      SELECT ref_id, retention, sensitivity, superseded_by, note
+      SELECT ref_id, retention, sensitivity, superseded_by, note, ${verifySelect}
       FROM memory_attributes WHERE ref_id IN (${placeholders})
     `).all(...refIds) as Array<{
         ref_id: string; retention: string | null; sensitivity: string | null
-        superseded_by: string | null; note: string | null
+        superseded_by: string | null; note: string | null; verify_cmd: string | null
     }>
     for (const row of rows) {
         map.set(row.ref_id, {
@@ -79,10 +91,47 @@ export function loadAttributes(db: Database.Database, refIds: string[]): Map<str
             retention: (row.retention as MemoryRetention | null) ?? null,
             sensitivity: (row.sensitivity as MemorySensitivity | null) ?? null,
             superseded_by: row.superseded_by,
-            note: row.note
+            note: row.note,
+            verify: row.verify_cmd
         })
     }
     return map
+}
+
+// ─── issue-32: state memories ────────────────────────────────────────────────
+//
+// A state memory ("X is merged", "the helper lives in Y") goes stale the moment someone else acts,
+// so it carries the read-only command that re-checks it. Memoria stores and shows that command and
+// never runs it — the agent reading it decides. Being stale-by-nature, a state memory must not also
+// be durable: durable means "never fades, pinned in every brief", which is exactly how a snapshot
+// ends up loaded into every session long after it stopped being true.
+
+export const VERIFY_DURABLE_CONFLICT =
+    '--verify marks a state memory, which goes stale, so it cannot be --durable. ' +
+    'Split it into two notes: the lasting constraint with --durable, and the snapshot with --verify.'
+
+/** Validate a `--verify` value. undefined stays undefined (no marker requested). The command is
+ *  rendered on one line of the brief, so a multi-line value is refused rather than mangled. */
+export function normalizeVerifyCommand(raw: string | undefined): string | undefined {
+    if (raw === undefined) return undefined
+    const command = raw.trim()
+    if (!command || /[\r\n]/.test(command)) {
+        throw new Error('--verify must be a non-empty, single-line command')
+    }
+    return command
+}
+
+/** Would applying `patch` leave any of `refIds` both durable and carrying a verify command?
+ *  Checked against the stored row, so the conflict is caught whichever half arrives second. */
+export function hasVerifyDurableConflict(dbPath: string, refIds: string[], patch: MemoryAttributePatch): boolean {
+    if (patch.retention === undefined && patch.verify === undefined) return false
+    const existing = getMemoryAttributes(dbPath, refIds)
+    return refIds.some((refId) => {
+        const stored = existing.get(refId)
+        const retention = patch.retention ?? stored?.retention ?? null
+        const verify = patch.verify ?? stored?.verify ?? null
+        return retention === 'durable' && Boolean(verify)
+    })
 }
 
 /** Does this ref actually name a memory (a session or an event)? Used to reject `--supersedes`
@@ -131,13 +180,18 @@ export function applyMemoryAttributes(
             const adjusted = kept.map((hit) => {
                 const attribute = attributes.get(hit.id)
                 if (!attribute) return hit
-                const superseded_by = attribute.superseded_by ?? undefined
+                // Appended after the existing marker fields so a hit with no verify command keeps
+                // the exact shape it had before issue-32.
+                const markers = {
+                    ...(attribute.superseded_by ? { superseded_by: attribute.superseded_by } : {}),
+                    ...(attribute.verify ? { verify: attribute.verify } : {})
+                }
                 if (attribute.retention !== 'durable') {
-                    return superseded_by ? { ...hit, superseded_by } : hit
+                    return Object.keys(markers).length > 0 ? { ...hit, ...markers } : hit
                 }
                 const decay = computeDecayFactor(hit.timestamp)
                 const score = decay > 0 ? hit.score / decay : hit.score
-                return { ...hit, score, retention: 'durable' as const, ...(superseded_by ? { superseded_by } : {}) }
+                return { ...hit, score, retention: 'durable' as const, ...markers }
             })
 
             // Restoring decay can reorder; keep ties on the original order for determinism.

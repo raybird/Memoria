@@ -246,6 +246,7 @@ export type MemoryAttributes = {
     sensitivity: MemorySensitivity | null
     superseded_by: string | null
     note: string | null
+    verify: string | null   // issue-32: state memory — the read-only command that re-checks it
 }
 
 /** Git provenance attached to hits that came from a promoted git summary (issue-1 §21). */
@@ -276,6 +277,9 @@ export type RecallHit = {
     source?: RecallHitSource
     retention?: MemoryRetention   // issue-5: present only when marked (durable = decay exempt)
     superseded_by?: string        // issue-5: set when surfaced via --include-superseded
+    // issue-32: present only on a state memory — the read-only command that re-checks it, verbatim.
+    // Memoria stores and shows it; it never runs it. The agent decides whether to.
+    verify?: string
 }
 
 export type MemoryKind = 'decision' | 'skill' | 'session'
@@ -456,6 +460,7 @@ export type RememberNoteInput = {
     sensitivity?: MemorySensitivity
     supersedes?: string          // ref_id this note replaces; must already exist
     supersedeNote?: string       // why it was replaced
+    verify?: string              // issue-32: state memory — read-only command that re-checks it; never run
 }
 
 export type RememberNoteData = {
@@ -475,6 +480,9 @@ export type BriefDecision = {
     project: string
     decision: string
     rationale: string
+    /** issue-32: present only on a state memory — the read-only command that re-checks it,
+     *  verbatim. Its as-of date is `timestamp`. */
+    verify?: string
 }
 
 export type BriefMemory = {
@@ -484,6 +492,9 @@ export type BriefMemory = {
     observations: number
     signal: 'explicit' | 'reuse'
     snippet: string
+    /** issue-32: present only on a state memory, together with the memory's own timestamp. */
+    verify?: string
+    verify_as_of?: string
 }
 
 export type BriefPinned = {

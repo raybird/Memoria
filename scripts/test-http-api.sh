@@ -217,4 +217,46 @@ if (!d.ok) throw new Error('health went unhealthy after an external write: ' + J
 " "$HEALTH_AFTER"
 echo "  db_integrity still passes after an external writer touched the same DB"
 
+echo "[http] issue-32 SCN-002: POST /v1/recall 的狀態類 hit 帶 verify，一般 hit 沒有"
+VERIFY32="git log main --oneline -1"
+MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" remember "http 的 release 分支已併入 main" --project http32 --verify "$VERIFY32" >/dev/null
+MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" remember "http 的 release 流程改用 release.sh" --project http32 >/dev/null
+RECALL32=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"http release","project":"http32","mode":"keyword","top_k":10}')
+node -e "
+const d = JSON.parse(process.argv[1]); const want = process.argv[2];
+const state = d.data.filter((h) => h.snippet.includes('已併入 main'));
+const plain = d.data.filter((h) => !h.snippet.includes('已併入 main'));
+if (state.length === 0 || plain.length === 0) throw new Error('fixture not recalled: ' + JSON.stringify(d.data.map((h) => h.snippet)));
+for (const h of state) if (h.verify !== want) throw new Error('state hit verify mismatch: ' + JSON.stringify(h));
+for (const h of plain) if ('verify' in h) throw new Error('plain hit must not carry verify: ' + JSON.stringify(h));
+" "$RECALL32" "$VERIFY32"
+echo "  state hit carries verify verbatim, plain hit carries none"
+
+echo "[http] issue-32 SCN-002: GET /v1/brief 的 markdown 含查證行，資料項帶 verify"
+BRIEF32=$(curl -sf "$SERVER_URL/v1/brief?project=http32&days=30")
+node -e "
+const d = JSON.parse(process.argv[1]).data; const want = process.argv[2];
+const dec = d.decisions.find((x) => x.decision.includes('已併入 main'));
+if (!dec || dec.verify !== want) throw new Error('decision item lacks verify: ' + JSON.stringify(dec));
+const plain = d.decisions.find((x) => x.decision.includes('release.sh'));
+if (!plain || 'verify' in plain) throw new Error('plain decision must not carry verify: ' + JSON.stringify(plain));
+const line = '  - 截至 ' + dec.timestamp.slice(0, 10) + '；據以行動前先跑 \`' + want + '\`';
+if (!d.markdown.split('\n').includes(line)) throw new Error('markdown lacks the verify line: ' + line + '\n' + d.markdown);
+" "$BRIEF32" "$VERIFY32"
+echo "  markdown and structured item both carry the command"
+
+echo "[http] issue-32 SCN-006: 伺服器回應 recall 與 brief 時不執行查證命令"
+RAN_HTTP="$TMP_DIR/ran-http"
+sh -c "touch $RAN_HTTP"
+[ -e "$RAN_HTTP" ] || { echo "  ✗ 對照組沒有建出檔案，斷言無效"; exit 1; }
+rm -f "$RAN_HTTP"
+MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" remember "http 的 staging 已部署 v2" --project http32 --verify "touch $RAN_HTTP" >/dev/null
+for mode in keyword tree hybrid; do
+    assert_ok "$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d "{\"query\":\"http staging\",\"project\":\"http32\",\"mode\":\"$mode\"}")"
+done
+assert_ok "$(curl -sf "$SERVER_URL/v1/brief?project=http32&days=30")"
+assert_ok "$(curl -sf "$SERVER_URL/v1/brief")"
+[ ! -e "$RAN_HTTP" ] || { echo "  ✗ 伺服器執行了查證命令"; exit 1; }
+echo "  /v1/recall（三種模式）與 /v1/brief 之後檔案不存在；對照組會建出"
+
 echo "[http] ok"

@@ -18,6 +18,16 @@
 #   (L) SCN-004 a pinned memory is not repeated in the recent-decisions block
 #   (M) SCN-006 durable + superseded stays out of the pinned block
 #
+# issue-32 — state memories carry a verify command (docs/issues/issue-32).
+#
+#   (P) SCN-004 --verify and --durable are mutually exclusive on every write path; a refusal writes nothing
+#   (Q) SCN-005 an empty, blank or multi-line --verify is refused and writes nothing
+#   (R) SCN-001/SCN-002 recall shows "as of <date>; re-check with <command>" under a state hit, and
+#       --json carries `verify` verbatim; a hit without one shows and carries nothing
+#   (S) SCN-003 brief adds "as of <date>; re-check with `<command>`" under a state memory in the
+#       recent-decisions, high-utility and environment blocks — whole command, backticks intact
+#   (T) SCN-006 Memoria never runs a verify command — on write, recall, brief, doctor, stats or mark
+#
 # issue-18 — mark marks both halves of a note (docs/issues/issue-18 AC-3).
 #
 #   (N) AC-3 marking either half of a note marks both; a ref with no pair gets no orphan row
@@ -324,5 +334,166 @@ NOTE_LINES=$(echo "$PINNED" | grep -c '^  - ' || true)
 [ "$(echo "$PINNED" | grep -c '^- ')" = "2" ] || {
     echo "  ✗ 期望兩則 pinned 主行，實得 $(echo "$PINNED" | grep -c '^- ')"; exit 1; }
 echo "  有 note 者多一行，無 note 者維持一行"
+
+echo "[attributes] (P/issue-32 SCN-004) --verify 與 --durable 互斥，拒絕時不寫入"
+reset_home home-p
+counts() { echo "$(q "SELECT COUNT(*) FROM sessions")/$(q "SELECT COUNT(*) FROM events")/$(q "SELECT COUNT(*) FROM memory_attributes")"; }
+attr_state() { q "SELECT group_concat(ref_id||':'||coalesce(retention,'')||':'||coalesce(verify_cmd,''), ',') FROM (SELECT * FROM memory_attributes ORDER BY ref_id)"; }
+BEFORE=$(counts)
+set +e
+ERR=$("$CLI" remember "demo 的 release 分支已併入 main" --project demo --durable --verify "git log main --oneline -1" 2>&1)
+CODE=$?
+set -e
+[ "$CODE" != "0" ] || { echo "  ✗ --durable 加 --verify 應該失敗"; exit 1; }
+case "$ERR" in *durable*"two notes"*) ;; *) echo "  ✗ 錯誤沒有說明 durable 互斥並建議拆成兩則: $ERR"; exit 1 ;; esac
+[ "$(counts)" = "$BEFORE" ] || { echo "  ✗ 被拒絕的命令仍寫入了資料 ($BEFORE→$(counts))"; exit 1; }
+# 已 durable 的筆記，用相同文字重跑並加 --verify
+"$CLI" remember "停 server 一律用 PID 精準停" --project demo --durable >/dev/null
+BEFORE=$(counts); STATE=$(attr_state)
+if "$CLI" remember "停 server 一律用 PID 精準停" --project demo --verify "pgrep -af memoria" >/dev/null 2>&1; then
+    echo "  ✗ 對 durable 筆記補 --verify 應該失敗"; exit 1
+fi
+[ "$(counts)" = "$BEFORE" ] && [ "$(attr_state)" = "$STATE" ] || { echo "  ✗ durable 筆記的標記被改動"; exit 1; }
+# 帶查證命令的筆記：相同文字重跑加 --durable、以及 mark 任一半 --durable，都要拒絕
+"$CLI" remember "截至 2026-11-10，helper 雜湊目錄為 690ebce" --project demo --verify "ls ~/.cache/memoria/vector/" >/dev/null
+VSID=$(q "SELECT id FROM sessions WHERE summary LIKE '截至 2026-11-10%'")
+[ -n "$VSID" ] || { echo "  ✗ 帶 --verify 的筆記沒有寫入"; exit 1; }
+[ "$(q "SELECT verify_cmd FROM memory_attributes WHERE ref_id='$VSID'")" = "ls ~/.cache/memoria/vector/" ] || { echo "  ✗ 查證命令沒有原樣存下"; exit 1; }
+BEFORE=$(counts); STATE=$(attr_state)
+if "$CLI" remember "截至 2026-11-10，helper 雜湊目錄為 690ebce" --project demo --durable >/dev/null 2>&1; then
+    echo "  ✗ 對帶查證命令的筆記補 --durable 應該失敗"; exit 1
+fi
+for ref in "$VSID" "noteev-${VSID#note-}"; do
+    if "$CLI" mark "$ref" --durable >/dev/null 2>&1; then echo "  ✗ mark $ref --durable 應該失敗"; exit 1; fi
+done
+[ "$(counts)" = "$BEFORE" ] && [ "$(attr_state)" = "$STATE" ] || { echo "  ✗ 帶查證命令的筆記標記被改動"; exit 1; }
+"$CLI" brief >/dev/null
+PINNED=$(section "## 常駐約束（pinned）" "$MEMORIA_HOME/knowledge/BRIEF.md")
+case "$PINNED" in *"截至 2026-11-10"*) echo "  ✗ 帶查證命令的筆記進了常駐約束區"; exit 1 ;; esac
+echo "  三條寫入路徑都拒絕，資料與標記不變，狀態類不進常駐約束區"
+
+echo "[attributes] (Q/issue-32 SCN-005) 空白或多行的 --verify 被拒絕"
+reset_home home-q
+BEFORE=$(counts)
+for bad in "" "   " $'git status\nrm -rf /tmp/x'; do
+    set +e
+    ERR=$("$CLI" remember "某個會變的狀態" --project demo --verify "$bad" 2>&1)
+    CODE=$?
+    set -e
+    [ "$CODE" != "0" ] || { echo "  ✗ --verify '$bad' 應該失敗"; exit 1; }
+    case "$ERR" in *--verify*) ;; *) echo "  ✗ 錯誤沒有指出 --verify: $ERR"; exit 1 ;; esac
+done
+[ "$(counts)" = "$BEFORE" ] || { echo "  ✗ 被拒絕的命令仍寫入了資料 ($BEFORE→$(counts))"; exit 1; }
+echo "  空字串、空白、多行都拒絕，沒有寫入"
+
+echo "[attributes] (R/issue-32 SCN-001, SCN-002) recall 顯示截至日期與查證命令"
+reset_home home-r
+VERIFY_R="git log main --oneline -1"
+"$CLI" remember "demo 的 release 分支已併入 main" --project demo --verify "$VERIFY_R" >/dev/null
+"$CLI" remember "demo 的 release 流程改用 release.sh" --project demo >/dev/null
+DAY_R=$(q "SELECT substr(timestamp,1,10) FROM sessions WHERE summary='demo 的 release 分支已併入 main'")
+EXPECT_R="  ⟳ 截至 ${DAY_R}；據以行動前先跑：${VERIFY_R}"
+for mode in keyword tree hybrid; do
+    "$CLI" recall "demo release" --project demo --top-k 10 --mode "$mode" > "$TMP_DIR/recall-r.txt"
+    node -e "
+const fs = require('fs'); const out = fs.readFileSync(process.argv[1], 'utf8'); const expect = process.argv[2]; const mode = process.argv[3];
+const blocks = out.split(/\n(?=- \[)/).filter((b) => b.startsWith('- ['));
+const state = blocks.filter((b) => b.includes('已併入 main'));
+const plain = blocks.filter((b) => !b.includes('已併入 main'));
+if (state.length === 0 || plain.length === 0) { console.error('  ✗ ' + mode + ': fixture not recalled\n' + out); process.exit(1); }
+for (const b of state) {
+  const lines = b.split('\n');
+  const at = lines.indexOf(expect);
+  // 查證行緊接在 snippet（第 2 行）之後
+  if (at !== 2) { console.error('  ✗ ' + mode + ': 狀態類 hit 沒有在 snippet 後顯示查證行\n' + b); process.exit(1); }
+}
+for (const b of plain) if (b.includes('⟳')) { console.error('  ✗ ' + mode + ': 一般記憶多了查證行\n' + b); process.exit(1); }
+" "$TMP_DIR/recall-r.txt" "$EXPECT_R" "$mode"
+    "$CLI" recall "demo release" --project demo --top-k 10 --mode "$mode" --json > "$TMP_DIR/recall-r.json"
+    node -e "
+const d = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')); const want = process.argv[2]; const mode = process.argv[3];
+const state = d.data.filter((h) => h.snippet.includes('已併入 main'));
+const plain = d.data.filter((h) => !h.snippet.includes('已併入 main'));
+if (state.length === 0 || plain.length === 0) { console.error('  ✗ ' + mode + ' --json: fixture not recalled'); process.exit(1); }
+for (const h of state) if (h.verify !== want) { console.error('  ✗ ' + mode + ' --json: verify 不是原命令: ' + JSON.stringify(h)); process.exit(1); }
+for (const h of plain) if ('verify' in h) { console.error('  ✗ ' + mode + ' --json: 一般記憶帶了 verify: ' + JSON.stringify(h)); process.exit(1); }
+" "$TMP_DIR/recall-r.json" "$VERIFY_R" "$mode"
+done
+echo "  keyword／tree／hybrid：狀態類 hit 在 snippet 後顯示查證行、--json 帶原命令；一般記憶兩者皆無"
+
+echo "[attributes] (S/issue-32 SCN-003) brief 三個區塊都附上截至日期與完整命令"
+reset_home home-s
+# 命令含反引號：code span 的分隔要比命令內最長的反引號多一個，命令以反引號結尾時兩側補空白。
+VERIFY_S='echo `git rev-parse HEAD`'
+"$CLI" remember "demo 的 release 分支已併入 main" --project demo --verify "$VERIFY_S" >/dev/null
+"$CLI" remember "demo 的 release 流程改用 release.sh" --project demo >/dev/null
+SID_S=$(q "SELECT id FROM sessions WHERE summary='demo 的 release 分支已併入 main'")
+DAY_S=$(q "SELECT substr(timestamp,1,10) FROM sessions WHERE id='$SID_S'")
+EXPECT_S="  - 截至 ${DAY_S}；據以行動前先跑 \`\` echo \`git rev-parse HEAD\` \`\`"
+# 兩次明確回饋，讓它進高效用區塊（brief 門檻是 2 次觀測）
+for _ in 1 2; do
+    RID_S=$("$CLI" recall "demo release" --project demo --json | field '.meta.recall_id')
+    "$CLI" feedback "$RID_S" --signal explicit --score 0.9 --used --hits "$SID_S,noteev-${SID_S#note-}" >/dev/null
+done
+"$CLI" brief >/dev/null
+BRIEF_S="$MEMORIA_HOME/knowledge/BRIEF.md"
+entry_block() { # $1=section heading, $2=entry substring, $3=file → the entry line plus its indented lines
+    section "$1" "$3" | awk -v k="$2" 'index($0,"- ")==1{f=index($0,k)>0; if(f){print; next}} f && /^  /{print} /^- /&&!index($0,k){f=0}'
+}
+DEC_BLOCK=$(entry_block "## 近期決策" "已併入 main" "$BRIEF_S")
+printf '%s\n' "$DEC_BLOCK" | grep -qxF "$EXPECT_S" || { echo "  ✗ 近期決策沒有完整的查證行:"; echo "$DEC_BLOCK"; echo "  期望: $EXPECT_S"; exit 1; }
+PLAIN_BLOCK=$(entry_block "## 近期決策" "改用 release.sh" "$BRIEF_S")
+[ -n "$PLAIN_BLOCK" ] || { echo "  ✗ 一般決策不在近期決策"; exit 1; }
+case "$PLAIN_BLOCK" in *截至*) echo "  ✗ 一般決策多了查證行:"; echo "$PLAIN_BLOCK"; exit 1 ;; esac
+UFL_BLOCK=$(entry_block "## 高效用記憶（UFL）" "已併入 main" "$BRIEF_S")
+printf '%s\n' "$UFL_BLOCK" | grep -qxF "$EXPECT_S" || { echo "  ✗ 高效用區塊沒有完整的查證行:"; echo "$UFL_BLOCK"; exit 1; }
+# 環境紀律區塊：只在 scoped brief 出現，需要一個已註冊 repo
+git init -q "$TMP_DIR/repo-s"
+echo "seed $RANDOM$RANDOM" > "$TMP_DIR/repo-s/seed.txt"
+git -C "$TMP_DIR/repo-s" add seed.txt
+git -C "$TMP_DIR/repo-s" -c user.name=memoria-test -c user.email=test@memoria.local commit -q -m init
+"$CLI" repo add "$TMP_DIR/repo-s" --name repo-s >/dev/null
+"$CLI" remember "ops 主機的 swap 已關閉" --project ops --verify "swapon --show" >/dev/null
+DAY_ENV=$(q "SELECT substr(timestamp,1,10) FROM sessions WHERE summary='ops 主機的 swap 已關閉'")
+"$CLI" brief --project repo-s --stdout > "$TMP_DIR/brief-s-env.md"
+ENV_BLOCK=$(entry_block "## 環境紀律（跨專案）" "swap 已關閉" "$TMP_DIR/brief-s-env.md")
+printf '%s\n' "$ENV_BLOCK" | grep -qxF "  - 截至 ${DAY_ENV}；據以行動前先跑 \`swapon --show\`" || {
+    echo "  ✗ 環境紀律區塊沒有完整的查證行:"; echo "$ENV_BLOCK"; exit 1; }
+# --json 的資料項帶 verify（SCN-002 的 brief 部分）
+"$CLI" brief --json | node -e "
+const d = JSON.parse(require('fs').readFileSync(0, 'utf8')).data; const want = process.argv[1];
+const dec = d.decisions.find((x) => x.decision.includes('已併入 main'));
+if (!dec || dec.verify !== want) { console.error('  ✗ brief --json 的決策項沒有原樣的 verify: ' + JSON.stringify(dec)); process.exit(1); }
+const plain = d.decisions.find((x) => x.decision.includes('改用 release.sh'));
+if (!plain || 'verify' in plain) { console.error('  ✗ 一般決策項不該帶 verify: ' + JSON.stringify(plain)); process.exit(1); }
+const ufl = d.high_utility.find((x) => x.snippet.includes('已併入 main'));
+if (!ufl || ufl.verify !== want || typeof ufl.verify_as_of !== 'string') { console.error('  ✗ 高效用項沒有 verify／verify_as_of: ' + JSON.stringify(ufl)); process.exit(1); }
+" "$VERIFY_S"
+echo "  近期決策、高效用、環境紀律都附上完整命令（含反引號），一般決策沒有；--json 帶 verify"
+
+echo "[attributes] (T/issue-32 SCN-006) Memoria 不執行查證命令"
+reset_home home-t
+RAN_T="$TMP_DIR/ran-t"
+VERIFY_T="touch $RAN_T"
+# 對照組：同一字串交給 shell 真的會建出檔案，證明下面的斷言抓得到「被執行」。
+sh -c "$VERIFY_T"
+[ -e "$RAN_T" ] || { echo "  ✗ 對照組沒有建出檔案，斷言無效"; exit 1; }
+rm -f "$RAN_T"
+"$CLI" remember "demo 的 release 分支已併入 main" --project demo --verify "$VERIFY_T" >/dev/null
+SID_T=$(q "SELECT id FROM sessions WHERE summary='demo 的 release 分支已併入 main'")
+[ "$(q "SELECT verify_cmd FROM memory_attributes WHERE ref_id='$SID_T'")" = "$VERIFY_T" ] || { echo "  ✗ fixture 沒有寫入查證命令"; exit 1; }
+for mode in keyword tree hybrid; do
+    "$CLI" recall "demo release" --project demo --mode "$mode" >/dev/null
+    "$CLI" recall "demo release" --project demo --mode "$mode" --json >/dev/null
+done
+"$CLI" brief >/dev/null
+"$CLI" brief --stdout >/dev/null
+"$CLI" brief --json >/dev/null
+"$CLI" doctor >/dev/null 2>&1 || true
+"$CLI" stats >/dev/null
+"$CLI" mark "$SID_T" --sensitivity private >/dev/null
+"$CLI" remember "demo 的 release 分支已併入 main" --project demo --verify "$VERIFY_T" >/dev/null
+[ ! -e "$RAN_T" ] || { echo "  ✗ Memoria 執行了查證命令"; exit 1; }
+echo "  寫入、recall（三種模式、--json）、brief、doctor、stats、mark、重跑 remember 之後，檔案都不存在；對照組會建出"
 
 echo "[attributes] ✓ all checks passed"

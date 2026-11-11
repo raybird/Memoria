@@ -142,7 +142,7 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: `ccc4b7a`
 - **核准來源**: 使用者 2026-11-10 對話。方向：「那這邊開 verify 的 issue 前先確認不要深入 hooks 的方式，走 skill 方式才不會與特定 agent 深度綁定」，指的是同一則對話中的提議（`remember --verify` 附查證命令與記錄日期、標成狀態類；recall 與 brief 顯示「截至 YYYY-MM-DD；據以行動前先跑 <命令>」；Memoria 不替 agent 執行命令）。逐題確認：Q1 --verify 與 --durable「互斥」（SCN-004）；Q2 BRIEF「完整顯示命令」（SCN-003）；Q3 範圍只納入「BRIEF 產生時間移到正文」（SCN-007），其餘三項不納入（TBD-2～4）。SCN-008 的來源是 [project.md](../../agents/project.md) 本地 gate「schema 向後相容：只加 migration，舊 DB 必須可讀」。SCN-002、005、009、010 是規劃時推導出的行為（TBD-1），使用者 2026-11-10 對這四項回覆「核准，提交文件」。
 
 全部 Scenario 於 2026-11-10 核准。
@@ -168,8 +168,8 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 | TBD-3 | `mark --verify`（替既有記憶補查證命令） | 不影響本次交付 | 追蹤：無。既有的狀態類記憶改寫成新筆記並 `--supersedes` 舊的；git 促升的摘要錨定 commit，不屬於狀態類。使用者 2026-11-10 未選入範圍 |
 | TBD-4 | 寫入時偵測「已部署、PASS、待…」等狀態詞並警告 | 不影響本次交付 | 追蹤：無。改由 skill 指引說明何時要加 `--verify`；中英文詞表誤報多。使用者 2026-11-10 未選入範圍 |
 | TBD-5 | 本機 UI（`serve --ui`）與 `export` 不顯示查證命令 | 不影響本次交付 | 追蹤：無。`export` 現況本來就不輸出任何標記；UI 給人瀏覽，據以行動的是 agent 讀的 recall 與 brief。2026-11-10 |
-| TBD-6 | 本機兩則夾帶快照的常駐約束（向量 ingest、helper 安裝位置）要不要改寫成「約束＋狀態」兩則 | 待確認 | 是資料整理，不是程式變更；交付後由使用者決定，不影響任何 Scenario |
-| TBD-7 | SCN-010 讓兩個 host 讀到新版 skill 的隔離方式：不得改動使用者實際的 host skill 連結與資料根 | 待確認 | 影響 SCN-010 的執行方式；SCN-010 核准後、步驟 8 開始前確認 |
+| TBD-6 | 本機兩則夾帶快照的常駐約束（向量 ingest、helper 安裝位置）要不要改寫成「約束＋狀態」兩則 | 不影響本次交付 | 使用者 2026-11-11 逐題確認：helper 那則拆成兩則；ingest 那則只刪「2026-11-10 本機已升級」，量測數字保留，不另寫狀態記憶；約束現在改、狀態記憶發版後寫。已以 1.37.0 寫入不含快照的常駐約束並取代舊的兩則。追蹤：issue-32 發版並升級本機 runtime 後，補寫 helper 的狀態記憶 `remember "本機語意召回 helper 的雜湊目錄是 690ebce65e137374（約 723MB），e5 模型目錄約 130MB" --project memoria-ops --verify "du -sh ~/.cache/memoria/vector/*"`（寫入前先重跑該命令更新數值）。這是資料整理，不影響任何 Scenario |
+| TBD-7 | SCN-010 讓兩個 host 讀到新版 skill 的隔離方式：不得改動使用者實際的 host skill 連結與資料根 | 已解決 | 使用者 2026-11-11 選 A：隔離 HOME 跑開發版 `setup` 產生臨時資料根與新版 skill，臨時專案目錄放專案層 skill 指向它並 export `MEMORIA_HOME`，以 `claude -p`、`codex exec` 提問；使用者層同名的舊版 skill 也可能被載入，觀測時記錄 host 實際讀的是哪一份 |
 
 ## Timeline
 
@@ -177,9 +177,12 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 |------|------|--------|
 | 2026-11-10 | 建立；SCN-001、003、004、006、007、008 依使用者方向與逐題確認核准 | - |
 | 2026-11-10 | SCN-002、005、009、010 核准（TBD-1），全部 Scenario 已核准 | - |
+| 2026-11-10 | 實作步驟 1～7 完成（migration 17、`remember --verify`、recall／brief 顯示、不執行斷言、skill 指引與常青文件）；步驟 9 CI 對齊全綠；步驟 8 等 TBD-7 決定隔離方式 | - |
+| 2026-11-11 | TBD-6 逐題確認並改寫兩則常駐約束，helper 狀態記憶待發版後補寫 | - |
+| 2026-11-11 | TBD-7 選 A；步驟 8 SCN-010 實測，Claude Code 與 Codex 都先跑查證命令再依結果回答，全部步驟完成 | - |
 
 ---
 **建立日期**: 2026-11-10  
 **分級**: Medium（migration 加 1 欄 + remember 旗標 + recall／brief 顯示 + skill 指引；零新依賴，不新增命令）  
 **風險**: High — recall 與 brief 共用函式的影響分析為 HIGH，且會把可執行命令放進自動載入的 context\
-**狀態**: 待實作
+**狀態**: 實作完成，待提交與審查

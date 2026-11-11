@@ -384,6 +384,7 @@ Long-term markers (issue-5) ride on the same command:
 ./cli recall "..." --include-superseded                        # see replaced versions too
 ./cli export --redact                                          # code-name private memories
 ./cli mark gitdec-sum_abc-0 --durable                          # pin an EXISTING memory (issue-17)
+./cli remember "release 分支已併入 main" --verify "git log main --oneline -1"  # state memory (issue-32): never --durable, never executed
 ```
 
 Re-running `remember` with identical text applies markers without rewriting the memory — that is how

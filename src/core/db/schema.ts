@@ -516,6 +516,17 @@ const MIGRATIONS: Migration[] = [
             const cols = new Set((db.prepare('PRAGMA table_info(recall_telemetry)').all() as { name: string }[]).map((r) => r.name))
             if (!cols.has('query_text')) db.exec(`ALTER TABLE recall_telemetry ADD COLUMN query_text TEXT`)
         }
+    },
+    {
+        id: 17,
+        name: 'memory_attributes_verify',
+        up: (db) => {
+            // docs/issues/issue-32: a state memory carries the read-only command that re-checks it.
+            // Stored only — Memoria never runs it. NULL on every existing row, so every reader keeps
+            // its pre-issue-32 behaviour until someone writes `remember --verify`.
+            const cols = new Set((db.prepare('PRAGMA table_info(memory_attributes)').all() as { name: string }[]).map((r) => r.name))
+            if (!cols.has('verify_cmd')) db.exec(`ALTER TABLE memory_attributes ADD COLUMN verify_cmd TEXT`)
+        }
     }
 ]
 

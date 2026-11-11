@@ -1,6 +1,6 @@
 # Operations Guide
 
-Last verified: 2026-10-23 against v1.31.1 source and CLI help for brief, markers and vector recovery.
+Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1.
 
 ## Runtime Health Commands
 
@@ -191,7 +191,9 @@ Keep shared read instructions in `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGE
 
 - It is a **derived view**. Each run overwrites the whole file; do not edit it by hand.
 - Generation is **manual by design** — no write path regenerates it. Re-run `brief` after a batch of
-  `remember` / `repo sync` work, otherwise the file silently ages.
+  `remember` / `repo sync` work, otherwise the file silently ages. The scope line in the body ends
+  with `｜ 產生於 <ISO time>` (issue-32), so an agent that loaded it through `@` import, which drops
+  the header comment, can still tell how old it is.
 - With no explicit `--project` or `--global`, the working directory determines scope when it belongs
   to a registered repository. Use the printed read instruction in that project's `AGENTS.md` and the absolute import path in
   `CLAUDE.md`. Outside registered repositories it falls back to the all-projects `BRIEF.md`.
@@ -217,6 +219,7 @@ git-promoted decision, use `mark` with a ref from `recall --json`:
 ./cli remember "內部部署細節" --sensitivity private
 ./cli mark <ref_id> --durable --note "Keep this constraint in every brief"
 ./cli mark <ref_id> --episodic              # restore time-bound retention
+./cli remember "release 分支已併入 main" --verify "git log main --oneline -1"   # state memory (issue-32)
 ```
 
 | marker | effect | escape hatch |
@@ -224,6 +227,7 @@ git-promoted decision, use `mark` with a ref from `recall --json`:
 | `--durable` | recall undoes time-decay; `prune --stale-days` spares it; `brief` pins it outside the recency/size limits | `--episodic` marks it explicitly time-bound |
 | `--supersedes <ref>` | the old memory stops appearing in recall and brief | `recall --include-superseded`; `export` never filters |
 | `--sensitivity private` | `export --redact` code-names known entities inside it | — |
+| `--verify "<command>"` | recall and `brief` show `截至 <date>；據以行動前先跑 <command>` under it; Memoria never runs the command | `--supersedes` with a fresh snapshot replaces it |
 
 Operational notes:
 
@@ -238,6 +242,16 @@ Operational notes:
   (repository names, project tags) and only inside memories explicitly marked `private`. The export
   summary always reports the `unclassified` count — memories exported verbatim because nobody marked
   them. Code names are deterministic per database (`proj-1a82`), so two exports stay diffable.
+- **A state memory is a snapshot, not a fact.** `--verify` (issue-32) is for what someone else or a
+  later release can change: merged, deployed, an installed version, a count, a platform setting. It
+  cannot be combined with `--durable` on any write path (`remember`, an identical re-run, `mark
+  --durable`), because a pinned snapshot that never fades is how a stale state stays in every brief.
+  Write the lasting constraint and the snapshot as two notes. The command is stored and shown
+  verbatim, on a single line, and Memoria never executes it.
+- **Migration 17 adds `memory_attributes.verify_cmd`** (nullable `TEXT`) the first time a writable
+  open meets an older database. A runtime older than issue-32 can still read and write the upgraded
+  file; it ignores the column. Read-only paths on a pre-17 file treat every memory as having no
+  verify command.
 
 ## Recall Quality Checks
 

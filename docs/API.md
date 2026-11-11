@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](API.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-10-23 against v1.31.1 source, CLI help and documentation checks.
+Last verified: 2026-11-10 against the issue-32 source (`verify` on recall hits and brief items), CLI help and documentation checks.
 
 This is the local HTTP interface. See the [Install Guide](INSTALL.md) for startup and background service options.
 
@@ -59,6 +59,12 @@ value came from: `lexical_coverage` (query-token coverage of the top hit), `no_h
 matched — `confidence` is `0`), or `unavailable` (the top hit came from the semantic index alone, so
 match quality is not measurable — `confidence` is `null`, which means "cannot judge", not "poor
 match"). Only the opt-in vector route ever produces `null`.
+
+A hit from a state memory (written with `remember --verify`) carries `verify`: the read-only command
+that re-checks it, verbatim. Its as-of date is the hit's own `timestamp`. In `/v1/brief`, decision
+items carry the same `verify`, high-utility items carry `verify` plus `verify_as_of`, and the
+rendered `markdown` adds `截至 <date>；據以行動前先跑 <command>` under each such entry. The field
+is absent on every other memory. The server stores and returns the command and never runs it.
 
 ## UI-mode API
 

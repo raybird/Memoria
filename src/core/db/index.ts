@@ -64,7 +64,11 @@ export {
     loadDurableRefs,
     applyMemoryAttributes,
     attributesTableExists,
-    memoryRefExists
+    memoryRefExists,
+    verifyColumnExists,
+    normalizeVerifyCommand,
+    hasVerifyDurableConflict,
+    VERIFY_DURABLE_CONFLICT
 } from './memory-attributes.js'
 export type { MemoryAttributePatch } from './memory-attributes.js'
 export type { BriefOptions } from './brief.js'

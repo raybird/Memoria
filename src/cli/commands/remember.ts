@@ -17,6 +17,7 @@ type RememberCommandOptions = {
     sensitivity?: string
     supersedes?: string
     supersedeNote?: string
+    verify?: string
     json?: boolean
 }
 
@@ -35,6 +36,7 @@ export function registerRememberCommand(program: Command, core: MemoriaCore): vo
         .option(`--sensitivity <level>`, `Mark sensitivity: ${SENSITIVITIES.join('|')} (drives export --redact)`)
         .option('--supersedes <refId>', 'Mark an existing memory as replaced by this note')
         .option('--supersede-note <text>', 'Why the superseded memory was replaced')
+        .option('--verify <command>', 'State memory: the read-only command that re-checks it; recall and brief show it, Memoria never runs it (not with --durable)')
         .option('--json', 'Machine-readable JSON output')
         .action(async (text: string, options: RememberCommandOptions) => {
             const type = (options.type ?? 'decision') as NoteType
@@ -59,7 +61,8 @@ export function registerRememberCommand(program: Command, core: MemoriaCore): vo
                 retention: options.durable ? 'durable' : options.episodic ? 'episodic' : undefined,
                 sensitivity: options.sensitivity as 'private' | 'shareable' | undefined,
                 supersedes: options.supersedes,
-                supersedeNote: options.supersedeNote
+                supersedeNote: options.supersedeNote,
+                verify: options.verify
             })
             if (!result.ok) throw new Error(result.error)
 
@@ -72,6 +75,7 @@ export function registerRememberCommand(program: Command, core: MemoriaCore): vo
                 console.log(`- event: ${data?.eventId}`)
                 if (options.durable) console.log('- retention: durable（不衰減、不被 stale 裁剪）')
                 if (options.sensitivity) console.log(`- sensitivity: ${options.sensitivity}`)
+                if (options.verify !== undefined) console.log(`- verify: ${options.verify.trim()}（狀態類，據以行動前先跑；Memoria 不執行）`)
                 if (data?.superseded?.length) console.log(`- 已標記取代: ${data.superseded.join(', ')}`)
             }
         })
