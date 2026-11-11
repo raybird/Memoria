@@ -496,11 +496,13 @@ reset_home home-v
 SID_V=$(q "SELECT id FROM sessions WHERE summary='demo 的 helper 雜湊目錄是 abc123'")
 DAY_V=$(q "SELECT substr(timestamp,1,10) FROM sessions WHERE id='$SID_V'")
 # 本 issue 之前的 runtime 不擋互斥，能把狀態類記憶標成 durable；這裡直接寫出那個狀態。
-sql "UPDATE memory_attributes SET retention='durable' WHERE ref_id IN ('$SID_V','noteev-${SID_V#note-}')"
+sql "UPDATE memory_attributes SET retention='durable', note='自檢：先跑查證命令' WHERE ref_id IN ('$SID_V','noteev-${SID_V#note-}')"
 "$CLI" brief >/dev/null
 BRIEF_V="$MEMORIA_HOME/knowledge/BRIEF.md"
-PIN_STATE=$(section "## 常駐約束（pinned）" "$BRIEF_V" | grep -A1 -F "helper 雜湊目錄是 abc123")
-printf '%s\n' "$PIN_STATE" | sed -n 2p | grep -qxF "  - 截至 ${DAY_V}；據以行動前先跑 \`ls ~/.cache/demo\`" || {
+# 順序：主行、常駐說明（note）、查證行
+PIN_STATE=$(section "## 常駐約束（pinned）" "$BRIEF_V" | grep -A2 -F "helper 雜湊目錄是 abc123")
+printf '%s\n' "$PIN_STATE" | sed -n 2p | grep -qxF "  - 自檢：先跑查證命令" || { echo "  ✗ 常駐說明不在主行之後:"; echo "$PIN_STATE"; exit 1; }
+printf '%s\n' "$PIN_STATE" | sed -n 3p | grep -qxF "  - 截至 ${DAY_V}；據以行動前先跑 \`ls ~/.cache/demo\`" || {
     echo "  ✗ 常駐區的狀態類記憶沒有查證行:"; echo "$PIN_STATE"; exit 1; }
 PIN_PLAIN=$(section "## 常駐約束（pinned）" "$BRIEF_V" | grep -A1 -F "demo 一律用 pnpm")
 case "$(printf '%s\n' "$PIN_PLAIN" | sed -n 2p)" in *截至*) echo "  ✗ 一般常駐約束多了查證行:"; echo "$PIN_PLAIN"; exit 1 ;; esac
@@ -512,7 +514,7 @@ if (!pin || pin.verify !== 'ls ~/.cache/demo' || typeof pin.verify_as_of !== 'st
 const plain = d.pinned.find((x) => x.snippet.includes('pnpm'));
 if (!plain || 'verify' in plain) { console.error('  ✗ 一般 pinned 項不該帶 verify: ' + JSON.stringify(plain)); process.exit(1); }
 "
-echo "  常駐區的狀態類記憶附查證行，一般常駐約束不變；--json 的 pinned 項帶 verify"
+echo "  常駐區的狀態類記憶依序帶常駐說明與查證行，一般常駐約束不變；--json 的 pinned 項帶 verify"
 
 echo "[attributes] (T/issue-32 SCN-006) Memoria 不執行查證命令"
 reset_home home-t

@@ -23,7 +23,7 @@ Memoria 這邊的實測（2026-11-10，本機資料根唯讀查詢）：
 |------|--------|--------|
 | 記一則狀態 | 只能寫成一般決策，或誤用 `--durable` 讓它常駐 | `remember "<狀態>" --verify "<唯讀查證命令>"`，不可同時 `--durable` |
 | recall 顯示 | 時間戳與標記 | 狀態類的 hit 多一行「截至 YYYY-MM-DD；據以行動前先跑：<命令>」 |
-| brief 顯示 | 決策與理由 | 狀態類多一行「截至 YYYY-MM-DD；據以行動前先跑 `<命令>`」，命令完整、不截斷 |
+| brief 顯示 | 決策與理由 | 狀態類多一行「截至 YYYY-MM-DD；據以行動前先跑 `<命令>`」，命令完整、不截斷，常駐區也一樣；有查證行時統計行之後另有一行固定說明 |
 | BRIEF 產生時間 | 只在 HTML 註解 | 正文也顯示，註解原樣保留 |
 | 誰執行查證命令 | — | 只有 agent；Memoria 只存字串、只顯示 |
 
@@ -35,7 +35,7 @@ src/core/
 ├── db/memory-attributes.ts  # 可改：讀寫查證命令，recall 後處理附到 hit
 ├── types.ts                 # 可改：RecallHit、MemoryAttributes、brief 資料項加 verify
 ├── memoria.ts               # 可改：rememberNote 驗證與互斥；markMemory 拒絕對狀態類設 durable
-├── db/brief.ts              # 可改：決策／環境／高效用項帶 verify；正文顯示產生時間
+├── db/brief.ts              # 可改：常駐／決策／環境／高效用項帶 verify；有查證行時加固定說明；正文顯示產生時間
 ├── db/recall.ts             # 不可觸及：排序、衰減與 UFL 不變
 ├── db/prune-export.ts       # 不可觸及：prune 規則與 export 格式不變
 └── db/memory-browser.ts     # 不可觸及：本機 UI 不顯示查證命令（TBD-5）
@@ -48,10 +48,11 @@ src/adapter/                 # 不可觸及：不接 hooks、不改任何 adapte
 src/ui/                      # 不可觸及
 skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md  # 可改：何時加 --verify、看到查證行要先查證
 scripts/
-├── test-memory-attributes.sh            # 可改：SCN-001、003～006
+├── test-memory-attributes.sh            # 可改：SCN-001、003～006、011、012
 ├── test-cli-memory.sh                   # 可改：SCN-007，brief 穩定性比對排除可見產生時間
 ├── test-migrations.sh                   # 可改：SCN-008
 ├── test-http-api.sh                     # 可改：SCN-002、SCN-006 的 HTTP 部分
+├── memory-browser-driver.mts            # 可改：migration 17 之前的資料庫唯讀開啟時標記保留（審查 S-1）
 └── fixtures/brief-zero-marker.golden.md # 可改：只多正文的產生時間
 docs/CLI.md、docs/CLI.zh-TW.md、docs/API.md、docs/API.zh-TW.md、docs/agents/architecture.md、docs/OPERATIONS.md、AGENTS.md  # 常青文件
 ```
@@ -157,12 +158,23 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: `ccc4b7a`
-- **核准來源**: 使用者 2026-11-10 對話。方向：「那這邊開 verify 的 issue 前先確認不要深入 hooks 的方式，走 skill 方式才不會與特定 agent 深度綁定」，指的是同一則對話中的提議（`remember --verify` 附查證命令與記錄日期、標成狀態類；recall 與 brief 顯示「截至 YYYY-MM-DD；據以行動前先跑 <命令>」；Memoria 不替 agent 執行命令）。逐題確認：Q1 --verify 與 --durable「互斥」（SCN-004）；Q2 BRIEF「完整顯示命令」（SCN-003）；Q3 範圍只納入「BRIEF 產生時間移到正文」（SCN-007），其餘三項不納入（TBD-2～4）。SCN-008 的來源是 [project.md](../../agents/project.md) 本地 gate「schema 向後相容：只加 migration，舊 DB 必須可讀」。SCN-002、005、009、010 是規劃時推導出的行為（TBD-1），使用者 2026-11-10 對這四項回覆「核准，提交文件」。
+- **核准 commit**: 待提交
+- **核准來源**: 使用者 2026-11-10 對話。方向：「那這邊開 verify 的 issue 前先確認不要深入 hooks 的方式，走 skill 方式才不會與特定 agent 深度綁定」，指的是同一則對話中的提議（`remember --verify` 附查證命令與記錄日期、標成狀態類；recall 與 brief 顯示「截至 YYYY-MM-DD；據以行動前先跑 <命令>」；Memoria 不替 agent 執行命令）。逐題確認：Q1 --verify 與 --durable「互斥」（SCN-004）；Q2 BRIEF「完整顯示命令」（SCN-003）；Q3 範圍只納入「BRIEF 產生時間移到正文」（SCN-007），其餘三項不納入（TBD-2～4）。SCN-008 的來源是 [project.md](../../agents/project.md) 本地 gate「schema 向後相容：只加 migration，舊 DB 必須可讀」。SCN-002、005、009、010 是規劃時推導出的行為（TBD-1），使用者 2026-11-10 對這四項回覆「核准，提交文件」。2026-11-11 審查 [review-5657988](./review-5657988.md) 後的修訂，使用者 2026-11-11 對話中逐題選擇：S-3 選「B 加一行固定說明」（新增 SCN-011）、N-1「擋其他換行字元」（擴大 SCN-005）、N-2「常駐區也印查證行」（新增 SCN-012）。原規格的核准 commit 為 `ccc4b7a`。
 
-全部 Scenario 於 2026-11-10 核准。
-
-2026-11-11 審查（[review-5657988](./review-5657988.md)）後使用者逐題確認的修訂：S-3 選 B，新增 SCN-011；N-1 擴大 SCN-005 的拒絕範圍；N-2 新增 SCN-012。核准來源：使用者 2026-11-11 對話中對這三題的選擇。
+| Scenario | 核准日期 | 狀態 |
+|---|---|---|
+| SCN-001 | 2026-11-10 | 已核准 |
+| SCN-002 | 2026-11-10 | 已核准 |
+| SCN-003 | 2026-11-10 | 已核准 |
+| SCN-004 | 2026-11-10 | 已核准 |
+| SCN-005 | 2026-11-11 | 已核准 |
+| SCN-006 | 2026-11-10 | 已核准 |
+| SCN-007 | 2026-11-10 | 已核准 |
+| SCN-008 | 2026-11-10 | 已核准 |
+| SCN-009 | 2026-11-10 | 已核准 |
+| SCN-010 | 2026-11-10 | 已核准 |
+| SCN-011 | 2026-11-11 | 已核准 |
+| SCN-012 | 2026-11-11 | 已核准 |
 
 ## 重構步驟概要
 
@@ -188,6 +200,7 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 | TBD-6 | 本機兩則夾帶快照的常駐約束（向量 ingest、helper 安裝位置）要不要改寫成「約束＋狀態」兩則 | 不影響本次交付 | 使用者 2026-11-11 逐題確認：helper 那則拆成兩則；ingest 那則只刪「2026-11-10 本機已升級」，量測數字保留，不另寫狀態記憶；約束現在改、狀態記憶發版後寫。已以 1.37.0 寫入不含快照的常駐約束並取代舊的兩則。追蹤：issue-32 發版並升級本機 runtime 後，補寫 helper 的狀態記憶 `remember "本機語意召回 helper 的雜湊目錄是 690ebce65e137374（約 723MB），e5 模型目錄約 130MB" --project memoria-ops --verify "du -sh ~/.cache/memoria/vector/*"`（寫入前先重跑該命令更新數值）。這是資料整理，不影響任何 Scenario |
 | TBD-7 | SCN-010 讓兩個 host 讀到新版 skill 的隔離方式：不得改動使用者實際的 host skill 連結與資料根 | 已解決 | 使用者 2026-11-11 選 A：隔離 HOME 跑開發版 `setup` 產生臨時資料根與新版 skill，臨時專案目錄放專案層 skill 指向它並 export `MEMORIA_HOME`，以 `claude -p`、`codex exec` 提問；使用者層同名的舊版 skill 也可能被載入，觀測時記錄 host 實際讀的是哪一份 |
 | TBD-8 | 審查 review-5657988 的 S-3（brief 自身沒帶唯讀條件） | 已解決 | 使用者 2026-11-11 選 B：有查證行時在 brief 加一行固定說明（SCN-011）；同輪一併處理 S-1、S-2、N-1、N-2、N-5、N-6，N-3 維持 UTC，N-4 發版時寫，N-7 不改 |
+| TBD-9 | 第二輪審查 review-4e78e45 的 N-8（U+202E、U+200B 等 Unicode 格式字元仍可寫入 --verify）與 N-9（前後的換行被 trim 後接受） | 不影響本次交付 | 使用者 2026-11-11 選「維持現有範圍」，記為已知限制。追蹤：無。格式字元不會換行、無法偽造新的一行；前後換行 trim 後存下的是單行值，SCN-005 的安全目的不受影響 |
 
 ## Timeline
 
@@ -197,11 +210,12 @@ Feature: 狀態類記憶附查證命令，agent 據以行動前自己重新查�
 | 2026-11-10 | SCN-002、005、009、010 核准（TBD-1），全部 Scenario 已核准 | - |
 | 2026-11-10 | 實作步驟 1～7 完成（migration 17、`remember --verify`、recall／brief 顯示、不執行斷言、skill 指引與常青文件）；步驟 9 CI 對齊全綠；步驟 8 等 TBD-7 決定隔離方式 | - |
 | 2026-11-11 | TBD-6 逐題確認並改寫兩則常駐約束，helper 狀態記憶待發版後補寫 | - |
-| 2026-11-11 | 審查 review-5657988 PASS；依使用者決策新增 SCN-011、SCN-012，擴大 SCN-005，進入審查修正 | - |
 | 2026-11-11 | TBD-7 選 A；步驟 8 SCN-010 實測，Claude Code 與 Codex 都先跑查證命令再依結果回答，全部步驟完成 | - |
+| 2026-11-11 | 審查 review-5657988 PASS；依使用者決策新增 SCN-011、SCN-012，擴大 SCN-005，進入審查修正 | - |
+| 2026-11-11 | 步驟 10 審查修正完成（4e78e45）；第二輪審查 review-4e78e45 RETURN（M-1 核准紀錄未展開），依使用者決定展開核准表、核准 commit 改為待提交；TBD-9 記為已知限制 | - |
 
 ---
 **建立日期**: 2026-11-10  
 **分級**: Medium（migration 加 1 欄 + remember 旗標 + recall／brief 顯示 + skill 指引；零新依賴，不新增命令）  
 **風險**: High — recall 與 brief 共用函式的影響分析為 HIGH，且會把可執行命令放進自動載入的 context\
-**狀態**: 審查修正完成，待重新審查
+**狀態**: 審查修正完成，待第三輪審查

@@ -175,6 +175,12 @@
      - 真實副本：scratch 原本的對比腳本與快照被清掉（原因不明，scratch 只放暫存檔），從對話紀錄取回 `run-set.sh`、`normalize.mjs` 重建，重新唯讀取快照（schema 16）。1.37.0 跑兩次 diff 0 行；開發版對 1.37.0 只差 `- 範圍:` 行的 `｜ 產生於 <TS>`。真實資料沒有狀態類記憶，所以不出現固定說明。
      - 範圍：`git diff --stat main -- src/adapter src/cli/commands/service.ts src/ui` 為空。
      - 精煉：新增的是一個常數、一個判斷函式與兩處沿用既有 `verifyLine`，no-op。
+     - 第二輪審查 [review-4e78e45](./review-4e78e45.md) 之後（2026-11-11）：
+       - M-1：依 acceptance.md 展開 README 核准表（SCN-005、011、012 為 2026-11-11），修訂的核准來源併入 `**核准來源**` 欄位行，`**核准 commit**` 改為 `待提交`，於第三輪審查保存報告時回填。
+       - N-11：(V) 的常駐項另帶常駐說明，斷言順序為主行、常駐說明、查證行。scratch 副本把這兩行對調後 `✗ 常駐說明不在主行之後`（紅燈）；工作區 `test-memory-attributes.sh` exit 0。
+       - N-10：README 關鍵差異、涉及檔案、Timeline 順序補正；N-12：`docs/agents/architecture.md` 改寫 brief 查證行格式的描述。
+       - N-8、N-9：使用者選維持現有範圍，記為 TBD-9 已知限制。
+       - 這一輪沒有修改 `src/`（`git diff --stat` 只有文件與 `test-memory-attributes.sh`），步驟 10 的 CI 對齊證據仍然有效；`pnpm run release:docs-check` 通過、`bash -n` 通過。
 
 ## 使用方式對照
 
