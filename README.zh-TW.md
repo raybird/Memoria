@@ -12,7 +12,7 @@ Memoria 將決策、踩坑經驗與學到的技能保存到本地 SQLite，在 a
 | --- | --- |
 | 持久記憶 | 匯入 session，或用 `remember` 保存單筆筆記；SQLite 與 markdown 保留來源 |
 | 召回 | Keyword、tree、hybrid 檢索，以及選用的本地 embedding 語意召回 |
-| 長期上下文 | Durable 記憶、明確取代舊記憶，以及由 `AGENTS.md` 指引讀取的專案 brief |
+| 長期上下文 | Durable 記憶、明確取代舊記憶、附查證命令的狀態類記憶，以及由 `AGENTS.md` 指引讀取的專案 brief |
 | Git 記憶 | 唯讀觀察 repository，增強變更摘要，召回時附上 commit 來源 |
 | 效用回饋 | 回報召回是否有用，讓觀測效用影響排序與保留 |
 | Wiki | 匯入 markdown/text、編譯 wiki 頁面、歸檔有價值的查詢結果 |
@@ -38,7 +38,7 @@ memoria brief --project Memoria
 
 這些命令直接存取本地資料，server 為選用。全域 setup 會將預設資料根目錄（`~/.memoria`）與本地向量設定寫入使用者設定檔（`install.json`），新開的終端機不需要手動 `export MEMORIA_HOME` 或 `LIBSQL_URL` 即可共用同一份記憶庫。專案範圍（`--scope project`）會使用目前專案的 `./memoria`，而顯式傳入的 `MEMORIA_HOME` 或 `--memoria-home` 永遠優先。
 
-`setup` 也會產生初始 brief，並在備份既有檔案後，將受管理區塊（`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`）接進共用的 `AGENTS.md` 與 `CLAUDE.md`。記憶更新後請執行 `memoria brief` 重新產生 brief。專案辨識、durable 標記與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。
+`setup` 也會產生初始 brief，並在備份既有檔案後，將受管理區塊（`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`）接進共用的 `AGENTS.md` 與 `CLAUDE.md`。記憶更新後請執行 `memoria brief` 重新產生 brief。專案辨識、durable 標記、狀態類記憶（`remember --verify`，v1.38.0 起）與效用回饋詳見 [CLI 指南](docs/CLI.zh-TW.md)。狀態類記憶把分支狀態這類快照連同一個唯讀查證命令記下來，recall 與 brief 會顯示截至日期與命令，提醒 agent 據以行動前先重查；Memoria 不會執行這個命令。
 
 ## 使用介面瀏覽記憶
 
@@ -84,7 +84,7 @@ Skill 引導 agent 在工作前召回記憶，並在做出決策或完成變更�
 | [規格](SPEC.md) · [路線圖](RFC.md) | 已實作行為與未來方向 |
 | [版本紀錄](CHANGELOG.md) · [發版 SOP](RELEASE.md) | 版本歷史與維護者流程 |
 
-最後驗證：2026-10-26，對照 issue-30 實作、CLI help 與文件檢查。工作台需要 v1.33.0 或更新版本。
+最後驗證：2026-11-11，對照 v1.38.0（issue-32 狀態類記憶）、CLI help 與文件檢查。工作台需要 v1.33.0 或更新版本。
 
 ## 授權
 

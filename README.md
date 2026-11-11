@@ -12,7 +12,7 @@ Memoria keeps decisions, pitfalls and learned skills in local SQLite, then recal
 | --- | --- |
 | Persistent memory | Import sessions or save a single note with `remember`; retain provenance in SQLite and markdown |
 | Recall | Keyword, tree and hybrid retrieval, plus optional semantic recall with local embeddings |
-| Long-term context | Durable memories, explicit replacements and project-scoped briefs read through shared `AGENTS.md` instructions |
+| Long-term context | Durable memories, explicit replacements, state memories that carry a re-check command, and project-scoped briefs read through shared `AGENTS.md` instructions |
 | Git-aware memory | Observe repositories read-only, enrich change summaries and recall decisions with commit provenance |
 | Feedback | Report useful recalls; observed utility informs ranking and retention |
 | Wiki | Import markdown/text sources, compile wiki pages and file useful query results |
@@ -38,7 +38,7 @@ memoria brief --project Memoria
 
 These commands use local storage directly; a server is optional. Global setup saves your default data root (`~/.memoria`) and vector settings to the user config (`install.json`), so new terminals find the same memory store without manually exporting `MEMORIA_HOME` or `LIBSQL_URL`. Project-scoped setup (`--scope project`) keeps `./memoria` in the current project, and an explicit `MEMORIA_HOME` or `--memoria-home` always wins.
 
-`setup` can also generate the initial brief and wire a managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) into shared `AGENTS.md` and `CLAUDE.md` while backing up existing files. Regenerate the brief with `memoria brief` after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers and utility feedback.
+`setup` can also generate the initial brief and wire a managed block (`<!-- memoria:managed:start -->` ... `<!-- memoria:managed:end -->`) into shared `AGENTS.md` and `CLAUDE.md` while backing up existing files. Regenerate the brief with `memoria brief` after memory updates. See the [CLI Guide](docs/CLI.md) for project detection, durable markers, state memories (`remember --verify`, v1.38.0 or later) and utility feedback. A state memory records a snapshot such as a branch status with a read-only command; recall and the brief show its as-of date and the command so the agent re-checks before acting, and Memoria never runs it.
 
 ## Browse memory visually
 
@@ -84,7 +84,7 @@ Optional next steps:
 | [Specification](SPEC.md) · [Roadmap](RFC.md) | Implemented behavior and future directions |
 | [Releases](CHANGELOG.md) · [Release SOP](RELEASE.md) | Version history and maintainer workflow |
 
-Last verified: 2026-10-26 against the issue-30 implementation, CLI help and documentation checks. The workspace requires v1.33.0 or later.
+Last verified: 2026-11-11 against v1.38.0 (issue-32 state memories), CLI help and documentation checks. The workspace requires v1.33.0 or later.
 
 ## License
 
