@@ -32,13 +32,19 @@ export async function syncDailyNote(memoriaHome: string, dbPath: string, session
 // lost its first bytes (review-9d76366 M1). The header is written to a private file first and the
 // note appears by hard link, which fails with EEXIST for every writer but the first.
 async function createDailyNoteWithHeader(notePath: string, header: string): Promise<void> {
+    // Most calls find the note already there. Skipping the staging file then cannot reopen the
+    // race: a writer that sees no note still goes through the link below.
+    if (await fs.access(notePath).then(() => true, () => false)) return
+
     const staging = `${notePath}.${process.pid}.${randomUUID()}.tmp`
-    await fs.writeFile(staging, header, 'utf8')
     try {
-        await fs.link(staging, notePath)
-    } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code
-        if (code === 'EEXIST') return
+        await fs.writeFile(staging, header, 'utf8')
+        try {
+            await fs.link(staging, notePath)
+            return
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'EEXIST') return
+        }
         // A filesystem without hard links: fall back to exclusive create, the narrower race.
         try {
             await fs.writeFile(notePath, header, { encoding: 'utf8', flag: 'wx' })
@@ -46,7 +52,11 @@ async function createDailyNoteWithHeader(notePath: string, header: string): Prom
             if ((fallbackError as NodeJS.ErrnoException).code !== 'EEXIST') throw fallbackError
         }
     } finally {
-        await fs.rm(staging, { force: true })
+        // A staging file that cannot be removed (EBUSY/EPERM while a virus scanner holds it on
+        // Windows) is clutter that wiki-build skips (it lists .md only), not a reason to fail.
+        await fs.rm(staging, { force: true }).catch((error: Error) => {
+            console.warn(`[memoria] could not remove ${staging}: ${error.message}`)
+        })
     }
 }
 

@@ -357,8 +357,6 @@ echo "[cli-memory] (issue-33 SCN-005) writers released on one instant never lose
 # the writers out). The driver calls syncDailyNote from 16 processes released together on a Daily
 # file that does not exist yet; before the hard-link creation about 15% of rounds lost an entry.
 (cd "$ROOT_DIR" && pnpm exec tsx scripts/daily-race-driver.mts "$TMP_DIR/home33-r1" 30) || exit 1
-[ -z "$(ls "$TMP_DIR/home33-r1/knowledge/Daily/" | grep -v '\.md$' || true)" ] || {
-    echo "  ✗ staging files left in Daily/"; ls "$TMP_DIR/home33-r1/knowledge/Daily/"; exit 1; }
 
 echo "[cli-memory] (issue-33 SCN-006) a held write lock is waited on for 5 seconds"
 # Holds a RESERVED lock (BEGIN IMMEDIATE) for $1 ms, announcing it via a marker file.

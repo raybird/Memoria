@@ -90,6 +90,8 @@ export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder
 
 `wx` 讓同時建立檔案的程式只有一個寫出檔頭。檔頭加上第一筆條目的位元組與原本完全相同，既有檔案則只在檔尾多一筆，也和原本相同。
 
+> 2026-11-18 起由步驟 8 取代（review-9d76366 M1）：`wx` 的 open 與寫檔頭之間，別的程式拿到 `EEXIST` 先附加，檔頭再寫在 offset 0 會蓋掉那筆的開頭。現行做法是先把檔頭寫進暫存檔，再以 `fs.link` 讓正式檔一出現就含檔頭。
+
 ## 實作步驟
 
 1. ✅ **首要驗證：跨程式 sync 的紅燈測試**（SCN-001～003）
@@ -130,6 +132,7 @@ export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder
    - 證據（2026-11-17）：
      - 修改前 `bash scripts/test-cli-memory.sh` exit 1：逐位元組比對 ✓（`單獨寫入兩筆，Daily 與既有格式逐位元組相同`），並行測試 `✗ round 4: Daily has 15 entries for 16 sessions`。
      - 修改後同一命令 exit 0：逐位元組比對 ✓，`5 輪、每輪 16 個程式同時寫入，Daily 條目數都等於 session 數，檔頭只有一個`。
+   - 後續：這一步的 `wx` 建檔在第一輪審查被判定仍會掉資料（review-9d76366 M1），已由步驟 8 的 hard link 建檔取代；上面的證據是當時的紀錄。
 6. ✅ **常青文件**
    - 產出：`docs/OPERATIONS.md`（移除「跨程式並行是 v1 限制」，說明租約、`MEMORIA_REPO_SYNC_WAIT_MS` 與鎖等待時間）、`docs/API.md`／`docs/API.zh-TW.md`（sync 的 409）、`docs/agents/architecture.md`（sync 序列化）、`memoria.ts:151` 的程式註解。
    - 相依：步驟 2～5。
@@ -145,13 +148,6 @@ export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder
      - 以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME` 重跑全部清單：`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`pnpm run release:docs-check`，加上 core 10 支、adapters 5 支、wiki 4 支、http-mcp 5 支、repo 8 支，共 37 項全部 PASS。
      - `gitnexus_detect_changes`（scope all）：程式改動落在 `connection.ts`、`schema.ts`（`initDatabase`、migration 18）、`sync.ts`（`syncDailyNote`）、`verify.ts`、`memoria.ts`（import、序列化註解、`withCrossProcessSyncLease`、`performRepoSync`）、`server.ts`（`gitErrorStatus`）。另列的 `resolveManagedRepo`、`withResult`、`notePairOf` 等是行號位移造成的誤判，`git diff -U0 src/core/memoria.ts` 只有 5 個 hunk，都在上述位置；列出的 `docs/AGENTS.md` 未修改（`git status` 無此檔）。
 
-## 使用方式對照
-
-| 情境 | 變更前 | 變更後 |
-|---|---|---|
-| 兩個 worktree 收尾時同時 `memoria repo sync <repo>` | 兩個都立刻完成，事件重複 | 後到的那個等先到的完成，再做一次沒有新東西的 sync |
-| 另一個 sync 卡住超過等待上限 | 不適用 | `repository_sync_busy: …`，exit 1，什麼都沒寫；稍後重跑 |
-| `memoria repo sync <repo> --dry-run` 遇到進行中的 sync | 不等待（跨程式） | 等到對方完成才預覽 |
 8. ✅ **依第一輪審查修正**（[review-9d76366](./review-9d76366.md)；M1、S1、S2、N2～N6，範圍見 README TBD-6）
    - 產出：
      - M1：`sync.ts` 的 `createDailyNoteWithHeader`，新 Daily 先把檔頭寫進同目錄的暫存檔，再以 `fs.link` 建立正式檔（`EEXIST` 時跳過），之後照舊附加；沒有 hard link 的檔案系統退回原本的 `wx`。新增 `scripts/daily-race-driver.mts`，`test-cli-memory.sh` 以它讓 16 個程式在同一時刻對尚未存在的 Daily 呼叫 `syncDailyNote`，跑 30 輪，並檢查 Daily 目錄沒有殘留暫存檔。
@@ -166,6 +162,35 @@ export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder
      - S2：新斷言 `✓ takeover records what a sync with no stale lease records`；它強化既有的回歸測試，修改前的行為本來就通過，不要求紅燈（同步驟 1 對 SCN-003 的判定）。
      - CI：`env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME` 下跑完整清單（靜態檢查 5 項加五組 32 支腳本），37 項全部 PASS。
      - 精煉（code-simplify）：CI 後把 `resolveSyncWaitMs` 與新加的 TTL 解析合併成 `envMs(name, fallback)`，行為不變；重跑 `pnpm run check`、`pnpm run build`、`test-repo-edge`、`test-repo-promotion`、`test-repo-sync` 全部 PASS。N7（兩個輪詢迴圈）照步驟 7 的判定維持分開。
+
+9. ✅ **依第二輪審查的 NICE TO HAVE 修正**（[review-680ed91](./review-680ed91.md)；N-a～N-g，範圍見 README TBD-7）
+   - 產出：
+     - N-a：`createDailyNoteWithHeader` 先檢查 Daily 是否已存在，已存在就不建暫存檔（多數 `remember` 是這種情況；沒看到檔案的程式仍走 hard link，競態不會重開）。暫存檔的寫入移進 `try`，寫入失敗也會清掉；`finally` 刪暫存檔失敗只警告，不讓已成功的建檔變成失敗。
+     - N-b：續約測試不再固定等 0.8 秒，改成輪詢 `git_sync_leases`，等慢的 sync 取得租約後才啟動第二個，並斷言這個前提。
+     - N-c：driver 的子程式在送出 ready 前結束時，該輪直接紅燈並結束其他子程式；每一輪都檢查 Daily 目錄沒有 `.md` 以外的檔案（原本只在 shell 端檢查最後一輪，該檢查移除）。
+     - N-d：續約間隔上限為 `2^31-1` ms；`test-repo-edge.sh` 新增以 `MEMORIA_REPO_SYNC_LEASE_TTL_MS=10000000000` sync，stderr 不得出現 `TimeoutOverflowWarning`。
+     - N-e：`performRepoSync` 的 dry-run 註解改為「so they do not start in the middle of one」。
+     - N-f：設計方案 C 與步驟 5 註明已由步驟 8 取代；「使用方式對照」表原本夾在步驟 7、8 之間，移到步驟之後。
+     - N-g：重建 GitNexus 索引，結果記在下方證據。
+   - 相依：步驟 8。
+   - 完成判準：N-c、N-d 的新檢查修改前紅燈、修改後綠燈；N-b 改寫後仍能抓到沒有續約；CI 對照清單全綠。
+   - 證據（2026-11-18）：
+     - N-d 紅燈：暫時把間隔改回 `ttlMs / 4` 後 build，`bash scripts/test-repo-edge.sh` exit 1：`✗ no timer overflow with a huge test TTL: expected '0', got '1'`。還原後 `✓ no timer overflow with a huge test TTL`、`[repo-edge] PASS`。
+     - N-b 鑑別力：暫時把續約間隔改成 `MAX_TIMER_MS`（等於不續約）後 build，連跑 3 次都是 `✗ renewed lease: the two syncs record what one sync records`（`head_changed=2`，對照為 1），且 `✓ the slow sync holds the lease before the second one starts`。還原後 PASS。
+     - N-c 掛住：在 driver 的暫時副本（放在 `scripts/` 讓相對 import 可用，跑完即刪）讓一個子程式在 warm-up 丟錯。原 driver（`git show HEAD:scripts/daily-race-driver.mts`）在 `timeout 20` 下 exit 124，一直掛到被殺；新 driver 554ms 後 exit 1：`✗ round 1: a writer exited with 1 before it was ready`，沒有遺留子程式。所有子程式都死掉時原 driver 不會掛，而是以 exit 13（unsettled top-level await）結束；只有部分子程式死掉、其他的還開著 IPC 時才會掛。
+     - N-c 殘留檢查：暫時讓 `createDailyNoteWithHeader` 不刪暫存檔，新 driver 3 輪全紅：`round 1: 4 entries, 1 headers for 4 sessions, 4 non-.md files left in Daily/`。原 driver 也會紅，但原因不同：贏得 link 的暫存檔與正式檔是同一個 inode，附加的條目也出現在暫存檔裡，被重複計數（`8 entries, 5 headers`）。這是巧合，不是在檢查殘留。還原後 `3 輪、每輪 4 個程式…沒有殘留暫存檔`。
+     - N-a：`strace -f -e trace=openat,link,unlink` 追蹤兩次 `remember`。第一次建 Daily 有 3 個暫存檔相關呼叫（建立、link、刪除），第二次（Daily 已存在）為 0。寫入失敗與 Windows 上刪除失敗兩條路徑沒有自動化測試：Linux 一般使用者無法讓暫存檔寫入或刪除單獨失敗，靠程式碼審閱。
+     - CI：`env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME` 下跑完整清單（靜態檢查 5 項加五組 32 支腳本），37 項全部 PASS。driver 這輪輸出 `30 輪、每輪 16 個程式在同一時刻寫入尚未存在的 Daily，條目與檔頭都完整，沒有殘留暫存檔`，SCN-006 為 8031ms。
+     - GitNexus：`npx gitnexus analyze` 重建索引（5582 nodes，8845 edges）。它會改寫 `AGENTS.md` 的統計數字，並把整段 GitNexus 說明附加到只有 `@AGENTS.md` 的 `CLAUDE.md`（內容重複）；兩者已還原，不在本 issue 範圍，之後請改用 `--skip-agents-md`。impact：`createDailyNoteWithHeader` 為 LOW（只有 `syncDailyNote`）；`withCrossProcessSyncLease` 為 HIGH（CLI、HTTP、`repoAdd` 的 sync 都經過它），所以 N-d 只改間隔的計算式。`detect_changes`（scope all）列出的程式符號中，實際有 hunk 的是 `createDailyNoteWithHeader`、`withCrossProcessSyncLease`、`performRepoSync` 的註解，以及新常數 `MAX_TIMER_MS`。`envMs` 與 `extractDecisions` 被列出只因為和 hunk 相鄰（`git diff -U0` 的 hunk 都不在它們的函式本體內）。
+     - 精煉（code-simplify）：no-op。driver 對每個檔案讀兩次是既有寫法，不在本步驟範圍。
+
+## 使用方式對照
+
+| 情境 | 變更前 | 變更後 |
+|---|---|---|
+| 兩個 worktree 收尾時同時 `memoria repo sync <repo>` | 兩個都立刻完成，事件重複 | 後到的那個等先到的完成，再做一次沒有新東西的 sync |
+| 另一個 sync 卡住超過等待上限 | 不適用 | `repository_sync_busy: …`，exit 1，什麼都沒寫；稍後重跑 |
+| `memoria repo sync <repo> --dry-run` 遇到進行中的 sync | 不等待（跨程式） | 等到對方完成才預覽 |
 
 ## 測試策略
 
@@ -182,5 +207,5 @@ export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder
 - [x] TBD-1～4 已回答，全部 Scenario 已核准（2026-11-17）；SCN-006 依 TBD-5 修訂後於 2026-11-18 重新核准
 - [x] 步驟 1 取得紅燈並記錄
 - [x] migration 18 只新增表，舊資料庫可讀
-- [x] 改 symbol 前已跑 GitNexus impact；detect_changes 已跑（2026-11-17），提交前若再修改需重跑
+- [x] 改 symbol 前已跑 GitNexus impact；detect_changes 已跑（2026-11-17；步驟 9 於 2026-11-18 重建索引後重跑），提交前若再修改需重跑
 - [x] 常青文件已更新，版控文件只用代稱

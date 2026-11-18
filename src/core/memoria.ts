@@ -164,6 +164,8 @@ const repoSyncLocks = new Map<string, Promise<void>>()
 const DEFAULT_SYNC_LEASE_TTL_MS = 60_000
 const SYNC_LEASE_POLL_MS = 200
 const DEFAULT_SYNC_WAIT_MS = 120_000
+// setInterval's ceiling: Node replaces a longer delay with 1 ms, which would renew every tick.
+const MAX_TIMER_MS = 2 ** 31 - 1
 
 // A positive number of milliseconds from the environment, else the default.
 function envMs(name: string, fallback: number): number {
@@ -217,7 +219,7 @@ async function withCrossProcessSyncLease<T>(
         } catch (error) {
             console.warn(`[memoria] could not renew sync lease for ${repository.name}: ${(error as Error).message}`)
         }
-    }, ttlMs / 4)
+    }, Math.min(ttlMs / 4, MAX_TIMER_MS))
     heartbeat.unref()
     try {
         return await fn()
@@ -1036,7 +1038,7 @@ export class MemoriaCore {
 
     // Shared by repoAdd (initial scan) and repoSync. Serialized per repository — see
     // withRepoSyncLock and withCrossProcessSyncLease. Dry runs write nothing but still wait for a
-    // sync in progress, so they never preview a half-written scan. Across processes they do not
+    // sync in progress, so they do not start in the middle of one. Across processes they do not
     // hold the lease, so a sync may start while a dry run is previewing.
     private async performRepoSync(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {
         const hostId = await getHostId(this.paths.memoryDir)

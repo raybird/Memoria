@@ -43,7 +43,15 @@ if (role === 'child') {
         await fs.rm(dailyDir, { recursive: true, force: true })
         await fs.mkdir(dailyDir, { recursive: true })
         const children = ids.map((id) => fork(self, [home, roundsArg, 'child', id]))
-        await Promise.all(children.map((child) => new Promise<void>((resolve) => child.once('message', () => resolve()))))
+        // A child that dies during warm-up never sends "ready"; fail the round instead of hanging.
+        await Promise.all(children.map((child) => new Promise<void>((resolve, reject) => {
+            child.once('message', () => resolve())
+            child.once('exit', (code) => reject(new Error(`round ${round}: a writer exited with ${code} before it was ready`)))
+        }))).catch((error: Error) => {
+            console.error(`  ✗ ${error.message}`)
+            for (const child of children) child.kill()
+            process.exit(1)
+        })
         const startAt = Date.now() + 50
         const exits = children.map((child) => new Promise<number | null>((resolve) => child.once('exit', resolve)))
         for (const child of children) child.send(startAt)
@@ -53,16 +61,20 @@ if (role === 'child') {
             process.exit(1)
         }
 
-        const files = await fs.readdir(dailyDir)
+        const entriesInDir = await fs.readdir(dailyDir)
+        const files = entriesInDir.filter((f) => f.endsWith('.md'))
+        const leftovers = entriesInDir.length - files.length
         const text = (await Promise.all(files.map((f) => fs.readFile(path.join(dailyDir, f), 'utf8')))).join('')
         const entries = text.match(/^## /gm)?.length ?? 0
         const headers = text.match(/^# /gm)?.length ?? 0
         const missing = ids.filter((id) => !text.includes(`Session ID: \`${id}\``))
         const startsWithHeader = await Promise.all(files.map(async (f) =>
             (await fs.readFile(path.join(dailyDir, f), 'utf8')).startsWith('# ')))
-        if (entries !== ids.length || headers !== files.length || missing.length > 0 || startsWithHeader.includes(false)) {
+        if (entries !== ids.length || headers !== files.length || missing.length > 0 ||
+            startsWithHeader.includes(false) || leftovers > 0) {
             broken.push(`round ${round}: ${entries} entries, ${headers} headers for ${ids.length} sessions` +
-                (missing.length ? `, ${missing.length} session ids missing` : ''))
+                (missing.length ? `, ${missing.length} session ids missing` : '') +
+                (leftovers ? `, ${leftovers} non-.md files left in Daily/` : ''))
         }
     }
 
@@ -71,5 +83,5 @@ if (role === 'child') {
         for (const line of broken.slice(0, 5)) console.error(`    ${line}`)
         process.exit(1)
     }
-    console.log(`  ${rounds} 輪、每輪 ${ids.length} 個程式在同一時刻寫入尚未存在的 Daily，條目與檔頭都完整`)
+    console.log(`  ${rounds} 輪、每輪 ${ids.length} 個程式在同一時刻寫入尚未存在的 Daily，條目與檔頭都完整，沒有殘留暫存檔`)
 }

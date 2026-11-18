@@ -280,7 +280,14 @@ RENEW_START=$(date +%s%N)
 ( PATH="$SLOW_BIN:$PATH" MEMORIA_HOME="$RENEW_HOME" MEMORIA_REPO_SYNC_LEASE_TTL_MS=3000 \
     "$CLI" repo sync conc --json > "$TMP_DIR/renew-a.json" 2>&1
   echo $(( ($(date +%s%N) - RENEW_START) / 1000000 )) > "$TMP_DIR/renew-a.ms" ) & PID_RA=$!
-sleep 0.8
+# Start the second sync only once the slow one holds the lease: with a fixed delay, a busy machine
+# could let the second one run first, and the test would pass without exercising renewal.
+for _ in $(seq 1 200); do
+    [ "$(db_at "$RENEW_HOME/.memory/sessions.db" "SELECT COUNT(*) FROM git_sync_leases")" = "1" ] && break
+    sleep 0.05
+done
+assert_eq "the slow sync holds the lease before the second one starts" \
+    "$(db_at "$RENEW_HOME/.memory/sessions.db" "SELECT COUNT(*) FROM git_sync_leases")" "1"
 MEMORIA_HOME="$RENEW_HOME" MEMORIA_REPO_SYNC_LEASE_TTL_MS=3000 MEMORIA_REPO_SYNC_WAIT_MS=60000 \
     "$CLI" repo sync conc --json > "$TMP_DIR/renew-b.json" 2>&1 & PID_RB=$!
 STATUS_RA=0; wait "$PID_RA" || STATUS_RA=$?
@@ -292,5 +299,12 @@ assert_eq "renewed lease: the two syncs record what one sync records" \
     "$(sync_shape "$RENEW_HOME/.memory/sessions.db")" "$CTRL_SHAPE"
 assert_eq "no lease left behind after renewal" \
     "$(db_at "$RENEW_HOME/.memory/sessions.db" "SELECT COUNT(*) FROM git_sync_leases")" "0"
+
+echo "[repo-edge] (issue-33) a lease TTL beyond the timer ceiling does not renew every millisecond"
+# ttl/4 above 2^31-1 ms makes Node print TimeoutOverflowWarning and fire every 1 ms instead.
+HUGE_TTL_OUT=$(MEMORIA_HOME="$RENEW_HOME" MEMORIA_REPO_SYNC_LEASE_TTL_MS=10000000000 \
+    "$CLI" repo sync conc --json 2>&1 >/dev/null)
+assert_eq "no timer overflow with a huge test TTL" \
+    "$(printf '%s' "$HUGE_TTL_OUT" | grep -c TimeoutOverflowWarning || true)" "0"
 
 echo "[repo-edge] PASS"
