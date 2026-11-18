@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { existsSync } from '../paths.js'
 import { safeDate, skillFileStem, slugify } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { withDb } from './connection.js'
@@ -20,13 +19,15 @@ export async function syncDailyNote(memoriaHome: string, dbPath: string, session
 
         const newEntry = `\n## ${time} - ${row.project}\n\n${row.summary ?? ''}\n\n事件數: ${row.event_count} | Session ID: \`${sessionId}\`\n`
 
-        let content = `# ${date}\n\n${newEntry}`
-        if (existsSync(notePath)) {
-            const oldContent = await fs.readFile(notePath, 'utf8')
-            content = `${oldContent}${newEntry}`
+        // Append, never read-modify-write: several processes (one CLI per worktree) remember at
+        // once, and a whole-file rewrite let the last writer drop the others' entries (issue-33).
+        // `wx` makes exactly one creator write the header; the bytes match the old output.
+        try {
+            await fs.writeFile(notePath, `# ${date}\n\n`, { encoding: 'utf8', flag: 'wx' })
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         }
-
-        await fs.writeFile(notePath, content, 'utf8')
+        await fs.appendFile(notePath, newEntry, 'utf8')
     })
 }
 

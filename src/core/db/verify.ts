@@ -2,7 +2,7 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
 import { initDatabase } from './schema.js'
-import { withDb } from './connection.js'
+import { withDb, SQLITE_BUSY_TIMEOUT_MS } from './connection.js'
 import type { MemoriaPaths, VerifyStatus, VerifyCheck } from '../types.js'
 
 async function canWrite(targetPath: string): Promise<boolean> {
@@ -46,7 +46,7 @@ function collectMissingColumns(db: Database.Database, table: string, expected: s
 function checkIntegrity(dbPath: string, add: (id: string, status: VerifyStatus, detail: string) => void): void {
     let db: Database.Database | null = null
     try {
-        db = new Database(dbPath, { readonly: true, fileMustExist: true })
+        db = new Database(dbPath, { readonly: true, fileMustExist: true, timeout: SQLITE_BUSY_TIMEOUT_MS })
         const rows = db.prepare('PRAGMA quick_check').all() as Array<{ quick_check?: string }>
 
         if (rows.length === 0) {

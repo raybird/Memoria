@@ -45,7 +45,7 @@ Launch: `memoria serve` (port 3917, override via `MEMORIA_PORT`).
 | `POST` | `/v1/repos` | Register a git repository for read-only observation |
 | `GET`  | `/v1/repos` | List observed repositories |
 | `GET`  | `/v1/repos/:ref/status` | Registry + live git state |
-| `POST` | `/v1/repos/:ref/sync` | Incremental git scan (`{generate_summaries?, dry_run?, ...}`) |
+| `POST` | `/v1/repos/:ref/sync` | Incremental git scan (`{generate_summaries?, dry_run?, ...}`); `409` `repository_sync_busy` when another process kept the same repository's sync lease past `MEMORIA_REPO_SYNC_WAIT_MS` (nothing is written) |
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summaries awaiting agent enrichment |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent summary write-back. A merge or release write-back also dismisses the pending commit-range skeletons it covers and reports `dismissed_covered` |

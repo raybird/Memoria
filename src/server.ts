@@ -20,7 +20,7 @@
 //   POST /v1/repos                 body: { path, name?, default_branch?, scan_history?, history_limit? }
 //   GET  /v1/repos
 //   GET  /v1/repos/:ref/status
-//   POST /v1/repos/:ref/sync       body: { generate_summaries?, dry_run?, force_summary?, from?, to? } (empty ok)
+//   POST /v1/repos/:ref/sync       body: { generate_summaries?, dry_run?, force_summary?, from?, to? } (empty ok; 409 repository_sync_busy, issue-33)
 //   POST /v1/repos/:ref/summarize  body: { branch?, range?, merge?, tag?, type?, force?, promote? } (empty ok)
 //   GET  /v1/repos/:ref/summaries/pending?with_diff=true&limit=20
 //   POST /v1/repos/:ref/summaries/:summaryId   body: §7.5 summary payload (agent write-back)
@@ -201,7 +201,8 @@ function gitErrorStatus(error?: string): number {
     if (error.includes('not_found')) return 404
     if (error.startsWith('invalid summary payload') || error.startsWith('invalid --range') ||
         error.startsWith('invalid dismiss types')) return 400
-    if (error.includes('summary_not_pending') || error.includes('summary_already_promoted')) return 409
+    if (error.includes('summary_not_pending') || error.includes('summary_already_promoted') ||
+        error.startsWith('repository_sync_busy')) return 409
     if (error.includes('not_a_git_repository') || error.includes('identity_mismatch') ||
         error.includes('repository_disabled') || error.includes('unborn_branch')) return 422
     return 500

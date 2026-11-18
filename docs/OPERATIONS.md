@@ -455,6 +455,14 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
 
 - **Sync cadence**: run `repo sync` at session start/end or on demand; unchanged repos complete
   fast (incremental `--not <previous tips>` walk) and insert nothing.
+- **Concurrent syncs (issue-33)**: syncs of one repository take turns, also across processes — one
+  CLI per worktree all syncing the same registered repository. Before issue-33 two processes each
+  recorded every event (17 `git_events` where one sync records 9). A process takes a lease row in
+  `git_sync_leases` (migration 18) for the whole sync, renews it every 15s, and deletes it when done;
+  a row nobody renewed for 60s — its holder died — is taken over. A second sync polls for the lease
+  up to `MEMORIA_REPO_SYNC_WAIT_MS` (default 120000), then fails with `repository_sync_busy` and
+  writes nothing. `--dry-run` waits the same way but never takes the lease: taking it is a write.
+  Inside one process (an HTTP server) syncs still queue in memory first.
 - **Scan lag**: `brief` shows `未掃描 commit: N` on a repository with commits past its last `repo sync`, and `doctor` lists them under `repo scan`. N is what a sync would discover (same as `repo sync --dry-run`'s `new_commits`). It never fails `doctor`: unscanned commits are normal between syncs. An unmeasurable repository is named as `not measured` and stays `null` in brief JSON.
 - **Commit-range skeletons**: writing back a merge or release summary dismisses every pending commit-range skeleton whose head falls inside any enriched milestone in that repository (a merge counts only the commits it brought in, `<merge>^1..<merge>`). Skeletons no milestone covers stay pending on purpose; there is no age limit, because one may be work still unwritten. Use `--dismiss-pending --type commit_range` to clear those by hand.
 - **Config**: `<configPath>/config.json`, `git.*` block (optional; Zod-validated). Tunables:
@@ -487,7 +495,7 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
   - `repository_identity_mismatch` → the path now holds a different history; re-check the path or `repo add` it as a new repository.
   - Shallow clones register as `limited_history`; after `git fetch --unshallow`, re-run `repo add` — the identity upgrades in place (no duplicate).
   - Failed scans keep their reason in `git_scan_runs` (`status='failed'`); the next sync resumes from the last good state.
-  - Concurrent syncs of one repository are serialized in-process; avoid concurrent CLI+server syncs from separate processes (documented v1 limitation).
+  - `repository_sync_busy` → another process is syncing the same repository and did not finish within `MEMORIA_REPO_SYNC_WAIT_MS`; the busy sync wrote nothing, and the message names the holder's pid, host and start time. Rerun after it finishes. (HTTP: `409`.)
 
 ## Test Commands (see also `scripts/test-cli-memory.sh` for the no-server memory loop)
 

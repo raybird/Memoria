@@ -1,0 +1,172 @@
+# Issue 33 實作計畫
+
+風險與首要驗證見 [README.md](./README.md#風險與首要驗證)。
+
+## 現況（2026-11-17 調查）
+
+- **連線**：`withDb`（`src/core/db/connection.ts:32`）、`initDatabase`（`src/core/db/schema.ts:553`）、`runVerify`（`src/core/db/verify.ts:49`）都直接 `new Database(...)`，沒有傳 `timeout`，沿用 better-sqlite3 的預設 5000 毫秒。資料庫是預設的 rollback journal（`PRAGMA journal_mode` 回 `delete`），沒有開 WAL。寫入交易都是同步執行、毫秒級；git 指令在交易之外執行。
+- **repo sync**：`performRepoSync`（`src/core/memoria.ts:961`）先解析 repository，再進 `withRepoSyncLock`（`memoria.ts:157`）。這把鎖是程式內的 Promise 鏈，跨程式無效。掃描在鎖內讀取舊的 ref 狀態（`getCurrentRefObservations`），比對後分好幾個交易寫入（`git-scan.ts:74/88/130`）。`repoAdd` 的首次掃描也走 `performRepoSync`。
+- **dry-run**：`options.dryRun` 時什麼都不寫（spec §19.4），但仍在程式內鎖裡排隊。
+- **Daily 筆記**：`syncDailyNote`（`src/core/db/sync.ts:8`）讀整份檔案，接上 `\n## HH:MM - <project>…` 後整份 `writeFile`。
+- **HTTP**：`gitErrorStatus`（`src/server.ts:199`）依錯誤字串對應狀態碼，沒對應到的回 500。
+
+2026-11-17 在隔離資料根的重現（scratchpad 腳本，未進版控）：
+
+| 實驗 | 結果 |
+|---|---|
+| 兩個程式同時 `repo sync`（註冊後新增 3 個 feature commit、`--no-ff` merge、tag） | `git_events` 17、`git_refs` 10、`git_scan_runs` 3；單獨 sync 的對照組為 9、6、2。每一種事件類型都是 2 倍，`is_current=1` 的每個 ref 各 2 列；`git_summaries` 兩邊都是 1 |
+| 16 個程式同時 `remember`，5 輪 | 資料庫每輪 16 個 session；Daily 條目為 15、15、16、16、16 |
+| 上述所有程式的 stderr | 沒有 `database is locked` |
+
+## 設計方案
+
+### A. 資料庫鎖等待時間（SCN-006）
+
+`connection.ts` 匯出 `SQLITE_BUSY_TIMEOUT_MS = 5000`（TBD-1：維持預設值，只改成明確寫出）。三個 `new Database` 呼叫都帶 `timeout: SQLITE_BUSY_TIMEOUT_MS`。不改 journal mode：WAL 會永久寫進資料庫檔案，唯讀開啟（`verify`、受限沙箱）要額外的 `-shm` 檔；16 個程式同時寫入都沒有失敗，沒有證據需要更高的並行吞吐量。
+
+### B. 跨程式 sync 租約（SCN-001～004）
+
+migration 18 `git_sync_leases`：
+
+```sql
+CREATE TABLE IF NOT EXISTS git_sync_leases (
+  repository_id TEXT PRIMARY KEY,
+  token TEXT NOT NULL,        -- 這次持有的隨機值，續約與釋放都要對得上
+  holder_pid INTEGER,
+  holder_host TEXT,
+  acquired_at DATETIME NOT NULL,
+  expires_at DATETIME NOT NULL
+);
+```
+
+新增 `src/core/db/git-sync-lease.ts`：
+
+```ts
+export type SyncLease = { repositoryId: string; token: string }
+export type LeaseHolder = { pid: number | null; host: string | null; acquiredAt: string; expiresAt: string }
+export function tryAcquireSyncLease(dbPath: string, repositoryId: string, ttlMs: number): SyncLease | LeaseHolder
+export function renewSyncLease(dbPath: string, lease: SyncLease, ttlMs: number): boolean
+export function releaseSyncLease(dbPath: string, lease: SyncLease): void
+export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder | null  // 唯讀，已過期的回 null
+```
+
+`tryAcquireSyncLease` 用 `db.transaction(...).immediate()`（`BEGIN IMMEDIATE`）：沒有租約或已過期，就寫入新的 token 並回傳 `SyncLease`；否則回傳持有者資訊。檢查和寫入在同一個寫入交易裡，兩個程式不會同時拿到。過期只看 `expires_at`，不檢查 pid 是否存活：容器之間看不到彼此的 pid。
+
+`performRepoSync` 的流程：
+
+```diff
+ preflight = findRepository(...)
+ return withRepoSyncLock(id, async () => {
++  if (options.dryRun) {
++    await waitUntilLeaseFree(id, waitMs)          // 只讀，不取得
++    return this.performRepoSyncLocked(ref, options)
++  }
++  const lease = await acquireWithin(id, waitMs)   // 每 200ms 重試；逾時丟 repository_sync_busy
++  const heartbeat = setInterval(() => renewSyncLease(...), 15_000).unref()
++  try {
+     return await this.performRepoSyncLocked(ref, options)
++  } finally {
++    clearInterval(heartbeat)
++    releaseSyncLease(dbPath, lease)
++  }
+ })
+```
+
+- 程式內鎖保留在外層：同一程式內的呼叫照舊用 Promise 排隊，不必輪詢資料庫。
+- TTL 60 秒、每 15 秒續約。續約失敗（例如鎖忙）只記警告，不中斷 sync；連續失敗到過期時，最差就是回到現在的行為。
+- 等待上限：`MEMORIA_REPO_SYNC_WAIT_MS`，預設 120000（TBD-2）。逾時錯誤：`repository_sync_busy: another process has been syncing <name> since <acquired_at> (pid <pid> on <host>)`。
+- `server.ts` 的 `gitErrorStatus` 把 `repository_sync_busy` 對應到 409（TBD-3）。
+
+### C. Daily 筆記附加寫入（SCN-005）
+
+```diff
+-let content = `# ${date}\n\n${newEntry}`
+-if (existsSync(notePath)) content = `${await fs.readFile(notePath)}${newEntry}`
+-await fs.writeFile(notePath, content)
++try { await fs.writeFile(notePath, `# ${date}\n\n`, { flag: 'wx' }) }
++catch (e) { if (e.code !== 'EEXIST') throw e }
++await fs.appendFile(notePath, newEntry, 'utf8')
+```
+
+`wx` 讓同時建立檔案的程式只有一個寫出檔頭。檔頭加上第一筆條目的位元組與原本完全相同，既有檔案則只在檔尾多一筆，也和原本相同。
+
+## 實作步驟
+
+1. ✅ **首要驗證：跨程式 sync 的紅燈測試**（SCN-001～003）
+   - 產出：`scripts/test-repo-edge.sh` 新增三段：兩個程式同時 sync 和單獨 sync 的對照組比較事件筆數與 `is_current` 列數；直接插入一筆未過期租約，以 `MEMORIA_REPO_SYNC_WAIT_MS=500` 執行 sync；插入一筆已過期租約後執行 sync。
+   - 相依：無。
+   - 完成判準：SCN-001 在修改前紅燈，事件筆數與對照組不同；記錄命令與輸出。SCN-002、SCN-003 要先有租約表才能插入資料，所以紅燈在步驟 2 先加 migration 18、`performRepoSync` 還沒用到租約時取得：SCN-002 會直接成功並寫入；SCN-003 的接手要等步驟 2 實作後才有意義，修改前它本來就會成功，因此記為守住「不會停擺」的回歸測試，不要求紅燈。
+   - 證據（2026-11-17，工作區未提交）：`bash scripts/test-repo-edge.sh`，exit 1，連跑 4 次都在同一條紅：`✗ concurrent syncs record exactly what one sync records: expected 'branch_discovered=1,branch_head_moved=1,commit_discovered=3,head_changed=1,merge_commit_discovered=1,repository_added=1,tag_discovered=1 | commits=7 | current_refs=4 | current_ref_names=4 | summaries=1', got 'branch_discovered=2,branch_head_moved=2,commit_discovered=6,head_changed=2,merge_commit_discovered=2,repository_added=1,tag_discovered=2 | commits=7 | current_refs=8 | current_ref_names=4 | summaries=1'`。每一種事件都是 2 倍，目前有效的 ref 多一份，和調查時的手動重現一致。
+2. ✅ **租約模組與 migration 18**（SCN-001～003）
+   - 產出：`git-sync-lease.ts`、`schema.ts` migration 18、`memoria.ts` 的 `performRepoSync`。
+   - 相依：步驟 1。
+   - 完成判準：步驟 1 的三段綠燈；SCN-001 連跑 10 次都綠；`test-migrations.sh` 綠燈（舊資料庫升級後有新表，既有資料不變）。
+   - 證據（2026-11-17）：
+     - SCN-002 紅燈：保留 migration 18、暫時讓 `performRepoSync` 不經過租約（暫時副本，跑完還原並重新 build），exit 1：`✗ busy sync exits non-zero: expected 'yes', got ''`，被佔住的 sync 照樣成功。
+     - 綠燈：`bash scripts/test-repo-edge.sh` exit 0，SCN-001～004 共 24 條 ✓；連跑 10 次 `repo-edge pass=10/10`。
+     - `bash scripts/test-migrations.sh` exit 0（`[migrations] ok`）。
+     - 真實資料庫副本（`sqlite3 .backup` 到 scratchpad，不碰 `~/.memoria`）跑 `stats` 升級：`before=532/1215/6751/17 after=532/1215/6751/18`（sessions／events／git_events／最大 migration），`git_sync_leases` 已建立，`pragma integrity_check` 為 `ok`。
+3. ✅ **dry-run 等待與 HTTP 409**（SCN-002 的 HTTP 部分、SCN-004）
+   - 產出：`performRepoSync` 的 dry-run 分支、`server.ts` 的 `gitErrorStatus`；`test-repo-edge.sh` 新增 dry-run 在租約釋放後才回傳、且租約表與 scan run 不變；`test-repo-promotion.sh` 新增被佔住時回 409（repo 端點的狀態碼測試都在這支，包括 dismiss 的 409；計畫原寫 `test-http-api.sh`，這是等價的路徑選擇）。
+   - 相依：步驟 2。
+   - 完成判準：新增的測試修改前紅燈、修改後綠燈。
+   - 證據（2026-11-17）：
+     - SCN-004 紅燈：同步驟 2 的暫時停用租約，exit 1：`✗ dry-run still waiting while the lease is live: expected 'waiting', got ''`，dry-run 沒有等待。
+     - HTTP 紅燈：`gitErrorStatus` 修改前 `bash scripts/test-repo-promotion.sh` exit 1：`✗ sync while another process holds the lease → 409 (issue-33): expected '409', got '500'`。
+     - 綠燈：`test-repo-edge.sh` 的 SCN-004 七條 ✓；`test-repo-promotion.sh` exit 0，`✓ sync while another process holds the lease → 409 (issue-33)`、`✓ 409 body names repository_sync_busy`、`[repo-promotion] PASS`。
+4. ✅ **資料庫鎖等待時間明確化**（SCN-006；不改變可觀察行為）
+   - 產出：`connection.ts`、`schema.ts`、`verify.ts`；`test-cli-memory.sh` 新增 characterization test：另一個 node 程式以 `BEGIN IMMEDIATE` 持有寫入鎖 2 秒時 `remember` 成功；持有 8 秒時寫入等約 5 秒後放棄、命令在約 5～10 秒之間結束（撤回寫到一半的筆記會再等同一把鎖，見 README TBD-5）、錯誤含 `database is locked`、資料庫沒有該筆。
+   - 相依：無（TBD-1 已解決）。
+   - 完成判準：等價證據。同一個 characterization test 在修改前、修改後都綠燈，記錄兩次的命令與輸出。
+   - 證據（2026-11-17）：
+     - 第一版判準「約 5 秒後失敗」（4500～7500ms）在修改前就不成立：`✗ 應在約 5 秒後失敗，實際 8036ms`。用暫時的 preload 追蹤 SQLite 呼叫（scratchpad，未進版控）：`run THREW after 5006ms: database is locked :: INSERT INTO sessions …`，接著 `run took 2932ms :: DELETE FROM events WHERE session_id = ?` 等到持有者在 8 秒時釋放。判準依此修訂為 4500～10500ms，SCN-006 標為待重新核准（README TBD-5）。
+     - 修改前（`timeout` 尚未明確寫出）：`bash scripts/test-cli-memory.sh` exit 0，`鎖持有 2 秒時等待後成功；持有 8 秒時 8031ms 後以 database is locked 失敗，沒有留下筆記`。
+     - 修改後（三處 `new Database` 帶 `timeout: SQLITE_BUSY_TIMEOUT_MS`）：同一命令 exit 0，同一行輸出，8031ms。
+   - 狀態：SCN-006 於 2026-11-18 依修訂後的判準重新核准（README TBD-5），完成。
+5. ✅ **Daily 附加寫入**（SCN-005）
+   - 產出：`sync.ts` 的 `syncDailyNote`；`test-cli-memory.sh` 新增 16 個程式同時 `remember`，檢查條目數與檔頭數；單獨 `remember` 的 Daily 內容和固定的預期字串比對。
+   - 相依：無。
+   - 完成判準：同時寫入的測試修改前在多輪中至少一輪紅燈（測試內連跑 5 輪），修改後綠燈；逐位元組比對修改前後都綠。
+   - 證據（2026-11-17）：
+     - 修改前 `bash scripts/test-cli-memory.sh` exit 1：逐位元組比對 ✓（`單獨寫入兩筆，Daily 與既有格式逐位元組相同`），並行測試 `✗ round 4: Daily has 15 entries for 16 sessions`。
+     - 修改後同一命令 exit 0：逐位元組比對 ✓，`5 輪、每輪 16 個程式同時寫入，Daily 條目數都等於 session 數，檔頭只有一個`。
+6. ✅ **常青文件**
+   - 產出：`docs/OPERATIONS.md`（移除「跨程式並行是 v1 限制」，說明租約、`MEMORIA_REPO_SYNC_WAIT_MS` 與鎖等待時間）、`docs/API.md`／`docs/API.zh-TW.md`（sync 的 409）、`docs/agents/architecture.md`（sync 序列化）、`memoria.ts:151` 的程式註解。
+   - 相依：步驟 2～5。
+   - 完成判準：文件描述與實作一致；`pnpm run release:docs-check` 綠燈。
+   - 證據（2026-11-17）：更新 `docs/OPERATIONS.md`（「Concurrent syncs」段落、troubleshooting 的 `repository_sync_busy`）、`docs/API.md`／`docs/API.zh-TW.md`、`docs/agents/architecture.md`（sync 雙層序列化；資料根多程式共用、鎖等待與 Daily 附加寫入）、`AGENTS.md`（`repoSync` 說明與 HTTP 表的 409）、`src/server.ts` 路由註解、`memoria.ts` 的序列化註解。`pnpm run release:docs-check`：`Release doc sync check passed for v1.38.0`。
+7. ✅ **整體驗證**
+   - 產出：CI 對照清單的靜態檢查，加上 `core`、`repo`、`http-mcp` 三組腳本的輸出（`withDb` 影響全部模組，實際跑了全部五組）。
+   - 相依：步驟 1～6。
+   - 完成判準：全部綠燈；`gitnexus_detect_changes` 的影響範圍只含上表的 symbol。
+   - 證據（2026-11-17，工作區未提交）：
+     - 精煉（code-simplify）：產品程式碼 no-op，dry-run 只讀等待與取得租約的兩個迴圈刻意分開，合併會把唯讀和寫入混在一起；`test-repo-promotion.sh` 抽出 `db_run`，取代兩段重複的 inline node，重跑 `[repo-promotion] PASS`。
+     - 第一次跑全部清單：36 項 PASS，`test-ui-http.sh` FAIL（`ui-http-driver.mts:68` 斷言 vector 模式 `fallback_used`）。在 `main` 的乾淨 worktree 跑同一支也失敗（exit 1）：本機 shell 帶著 `LIBSQL_URL`、`MEMORIA_EMBED_PROVIDER`、`MEMORIA_VECTOR_TIMEOUT_MS`，測試因此連到真實向量庫，與本次變更無關（`docs/agents/project.md` M-4）。真實 `vectors.db` 的 mtime 停在 17:00:35，早於這次執行，沒有被寫入。
+     - 以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME` 重跑全部清單：`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`pnpm run release:docs-check`，加上 core 10 支、adapters 5 支、wiki 4 支、http-mcp 5 支、repo 8 支，共 37 項全部 PASS。
+     - `gitnexus_detect_changes`（scope all）：程式改動落在 `connection.ts`、`schema.ts`（`initDatabase`、migration 18）、`sync.ts`（`syncDailyNote`）、`verify.ts`、`memoria.ts`（import、序列化註解、`withCrossProcessSyncLease`、`performRepoSync`）、`server.ts`（`gitErrorStatus`）。另列的 `resolveManagedRepo`、`withResult`、`notePairOf` 等是行號位移造成的誤判，`git diff -U0 src/core/memoria.ts` 只有 5 個 hunk，都在上述位置；列出的 `docs/AGENTS.md` 未修改（`git status` 無此檔）。
+
+## 使用方式對照
+
+| 情境 | 變更前 | 變更後 |
+|---|---|---|
+| 兩個 worktree 收尾時同時 `memoria repo sync <repo>` | 兩個都立刻完成，事件重複 | 後到的那個等先到的完成，再做一次沒有新東西的 sync |
+| 另一個 sync 卡住超過等待上限 | 不適用 | `repository_sync_busy: …`，exit 1，什麼都沒寫；稍後重跑 |
+| `memoria repo sync <repo> --dry-run` 遇到進行中的 sync | 不等待（跨程式） | 等到對方完成才預覽 |
+
+## 測試策略
+
+| 驗收 | 層級 | 位置 |
+|---|---|---|
+| SCN-001～004 | 端到端，真的跨程式 | `scripts/test-repo-edge.sh` |
+| SCN-002（HTTP） | HTTP 契約 | `scripts/test-http-api.sh` |
+| SCN-005、SCN-006 | 端到端，真的跨程式 | `scripts/test-cli-memory.sh` |
+
+都是單迴圈：這幾項行為只有在真正的多程式之下才看得到，沒有獨立的單元層級失敗面。租約模組的邊界（過期判定、token 不符時不釋放）由 SCN-003 與 SCN-001 的「租約表沒有殘留」間接覆蓋。
+
+## 檢查清單
+
+- [x] TBD-1～4 已回答，全部 Scenario 已核准（2026-11-17）；SCN-006 依 TBD-5 修訂後於 2026-11-18 重新核准
+- [x] 步驟 1 取得紅燈並記錄
+- [x] migration 18 只新增表，舊資料庫可讀
+- [x] 改 symbol 前已跑 GitNexus impact；detect_changes 已跑（2026-11-17），提交前若再修改需重跑
+- [x] 常青文件已更新，版控文件只用代稱

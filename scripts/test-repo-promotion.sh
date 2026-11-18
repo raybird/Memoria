@@ -8,6 +8,7 @@
 #   3. the same summary never promotes twice (re-submit + re-sync stay idempotent)
 #   4. release summaries auto-promote during sync; memory_checkpoints records the milestone
 #   5. the whole flow works over HTTP (/v1/repos add→sync→pending→submit→recall)
+#   6. a sync blocked by another process's live lease answers 409 repository_sync_busy (issue-33)
 
 set -euo pipefail
 
@@ -35,6 +36,9 @@ db_get() {
       process.stdout.write(String(row === undefined ? '' : row[0]));
     " "$1" "$DB_PATH")
 }
+db_run() { # $1 = SQL statement (write)
+    (cd "$ROOT_DIR" && node -e "new (require('better-sqlite3'))(process.argv[2]).prepare(process.argv[1]).run()" "$1" "$DB_PATH")
+}
 assert_eq() {
     if [ "$2" != "$3" ]; then echo "  ✗ $1: expected '$3', got '$2'"; exit 1; fi
     echo "  ✓ $1"
@@ -48,7 +52,8 @@ seq 1 30 > "$REPO/src/app.js"
 git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c1: bootstrap"
 
 echo "[repo-promotion] start HTTP server"
-env MEMORIA_PORT="$PORT" "$CLI" serve >"$TMP_DIR/server.log" 2>&1 &
+# MEMORIA_REPO_SYNC_WAIT_MS kept short so the issue-33 busy case below answers quickly.
+env MEMORIA_PORT="$PORT" MEMORIA_REPO_SYNC_WAIT_MS=300 "$CLI" serve >"$TMP_DIR/server.log" 2>&1 &
 SERVER_PID=$!
 for _ in $(seq 1 40); do curl -sf "$URL/v1/health" >/dev/null 2>&1 && break; sleep 0.25; done
 curl -sf "$URL/v1/health" >/dev/null || { echo "  ✗ server failed"; cat "$TMP_DIR/server.log"; exit 1; }
@@ -235,6 +240,14 @@ CONFLICT_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/repos/$R
 assert_eq "dismissing an enriched summary → 409" "$CONFLICT_CODE" "409"
 NOTYPES_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/v1/repos/$REPO_ID/summaries/dismiss" -H 'Content-Type: application/json' -d '{}')
 assert_eq "batch without types → 400" "$NOTYPES_CODE" "400"
+BUSY_LEASE_SQL="INSERT INTO git_sync_leases (repository_id, token, holder_pid, holder_host, acquired_at, expires_at)
+    VALUES ('$REPO_ID', 'http-busy', 999999, 'other-host', '2026-11-17T00:00:00.000Z', '2999-01-01T00:00:00.000Z')"
+db_run "$BUSY_LEASE_SQL"
+BUSY_BODY=$(curl -s -w '\n%{http_code}' -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}')
+assert_eq "sync while another process holds the lease → 409 (issue-33)" "$(tail -n1 <<<"$BUSY_BODY")" "409"
+assert_eq "409 body names repository_sync_busy" \
+    "$(json_get "$(sed '$d' <<<"$BUSY_BODY")" "d.ok === false && d.error.startsWith('repository_sync_busy: ')")" "true"
+db_run "DELETE FROM git_sync_leases WHERE token = 'http-busy'"
 RANGES_LEFT=$(db_get "SELECT COUNT(*) FROM git_summaries WHERE status = 'pending' AND summary_type = 'commit_range'")
 BATCH=$(curl -s -X POST "$URL/v1/repos/$REPO_ID/summaries/dismiss" -H 'Content-Type: application/json' -d '{"types":["commit_range"]}')
 assert_eq "batch dismiss envelope ok" "$(json_get "$BATCH" "d.ok")" "true"

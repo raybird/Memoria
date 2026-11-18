@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { SQLITE_BUSY_TIMEOUT_MS } from './connection.js'
 
 type Migration = {
     id: number
@@ -527,6 +528,26 @@ const MIGRATIONS: Migration[] = [
             const cols = new Set((db.prepare('PRAGMA table_info(memory_attributes)').all() as { name: string }[]).map((r) => r.name))
             if (!cols.has('verify_cmd')) db.exec(`ALTER TABLE memory_attributes ADD COLUMN verify_cmd TEXT`)
         }
+    },
+    {
+        id: 18,
+        name: 'git_sync_leases',
+        up: (db) => {
+            // docs/issues/issue-33: one row per repository while a process is syncing it, so syncs
+            // from SEPARATE processes (one CLI per worktree) take turns. A row past expires_at is
+            // free to take over — its holder stopped renewing. holder_pid/holder_host only feed the
+            // busy error message; expiry never consults them (pids are not comparable across hosts).
+            db.exec(`
+              CREATE TABLE IF NOT EXISTS git_sync_leases (
+                repository_id TEXT PRIMARY KEY,
+                token TEXT NOT NULL,
+                holder_pid INTEGER,
+                holder_host TEXT,
+                acquired_at DATETIME NOT NULL,
+                expires_at DATETIME NOT NULL
+              );
+            `)
+        }
     }
 ]
 
@@ -550,7 +571,7 @@ function runMigrations(db: Database.Database): void {
 }
 
 export function initDatabase(dbPath: string): void {
-    const db = new Database(dbPath)
+    const db = new Database(dbPath, { timeout: SQLITE_BUSY_TIMEOUT_MS })
     try {
         db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (

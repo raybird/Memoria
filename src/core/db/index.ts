@@ -27,6 +27,14 @@ export {
     resolveProjectForPath
 } from './git-repo.js'
 export {
+    tryAcquireSyncLease,
+    renewSyncLease,
+    releaseSyncLease,
+    peekSyncLease,
+    type SyncLease,
+    type SyncLeaseHolder
+} from './git-sync-lease.js'
+export {
     getCurrentRefObservations,
     insertCommits,
     applyRefSnapshot,

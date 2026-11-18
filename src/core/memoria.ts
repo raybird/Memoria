@@ -58,6 +58,12 @@ import {
     hasVerifyDurableConflict,
     VERIFY_DURABLE_CONFLICT,
     resolveProjectForPath,
+    tryAcquireSyncLease,
+    renewSyncLease,
+    releaseSyncLease,
+    peekSyncLease,
+    type SyncLease,
+    type SyncLeaseHolder,
     type BriefOptions,
     type MemoryAttributePatch
 } from './db/index.js'
@@ -149,10 +155,73 @@ const DEFAULT_FIRST_SCAN_COMMITS = 200
 const DEFAULT_PENDING_SUMMARY_LIMIT = 20
 
 // Per-repository sync serialization (issue-1 Phase 6): the scan's read-compare-write against the
-// previous state is not atomic, so concurrent syncs of the SAME repository (HTTP + CLI, or two
-// worktrees) queue behind each other in this process. Cross-process concurrency remains a
-// documented v1 limitation (single-user assumption).
+// previous state is not atomic, so concurrent syncs of the SAME repository queue behind each other.
+// Two layers: this in-process promise chain (HTTP requests in one server), then a lease row in the
+// shared DB for syncs from separate processes — one CLI per worktree (issue-33; without it two
+// processes each recorded every event). See withCrossProcessSyncLease.
 const repoSyncLocks = new Map<string, Promise<void>>()
+
+const SYNC_LEASE_TTL_MS = 60_000
+const SYNC_LEASE_RENEW_MS = 15_000
+const SYNC_LEASE_POLL_MS = 200
+const DEFAULT_SYNC_WAIT_MS = 120_000
+
+function resolveSyncWaitMs(): number {
+    const fromEnv = Number(process.env.MEMORIA_REPO_SYNC_WAIT_MS)
+    return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_SYNC_WAIT_MS
+}
+
+function syncBusyError(repositoryName: string, holder: SyncLeaseHolder): Error {
+    return new Error(`repository_sync_busy: another process has been syncing ${repositoryName} since ` +
+        `${holder.acquiredAt} (pid ${holder.pid ?? '?'} on ${holder.host ?? '?'}); retry after it finishes`)
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** Runs fn holding the repository's cross-process sync lease. A dry run only waits for the lease
+ *  to be free and never takes it: taking it is a write, and a dry run writes nothing (§19.4). */
+async function withCrossProcessSyncLease<T>(
+    dbPath: string,
+    repository: { id: string; name: string },
+    dryRun: boolean,
+    fn: () => Promise<T>
+): Promise<T> {
+    const deadline = Date.now() + resolveSyncWaitMs()
+    if (dryRun) {
+        for (;;) {
+            const holder = peekSyncLease(dbPath, repository.id)
+            if (!holder) return fn()
+            if (Date.now() >= deadline) throw syncBusyError(repository.name, holder)
+            await sleep(SYNC_LEASE_POLL_MS)
+        }
+    }
+
+    let lease: SyncLease
+    for (;;) {
+        const attempt = tryAcquireSyncLease(dbPath, repository.id, SYNC_LEASE_TTL_MS)
+        if ('lease' in attempt) { lease = attempt.lease; break }
+        if (Date.now() >= deadline) throw syncBusyError(repository.name, attempt.holder)
+        await sleep(SYNC_LEASE_POLL_MS)
+    }
+    const heartbeat = setInterval(() => {
+        // A failed renewal must not abort the sync: the worst case is the lease expiring, which
+        // is exactly the pre-issue-33 behaviour, not something worse.
+        try {
+            if (!renewSyncLease(dbPath, lease, SYNC_LEASE_TTL_MS)) {
+                console.warn(`[memoria] sync lease for ${repository.name} was taken over after it expired`)
+            }
+        } catch (error) {
+            console.warn(`[memoria] could not renew sync lease for ${repository.name}: ${(error as Error).message}`)
+        }
+    }, SYNC_LEASE_RENEW_MS)
+    heartbeat.unref()
+    try {
+        return await fn()
+    } finally {
+        clearInterval(heartbeat)
+        releaseSyncLease(dbPath, lease)
+    }
+}
 
 async function withRepoSyncLock<T>(repositoryId: string, fn: () => Promise<T>): Promise<T> {
     const previous = repoSyncLocks.get(repositoryId) ?? Promise.resolve()
@@ -956,12 +1025,15 @@ export class MemoriaCore {
     }
 
     // Shared by repoAdd (initial scan) and repoSync. Serialized per repository — see
-    // withRepoSyncLock. Dry runs write nothing but still queue, so they observe settled state.
+    // withRepoSyncLock and withCrossProcessSyncLease. Dry runs write nothing but still queue, so
+    // they observe settled state.
     private async performRepoSync(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {
         const hostId = await getHostId(this.paths.memoryDir)
         const preflight = findRepository(this.paths.dbPath, ref, hostId)
         if (!preflight || !preflight.instance) throw new Error(`repository_not_found: ${ref}`)
-        return withRepoSyncLock(preflight.repository.id, () => this.performRepoSyncLocked(ref, options))
+        return withRepoSyncLock(preflight.repository.id, () =>
+            withCrossProcessSyncLease(this.paths.dbPath, preflight.repository, Boolean(options.dryRun),
+                () => this.performRepoSyncLocked(ref, options)))
     }
 
     private async performRepoSyncLocked(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {

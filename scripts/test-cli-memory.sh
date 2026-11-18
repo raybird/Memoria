@@ -299,4 +299,92 @@ else
     echo "  失敗的新筆記已撤回，重試完整寫入；既有筆記 A 保留"
 fi
 
+# ── issue-33: several processes writing one data root ─────────────────────────────────────────
+H33="$TMP_DIR/home33"
+cli33() { MEMORIA_HOME="$H33" "$CLI" "$@"; }
+q33() {
+    node -e "
+      const D=require('$BSQ');
+      const db=new D(process.argv[2],{readonly:true});
+      const r=db.prepare(process.argv[1]).get(...process.argv.slice(3));
+      console.log(r ? Object.values(r)[0] : '');
+    " "$1" "$H33/.memory/sessions.db" "${@:2}"
+}
+cli33 init >/dev/null
+
+echo "[cli-memory] (issue-33 SCN-005) a lone remember writes the Daily note byte-for-byte as before"
+DAILY33() { ls "$H33/knowledge/Daily/"*.md 2>/dev/null | head -1; }
+cli33 remember "Daily 逐位元組第一筆" --project demo33 >/dev/null
+cli33 remember "Daily 逐位元組第二筆" --project demo33 >/dev/null
+EXPECTED_DAILY=$(node -e "
+  const D=require('$BSQ');
+  const db=new D(process.argv[1],{readonly:true});
+  const rows=db.prepare('SELECT id, timestamp, project, event_count, summary FROM sessions ORDER BY timestamp, id').all();
+  const date=new Date(rows[0].timestamp).toISOString().slice(0,10);
+  let out='# '+date+'\n\n';
+  for (const r of rows) {
+    const t=new Date(r.timestamp).toISOString().slice(11,16);
+    out+='\n## '+t+' - '+r.project+'\n\n'+(r.summary ?? '')+'\n\n事件數: '+r.event_count+' | Session ID: \`'+r.id+'\`\n';
+  }
+  process.stdout.write(out);
+" "$H33/.memory/sessions.db"; printf x)
+EXPECTED_DAILY="${EXPECTED_DAILY%x}"
+ACTUAL_DAILY="$(cat "$(DAILY33)"; printf x)"; ACTUAL_DAILY="${ACTUAL_DAILY%x}"
+[ "$ACTUAL_DAILY" = "$EXPECTED_DAILY" ] || {
+    echo "  ✗ Daily 內容與既有格式不同"; diff <(printf '%s' "$EXPECTED_DAILY") <(printf '%s' "$ACTUAL_DAILY") | head -20; exit 1; }
+echo "  單獨寫入兩筆，Daily 與既有格式逐位元組相同"
+
+echo "[cli-memory] (issue-33 SCN-005) 16 concurrent remembers keep all 16 Daily entries"
+for round in 1 2 3 4 5; do
+    HR="$TMP_DIR/home33-r$round"
+    MEMORIA_HOME="$HR" "$CLI" init >/dev/null
+    PIDS=()
+    for i in $(seq 1 16); do
+        MEMORIA_HOME="$HR" "$CLI" remember "並行筆記 r$round-$i" --project demo33 >/dev/null & PIDS+=($!)
+    done
+    for p in "${PIDS[@]}"; do wait "$p" || { echo "  ✗ round $round: a concurrent remember failed"; exit 1; }; done
+    SESSIONS_R=$(node -e "const D=require('$BSQ');console.log(new D(process.argv[1],{readonly:true}).prepare('SELECT COUNT(*) c FROM sessions').get().c)" "$HR/.memory/sessions.db")
+    ENTRIES_R=$(cat "$HR/knowledge/Daily/"*.md | grep -c '^## ' || true)
+    HEADERS_R=$(cat "$HR/knowledge/Daily/"*.md | grep -c '^# ' || true)
+    [ "$SESSIONS_R" = "16" ] || { echo "  ✗ round $round: expected 16 sessions, got $SESSIONS_R"; exit 1; }
+    [ "$ENTRIES_R" = "16" ] || { echo "  ✗ round $round: Daily has $ENTRIES_R entries for 16 sessions"; exit 1; }
+    [ "$HEADERS_R" = "1" ] || { echo "  ✗ round $round: Daily has $HEADERS_R headers"; exit 1; }
+done
+echo "  5 輪、每輪 16 個程式同時寫入，Daily 條目數都等於 session 數，檔頭只有一個"
+
+echo "[cli-memory] (issue-33 SCN-006) a held write lock is waited on for 5 seconds"
+# Holds a RESERVED lock (BEGIN IMMEDIATE) for $1 ms, announcing it via a marker file.
+hold_write_lock() {
+    node -e "
+      const D=require('$BSQ'); const fs=require('fs');
+      const db=new D(process.argv[1]);
+      db.exec('BEGIN IMMEDIATE');
+      fs.writeFileSync(process.argv[3], 'held');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.argv[2]));
+      db.exec('COMMIT');
+    " "$H33/.memory/sessions.db" "$1" "$2"
+}
+wait_marker() { for _ in $(seq 1 100); do [ -f "$1" ] && return 0; sleep 0.05; done; echo "  ✗ lock holder never started"; exit 1; }
+
+hold_write_lock 2000 "$TMP_DIR/lock-short" & HOLDER=$!
+wait_marker "$TMP_DIR/lock-short"
+SHORT_OUT=$(cli33 remember "鎖持有 2 秒時寫入" --project demo33 --json)
+wait "$HOLDER"
+[ "$(echo "$SHORT_OUT" | jq_field '.data.created')" = "true" ] || { echo "  ✗ 2 秒的鎖之後 remember 應成功: $SHORT_OUT"; exit 1; }
+
+hold_write_lock 8000 "$TMP_DIR/lock-long" & HOLDER=$!
+wait_marker "$TMP_DIR/lock-long"
+LONG_START=$(date +%s%N)
+LONG_STATUS=0
+cli33 remember "鎖持有 8 秒時寫入" --project demo33 --json > "$TMP_DIR/long.out" 2> "$TMP_DIR/long.err" || LONG_STATUS=$?
+LONG_MS=$(( ($(date +%s%N) - LONG_START) / 1000000 ))
+wait "$HOLDER"
+[ "$LONG_STATUS" != "0" ] || { echo "  ✗ 8 秒的鎖期間 remember 應失敗"; exit 1; }
+grep -q "database is locked" "$TMP_DIR/long.err" || { echo "  ✗ 錯誤應含 database is locked: $(cat "$TMP_DIR/long.err")"; exit 1; }
+# The write gives up after its 5 s wait; rolling back the half-written note (issue-31) then waits
+# for the same lock again, up to another 5 s — so the command ends between ~5 s and ~10 s.
+[ "$LONG_MS" -ge 4500 ] && [ "$LONG_MS" -lt 10500 ] || { echo "  ✗ 應等待約 5 秒才放棄、總計不超過約 10 秒，實際 ${LONG_MS}ms"; exit 1; }
+[ "$(q33 "SELECT COUNT(*) FROM sessions WHERE summary LIKE ?" "%鎖持有 8 秒時寫入%")" = "0" ] || { echo "  ✗ 失敗的寫入留下了筆記"; exit 1; }
+echo "  鎖持有 2 秒時等待後成功；持有 8 秒時 ${LONG_MS}ms 後以 database is locked 失敗，沒有留下筆記"
+
 echo "[cli-memory] ✓ all checks passed"

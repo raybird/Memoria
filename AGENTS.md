@@ -205,7 +205,7 @@ All business logic lives in `src/core/`; CLI, HTTP server and SDK share that cor
 - `recallTelemetry({ window, limit, zeroUtility })` – raw recall routing telemetry rows; `zeroUtility` keeps only recalls reported useless or with no hits
 - `governanceReview({ project, scope, limit })` – deterministic governance candidate review
 - `repoAdd(input)` / `repoList()` / `repoStatus(ref)` / `repoRelocate(ref, path)` / `repoRemove(ref, opts)` – git repository registry (read-only observation; fingerprint identity)
-- `repoSync(ref, opts)` – incremental scan → events → deterministic summaries → promotion (`dryRun` writes nothing; serialized per repository in-process)
+- `repoSync(ref, opts)` – incremental scan → events → deterministic summaries → promotion (`dryRun` writes nothing; serialized per repository in-process and, through a lease in `git_sync_leases`, across processes — `repository_sync_busy` after `MEMORIA_REPO_SYNC_WAIT_MS`)
 - `repoSummarize(ref, opts)` – branch/range/merge/tag summaries; `promote` forces promotion
 - `repoPendingSummaries(ref)` / `repoSubmitSummary(ref, summaryId, payload)` – agent enrichment loop (deterministic skeleton → validated write-back → auto-promotion); a merge or release write-back also dismisses the commit-range skeletons it covers; recall hits from promoted summaries carry `hit.source`
 
@@ -231,7 +231,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `POST` | `/v1/repos` | Register a git repository for read-only observation (`{path, name?, ...}`) |
 | `GET`  | `/v1/repos` | List observed repositories |
 | `GET`  | `/v1/repos/:ref/status` | Registry + live git state (`:ref` = id, name, or path) |
-| `POST` | `/v1/repos/:ref/sync` | Incremental scan (`{generate_summaries?, dry_run?, force_summary?, from?, to?}`) |
+| `POST` | `/v1/repos/:ref/sync` | Incremental scan (`{generate_summaries?, dry_run?, force_summary?, from?, to?}`); `409` `repository_sync_busy` when another process holds the repository's sync lease past `MEMORIA_REPO_SYNC_WAIT_MS` |
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag or pending events |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summary requests awaiting agent enrichment (`?with_diff=true&limit=20`; diff omitted by default) |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent write-back of a structured summary payload |
