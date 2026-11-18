@@ -8,12 +8,12 @@
 
 ## 0. TL;DR（30 秒版）
 
-> 2026-11-11 當前狀態
+> 2026-11-18 當前狀態
 
-- **已發布版本**：[`v1.38.0`](https://github.com/raybird/Memoria/releases/tag/v1.38.0)（2026-11-11）；前一版為 `v1.37.0`（2026-11-10）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/42970165449) 成功，四平台安裝包與 `install.sh` 已上傳，交付一致性檢查通過，npm `latest` 為 1.38.0，registry 確認由 trusted publisher 發布並帶 provenance。
-- **交付內容**：issue-32（`docs/issues/issue-32/`）。`remember --verify "<命令>"` 把快照類記憶標成狀態類，recall 與 brief 顯示「截至 <UTC 日期>；據以行動前先跑 <命令>」，brief 有查證行時加一行固定說明；Memoria 只存、只顯示，不執行命令。與 `--durable` 互斥，`--verify` 拒絕換行與控制字元。BRIEF 正文顯示產生時間。migration 17 新增 `memory_attributes.verify_cmd`。三輪獨立審查，第三輪 PASS；發版提交 `3a5feae`。
-- **使用入口**：`npm i -g @raybird.chen/memoria@1.38.0` 後重跑 `memoria setup` 刷新部署的 skill（含何時加 `--verify` 的指引）。helper 的 lockfile 沒變，不必重跑 `setup --vector`。比對或解析 BRIEF `- 範圍:` 行的下游要容許新增的 `｜ 產生於 <時間>`。
-- **下一步**：issue-32 留下的已知限制：`--verify` 仍接受 Unicode 格式字元（U+202E、U+200B 等）與前後換行 trim 後的值（TBD-9）；前一版 runtime 不擋 `--verify` 與 `--durable` 互斥。issue-31 審查留下兩個不阻擋的項目：部署版 skill 收尾段沒有提到 `tree index`（N-3）；以 root 執行時 SCN-002／003 只印略過（N-5）。`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
+- **已發布版本**：[`v1.39.0`](https://github.com/raybird/Memoria/releases/tag/v1.39.0)（2026-11-18）；前一版為 `v1.38.0`（2026-11-11）。[Release workflow](https://github.com/raybird/Memoria/actions/runs/44259593596) 成功，四平台安裝包與 `install.sh` 已上傳，交付一致性檢查通過，npm `latest` 為 1.39.0，registry 確認由 trusted publisher 發布並帶 provenance。
+- **交付內容**：issue-33（`docs/issues/issue-33/`）。多個程式共用一份資料根時：`repo sync` 以 `git_sync_leases`（migration 18）跨程式租約序列化，不再重複記錄事件，等超過 `MEMORIA_REPO_SYNC_WAIT_MS`（預設 120 秒）回 `repository_sync_busy`（CLI exit 1、HTTP 409），dry-run 只等待；Daily 筆記改為只附加、新檔以 hard link 出現，並行 `remember` 不再掉條目；SQLite 鎖等待明確寫成 5 秒。三輪獨立審查，第三輪 PASS；發版提交 `6ab2d47`。
+- **使用入口**：`npm i -g @raybird.chen/memoria@1.39.0`；部署的 skill 內容沒變，`memoria setup` 只更新版本號，helper 的 lockfile 沒變，不必重跑 `setup --vector`。共用同一份資料根的 runtime 要一起升級：前一版不理會租約，與新版並行時不會被序列化。
+- **下一步**：issue-33 留下兩個不阻擋的測試項目（review-d34b352）：超大 TTL 測試沒有斷言 sync 成功，且在 `NODE_NO_WARNINGS=1` 下會假綠（R3-a）；等不到租約時沒有先收掉背景 sync，最壞 20～30 秒才判定失敗（R3-b）。沒有 hard link 的檔案系統退回 `wx` 建 Daily，仍有較窄的時間窗。issue-32 留下的已知限制：`--verify` 仍接受 Unicode 格式字元（U+202E、U+200B 等）與前後換行 trim 後的值（TBD-9）；前一版 runtime 不擋 `--verify` 與 `--durable` 互斥。issue-31 審查留下兩個不阻擋的項目：部署版 skill 收尾段沒有提到 `tree index`（N-3）；以 root 執行時 SCN-002／003 只印略過（N-5）。`--server`（issue-13 第二階段）維護者已明確延後。已知未修：查詢文字沒有清除指令；規劃器依 committer time 排序，同秒或 rebase 後的提交會讓 range 的 `base..head` 為空或過大；`queryRecallFts` 以 0.001 容差排序，同分結果的順序在不同次執行間可能互換。韓文語尾（如 `습니다`）沒有平假名那樣的分隔方式，仍可能干擾排序，真實語料尚未驗證。
 
 ### 歷史摘要（2026-08-14；保留原日期與當時狀態）
 
