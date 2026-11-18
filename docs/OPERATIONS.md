@@ -460,7 +460,8 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
   recorded every event (17 `git_events` where one sync records 9). A process takes a lease row in
   `git_sync_leases` (migration 18) for the whole sync, renews it every 15s, and deletes it when done;
   a row nobody renewed for 60s — its holder died — is taken over. A second sync polls for the lease
-  up to `MEMORIA_REPO_SYNC_WAIT_MS` (default 120000), then fails with `repository_sync_busy` and
+  up to `MEMORIA_REPO_SYNC_WAIT_MS` (default 120000; a value that is not a positive number of
+  milliseconds falls back to the default), then fails with `repository_sync_busy` and
   writes nothing. `--dry-run` waits the same way but never takes the lease: taking it is a write.
   Inside one process (an HTTP server) syncs still queue in memory first.
 - **Scan lag**: `brief` shows `未掃描 commit: N` on a repository with commits past its last `repo sync`, and `doctor` lists them under `repo scan`. N is what a sync would discover (same as `repo sync --dry-run`'s `new_commits`). It never fails `doctor`: unscanned commits are normal between syncs. An unmeasurable repository is named as `not measured` and stays `null` in brief JSON.

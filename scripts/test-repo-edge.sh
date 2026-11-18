@@ -12,7 +12,8 @@
 #   6. issue-33: syncs of one repository from SEPARATE processes are serialized by a lease in
 #      the DB — concurrent syncs record exactly what one sync records; a live lease past
 #      MEMORIA_REPO_SYNC_WAIT_MS fails with repository_sync_busy and writes nothing; an
-#      expired lease is taken over; --dry-run waits for the lease without taking it
+#      expired lease is taken over; --dry-run waits for the lease without taking it; a sync that
+#      outlives the lease TTL keeps it by renewing (test-only MEMORIA_REPO_SYNC_LEASE_TTL_MS)
 
 set -euo pipefail
 
@@ -256,5 +257,40 @@ assert_eq "takeover sync ok" "$(json_get "$TAKEOVER" "d.ok")" "true"
 assert_eq "takeover did not wait for the limit" "$(test "$TAKEOVER_MS" -lt 10000 && echo yes)" "yes"
 assert_eq "takeover recorded the pending commit" "$(json_get "$TAKEOVER" "d.data.new_commits")" "1"
 assert_eq "no lease left behind after takeover" "$(db_at "$CONC_DB" "SELECT COUNT(*) FROM git_sync_leases")" "0"
+# The control home gets the same extra commit and one plain sync: the busy sync, the dry run and
+# the takeover together must have recorded exactly what that records.
+echo "after" >> "$TMP_DIR/conc-control-repo/base.txt"
+git -C "$TMP_DIR/conc-control-repo" add base.txt
+git -C "$TMP_DIR/conc-control-repo" "${GIT_ID[@]}" commit -q -m "after conc"
+MEMORIA_HOME="$CTRL_HOME" "$CLI" repo sync conc --json >/dev/null
+assert_eq "takeover records what a sync with no stale lease records" \
+    "$(sync_shape "$CONC_DB")" "$(sync_shape "$CTRL_HOME/.memory/sessions.db")"
+
+echo "[repo-edge] (issue-33) a sync that outlives the lease TTL renews it and is not taken over"
+# Every git call of the first sync sleeps, so it runs well past a 3s TTL; the second sync starts
+# while it is running. Without renewal the lease expires mid-sync, the second one takes it over and
+# both record every event (as SCN-001 without a lease).
+SLOW_BIN="$TMP_DIR/slow-git-bin"
+mkdir -p "$SLOW_BIN"
+printf '#!/usr/bin/env bash\nsleep 0.4\nexec %q "$@"\n' "$(command -v git)" > "$SLOW_BIN/git"
+chmod +x "$SLOW_BIN/git"
+RENEW_HOME="$TMP_DIR/renew"
+conc_fixture "$RENEW_HOME" "$TMP_DIR/renew-repo"
+RENEW_START=$(date +%s%N)
+( PATH="$SLOW_BIN:$PATH" MEMORIA_HOME="$RENEW_HOME" MEMORIA_REPO_SYNC_LEASE_TTL_MS=3000 \
+    "$CLI" repo sync conc --json > "$TMP_DIR/renew-a.json" 2>&1
+  echo $(( ($(date +%s%N) - RENEW_START) / 1000000 )) > "$TMP_DIR/renew-a.ms" ) & PID_RA=$!
+sleep 0.8
+MEMORIA_HOME="$RENEW_HOME" MEMORIA_REPO_SYNC_LEASE_TTL_MS=3000 MEMORIA_REPO_SYNC_WAIT_MS=60000 \
+    "$CLI" repo sync conc --json > "$TMP_DIR/renew-b.json" 2>&1 & PID_RB=$!
+STATUS_RA=0; wait "$PID_RA" || STATUS_RA=$?
+STATUS_RB=0; wait "$PID_RB" || STATUS_RB=$?
+assert_eq "slow sync exits 0" "$STATUS_RA" "0"
+assert_eq "waiting sync exits 0" "$STATUS_RB" "0"
+assert_eq "the slow sync really outlived the TTL" "$(test "$(cat "$TMP_DIR/renew-a.ms")" -gt 4000 && echo yes)" "yes"
+assert_eq "renewed lease: the two syncs record what one sync records" \
+    "$(sync_shape "$RENEW_HOME/.memory/sessions.db")" "$CTRL_SHAPE"
+assert_eq "no lease left behind after renewal" \
+    "$(db_at "$RENEW_HOME/.memory/sessions.db" "SELECT COUNT(*) FROM git_sync_leases")" "0"
 
 echo "[repo-edge] PASS"

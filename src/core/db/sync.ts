@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { safeDate, skillFileStem, slugify } from '../utils.js'
@@ -21,14 +22,32 @@ export async function syncDailyNote(memoriaHome: string, dbPath: string, session
 
         // Append, never read-modify-write: several processes (one CLI per worktree) remember at
         // once, and a whole-file rewrite let the last writer drop the others' entries (issue-33).
-        // `wx` makes exactly one creator write the header; the bytes match the old output.
-        try {
-            await fs.writeFile(notePath, `# ${date}\n\n`, { encoding: 'utf8', flag: 'wx' })
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-        }
+        await createDailyNoteWithHeader(notePath, `# ${date}\n\n`)
         await fs.appendFile(notePath, newEntry, 'utf8')
     })
+}
+
+// The note must never be visible without its header. Creating it with `wx` and then writing was
+// not enough: the header write lands at offset 0, so an entry another process appended in between
+// lost its first bytes (review-9d76366 M1). The header is written to a private file first and the
+// note appears by hard link, which fails with EEXIST for every writer but the first.
+async function createDailyNoteWithHeader(notePath: string, header: string): Promise<void> {
+    const staging = `${notePath}.${process.pid}.${randomUUID()}.tmp`
+    await fs.writeFile(staging, header, 'utf8')
+    try {
+        await fs.link(staging, notePath)
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code
+        if (code === 'EEXIST') return
+        // A filesystem without hard links: fall back to exclusive create, the narrower race.
+        try {
+            await fs.writeFile(notePath, header, { encoding: 'utf8', flag: 'wx' })
+        } catch (fallbackError) {
+            if ((fallbackError as NodeJS.ErrnoException).code !== 'EEXIST') throw fallbackError
+        }
+    } finally {
+        await fs.rm(staging, { force: true })
+    }
 }
 
 export async function extractDecisions(memoriaHome: string, dbPath: string, sessionId: string): Promise<void> {

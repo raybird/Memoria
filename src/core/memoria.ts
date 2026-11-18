@@ -161,14 +161,14 @@ const DEFAULT_PENDING_SUMMARY_LIMIT = 20
 // processes each recorded every event). See withCrossProcessSyncLease.
 const repoSyncLocks = new Map<string, Promise<void>>()
 
-const SYNC_LEASE_TTL_MS = 60_000
-const SYNC_LEASE_RENEW_MS = 15_000
+const DEFAULT_SYNC_LEASE_TTL_MS = 60_000
 const SYNC_LEASE_POLL_MS = 200
 const DEFAULT_SYNC_WAIT_MS = 120_000
 
-function resolveSyncWaitMs(): number {
-    const fromEnv = Number(process.env.MEMORIA_REPO_SYNC_WAIT_MS)
-    return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_SYNC_WAIT_MS
+// A positive number of milliseconds from the environment, else the default.
+function envMs(name: string, fallback: number): number {
+    const fromEnv = Number(process.env[name])
+    return Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : fallback
 }
 
 function syncBusyError(repositoryName: string, holder: SyncLeaseHolder): Error {
@@ -186,7 +186,7 @@ async function withCrossProcessSyncLease<T>(
     dryRun: boolean,
     fn: () => Promise<T>
 ): Promise<T> {
-    const deadline = Date.now() + resolveSyncWaitMs()
+    const deadline = Date.now() + envMs('MEMORIA_REPO_SYNC_WAIT_MS', DEFAULT_SYNC_WAIT_MS)
     if (dryRun) {
         for (;;) {
             const holder = peekSyncLease(dbPath, repository.id)
@@ -196,9 +196,13 @@ async function withCrossProcessSyncLease<T>(
         }
     }
 
+    // MEMORIA_REPO_SYNC_LEASE_TTL_MS is a test hook, deliberately undocumented: it lets
+    // scripts/test-repo-edge.sh prove renewal keeps a sync that outlives the TTL from being taken
+    // over, without a 60-second test. The lease is renewed four times per TTL.
+    const ttlMs = envMs('MEMORIA_REPO_SYNC_LEASE_TTL_MS', DEFAULT_SYNC_LEASE_TTL_MS)
     let lease: SyncLease
     for (;;) {
-        const attempt = tryAcquireSyncLease(dbPath, repository.id, SYNC_LEASE_TTL_MS)
+        const attempt = tryAcquireSyncLease(dbPath, repository.id, ttlMs)
         if ('lease' in attempt) { lease = attempt.lease; break }
         if (Date.now() >= deadline) throw syncBusyError(repository.name, attempt.holder)
         await sleep(SYNC_LEASE_POLL_MS)
@@ -207,19 +211,25 @@ async function withCrossProcessSyncLease<T>(
         // A failed renewal must not abort the sync: the worst case is the lease expiring, which
         // is exactly the pre-issue-33 behaviour, not something worse.
         try {
-            if (!renewSyncLease(dbPath, lease, SYNC_LEASE_TTL_MS)) {
+            if (!renewSyncLease(dbPath, lease, ttlMs)) {
                 console.warn(`[memoria] sync lease for ${repository.name} was taken over after it expired`)
             }
         } catch (error) {
             console.warn(`[memoria] could not renew sync lease for ${repository.name}: ${(error as Error).message}`)
         }
-    }, SYNC_LEASE_RENEW_MS)
+    }, ttlMs / 4)
     heartbeat.unref()
     try {
         return await fn()
     } finally {
         clearInterval(heartbeat)
-        releaseSyncLease(dbPath, lease)
+        // A failed release must not turn a finished sync into an error: the lease then expires
+        // after one TTL, which only delays the next sync.
+        try {
+            releaseSyncLease(dbPath, lease)
+        } catch (error) {
+            console.warn(`[memoria] could not release sync lease for ${repository.name}: ${(error as Error).message}`)
+        }
     }
 }
 
@@ -1025,8 +1035,9 @@ export class MemoriaCore {
     }
 
     // Shared by repoAdd (initial scan) and repoSync. Serialized per repository — see
-    // withRepoSyncLock and withCrossProcessSyncLease. Dry runs write nothing but still queue, so
-    // they observe settled state.
+    // withRepoSyncLock and withCrossProcessSyncLease. Dry runs write nothing but still wait for a
+    // sync in progress, so they never preview a half-written scan. Across processes they do not
+    // hold the lease, so a sync may start while a dry run is previewing.
     private async performRepoSync(ref: string, options: RepoSyncOptions): Promise<RepoSyncData> {
         const hostId = await getHostId(this.paths.memoryDir)
         const preflight = findRepository(this.paths.dbPath, ref, hostId)

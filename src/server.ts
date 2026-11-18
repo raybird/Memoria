@@ -198,11 +198,12 @@ function formatZodError(error: z.ZodError): string {
 // Map git-integration error codes (spec §24) onto HTTP statuses.
 function gitErrorStatus(error?: string): number {
     if (!error) return 500
+    // First: the message embeds the repository name, which may itself contain another code.
+    if (error.startsWith('repository_sync_busy')) return 409
     if (error.includes('not_found')) return 404
     if (error.startsWith('invalid summary payload') || error.startsWith('invalid --range') ||
         error.startsWith('invalid dismiss types')) return 400
-    if (error.includes('summary_not_pending') || error.includes('summary_already_promoted') ||
-        error.startsWith('repository_sync_busy')) return 409
+    if (error.includes('summary_not_pending') || error.includes('summary_already_promoted')) return 409
     if (error.includes('not_a_git_repository') || error.includes('identity_mismatch') ||
         error.includes('repository_disabled') || error.includes('unborn_branch')) return 422
     return 500

@@ -152,16 +152,30 @@ export function peekSyncLease(dbPath: string, repositoryId: string): LeaseHolder
 | 兩個 worktree 收尾時同時 `memoria repo sync <repo>` | 兩個都立刻完成，事件重複 | 後到的那個等先到的完成，再做一次沒有新東西的 sync |
 | 另一個 sync 卡住超過等待上限 | 不適用 | `repository_sync_busy: …`，exit 1，什麼都沒寫；稍後重跑 |
 | `memoria repo sync <repo> --dry-run` 遇到進行中的 sync | 不等待（跨程式） | 等到對方完成才預覽 |
+8. ✅ **依第一輪審查修正**（[review-9d76366](./review-9d76366.md)；M1、S1、S2、N2～N6，範圍見 README TBD-6）
+   - 產出：
+     - M1：`sync.ts` 的 `createDailyNoteWithHeader`，新 Daily 先把檔頭寫進同目錄的暫存檔，再以 `fs.link` 建立正式檔（`EEXIST` 時跳過），之後照舊附加；沒有 hard link 的檔案系統退回原本的 `wx`。新增 `scripts/daily-race-driver.mts`，`test-cli-memory.sh` 以它讓 16 個程式在同一時刻對尚未存在的 Daily 呼叫 `syncDailyNote`，跑 30 輪，並檢查 Daily 目錄沒有殘留暫存檔。
+     - S1：`MEMORIA_REPO_SYNC_LEASE_TTL_MS`（只給測試用，不寫進使用者文件），續約間隔為 TTL 的四分之一；`test-repo-edge.sh` 新增 TTL 3 秒、git 每次呼叫慢 0.4 秒的長 sync，第二個 sync 在它進行中開始。
+     - S2：SCN-003 的「事件筆數與沒有殘留租約時相同」改為和對照資料根（同樣多一個 commit 後 sync 一次）比較 `sync_shape`。
+     - N2 `gitErrorStatus` 先判斷 `repository_sync_busy`；N3 釋放租約失敗只警告、不蓋掉已成功的 sync；N4 `OPERATIONS.md` 補上無效的 `MEMORIA_REPO_SYNC_WAIT_MS` 退回預設；N5 測試策略表更正；N6 `performRepoSync` 的 dry-run 註解更正。
+   - 相依：步驟 1～7。
+   - 完成判準：M1 與 S1 的新測試修改前紅燈、修改後綠燈；CI 對照清單全綠。
+   - 證據（2026-11-18）：
+     - M1 量測：driver 對原寫法每輪約 15% 壞掉（16 個程式 × 20 輪，三次分別 3、3、5 輪 `15 entries, 1 headers for 16 sessions`）。只拿原寫法的 `sync.ts`（`git show HEAD:src/core/db/sync.ts`）重新 build，`bash scripts/test-cli-memory.sh` exit 1：`✗ 6/30 rounds lost or corrupted Daily entries`。換回修正後 exit 0：`30 輪、每輪 16 個程式在同一時刻寫入尚未存在的 Daily，條目與檔頭都完整`，逐位元組比對與 SCN-006（8037ms）照舊通過。修正後另以 driver 手動跑 3 × 30 輪全綠，Daily 目錄只有 `.md`。`wiki-build` 只讀 `.md`，建檔途中的暫存檔不會被收進 wiki。
+     - S1：暫時把續約呼叫短路（`if (false && !renewSyncLease(...))`）後 build，`bash scripts/test-repo-edge.sh` exit 1：`✗ renewed lease: the two syncs record what one sync records`，`head_changed=2`（對照為 1）；長 sync 確實超過 TTL（`✓ the slow sync really outlived the TTL`）。還原後 exit 0，`[repo-edge] PASS`。
+     - S2：新斷言 `✓ takeover records what a sync with no stale lease records`；它強化既有的回歸測試，修改前的行為本來就通過，不要求紅燈（同步驟 1 對 SCN-003 的判定）。
+     - CI：`env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME` 下跑完整清單（靜態檢查 5 項加五組 32 支腳本），37 項全部 PASS。
+     - 精煉（code-simplify）：CI 後把 `resolveSyncWaitMs` 與新加的 TTL 解析合併成 `envMs(name, fallback)`，行為不變；重跑 `pnpm run check`、`pnpm run build`、`test-repo-edge`、`test-repo-promotion`、`test-repo-sync` 全部 PASS。N7（兩個輪詢迴圈）照步驟 7 的判定維持分開。
 
 ## 測試策略
 
 | 驗收 | 層級 | 位置 |
 |---|---|---|
 | SCN-001～004 | 端到端，真的跨程式 | `scripts/test-repo-edge.sh` |
-| SCN-002（HTTP） | HTTP 契約 | `scripts/test-http-api.sh` |
+| SCN-002（HTTP） | HTTP 契約 | `scripts/test-repo-promotion.sh`（repo 端點的狀態碼測試都在這支，見步驟 3） |
 | SCN-005、SCN-006 | 端到端，真的跨程式 | `scripts/test-cli-memory.sh` |
 
-都是單迴圈：這幾項行為只有在真正的多程式之下才看得到，沒有獨立的單元層級失敗面。租約模組的邊界（過期判定、token 不符時不釋放）由 SCN-003 與 SCN-001 的「租約表沒有殘留」間接覆蓋。
+都是單迴圈：這幾項行為只有在真正的多程式之下才看得到，沒有獨立的單元層級失敗面。租約模組的邊界（過期判定、token 不符時不釋放）由 SCN-003 與 SCN-001 的「租約表沒有殘留」間接覆蓋；續約由 `test-repo-edge.sh` 的長 sync 測試覆蓋（步驟 8）。
 
 ## 檢查清單
 

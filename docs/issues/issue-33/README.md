@@ -29,7 +29,7 @@ worktree A 取得該 repo 的 sync 租約 → B 發現租約有效，等待 → 
 | 同一 repo 跨程式同時 sync | 各自寫入，事件與 ref 重複 | 依序執行，結果與單獨 sync 相同 |
 | 另一個程式 sync 太久 | 不會發生（不等待） | 等到上限後報 `repository_sync_busy`，什麼都不寫；HTTP 回 409 |
 | 握著租約的程式當掉 | 不適用 | 租約過期後下一個 sync 可接手 |
-| Daily 筆記 | 讀出整份再寫回 | 直接附加在檔尾，檔頭只在建立時寫一次 |
+| Daily 筆記 | 讀出整份再寫回 | 直接附加在檔尾；新檔以 hard link 出現時就已含檔頭，只建立一次 |
 | 資料庫鎖等待時間 | 未設定，沿用預設 5 秒 | 在程式中明確設定為 5 秒，行為不變 |
 
 ## 涉及檔案
@@ -40,13 +40,16 @@ src/core/
 ├── db/schema.ts          # 可改：initDatabase 帶上鎖等待時間；migration 18 新增 git_sync_leases
 ├── db/verify.ts          # 可改：唯讀開連線時帶上同一個等待時間
 ├── db/git-sync-lease.ts  # 新增：租約的取得、續約、釋放與查詢
-├── db/sync.ts            # 可改：syncDailyNote 改為附加寫入
+├── db/sync.ts            # 可改：syncDailyNote 改為附加寫入，新檔以 hard link 建立
 ├── memoria.ts            # 可改：performRepoSync 在程式內鎖之後再取跨程式租約
 ├── db/git-scan.ts        # 不可觸及：掃描與事件寫入邏輯不變
 └── git/                  # 不可觸及
 src/server.ts             # 可改：repository_sync_busy 對應 409
-scripts/test-repo-edge.sh # 可改：跨程式同時 sync、租約逾時與接手
+scripts/test-repo-edge.sh # 可改：跨程式同時 sync、租約逾時、接手與續約
+scripts/test-repo-promotion.sh # 可改：sync 被佔住時 HTTP 409
 scripts/test-cli-memory.sh # 可改：同時 remember 的 Daily 筆數、鎖等待
+scripts/daily-race-driver.mts # 新增：多個程式同一時刻呼叫 syncDailyNote
+AGENTS.md、docs/agents/project.md  # 常青文件（repoSync 說明、HTTP 409；地雷 M-4）
 docs/OPERATIONS.md、docs/API.md、docs/API.zh-TW.md、docs/agents/architecture.md  # 常青文件
 ```
 
@@ -143,6 +146,7 @@ Feature: 多個程式同時使用同一份資料根時，記錄不重複、不�
 | TBD-3 | HTTP 遇到 `repository_sync_busy` 回什麼狀態碼 | 已解決 | 2026-11-17 使用者「照建議」：409，與既有的 `summary_not_pending` 同為「目前狀態不允許這次操作」。SCN-002 |
 | TBD-4 | dry-run 遇到進行中的 sync 怎麼辦 | 已解決 | 2026-11-17 使用者「照建議」：只等待、不取得租約。dry-run 承諾什麼都不寫（spec §19.4），取得租約本身就是寫入。SCN-004 |
 | TBD-5 | SCN-006 的失敗時間：characterization test 實測（2026-11-17，修改鎖等待設定之前）8 秒的鎖期間 `remember` 在 8033ms 才失敗。追蹤顯示 `INSERT INTO sessions` 在 5006ms 正確放棄，接著 issue-31 的撤回 `DELETE FROM events` 等到持有者釋放才完成。原本核准的「約 5 秒後以非 0 結束」與現況不符，改為「寫入等約 5 秒後放棄，總計約 5～10 秒」 | 已解決 | 2026-11-18 使用者確認修訂後的寫法，SCN-006 重新核准；步驟 4 的等價證據依修訂後的判準取得 |
+| TBD-6 | 續約沒有自動化測試（review-9d76366 S1）：要加只給測試用的 TTL 覆寫變數把續約實驗寫成測試，或只記手動實驗為等價證據 | 已解決 | 2026-11-18 使用者選「加測試用 TTL 變數」：`MEMORIA_REPO_SYNC_LEASE_TTL_MS`，不寫進使用者文件，續約間隔為 TTL 的四分之一；同時選「S2＋小項一起修」：S2、N2～N6 一併處理，N1、N7 不處理（追蹤：無。N1 的 5 秒值由 `SQLITE_BUSY_TIMEOUT_MS` 常數與行為不變的等價證據守住；N7 兩個輪詢迴圈刻意分開唯讀與寫入，見步驟 7 精煉紀錄） |
 
 ## Timeline
 
@@ -153,6 +157,7 @@ Feature: 多個程式同時使用同一份資料根時，記錄不重複、不�
 | 2026-11-17 | 規格修訂：SCN-006 的失敗時間依實測改為約 5～10 秒（TBD-5），待重新核准 | - |
 | 2026-11-18 | SCN-006 重新核准（TBD-5 解決）；步驟 1～7 全部完成，待提交 | - |
 | 2026-11-18 | 第一輪獨立審查（review-9d76366）：RETURN TO execute-task，M1 Daily 建檔時檔頭覆蓋並行附加的條目 | - |
+| 2026-11-18 | TBD-6 解決；依審查修正 M1、S1、S2、N2～N6（步驟 8） | - |
 
 ---
 **建立日期**: 2026-11-17  
