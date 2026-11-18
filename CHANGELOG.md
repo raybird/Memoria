@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-11-18
+
+### Fixed
+- **Two processes syncing the same repository no longer record every git event twice.** All worktrees of one repository are a single repository in Memoria, and a skill-style deployment starts one `memoria` CLI per worktree, but `repo sync` was serialized only inside one process. Two concurrent syncs of a repository with a `--no-ff` merge and a tag recorded 17 `git_events` instead of 9 and kept every current ref twice. A sync now also holds a per-repository lease in the shared database (`git_sync_leases`): a second process waits for the first and then runs a sync that finds nothing new. The lease is renewed while a sync runs, so a long sync is not taken over; a lease left by a crashed process expires after 60 seconds and the next sync takes it over.
+- **Concurrent `remember` calls no longer lose Daily note entries.** The note was read, extended and rewritten whole, so with 16 processes writing at once some rounds kept 15 of 16 entries. Entries are now appended. A new note appears by hard-linking a private file that already holds the header, so it is never visible without its header and no entry is overwritten; on a filesystem without hard links it falls back to exclusive create. The bytes written are unchanged.
+
+### Added
+- **`MEMORIA_REPO_SYNC_WAIT_MS`** (default `120000`) caps how long a sync waits for another process's lease. Past it the sync fails with `repository_sync_busy: …` naming the holder's pid and host, writes nothing, and exits 1; `POST /v1/repos/:ref/sync` answers `409`. An invalid value falls back to the default.
+
+### Changed
+- **`repo sync --dry-run` waits for a sync running in another process** before previewing, and never takes the lease itself, since taking it is a write.
+- The SQLite lock wait is now set explicitly to 5 seconds (`SQLITE_BUSY_TIMEOUT_MS`), the value better-sqlite3 already used; behaviour is unchanged. A write blocked by another process's lock gives up after about 5 seconds; with the issue-31 rollback the command ends within about 5–10 seconds.
+
+### Compatibility and upgrade
+- **Migration 18 adds the `git_sync_leases` table.** The previous release can still read and write an upgraded database, but it ignores the table, so a sync from an older runtime running next to a newer one is not serialized against it. Upgrade every runtime that shares a data root.
+- HTTP clients of `POST /v1/repos/:ref/sync` should treat `409 repository_sync_busy` as "retry later".
+- The deployed skill and the helper's dependencies are unchanged; `memoria setup` only refreshes the version, and `--vector` does not need reinstalling.
+
 ## [1.38.0] - 2026-11-11
 
 ### Added
