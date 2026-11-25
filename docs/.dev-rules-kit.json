@@ -1,11 +1,11 @@
 {
   "files": {
-    "docs/AGENTS.md": "12e2a90a0cb2f2e0333aac6caa96a241ccdb14971d3dff1193321b396c74ec23",
-    "docs/agents/acceptance.md": "b37209981a7c8970f4fa8d75e83852a4710144d78817bea775983fa2a65f93e5",
+    "docs/AGENTS.md": "e17bbddcfa3995cee7bca480c25190d31ddb25b60a098353e9be8b9b91e4458c",
+    "docs/agents/acceptance.md": "206bb5ccee5e9dff49ab70c3a75474c5e6aaf58c3d3450556e299165caae9f9f",
     "docs/agents/document-types.md": "77e03e99a43eb84a140a7ac045bd049ca9355bdf767f986267d85859634be677",
     "docs/agents/issue-checklist.md": "944c67a6f2e660dcd2d113240b0f3cccd65008b2ecf2e01c014b5102ec32f51f",
-    "docs/agents/readme-templates.md": "8ea8d05d4161e02eee682d3120f2edd845fd99290f839299b0403cae3c2be55a",
-    "docs/agents/review-evidence.md": "811da8ad3b8041aa906dda7b15cea21026feb9208c731eb8472b3bed56a8988f",
+    "docs/agents/readme-templates.md": "c6a652e3d6d882a37c2472cc5ad1ec4f1dfa05cb98b0843c649533037cd1735f",
+    "docs/agents/review-evidence.md": "6dc77aacaca00aa7d2bd6b1231c032b1c5f0052e78796a13c2dba00ba7bb5cd1",
     "docs/agents/verification.md": "c2e2aa5c5cc36d5cf084f403e54768387a8eb5f4a3b20ab13e5c956540f1865b"
   },
   "format": 1
