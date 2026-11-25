@@ -67,7 +67,7 @@ import {
     type BriefOptions,
     type MemoryAttributePatch
 } from './db/index.js'
-import { CJK_CHAR, collapseNoteHits, hybridUsedKeyword } from './utils.js'
+import { CJK_CHAR, collapseNoteHits, hybridUsedKeyword, noteFingerprintOf } from './utils.js'
 import { queryMemoryPage, queryMemoryDetail, queryMemoryFacets } from './db/index.js'
 import type { MemoryFilter, MemoryPage, MemoryDetail, MemoryFacets, MemoryKind, MemorySearch } from './types.js'
 import { memorySearchSchema } from './db/memory-browser.js'
@@ -292,9 +292,9 @@ async function withResult<T>(
  *  fingerprint shared by its session (`note-`) and its event (`noteev-`); everything else — a
  *  git-promoted `gitdec-`, a synthetic session — stands alone. */
 function notePairOf(refId: string): string[] {
-    if (refId.startsWith('note-')) return [`noteev-${refId.slice('note-'.length)}`]
-    if (refId.startsWith('noteev-')) return [`note-${refId.slice('noteev-'.length)}`]
-    return []
+    const fingerprint = noteFingerprintOf(refId)
+    if (fingerprint === null) return []
+    return [refId.startsWith('noteev-') ? `note-${fingerprint}` : `noteev-${fingerprint}`]
 }
 
 export class MemoriaCore {

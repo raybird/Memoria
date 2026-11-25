@@ -421,6 +421,22 @@ for MODE34 in keyword hybrid tree; do
 done
 echo "  keyword/hybrid/tree：同一則筆記只出現一次"
 
+echo "[cli-memory] (issue-34 AC-1) the surviving row is the higher-ranked one, whichever half it is"
+# Explicit feedback decides which half ranks first: one home favours the event, the other the session.
+# A collapse that kept the lower-ranked row, or always one particular half, fails one of the two.
+Q34="axolotl ranking flip"
+for HI_HALF in noteev note; do
+    H34F="$TMP_DIR/home34-$HI_HALF"; cli34 "$H34F" init >/dev/null
+    FPF=$(cli34 "$H34F" remember "axolotl ranking flip probe" --project demo34 --rationale "axolotl ranking flip reason" --json | jq_field '.data.noteId')
+    if [ "$HI_HALF" = noteev ]; then HI="noteev-$FPF"; LO="note-$FPF"; else HI="note-$FPF"; LO="noteev-$FPF"; fi
+    RID=$(cli34 "$H34F" recall "$Q34" --project demo34 --json | jq_field '.meta.recall_id')
+    cli34 "$H34F" feedback "$RID" --signal explicit --score 1 --hits "$HI" >/dev/null
+    cli34 "$H34F" feedback "$RID" --signal explicit --score 0 --hits "$LO" >/dev/null
+    GOT=$(cli34 "$H34F" recall "$Q34" --project demo34 --json | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).data.map(h=>h.id).join(" ")))')
+    [ "$GOT" = "$HI" ] || { echo "  ✗ utility favours $HI, recall returned: $GOT"; exit 1; }
+done
+echo "  utility 偏向 event 時留 noteev-，偏向 session 時留 note-"
+
 echo "[cli-memory] (issue-34 AC-2) the freed slots go to the next distinct notes"
 for i in 1 2 3 4 5; do
     cli34 "$H34" remember "補滿測試第 $i 則 quokka 筆記" --project demo34 --rationale "quokka 理由 $i" >/dev/null

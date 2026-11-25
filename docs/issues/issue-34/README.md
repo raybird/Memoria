@@ -53,12 +53,20 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
    - 完成證據：2026-11-25 改動後 `pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`pnpm run release:docs-check` 通過；CI 的 core、adapters、wiki、http-mcp、repo 五組共 32 支腳本依序執行（同樣清掉 M-4 的變數），exit 皆 0。步驟 1 的四支腳本輸出與基準正規化後比對：`test-utility-ranking`、`test-http-api` 完全相同；`test-repo-promotion` 只差隨機 port 與測試 repo 的隨機 SHA；`test-vector-recall` 只差並行 ingest 期間的 recall 次數與新增段落。
    - 真實資料對照：以 `sqlite3 -readonly` 備份本機資料庫兩份，舊、新建置各跑 25 個查詞 × keyword／tree／hybrid × top-k 5、10。舊結果沒有成對筆記的 78 組，新結果的 id、順序、relevance、`route_mode`、`fallback_used` 逐筆相同（score 含以當下時間算的衰減，容許 1e-6 相對誤差）。有成對筆記的 72 組，新結果都沒有重複指紋，筆數都補到 2k 視窗內可得的不同筆數；其中 2 組（hybrid「migration」k=5、「fallback」k=10）非筆記命中的相對順序改變，見 TBD-1。
    - 文件：`docs/agents/architecture.md` recall 段與最後驗證日期、`AGENTS.md` 的 `recall(filter)` 說明。
+4. ✅ **處理 review-a6db261 的建議（S3、N3）** — 使用者 2026-11-25 選擇修正的兩項，結論見待確認事項 TBD-2、TBD-6。
+   - S3 完成證據：`scripts/test-cli-memory.sh` 新增「the surviving row is the higher-ranked one」段落，兩個隔離資料根以 explicit feedback 分別讓 event、session 排在前面，斷言 recall 只回排在前面的那一半。手動探測確認翻轉前 `note-` 在前、翻轉後依 utility 改變。反向改壞（`collapseNoteHits` 改成保留排名較後的一筆）後 `bash scripts/test-cli-memory.sh` exit 1，`utility favours noteev-3af6079e77d43eea, recall returned: note-3af6079e77d43eea`；還原後 exit 0。
+   - N3 完成證據：純重構，`notePairOf` 改用 `noteFingerprintOf`；以新舊兩個實作對 10 個邊界輸入（含 `note-`、`noteev-`、`note-noteev-x`、`gitdec-` 與空字串）比對輸出逐字相同。GitNexus impact（`notePairOf`）為 CRITICAL：直接呼叫者 `rememberNote`、`markMemory`，已告知使用者。改動前的同組綠燈為步驟 3 的 CI 全量執行；改動後 `pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help` 通過，`test-cli-memory`、`test-memory-attributes`、`test-smoke`、`test-brief-scope`、`test-setup-onboarding`、`test-memory-browser`、`test-ui-http`、`test-utility-ranking`、`test-http-api` exit 皆 0（2026-11-25，清掉 M-4 的變數）。
 
 ## 待確認事項
 
 | 編號 | 事項 | 狀態 | 影響 |
 |---|---|---|---|
-| TBD-1 | 有成對筆記而觸發補滿時，結果等於路由在 2 × top-k 視窗下的管線結果再去掉成對的那筆，因此非筆記命中的相對順序可能和改動前不同：hybrid 原本 k 筆內沒有任何命中帶 utility 時，`applyUtilityWeighting` 原樣回傳（tree 在前、不依分數排序），視窗加深後有命中帶 utility 就整批依分數重排。實例 hybrid「migration」k=5，新結果的順序和舊版 k=10 去掉成對那筆後相同。同理，補滿時被 superseded 濾掉的空位也會一起補上。沒有成對筆記的查詢不受影響。是否接受，或要求補滿時保留第一輪非筆記命中的順序 | 待確認 | AC-3 字面「順序與數量和改動前相同」在有成對筆記的查詢上不完全成立；AC-3 的檢查方式（三支腳本全綠）已通過 |
+| TBD-1 | 有成對筆記而觸發補滿時，結果等於路由在 2 × top-k 視窗下的管線結果再去掉成對的那筆，所以非筆記命中可能換位置，也可能換成員：keyword 的 FTS 與 LIKE 都先取 4 × limit 筆候選再依衰減分數重排，視窗加深後前幾名不一定相同，不需要任何 utility 或 superseded 標記（review-a6db261 S1，實測舊結果的非筆記命中被另兩筆取代）；hybrid 原本 k 筆內沒有命中帶 utility 時不依分數排序，視窗加深後有命中帶 utility 就整批重排。視窗內有被取代的筆記時，補一次仍可能不滿（S2，實測 6 則可見加 1 則被取代，--top-k 5 回 4 則，舊版回 2 則不同的）；先前「superseded 空位也會一起補上」的說法不成立。沒有成對筆記的查詢不受影響 | 已解決（2026-11-25 使用者選「接受並記錄」）：不改程式；AC-3 的「順序與數量和改動前相同」適用於沒有成對筆記的查詢，有成對筆記時以補滿後的結果為準；superseded 造成的不足不另開 issue，改動前 superseded 一律不補，這次沒有變差 | AC-3、AC-2 |
+| TBD-2 | review-a6db261 S3：AC-1「留排名較前的那一筆」沒有測試擋住，合併改成留排名較後的那筆時 test-cli-memory 仍全綠 | 已解決（2026-11-25 使用者選「修正」）：test-cli-memory 新增 utility 翻轉斷言，證據見步驟 4 | AC-1 |
+| TBD-3 | review-a6db261 S4：有成對筆記的 hybrid 查詢，route_mode 可能從 hybrid_fallback 變成 hybrid_tree，因為合併掉的那筆不再計入標籤；升級前後的 routeUtility 讀數會在升級點不連續 | 不影響本次交付（2026-11-25 使用者選「記錄並寫進 CHANGELOG」）。追蹤：無；行為依 issue-16「標籤看實際回傳的列」的規則，發版時在本版 CHANGELOG 條目寫明 routeUtility 讀數在升級點前後不連續 | AC-3 |
+| TBD-4 | review-a6db261 N1：POST /v1/recall 與 SDK 的 top_k 只驗 z.number()，負數與小數會進到 recall；-1 在沒有成對筆記的查詢上比改動前少一筆，2.5 不會補滿 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；CLI 的 --top-k 與 GET /v1/brief 已擋非正數，負數與小數在改動前就回無意義的筆數，合法輸入的行為不受影響 | 無 |
+| TBD-5 | review-a6db261 N2：補滿時，hybrid 標籤會把 2 × top-k 視窗截斷點之後被 superseded 濾掉的列也算進去 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；只影響 telemetry 標籤，而且需要同時有成對筆記、補滿與 superseded 的 keyword 專屬列，superseded 列計入標籤是改動前就有的慣例 | 無 |
+| TBD-6 | review-a6db261 N3：notePairOf 與 noteFingerprintOf 各自解析 note-／noteev- 前綴 | 已解決（2026-11-25 使用者選修正）：notePairOf 改用 noteFingerprintOf，證據見步驟 4 | 無 |
 
 ## Timeline
 
@@ -70,4 +78,4 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 審查通過（review-a6db261），建議待確認
+**狀態**: 建議修正完成，待增量覆審
