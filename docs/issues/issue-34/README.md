@@ -8,7 +8,7 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 
 ## 現況
 
-**現行 review**: review-a6db261.md
+**現行 review**: review-269a2aa.md
 
 ## 涉及檔案
 
@@ -78,4 +78,4 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 建議修正完成，待增量覆審
+**狀態**: 審查通過（review-269a2aa），建議待確認
