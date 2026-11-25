@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`recall` gives each note one slot.** `remember` stores a note as a session (`note-<fingerprint>`) and an event (`noteev-<fingerprint>`), and recall counted both, so a top-5 could hold three distinct memories. Only the higher-ranked of the two is kept now, and the freed slots go to the next distinct memories: when collapsing leaves fewer than `top_k` and the routes filled their window, recall runs them once more at `2 × top_k`. In `vector` mode that second pass reuses the helper's overfetched candidates, so the embedder still runs once per recall. A query with no note pair to collapse returns exactly what it did before (issue-34).
+
+### Compatibility and upgrade
+- **`routeUtility` readings are not comparable across this upgrade for hybrid queries that hit a note.** The hybrid label counts only the rows a caller receives; the collapsed half no longer does, so such a query can now read `hybrid_tree` where it read `hybrid_fallback`. Compare route utility within one side of the upgrade.
+- When a refill happens, the result is what the routes return at the deeper window minus the collapsed halves, so the other hits in it can differ from the previous release's.
+
 ## [1.39.0] - 2026-11-18
 
 ### Fixed
