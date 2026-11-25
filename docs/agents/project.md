@@ -1,6 +1,6 @@
 # 專案客製規範
 
-本檔由專案維護，初始化只在不存在時建立，更新上游時保留。規劃與交付前讀取；未填內容從 repo 的設定、現有文件與命令取得，不為填表猜測。
+規劃與交付前讀取；未填內容從 repo 的設定、現有文件與命令取得，不為填表猜測。
 
 共用規範以根目錄 `AGENTS.md` 為準；`CLAUDE.md` 以 `@AGENTS.md` 引入，只保留需要的 Claude 專用內容。
 
@@ -16,7 +16,7 @@
 
 - **提交格式**：`type(scope): 中文摘要`，scope 用模組名（`brief`、`recall`、`release`）或 `issue-N`。**不附任何 AI 署名或 `Co-Authored-By` 尾行**（根目錄 `AGENTS.md`「Commit Messages」）。本 repo 不使用 `Refs:` footer，issue 關聯寫在 scope 或內文。
 - **分支**：`issue-N-<描述>`（例：`issue-18-vector-coverage`）；遠端是 GitHub `origin`（`git@github.com:raybird/Memoria.git`，SSH）。
-- **併入方式與判定**：不開 PR、沒有 merge commit，issue 分支 rebase 後 fast-forward 進 `main`，原分支名因此不會出現在 `git branch --merged`。合併判定以 `git log main --grep "issue-N"` 有該 issue 的提交，加上 issue README 狀態為準；發版後另以 `docs/HANDOVER.md` §2 出貨紀錄有該版本列為準。
+- **併入方式與判定**：不開 PR、沒有 merge commit，issue 分支 rebase 後 fast-forward 進 `main`，原分支名因此不會出現在 `git branch --merged`。合併判定只看 Git：`git log main --grep "issue-N"` 有該 issue 的實作提交即已合併；rebase 時 `main` 沒有前進的話，現行審查報告的 Reviewed HEAD 也會是 `main` 的祖先，可作輔助確認。issue README 的 `**狀態**` 自流程契約 2.7 起在合併前就寫成 `已完成`，不代表已合併。發版後另以 `docs/HANDOVER.md` §2 出貨紀錄有該版本列為準。
 - **發版**：`pnpm run release:prepare <level>` → 編 CHANGELOG → `pnpm run release:publish`，細節與守門在 `RELEASE.md` 與 `scripts/release.sh`。npm 以 OIDC trusted publishing 發佈，沒有 token 可輪替。
 
 ## 常青文件更新責任
