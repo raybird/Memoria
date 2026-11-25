@@ -67,7 +67,7 @@ import {
     type BriefOptions,
     type MemoryAttributePatch
 } from './db/index.js'
-import { CJK_CHAR, hybridUsedKeyword } from './utils.js'
+import { CJK_CHAR, collapseNoteHits, hybridUsedKeyword } from './utils.js'
 import { queryMemoryPage, queryMemoryDetail, queryMemoryFacets } from './db/index.js'
 import type { MemoryFilter, MemoryPage, MemoryDetail, MemoryFacets, MemoryKind, MemorySearch } from './types.js'
 import { memorySearchSchema } from './db/memory-browser.js'
@@ -701,22 +701,12 @@ export class MemoriaCore {
                 }
             }
 
-            // Vector mode never touches the tree route: it is lexical floor + semantic index
-            // (RFC-semantic-recall §3). All other modes keep their exact pre-vector code paths.
-            const treeRaw = mode !== 'keyword' && mode !== 'vector'
-                ? recallTree(this.paths.dbPath, filter.query, filter.project, filter.scope, topK)
-                : []
-            const keywordRaw = mode === 'tree'
-                ? []
-                : recallKeyword(this.paths.dbPath, filter.query, filter.project, filter.scope, topK, afterDate)
             // Opt-in semantic route (LIBSQL_URL-gated, fail-open). Awaited before ranking; the
-            // keyword floor above is authoritative whenever this degrades.
+            // keyword floor is authoritative whenever this degrades. It runs once per recall: a
+            // refill pass (issue-34, below) deepens into its `candidates` rather than re-embedding.
             const vectorOutcome = mode === 'vector'
                 ? await recallVector(this.paths.dbPath, filter.query, filter.project, filter.scope, topK, afterDate)
                 : null
-
-            let routeMode: string = mode
-            let fallbackUsed = false
 
             type RawRecallRow = {
                 type: string
@@ -730,46 +720,105 @@ export class MemoriaCore {
                 node_id?: string
                 reasoning_path?: string[]
             }
+            type RouteResult = {
+                rows: RawRecallRow[]
+                routeMode: string
+                fallbackUsed: boolean
+                /** hybrid only: its label is decided after ranking, from what is returned. */
+                treeKeys?: string[]
+            }
+            const rowKey = (r: { id: string; session_id: string }): string => `${r.id}:${r.session_id}`
 
-            const raw: RawRecallRow[] = (() => {
-                if (mode === 'tree') {
-                    routeMode = 'tree'
-                    return treeRaw as RawRecallRow[]
-                }
-                if (mode === 'keyword') {
-                    routeMode = 'keyword'
-                    return keywordRaw as RawRecallRow[]
-                }
+            // One pass over the routes with a candidate window of `limit` rows.
+            const runRoutes = (limit: number): RouteResult => {
+                // Vector mode never touches the tree route: it is lexical floor + semantic index
+                // (RFC-semantic-recall §3). All other modes keep their exact pre-vector code paths.
+                const treeRaw = (mode !== 'keyword' && mode !== 'vector'
+                    ? recallTree(this.paths.dbPath, filter.query, filter.project, filter.scope, limit)
+                    : []) as RawRecallRow[]
+                const keywordRaw = (mode === 'tree'
+                    ? []
+                    : recallKeyword(this.paths.dbPath, filter.query, filter.project, filter.scope, limit, afterDate)) as RawRecallRow[]
+
+                if (mode === 'tree') return { rows: treeRaw, routeMode: 'tree', fallbackUsed: false }
+                if (mode === 'keyword') return { rows: keywordRaw, routeMode: 'keyword', fallbackUsed: false }
 
                 if (mode === 'vector') {
                     // Degradation matrix (RFC-semantic-recall §6): every non-ok status serves the
                     // lexical floor; ok+hits fuses by rank (RRF) so scales never mix.
                     const v = vectorOutcome!
                     if (v.status !== 'ok') {
-                        routeMode = v.status === 'timeout' ? 'vector_timeout' : 'vector_unavailable'
-                        fallbackUsed = true
-                        return keywordRaw as RawRecallRow[]
+                        return { rows: keywordRaw, routeMode: v.status === 'timeout' ? 'vector_timeout' : 'vector_unavailable', fallbackUsed: true }
                     }
-                    if (v.rows.length === 0) {
-                        routeMode = 'keyword'
-                        return keywordRaw as RawRecallRow[]
+                    if (v.rows.length === 0) return { rows: keywordRaw, routeMode: 'keyword', fallbackUsed: false }
+                    // At limit = topK this is exactly `v.rows`.
+                    const vectorRows = v.candidates.slice(0, Math.max(1, limit)) as RawRecallRow[]
+                    return {
+                        rows: rrfFuse<RawRecallRow>([keywordRaw, vectorRows], limit),
+                        routeMode: keywordRaw.length > 0 ? 'hybrid_vector' : 'vector',
+                        fallbackUsed: false
                     }
-                    routeMode = keywordRaw.length > 0 ? 'hybrid_vector' : 'vector'
-                    return rrfFuse<RawRecallRow>([keywordRaw as RawRecallRow[], v.rows as RawRecallRow[]], topK)
                 }
 
                 // hybrid mode: BOTH routes have already run — see the unconditional `treeRaw` /
                 // `keywordRaw` above — and both always merge here, tree first so it wins on ties.
-                // There is no "if needed": `fallbackUsed` below is decided after the fact, from
-                // whether anything keyword-only survived the merge, and does not gate the query.
+                // There is no "if needed": `fallbackUsed` is decided after the fact, from whether
+                // anything keyword-only reached the caller, and does not gate the query.
                 // (This comment used to say "merge keyword fallback if needed", which described an
                 // intent the code does not implement; a hybrid caller that degrades the keyword half
                 // is losing that half's contribution right now, not hypothetically.)
                 const merged = [...treeRaw, ...keywordRaw].filter((item, index, arr) =>
                     arr.findIndex((x) => x.id === item.id && x.session_id === item.session_id) === index
-                ) as RawRecallRow[]
+                )
+                return { rows: merged.slice(0, limit), routeMode: 'hybrid', fallbackUsed: false, treeKeys: treeRaw.map(rowKey) }
+            }
 
-                // Decide the route label from what is RETURNED, not from what was merged.
+            const rank = (rows: RawRecallRow[]): RecallHit[] => {
+                const rawHits: RecallHit[] = rows.map((r) => ({
+                    type: r.type as RecallHit['type'],
+                    id: r.id,
+                    session_id: r.session_id,
+                    timestamp: r.timestamp,
+                    project: r.project,
+                    snippet: r.snippet,
+                    // score = relevance × time-decay (ranking); relevance is the decay-free match quality
+                    score: Number.isFinite(r.score) ? Number(r.score) : 0,
+                    relevance: Number.isFinite(r.relevance) ? Number(r.relevance) : undefined,
+                    node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
+                    reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
+                }))
+
+                // issue-5: drop superseded memories and undo time-decay for durable ones. Runs FIRST so
+                // that utility weighting below stays the final arbiter — a mis-marked durable memory can
+                // still be pushed down by poor observed utility. Byte-identical when nothing is marked.
+                const attributed: RecallHit[] = applyMemoryAttributes(this.paths.dbPath, rawHits, {
+                    includeSuperseded: filter.include_superseded
+                })
+
+                // UFL Phase 3: re-rank by accrued per-memory utility (byte-identical when no observations
+                // exist). Runs before telemetry so recall_id's top_confidence reflects the surfaced order.
+                return applyUtilityWeighting(this.paths.dbPath, attributed)
+            }
+
+            // issue-34: one slot per note. A note's session and event rows share a fingerprint, so
+            // the lower-ranked of the two (after utility weighting) gives up its slot. When that frees
+            // slots and the routes filled their window — there may be more to find — run once more
+            // at twice the depth: k distinct notes occupy at most 2k rows. When nothing collapses,
+            // this is the pre-issue-34 pipeline row for row, label included.
+            let route = runRoutes(topK)
+            let ranked = rank(route.rows)
+            let distinct = collapseNoteHits(ranked)
+            if (distinct.length < ranked.length && distinct.length < topK && route.rows.length >= topK) {
+                route = runRoutes(topK * 2)
+                ranked = rank(route.rows)
+                distinct = collapseNoteHits(ranked)
+            }
+            const weighted: RecallHit[] = distinct.slice(0, topK)
+
+            let routeMode = route.routeMode
+            let fallbackUsed = route.fallbackUsed
+            if (route.treeKeys) {
+                // Decide the hybrid label from what is RETURNED, not from what was merged.
                 //
                 // `usedKeyword` used to be computed on the pre-slice set, so a keyword-only row that
                 // existed in `merged` but was cut by `slice(0, topK)` still flipped the label. When
@@ -781,42 +830,16 @@ export class MemoriaCore {
                 // than it is, which is the one question that metric exists to answer. v1.28.1 made
                 // this fire often rather than rarely — widening the LIKE fallback gave the keyword
                 // half far more to find, most of it then discarded by the slice.
-                const finalRows = merged.slice(0, topK)
-                const rowKey = (r: RawRecallRow): string => `${r.id}:${r.session_id}`
-                const usedKeyword = hybridUsedKeyword(
-                    (treeRaw as RawRecallRow[]).map(rowKey),
-                    finalRows.map(rowKey)
-                )
-
-                fallbackUsed = treeRaw.length === 0 || usedKeyword
+                //
+                // issue-34 applies the same rule to the rows a collapsed note pair or the refill
+                // window's final cut leaves behind: they never reach the caller either. Rows the
+                // superseded filter removed still count, as they did before issue-34.
+                const returned = new Set(weighted.map(rowKey))
+                const dropped = new Set(ranked.map(rowKey).filter((key) => !returned.has(key)))
+                const usedKeyword = hybridUsedKeyword(route.treeKeys, route.rows.map(rowKey).filter((key) => !dropped.has(key)))
+                fallbackUsed = route.treeKeys.length === 0 || usedKeyword
                 routeMode = fallbackUsed ? 'hybrid_fallback' : 'hybrid_tree'
-                return finalRows
-            })()
-
-            const rawHits: RecallHit[] = raw.map((r, i) => ({
-                type: r.type as RecallHit['type'],
-                id: r.id,
-                session_id: r.session_id,
-                timestamp: r.timestamp,
-                project: r.project,
-                snippet: r.snippet,
-                // score = relevance × time-decay (ranking); relevance is the decay-free match quality
-                score: Number.isFinite(r.score) ? Number(r.score) : 0,
-                relevance: Number.isFinite(r.relevance) ? Number(r.relevance) : undefined,
-                node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
-                reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
-            }))
-
-            // issue-5: drop superseded memories and undo time-decay for durable ones. Runs FIRST so
-            // that utility weighting below stays the final arbiter — a mis-marked durable memory can
-            // still be pushed down by poor observed utility. Byte-identical when nothing is marked.
-            const attributed: RecallHit[] = applyMemoryAttributes(this.paths.dbPath, rawHits, {
-                includeSuperseded: filter.include_superseded
-            })
-
-            // UFL Phase 3: re-rank by accrued per-memory utility (byte-identical when no observations
-            // exist). Runs before telemetry so recall_id's top_confidence reflects the surfaced order.
-            const weighted: RecallHit[] = applyUtilityWeighting(this.paths.dbPath, attributed)
+            }
 
             // Git provenance (issue-1 §21): hits promoted from git summaries carry their source
             // (repository/branch/tag + base/head SHA). Fail-open — enrichment never blocks recall.

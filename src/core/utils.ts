@@ -64,6 +64,28 @@ function expandCjkRuns(token: string, n: number): string[] {
     return out
 }
 
+/** A CLI note occupies two refs — its session and its event — and both get marked or attributed.
+ *  The shared content fingerprint is what identifies the note itself. */
+export function noteFingerprintOf(ref: string): string | null {
+    return ref.startsWith('note-') ? ref.slice('note-'.length)
+        : ref.startsWith('noteev-') ? ref.slice('noteev-'.length)
+            : null
+}
+
+/** One recall slot per note (issue-34). `remember` stores a note as two rows under one fingerprint,
+ *  so a query matching it would otherwise spend two of its k slots on the same memory. Keeps the
+ *  first-ranked row of each note; every other hit passes through in its original order. */
+export function collapseNoteHits<T extends { id: string }>(hits: T[]): T[] {
+    const seen = new Set<string>()
+    return hits.filter((hit) => {
+        const fingerprint = noteFingerprintOf(hit.id)
+        if (fingerprint === null) return true
+        if (seen.has(fingerprint)) return false
+        seen.add(fingerprint)
+        return true
+    })
+}
+
 /** Did the keyword half actually change what the caller received? (issue-16 follow-up)
  *
  * `returned` must be the rows AFTER `slice(0, topK)`, not the merged candidate set. The distinction

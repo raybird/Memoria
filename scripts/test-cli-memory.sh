@@ -393,4 +393,52 @@ grep -q "database is locked" "$TMP_DIR/long.err" || { echo "  ✗ 錯誤應含 d
 [ "$(q33 "SELECT COUNT(*) FROM sessions WHERE summary LIKE ?" "%鎖持有 8 秒時寫入%")" = "0" ] || { echo "  ✗ 失敗的寫入留下了筆記"; exit 1; }
 echo "  鎖持有 2 秒時等待後成功；持有 8 秒時 ${LONG_MS}ms 後以 database is locked 失敗，沒有留下筆記"
 
+# ── issue-34: one note, one recall slot ───────────────────────────────────────────────────────
+# remember stores a note twice under one fingerprint (session note-{fp}, event noteev-{fp}); recall
+# used to return both, so a top-k could hold k/2 distinct notes.
+cli34() { MEMORIA_HOME="$1" "$CLI" "${@:2}"; }
+# Prints "{hit count} {distinct fingerprints}" for a recall --json result on stdin; a non-note hit
+# counts as its own fingerprint.
+note_slots() {
+    node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const hits=JSON.parse(d).data;
+      const fp=hits.map(h=>h.id.replace(/^noteev-/,"").replace(/^note-/,""));
+      console.log(hits.length+" "+new Set(fp).size)})'
+}
+H34="$TMP_DIR/home34"; cli34 "$H34" init >/dev/null
+
+echo "[cli-memory] (issue-34 AC-1) a note matched by both of its rows appears once"
+FP34=$(cli34 "$H34" remember "成對筆記去重的唯一標記 zebrafish" --project demo34 --rationale "zebrafish 理由" --json | jq_field '.data.noteId')
+BOTH=$(node -e "
+  const D=require('$BSQ');const db=new D(process.argv[1],{readonly:true});
+  console.log(db.prepare(\"SELECT COUNT(DISTINCT ref_id) c FROM recall_fts WHERE recall_fts MATCH 'zebrafish' AND ref_id IN (?, ?)\").get('note-'+process.argv[2],'noteev-'+process.argv[2]).c)
+" "$H34/.memory/sessions.db" "$FP34")
+[ "$BOTH" = "2" ] || { echo "  ✗ fixture: the query must match both note- and noteev- rows, matched $BOTH"; exit 1; }
+for MODE34 in keyword hybrid tree; do
+    OUT34=$(cli34 "$H34" recall "zebrafish" --project demo34 --mode "$MODE34" --json)
+    N34=$(echo "$OUT34" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{
+      console.log(JSON.parse(d).data.filter(h=>h.id==="note-"+process.argv[1]||h.id==="noteev-"+process.argv[1]).length)})' "$FP34")
+    [ "$N34" = "1" ] || { echo "  ✗ mode=$MODE34: fingerprint $FP34 appears $N34 times (want 1)"; exit 1; }
+done
+echo "  keyword/hybrid/tree：同一則筆記只出現一次"
+
+echo "[cli-memory] (issue-34 AC-2) the freed slots go to the next distinct notes"
+for i in 1 2 3 4 5; do
+    cli34 "$H34" remember "補滿測試第 $i 則 quokka 筆記" --project demo34 --rationale "quokka 理由 $i" >/dev/null
+done
+# tree is left out here: it returns one row per note already, and how many notes it surfaces is the
+# tree index's own behaviour, not this change's.
+for MODE34 in keyword hybrid; do
+    SLOTS=$(cli34 "$H34" recall "quokka" --project demo34 --mode "$MODE34" --top-k 3 --json | note_slots)
+    [ "$SLOTS" = "3 3" ] || { echo "  ✗ mode=$MODE34 --top-k 3 over 5 notes: got hits/distinct=$SLOTS (want 3 3)"; exit 1; }
+done
+H34B="$TMP_DIR/home34b"; cli34 "$H34B" init >/dev/null
+for i in 1 2; do
+    cli34 "$H34B" remember "只有兩則的 quokka 筆記 $i" --project demo34 --rationale "quokka 理由 $i" >/dev/null
+done
+for MODE34 in keyword hybrid; do
+    SLOTS=$(cli34 "$H34B" recall "quokka" --project demo34 --mode "$MODE34" --top-k 3 --json | note_slots)
+    [ "$SLOTS" = "2 2" ] || { echo "  ✗ mode=$MODE34 --top-k 3 over 2 notes: got hits/distinct=$SLOTS (want 2 2)"; exit 1; }
+done
+echo "  5 則時 --top-k 3 回 3 則不同筆記；只有 2 則時回 2 則"
+
 echo "[cli-memory] ✓ all checks passed"

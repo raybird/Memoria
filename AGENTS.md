@@ -194,7 +194,7 @@ All business logic lives in `src/core/`; CLI, HTTP server and SDK share that cor
 - `remember(sessionData)` – import + sync daily/decisions/skills
 - `addSource(input)` – import markdown/text source and generate `source-summary`
 - `listSources(filter)` – inspect imported raw sources
-- `recall(filter)` – supports `keyword | tree | hybrid | vector` retrieval plus adaptive skip for trivial queries; results are ranked by relevance × time-decay (halfLife=90 days), then down-weighted by accrued per-memory utility (UFL); success meta carries a `recall_id` for utility write-back. `vector` is opt-in semantic recall (LIBSQL_URL + `skills/memoria-vector`; degrades to lexical, fail-open)
+- `recall(filter)` – supports `keyword | tree | hybrid | vector` retrieval plus adaptive skip for trivial queries; results are ranked by relevance × time-decay (halfLife=90 days), then down-weighted by accrued per-memory utility (UFL); a CLI note's `note-`/`noteev-` pair takes one slot and the freed slots are refilled (issue-34); success meta carries a `recall_id` for utility write-back. `vector` is opt-in semantic recall (LIBSQL_URL + `skills/memoria-vector`; degrades to lexical, fail-open)
 - `recordRecallOutcome(recallId, outcome)` – UFL write-back: `{signal, utility_score?, used?, hits?}`; `hits[]` attributes utility per memory; `signal:'explicit'` is the high-fidelity host signal that overrides the reuse proxy
 - `buildWiki()` – refresh compiled wiki special pages (`index/log/overview`)
 - `fileQuery(input)` – file a high-value recall result into `synthesis` or `comparison` page

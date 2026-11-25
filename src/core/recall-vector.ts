@@ -376,6 +376,8 @@ function mapNamesToRows(
 /**
  * Query the optional semantic index. Returns ranked authoritative rows plus a status for the
  * RFC §6 degradation matrix. Never throws — every failure maps to a status the caller can route.
+ * `candidates` is the same ranking before the top-k cut (up to topK × OVERFETCH_FACTOR rows), so
+ * a caller that needs a deeper list (issue-34 refill) reuses this helper run instead of a second one.
  */
 export async function recallVector(
     dbPath: string,
@@ -384,18 +386,18 @@ export async function recallVector(
     scopeFilter?: string,
     topK = 5,
     afterDate?: Date
-): Promise<{ rows: VectorRow[]; status: VectorRecallStatus }> {
-    if (!process.env.LIBSQL_URL?.trim()) return { rows: [], status: 'unavailable' }
+): Promise<{ rows: VectorRow[]; candidates: VectorRow[]; status: VectorRecallStatus }> {
+    if (!process.env.LIBSQL_URL?.trim()) return { rows: [], candidates: [], status: 'unavailable' }
     const script = resolveHelperScript()
-    if (!script || !existsSync(script)) return { rows: [], status: 'unavailable' }
+    if (!script || !existsSync(script)) return { rows: [], candidates: [], status: 'unavailable' }
     const timeoutMs = Math.max(100, Number(process.env.MEMORIA_VECTOR_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS)
     try {
         const { status, hits } = await runHelper(script, query, Math.max(1, topK) * OVERFETCH_FACTOR, timeoutMs)
-        if (status !== 'ok') return { rows: [], status }
-        const rows = mapNamesToRows(dbPath, hits.map((h) => h.name), projectFilter, scopeFilter, afterDate).slice(0, Math.max(1, topK))
-        return { rows, status: 'ok' }
+        if (status !== 'ok') return { rows: [], candidates: [], status }
+        const candidates = mapNamesToRows(dbPath, hits.map((h) => h.name), projectFilter, scopeFilter, afterDate)
+        return { rows: candidates.slice(0, Math.max(1, topK)), candidates, status: 'ok' }
     } catch {
-        return { rows: [], status: 'error' }
+        return { rows: [], candidates: [], status: 'error' }
     }
 }
 

@@ -10,7 +10,7 @@
 
 import type Database from 'better-sqlite3'
 import { withDb } from './connection.js'
-import { effectiveUtility, maybeParseJson } from '../utils.js'
+import { effectiveUtility, maybeParseJson, noteFingerprintOf } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { truncateText } from './mappers.js'
 import { loadAttributes } from './memory-attributes.js'
@@ -32,14 +32,6 @@ export type BriefOptions = {
     project?: string
     days?: number
     topK?: number
-}
-
-/** A CLI note occupies two refs — its session and its event — and both get marked or attributed.
- *  The shared content fingerprint is what identifies the note itself. */
-function noteFingerprintOf(ref: string): string | null {
-    return ref.startsWith('note-') ? ref.slice('note-'.length)
-        : ref.startsWith('noteev-') ? ref.slice('noteev-'.length)
-            : null
 }
 
 /** Human-readable text + project for a mixed batch of session and event refs. Event content is a

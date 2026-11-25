@@ -734,4 +734,39 @@ if(/index build/.test(cov.fix||'')) throw new Error('沒有 tree index 缺口時
 " "$DOC31_VEC"
 echo "  有缺口 -> tree index 失敗、修法先 index build，執行後兩者 missing=0；只缺向量 -> 修法不變"
 
+# issue-34: a note is indexed twice (session:note-{fp}, decision:noteev-{fp}), so the semantic route
+# returned both halves too. The index text below matches the query while the local text does not,
+# so only the vector route can fill the slots a collapsed pair frees — and it must do so from the
+# helper run it already made (a counting wrapper stands in for the helper).
+echo "[vector] issue-34 AC-2 成對筆記只佔一格，語意路由補滿 top-k 且不重跑 helper"
+H34V="$TMP_DIR/home-34v"
+VEC34V="$TMP_DIR/vectors-34v.db"
+COUNT34="$TMP_DIR/helper-runs-34"
+cat > "$TMP_DIR/count-helper.mjs" <<EOF
+import { appendFileSync } from 'node:fs'
+appendFileSync('$COUNT34', 'run\n')
+await import('$HELPER_DIR/vector-recall.mjs')
+EOF
+cli34v() { env MEMORIA_HOME="$H34V" LIBSQL_URL="file:$VEC34V" MEMORIA_EMBED_PROVIDER=stub MEMORIA_VECTOR_RECALL_CMD="$TMP_DIR/count-helper.mjs" "$ROOT_DIR/cli" "$@"; }
+cli34v init >/dev/null
+ENTITIES34=""
+for i in 1 2 3 4 5; do
+    FP=$(cli34v remember "本機文字不含查詢詞的第 $i 則筆記" --project vec34 --rationale "理由 $i" --json \
+        | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).data.noteId)")
+    ENTITIES34="$ENTITIES34{\"id\":\"session:note-$FP\",\"type\":\"session\",\"name\":\"note $i\",\"text\":\"wombat burrow survey $i\"},"
+    ENTITIES34="$ENTITIES34{\"id\":\"decision:noteev-$FP\",\"type\":\"decision\",\"name\":\"note $i\",\"text\":\"wombat burrow survey $i\"},"
+done
+echo "{\"entities\":[${ENTITIES34%,}]}" > "$TMP_DIR/payload-34.json"
+LIBSQL_URL="file:$VEC34V" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload-34.json" >/dev/null
+rm -f "$COUNT34"
+RES34=$(cli34v recall "wombat burrow survey" --project vec34 --mode vector --top-k 3 --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.meta.route_mode!=='vector') throw new Error('前提：只有語意路由命中，route_mode 應為 vector，實際 '+d.meta.route_mode);
+const fp=d.data.map(h=>h.id.replace(/^noteev-/,'').replace(/^note-/,''));
+if(d.data.length!==3||new Set(fp).size!==3) throw new Error('--top-k 3 應回 3 則不同筆記，實際 '+d.data.map(h=>h.id).join(' '));
+" "$RES34"
+[ "$(wc -l < "$COUNT34")" = "1" ] || { echo "  ✗ 一次 recall 應只跑一次 helper，實際 $(wc -l < "$COUNT34") 次"; exit 1; }
+echo "  route_mode=vector、3 則不同筆記，helper 只跑一次"
+
 echo "[vector] ok"
