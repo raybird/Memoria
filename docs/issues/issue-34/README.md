@@ -6,6 +6,10 @@
 
 brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`），recall 沒有。本 issue 讓 recall 一則筆記只佔一格，空出的名額由下一則不同的記憶補上。
 
+## 現況
+
+**現行 review**: review-a6db261.md
+
 ## 涉及檔案
 
 - `src/core/memoria.ts` - `recall()`：排序後、截斷前合併筆記的兩筆；合併後不足 top-k 且路由填滿視窗時，以 2 × top-k 再跑一次路由
@@ -66,4 +70,4 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 實作完成，待審查
+**狀態**: 審查通過（review-a6db261），建議待確認
