@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](CLI.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-11-10 against the issue-32 source (`remember --verify`, recall and brief output), CLI help and documentation checks.
+Last verified: 2026-11-26 against the issue-35 source (recall's explanation lines and weak-hit mark), CLI help and documentation checks.
 
 These examples use the npm-installed `memoria` command. From a repository checkout, use `./cli` instead. Run `memoria <command> --help` for all flags. Square brackets denote optional arguments; replace values inside `<…>`.
 
@@ -56,6 +56,8 @@ memoria setup [--serve] [--json]       # Automation one-shot install
 `remember`, `recall`, `mark`, `feedback` and `brief` work directly against local storage, so a skill-based setup needs no server. When several repositories share a store, pass `--project` to recall to keep results scoped.
 
 A memory written with `--verify` is a state memory, a snapshot that can go stale. recall prints `⟳ 截至 <date>；據以行動前先跑：<command>` under the hit, and `--json` and `/v1/recall` carry it as `verify`. The brief adds `截至 <date>；據以行動前先跑 <command>` under the entry in every block that lists it, and one fixed note after the totals line saying the command is never run by Memoria and should be run only if it is a read-only check. The command is shown whole and never executed; the agent reading it decides whether to run it. The as-of date is the memory's UTC date. `--verify` must be a single non-empty line without control characters (tab is allowed; Unicode line separators are refused) and cannot be combined with `--durable`, either at write time or later through `mark` (split the lasting constraint and the snapshot into two notes).
+
+recall's listing says why it found little. Under the count line, `- 語意查詢有執行，沒有命中；列出的是字面查詢的結果` means `--mode vector` did run and the semantic index matched nothing (`route_mode` stays `keyword` in that case), and `- 這個 project 沒有任何記憶：<name>；已登記的名稱見 \`memoria repo list\`` means the `--project` value names no memory at all, so the empty result is not "nothing relevant". A hit whose relevance is below 0.3 shares only a token or two with the query and is marked `[0.250 弱命中]`. It is still returned. A hit found only by the semantic index prints `n/a` and is never marked. `--json` carries the first two as `meta.vector_hits` and `meta.project_known`.
 
 Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. The body shows the generation time on the scope line, because hosts that `@`-import the brief drop the header comment. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Recent decisions share their `--top-k` slots across projects, most recently active first. Memories whose project is not a registered repository accompany each project's brief. Follow the output to add read instructions to `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the brief path. Regenerate the brief after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).
 

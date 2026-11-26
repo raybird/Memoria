@@ -20,6 +20,7 @@ import {
     buildMemoryIndex,
     recallTree,
     recallKeyword,
+    projectHasMemories,
     applyUtilityWeighting,
     querySessionSummary,
     listSourceRecords,
@@ -867,6 +868,12 @@ export class MemoriaCore {
             const confidenceBasis: ConfidenceBasis =
                 top === undefined ? 'no_hits' : top.relevance === undefined ? 'unavailable' : 'lexical_coverage'
 
+            // Fail-open: a failed check leaves the field out rather than failing the recall.
+            let projectKnown: boolean | undefined
+            if (filter.project) {
+                try { projectKnown = projectHasMemories(this.paths.dbPath, filter.project) } catch { /* optional hint */ }
+            }
+
             let recallId: string | null = null
             try {
                 recallId = logRecallTelemetry(this.paths.dbPath, {
@@ -895,7 +902,12 @@ export class MemoriaCore {
                     route_mode: routeMode,
                     fallback_used: fallbackUsed,
                     // UFL: correlates this recall to a later utility outcome. Success branch only.
-                    recall_id: recallId ?? undefined
+                    recall_id: recallId ?? undefined,
+                    // issue-35: why a recall found little. Added fields only — route_mode keeps its
+                    // values because routeUtility groups by it (issue-18).
+                    // A note is indexed twice (issue-34), so its pair counts once — the same unit as `data`.
+                    vector_hits: vectorOutcome?.status === 'ok' ? collapseNoteHits(vectorOutcome.rows).length : undefined,
+                    project_known: projectKnown
                 }
             }
         })

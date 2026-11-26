@@ -417,6 +417,16 @@ function buildSnippet(content: string): string {
         : String(content).slice(0, 200)
 }
 
+/**
+ * issue-35: whether `project` has any memory at all, so a recall that found nothing can say "this
+ * project is empty" instead of looking like "nothing relevant". Same exact-match rule as the
+ * recall routes' project filter (sessions.project, which every event inherits through its session).
+ */
+export function projectHasMemories(dbPath: string, project: string): boolean {
+    return withDb(dbPath, { readonly: true }, (db) =>
+        db.prepare('SELECT 1 FROM sessions WHERE project = ? LIMIT 1').get(project) !== undefined)
+}
+
 // Build the optional project/scope/after-date WHERE predicates shared across every recall query.
 // `cols` names the columns per query (raw column, table alias, or COALESCE expression); the
 // returned params line up positionally with the `?` placeholders in `sql`.

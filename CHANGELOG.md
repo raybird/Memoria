@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`recall` says why it found little.** A `--mode vector` query that ran but matched nothing used to read `route_mode: keyword` with no other trace, so callers concluded semantic recall was broken; recall meta now carries `vector_hits` (`0` in that case). A `--project` naming no memory at all looked the same as an unrelated query; meta now carries `project_known` (`false`). The human listing prints a line for each, and marks hits with relevance below 0.3 as `弱命中`. Hits, ordering, `route_mode` and every other field are unchanged, and both fields are absent where they do not apply (issue-35).
+
 ### Fixed
 - **`recall` gives each note one slot.** `remember` stores a note as a session (`note-<fingerprint>`) and an event (`noteev-<fingerprint>`), and recall counted both, so a top-5 could hold three distinct memories. Only the higher-ranked of the two is kept now, and the freed slots go to the next distinct memories: when collapsing leaves fewer than `top_k` and the routes filled their window, recall runs them once more at `2 × top_k`. In `vector` mode that second pass reuses the helper's overfetched candidates, so the embedder still runs once per recall. A query with no note pair to collapse returns exactly what it did before (issue-34).
 

@@ -4,6 +4,11 @@ import type { MemoriaCore, RecallFilter } from '../../core/index.js'
 const RECALL_MODES = ['keyword', 'tree', 'hybrid', 'vector'] as const
 type RecallMode = (typeof RECALL_MODES)[number]
 
+// issue-35: below this relevance a hit shares only a token or two with the query. Such hits are still
+// returned (filtering is the caller's call); the listing marks them so a page of them is not read
+// as "these are the relevant memories".
+const WEAK_RELEVANCE = 0.3
+
 type RecallCommandOptions = {
     project?: string
     scope?: string
@@ -53,6 +58,13 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
             const hits = result.data ?? []
             const route = result.meta.route_mode ? `, mode=${result.meta.route_mode}` : ''
             console.log(`🔎 Recall: ${hits.length} hits (${result.meta.latency_ms}ms${route})`)
+            // issue-35: say why a recall found little, next to the count it explains. route_mode
+            // stays `keyword` when the semantic route ran and matched nothing, which read as "vector
+            // mode did not run"; and an empty project looked the same as an unrelated query.
+            if (result.meta.vector_hits === 0) console.log('- 語意查詢有執行，沒有命中；列出的是字面查詢的結果')
+            if (result.meta.project_known === false) {
+                console.log(`- 這個 project 沒有任何記憶：${options.project}；已登記的名稱見 \`memoria repo list\``)
+            }
             for (const hit of hits) {
                 // relevance is the decay-free 0–1 match quality (and the basis for meta.confidence);
                 // the raw bm25-derived `score` that drives ordering is orders of magnitude smaller
@@ -60,7 +72,8 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
                 // A semantic-only hit has no relevance at all (issue-9), and printing its RRF score
                 // here would put an unrelated scale (~0.016) in the same column as a 0–1 quality —
                 // so it prints as unmeasured instead. Ordering is unaffected either way.
-                const quality = hit.relevance === undefined ? ' n/a ' : hit.relevance.toFixed(3)
+                const quality = hit.relevance === undefined ? ' n/a '
+                    : `${hit.relevance.toFixed(3)}${hit.relevance < WEAK_RELEVANCE ? ' 弱命中' : ''}`
                 const marks = [
                     hit.retention === 'durable' ? 'durable' : null,
                     hit.superseded_by ? `superseded by ${hit.superseded_by}` : null

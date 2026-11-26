@@ -2,7 +2,7 @@
 
 [English](API.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-11-10，對照 issue-32 原始碼（recall hit 與 brief 項目的 `verify`）、CLI help 與文件檢查。
+最後驗證：2026-11-26，對照 issue-35 原始碼（recall meta 的 `vector_hits` 與 `project_known`）、CLI help 與文件檢查。
 
 這是本地 HTTP 介面；啟動與背景服務設定見 [安裝指南](INSTALL.md)。
 
@@ -58,6 +58,17 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 `lexical_coverage`（查詢 token 在首位命中的覆蓋率）、`no_hits`（沒有任何命中，`confidence` 為 `0`）、
 `unavailable`（首位命中僅來自語意索引，字面匹配品質無從衡量，`confidence` 為 `null`——意思是
 「無法評估」，不是「匹配很差」）。只有 opt-in 的 vector route 會產生 `null`。
+
+recall 的 meta 另有兩個欄位說明查得少的原因，各自只在適用時出現：
+
+- `vector_hits`：`mode:"vector"` 且 helper 有回應時，語意路由在融合前找到幾則記憶（一則筆記的 session
+  與 event 兩列算一則，和 `data` 相同）。`0` 表示語意查詢跑了但沒有命中，也就是 `route_mode` 顯示
+  `keyword` 的那種情況。降級（`vector_unavailable`、`vector_timeout`）時沒有這個欄位，因為 `route_mode`
+  已經說明了原因。
+- `project_known`：帶 `project` 過濾時，這個 project 有沒有任何記憶。`false` 且 0 筆表示名稱錯了或沒有
+  登記，不是沒有相關記憶。檢查本身失敗時不放這個欄位，recall 照常回傳。
+
+`route_mode` 與其他欄位的值都不變，`routeUtility` 的分組不受影響。
 
 狀態類記憶（以 `remember --verify` 寫入）的 hit 帶 `verify`：重新查證它的唯讀命令，原樣保留；截至日期
 就是該 hit 自己的 `timestamp`。`/v1/brief` 的決策項帶同樣的 `verify`，高效用項與常駐項帶 `verify`

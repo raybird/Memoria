@@ -121,6 +121,24 @@ assert_status 400 -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/
 assert_status 400 -X POST "$SERVER_URL/v1/remember" -H 'Content-Type: application/json' -d '{"events":"not-an-array"}'
 echo "  malformed bodies rejected (400)"
 
+# issue-35 SCN-006: the same meta a CLI caller gets. The server and the CLI share MemoriaCore, so the
+# check is that both entry points report the same project_known for the same query and home.
+echo "[http] issue-35 SCN-006 POST /v1/recall 帶 project_known，與 CLI 相同"
+for PROJ35 in http no-such-project; do
+    HTTP35=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' \
+        -d "{\"query\":\"HTTP contract test session\",\"mode\":\"keyword\",\"project\":\"$PROJ35\"}")
+    CLI35=$(MEMORIA_HOME="$TMP_DIR/home" "$ROOT_DIR/cli" recall "HTTP contract test session" --mode keyword --project "$PROJ35" --json)
+    node -e "
+const h=JSON.parse(process.argv[1]).meta, c=JSON.parse(process.argv[2]).meta;
+const want=process.argv[3]==='http';
+if(h.project_known!==want) throw new Error('HTTP project=$PROJ35 project_known 應為 '+want+'，實際 '+h.project_known);
+if(c.project_known!==h.project_known) throw new Error('CLI 與 HTTP 的 project_known 不同：'+c.project_known+' vs '+h.project_known);
+" "$HTTP35" "$CLI35" "$PROJ35"
+done
+HTTP35=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"HTTP contract test session","mode":"keyword"}')
+node -e "const m=JSON.parse(process.argv[1]).meta; if('project_known' in m||'vector_hits' in m) throw new Error('沒帶 project 的 keyword recall 不應有新欄位')" "$HTTP35"
+echo "  有記憶 -> true、沒有記憶 -> false，CLI 相同；沒帶 project 時沒有欄位"
+
 echo "[http] POST /v1/recall/:id/outcome writes utility back (UFL)"
 RID=$(curl -sf -X POST "$SERVER_URL/v1/recall" -H 'Content-Type: application/json' -d '{"query":"HTTP contract test session","mode":"keyword"}' | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).meta.recall_id||''))")
 [ -n "$RID" ] || { echo "  ✗ recall did not return a recall_id"; exit 1; }

@@ -769,4 +769,95 @@ if(d.data.length!==3||new Set(fp).size!==3) throw new Error('--top-k 3 應回 3 
 [ "$(wc -l < "$COUNT34")" = "1" ] || { echo "  ✗ 一次 recall 應只跑一次 helper，實際 $(wc -l < "$COUNT34") 次"; exit 1; }
 echo "  route_mode=vector、3 則不同筆記，helper 只跑一次"
 
+# issue-35: a semantic query that ran but matched nothing used to read route_mode=keyword with no
+# other trace, so callers concluded --mode vector was broken. route_mode keeps its value (it is the
+# key routeUtility groups by); meta.vector_hits says how many rows the semantic route contributed.
+# Index text matches the query, local text does not, so only the vector route can find vec35 —
+# and vec35bare has no vectors at all, which makes the helper answer ok with nothing that maps.
+# Each vec35 note is indexed as both halves, as the real payload does: 4 semantic rows, 2 notes.
+echo "[vector] issue-35 SCN-001／SCN-002 meta.vector_hits 說明語意查詢有沒有命中"
+H35V="$TMP_DIR/home-35v"
+VEC35V="$TMP_DIR/vectors-35v.db"
+cli35v() { env MEMORIA_HOME="$H35V" LIBSQL_URL="file:$VEC35V" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" "$@"; }
+cli35v init >/dev/null
+ENTITIES35=""
+for i in 1 2; do
+    FP=$(cli35v remember "本機文字不含查詢詞的第 $i 則筆記" --project vec35 --rationale "理由 $i" --json \
+        | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).data.noteId)")
+    ENTITIES35="$ENTITIES35{\"id\":\"session:note-$FP\",\"type\":\"session\",\"name\":\"note $i\",\"text\":\"okapi grassland census $i\"},"
+    ENTITIES35="$ENTITIES35{\"id\":\"decision:noteev-$FP\",\"type\":\"decision\",\"name\":\"note $i\",\"text\":\"okapi grassland census record $i\"},"
+done
+cli35v remember "沒有向量的一則筆記" --project vec35bare --rationale "只用來讓 project 存在" >/dev/null
+echo "{\"entities\":[${ENTITIES35%,}]}" > "$TMP_DIR/payload-35.json"
+# libSQL's vector index is approximate: on a 4-row store about 1 build in 12 misses one note's
+# rows entirely (measured 2/25). SCN-002's premise is that the helper returns both notes, so the
+# index is rebuilt until it does rather than letting the premise fail at random.
+for _ in 1 2 3 4 5; do
+    rm -f "$VEC35V"*
+    LIBSQL_URL="file:$VEC35V" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload-35.json" >/dev/null
+    ROWS35=$(echo '{"query":"okapi grassland census","topK":5}' | LIBSQL_URL="file:$VEC35V" MEMORIA_EMBED_PROVIDER=stub \
+        node "$HELPER_DIR/vector-recall.mjs" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).hits.length))")
+    [ "$ROWS35" = "4" ] && break
+done
+[ "$ROWS35" = "4" ] || { echo "  ✗ 前提：helper 應回 4 列語意命中，5 次重建都是 $ROWS35"; exit 1; }
+
+RES35A=$(cli35v recall "okapi grassland census" --project vec35bare --mode vector --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.meta.route_mode!=='keyword') throw new Error('SCN-001 route_mode 應維持 keyword，實際 '+d.meta.route_mode);
+if(d.meta.fallback_used!==false) throw new Error('SCN-001 fallback_used 應維持 false');
+if(d.meta.vector_hits!==0) throw new Error('SCN-001 語意查詢沒有命中時 vector_hits 應為 0，實際 '+d.meta.vector_hits);
+" "$RES35A"
+OUT35A=$(cli35v recall "okapi grassland census" --project vec35bare --mode vector)
+printf '%s\n' "$OUT35A" | grep -q "語意查詢有執行，沒有命中" \
+    || { echo "  ✗ SCN-001 人讀輸出應說明語意查詢有執行但沒有命中："; printf '%s\n' "$OUT35A"; exit 1; }
+
+RES35B=$(cli35v recall "okapi grassland census" --project vec35 --mode vector --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.meta.route_mode!=='vector') throw new Error('SCN-002 route_mode 應維持 vector，實際 '+d.meta.route_mode);
+if(d.meta.vector_hits!==2) throw new Error('SCN-002 兩則筆記（4 列語意命中）時 vector_hits 應為 2，實際 '+d.meta.vector_hits+'；命中 '+d.data.map(h=>h.id).join(' '));
+if(d.data.length!==2) throw new Error('前提：應回 2 則筆記，實際 '+d.data.length);
+" "$RES35B"
+OUT35B=$(cli35v recall "okapi grassland census" --project vec35 --mode vector)
+if printf '%s\n' "$OUT35B" | grep -q "語意查詢有執行，沒有命中"; then echo "  ✗ SCN-002 有命中時不應印沒有命中的說明"; exit 1; fi
+# SCN-005: a semantic-only hit has no relevance (issue-9), so it is unmeasured, not weak.
+printf '%s\n' "$OUT35B" | grep -q "^- \[ n/a \]" || { echo "  ✗ 前提：只靠語意命中的列應印 n/a"; printf '%s\n' "$OUT35B"; exit 1; }
+if printf '%s\n' "$OUT35B" | grep -q "弱命中"; then echo "  ✗ SCN-005 沒有 relevance 的命中不應標弱命中"; exit 1; fi
+for MODE35 in keyword hybrid tree; do
+    RES35M=$(cli35v recall "okapi grassland census" --project vec35 --mode "$MODE35" --json)
+    node -e "if('vector_hits' in JSON.parse(process.argv[1]).meta) throw new Error('SCN-002 mode=$MODE35 不應有 vector_hits')" "$RES35M"
+done
+# Degraded: route_mode already names the cause, so the field stays absent.
+RES35D=$(env -u LIBSQL_URL MEMORIA_HOME="$H35V" "$ROOT_DIR/cli" recall "okapi grassland census" --project vec35 --mode vector --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.meta.route_mode!=='vector_unavailable') throw new Error('前提：未設定 LIBSQL_URL 應降級為 vector_unavailable，實際 '+d.meta.route_mode);
+if('vector_hits' in d.meta) throw new Error('降級時不應有 vector_hits');
+" "$RES35D"
+echo "  語意 0 筆 -> vector_hits=0 且人讀輸出說明；2 筆 -> 2；非 vector 模式與降級時沒有這個欄位"
+
+# SCN-006 for vector_hits sits here rather than in test-http-api.sh: this script installs the
+# helper's deps, and the http-mcp group runs test-http-api first. project_known is covered there.
+echo "[vector] issue-35 SCN-006 POST /v1/recall 帶與 CLI 相同的 vector_hits"
+PORT35=$((PORT + 35))
+env MEMORIA_HOME="$H35V" MEMORIA_PORT="$PORT35" LIBSQL_URL="file:$VEC35V" MEMORIA_EMBED_PROVIDER=stub \
+    "$ROOT_DIR/cli" serve >"$TMP_DIR/server-$PORT35.log" 2>&1 &
+SERVER_PID=$!
+for _ in $(seq 1 30); do curl -sf "http://localhost:$PORT35/v1/health" >/dev/null 2>&1 && break; sleep 0.2; done
+for PROJ35 in vec35bare vec35; do
+    HTTP35=$(curl -sf -X POST "http://localhost:$PORT35/v1/recall" -H 'Content-Type: application/json' \
+        -d "{\"query\":\"okapi grassland census\",\"mode\":\"vector\",\"project\":\"$PROJ35\"}")
+    CLI35=$(cli35v recall "okapi grassland census" --project "$PROJ35" --mode vector --json)
+    node -e "
+const h=JSON.parse(process.argv[1]).meta, c=JSON.parse(process.argv[2]).meta;
+const want=process.argv[3]==='vec35'?2:0;
+if(h.vector_hits!==want) throw new Error('HTTP project=$PROJ35 vector_hits 應為 '+want+'，實際 '+h.vector_hits);
+if(c.vector_hits!==h.vector_hits||c.project_known!==h.project_known||h.project_known!==true)
+  throw new Error('CLI 與 HTTP 的 meta 不同：'+JSON.stringify([c.vector_hits,c.project_known,h.vector_hits,h.project_known]));
+" "$HTTP35" "$CLI35" "$PROJ35"
+done
+stop_server
+echo "  HTTP 與 CLI 的 vector_hits、project_known 相同（0 筆與 2 筆）"
+
 echo "[vector] ok"

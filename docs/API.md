@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](API.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-11-10 against the issue-32 source (`verify` on recall hits and brief items), CLI help and documentation checks.
+Last verified: 2026-11-26 against the issue-35 source (`vector_hits` and `project_known` on recall meta), CLI help and documentation checks.
 
 This is the local HTTP interface. See the [Install Guide](INSTALL.md) for startup and background service options.
 
@@ -59,6 +59,18 @@ value came from: `lexical_coverage` (query-token coverage of the top hit), `no_h
 matched — `confidence` is `0`), or `unavailable` (the top hit came from the semantic index alone, so
 match quality is not measurable — `confidence` is `null`, which means "cannot judge", not "poor
 match"). Only the opt-in vector route ever produces `null`.
+
+Two recall meta fields say why a recall found little. Each is present only when it applies:
+
+- `vector_hits`: in `mode:"vector"` when the helper answered, how many memories the semantic route
+  found before fusion (a note's session and event rows count once, as in `data`). `0` means the
+  semantic query ran and matched nothing, the case where `route_mode` reads `keyword`. A degraded
+  route (`vector_unavailable`, `vector_timeout`) omits it, since `route_mode` already names the cause.
+- `project_known`: with a `project` filter, whether that project has any memory at all. `false` with
+  zero hits means the name is wrong or unregistered, not that nothing relevant exists. It is omitted
+  if the check itself fails; recall still answers.
+
+`route_mode` and every other field keep their values, so `routeUtility` groupings are unaffected.
 
 A hit from a state memory (written with `remember --verify`) carries `verify`: the read-only command
 that re-checks it, verbatim. Its as-of date is the hit's own `timestamp`. In `/v1/brief`, decision

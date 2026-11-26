@@ -17,7 +17,7 @@ export { syncDailyNote, extractDecisions, extractSkills } from './sync.js'
 export { logRecallTelemetry, recordRecallOutcome, queryStats, readMemoryIndexCoverage, queryRecallTelemetry, queryGovernanceReview } from './telemetry.js'
 export { runVerify } from './verify.js'
 export { runPrune, exportMemory } from './prune-export.js'
-export { buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting } from './recall.js'
+export { buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting, projectHasMemories } from './recall.js'
 export {
     registerRepository,
     listRepositories,

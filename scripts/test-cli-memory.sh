@@ -457,4 +457,63 @@ for MODE34 in keyword hybrid; do
 done
 echo "  5 則時 --top-k 3 回 3 則不同筆記；只有 2 則時回 2 則"
 
+# ── issue-35: recall says why it found nothing, or only weak matches ─────────────────────────────
+# Its own home, so project names and weak-match texts cannot collide with the notes above.
+H35="$TMP_DIR/home-35"
+cli35() { MEMORIA_HOME="$H35" "$CLI" "$@"; }
+cli35 init >/dev/null
+cli35 remember "alpha 改用 pnpm 作為套件管理器" --project alpha --rationale "lockfile 是權威" >/dev/null
+cli35 remember "alpha 的部署流程改走靜態主機" --project alpha --rationale "推送即部署" >/dev/null
+
+echo "[cli-memory] (issue-35 SCN-003) --project naming no memory at all says so"
+for MODE35 in keyword hybrid; do
+    RES35=$(cli35 recall "pnpm 套件管理器" --project beta --mode "$MODE35" --json)
+    node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.data.length!==0) throw new Error('mode=$MODE35 前提：beta 沒有記憶，應 0 筆');
+if(d.meta.project_known!==false) throw new Error('mode=$MODE35 project_known 應為 false，實際 '+d.meta.project_known);
+" "$RES35"
+done
+OUT35=$(cli35 recall "pnpm 套件管理器" --project beta)
+printf '%s\n' "$OUT35" | grep -q "這個 project 沒有任何記憶" \
+    && printf '%s\n' "$OUT35" | grep -q "memoria repo list" \
+    || { echo "  ✗ 人讀輸出應提示 project 沒有記憶並指向 repo list："; printf '%s\n' "$OUT35"; exit 1; }
+echo "  0 筆、project_known=false，人讀輸出指向 repo list"
+
+echo "[cli-memory] (issue-35 SCN-004) a known project with no relevant hit is told apart"
+RES35=$(cli35 recall "完全無關的量子糾纏" --project alpha --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.data.length!==0) throw new Error('前提：不相關查詢應 0 筆，實際 '+d.data.length);
+if(d.meta.project_known!==true) throw new Error('project_known 應為 true，實際 '+d.meta.project_known);
+" "$RES35"
+if cli35 recall "完全無關的量子糾纏" --project alpha | grep -q "這個 project 沒有任何記憶"; then
+    echo "  ✗ 有記憶的 project 不應印沒有記憶的提示"; exit 1
+fi
+RES35=$(cli35 recall "pnpm 套件管理器" --json)
+node -e "if('project_known' in JSON.parse(process.argv[1]).meta) throw new Error('沒帶 --project 不應有 project_known')" "$RES35"
+echo "  0 筆、project_known=true；沒帶 --project 時沒有這個欄位"
+
+echo "[cli-memory] (issue-35 SCN-005) weak hits are returned as before and marked in the listing"
+# One note covers the whole query, the other only "checklist" (1 of 4 tokens, relevance 0.25).
+# Both rows stay; only the human listing gains a mark.
+cli35 remember "switched to pnpm with lockfile migration checklist" --project alpha --rationale "weak-hit fixture" >/dev/null
+cli35 remember "deployment checklist for staging" --project alpha --rationale "weak-hit fixture" >/dev/null
+RES35=$(cli35 recall "pnpm lockfile migration checklist" --json)
+OUT35=$(cli35 recall "pnpm lockfile migration checklist")
+node -e "
+const d=JSON.parse(process.argv[1]); const out=process.argv[2].split('\n');
+const lines=out.filter(l=>l.startsWith('- ['));
+if(lines.length!==d.data.length) throw new Error('人讀輸出的命中行數應等於 --json 的筆數');
+const weak=d.data.filter(h=>h.relevance!==undefined&&h.relevance<0.3);
+const strong=d.data.filter(h=>h.relevance!==undefined&&h.relevance>=0.3);
+if(weak.length===0||strong.length===0) throw new Error('前提：應同時有弱命中與一般命中，relevance='+d.data.map(h=>h.relevance).join(','));
+d.data.forEach((h,i)=>{
+  const marked=lines[i].includes('弱命中');
+  const want=h.relevance!==undefined&&h.relevance<0.3;
+  if(marked!==want) throw new Error('第 '+(i+1)+' 筆 relevance='+h.relevance+' 標示應為 '+want+'：'+lines[i]);
+});
+" "$RES35" "$OUT35"
+echo "  relevance 低於 0.3 的命中標「弱命中」，其餘不標，筆數不變"
+
 echo "[cli-memory] ✓ all checks passed"
