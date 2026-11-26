@@ -12,6 +12,10 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 
 本 issue 決定 `--used` 的語意，讓 skill、CLI 文件與程式一致。HTTP `POST /v1/recall/:id/outcome` 與 SDK `markRecallUseful` 也接受 `used`，一併確認。
 
+## 現況
+
+**現行 review**: review-430907e.md
+
 ## 涉及檔案
 
 採 TBD-1 做法 (a)：寫入語意不變，只讓說明與程式一致。
@@ -70,10 +74,11 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 |------|------|
 | 2026-11-26 | 建立（來源：issue-36 review-88b341c S1；使用者 2026-11-26 回「照建議」：另開 issue 決定 `--used` 的語意）；驗收條件待 TBD-1 決定 |
 | 2026-11-26 | TBD-1 使用者選 (a)；撰寫並核准 AC-1～4 |
-| 2026-11-26 | 步驟 1～3 完成，rebase 到 v1.40.0 之後的 main，待審查 |
+| 2026-11-26 | 步驟 1～3 完成，rebase 到 v1.40.0 之後的 main |
+| 2026-11-26 | 獨立審查 review-430907e：PASS，1 項 SHOULD FIX、3 項 NICE TO HAVE |
 
 ---
 **建立日期**: 2026-11-26  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 實作中
+**狀態**: 審查中
