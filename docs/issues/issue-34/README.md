@@ -8,7 +8,7 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 
 ## 現況
 
-**現行 review**: review-269a2aa.md
+**現行 review**: review-7e6baf6.md
 
 ## 涉及檔案
 
@@ -67,6 +67,7 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 | TBD-4 | review-a6db261 N1：POST /v1/recall 與 SDK 的 top_k 只驗 z.number()，負數與小數會進到 recall；-1 在沒有成對筆記的查詢上比改動前少一筆，2.5 不會補滿 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；CLI 的 --top-k 與 GET /v1/brief 已擋非正數，負數與小數在改動前就回無意義的筆數，合法輸入的行為不受影響 | 無 |
 | TBD-5 | review-a6db261 N2：補滿時，hybrid 標籤會把 2 × top-k 視窗截斷點之後被 superseded 濾掉的列也算進去 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；只影響 telemetry 標籤，而且需要同時有成對筆記、補滿與 superseded 的 keyword 專屬列，superseded 列計入標籤是改動前就有的慣例 | 無 |
 | TBD-6 | review-a6db261 N3：notePairOf 與 noteFingerprintOf 各自解析 note-／noteev- 前綴 | 已解決（2026-11-25 使用者選修正）：notePairOf 改用 noteFingerprintOf，證據見步驟 4 | 無 |
+| TBD-7 | review-7e6baf6 NICE TO HAVE：CHANGELOG.md [Unreleased] 的「The hybrid label counts only the rows a caller receives」沒有提到被 superseded 濾掉的列照舊計入標籤 | 不影響本次交付（2026-11-26 使用者選「不修」）。追蹤：無；superseded 列計入標籤是改動前就有的行為（TBD-5），不是本版的變更，CHANGELOG 只記變更 | 無 |
 
 ## Timeline
 
@@ -78,4 +79,4 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 建議修正完成，待增量覆審
+**狀態**: 已完成
