@@ -83,7 +83,7 @@ recall 的 meta 另有兩個欄位說明查得少的原因，各自只在適用�
 
 `/v1/brief` 的每個 repository 帶 `unscanned_commits`：上次 sync 之後、登記的預設分支與 tag 上的提交數
 （沒有登記預設分支或本機沒有該分支時算所有分支）；以及 `unscanned_tags`：還沒被 sync 看過的本機 tag，
-由新到舊。量不到時兩者都是 `null`，例如登記的路徑已不是這個 repository。markdown 在該 repository 那行
+依 tag 的日期由新到舊（輕量 tag 用它指向的提交的日期）。量不到時兩者都是 `null`，例如登記的路徑已不是這個 repository。markdown 在該 repository 那行
 最多列出 3 個 tag。
 
 ## UI 模式 API

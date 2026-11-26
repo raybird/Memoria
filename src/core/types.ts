@@ -526,7 +526,7 @@ export type BriefRepository = {
     /** Commits a `repo sync` would add on the registered default branch and tags (all branches when
      *  none is registered or it is not local, issue-38); null when it cannot be measured here. */
     unscanned_commits: number | null
-    /** Local tags no sync has observed yet, newest first (issue-38); null when not measurable. */
+    /** Local tags no sync has observed yet, newest first by tag date (issue-38); null when not measurable. */
     unscanned_tags: string[] | null
 }
 

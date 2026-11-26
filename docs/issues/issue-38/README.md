@@ -104,6 +104,9 @@ Feature: brief 的未掃描提示只反映該 sync 的變更，並點名未掃�
 | 編號 | 事項 | 狀態 | 影響 |
 |------|------|------|------|
 | TBD-1 | 登記的預設分支和實際整合分支不同時怎麼辦：目前已知 1 個下游（登記 `master`、合併進 `dev`）。可以用既有的 `repo add <path> --default-branch dev` 更正登記，不需改程式；要不要更正，由使用者決定 | 已解決（2026-11-26 使用者回「照建議」，選更正）：步驟 1 盤點 12 個 repository，只有這個下游不一致，近 30 天 dev 有 926 個提交不在 master、最新 tag 只在 dev。已在維護者資料根執行 `repo add` 加 `--default-branch dev`，登記改為 dev；這次 `repo add` 也順帶做了一次初始掃描（commits=83、refs=11、tags=1）。其他使用者的登記不一致時仍會漏報，文件寫明並指出更正方式 | 不更正時，該 repository 的未掃描提示會漏報合併到 `dev` 的工作；不阻擋 SCN-001～005 的實作 |
+| TBD-2 | review-2cca66c S1、S2、N2、N5：英文 CLI 文件與 CHANGELOG 把退回條件寫成「not checked out locally」，與程式（看本機有沒有該分支）相反；只有未掃描 tag 時 doctor 仍寫 up to date（需決策）；文件寫由新到舊卻沒寫排序依據，排序也沒有斷言；測試檔頭的段落清單缺 (K/issue-38) | 已解決（2026-11-26 使用者回「照建議」，選修正，S2 採做法 B）：兩處改為「no local branch by that name」；`docs/OPERATIONS.md` 寫明 doctor 的 repo scan 只看提交數，未掃描 tag 由 brief 點名，doctor 不改；CLI、API 雙語與 CHANGELOG 寫明依 tag 日期排序、輕量 tag 用提交日期，並在 (K/issue-38) 段以日期與名稱順序錯開的 4 個 tag 斷言排序（依名稱正排、反排都會失敗）；檔頭補上該段 | SCN-003、SCN-004 |
+| TBD-3 | review-2cca66c N1：用 `git tag -f` 移到新提交的既有 tag 不會被點名，因為只比對 tag 名稱 | 不影響本次交付（2026-11-26 使用者回「照建議」，選記入待確認）。追蹤：無；發版流程不會移動已發布的 tag，移動後的新提交仍算進未掃描 commit，提醒不會消失 | SCN-003 |
+| TBD-4 | review-2cca66c N3、N4：JSON 的 `unscanned_tags` 沒有上限；判斷分支與列 tag 是兩次 `for-each-ref` | 已解決（2026-11-26 使用者回「照建議」，選不修）：上萬個未掃描 tag 屬極端情況（實測 5000 個約 40KB），完整清單對呼叫端有用；分開兩次呼叫比較好讀，成本只多一次 git 呼叫 | 無 |
 
 ## Timeline
 
@@ -113,6 +116,7 @@ Feature: brief 的未掃描提示只反映該 sync 的變更，並點名未掃�
 | 2026-11-26 | 步驟 1 盤點完成；TBD-1 使用者選更正，該下游登記改為 dev |
 | 2026-11-26 | 步驟 2～5 完成，三組回歸全綠 |
 | 2026-11-26 | 獨立審查 review-2cca66c：PASS，2 項 SHOULD FIX（其中 1 項需決策）、5 項 NICE TO HAVE |
+| 2026-11-26 | 使用者對 review-2cca66c 的建議回「照建議」：修正 S1、S2（做法 B）、N2、N5，記錄 TBD-2～4，送增量覆審 |
 
 ---
 **建立日期**: 2026-11-25  

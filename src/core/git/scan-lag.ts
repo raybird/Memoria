@@ -20,7 +20,8 @@ export type RepoScanLag = {
     repository: string
     /** null = not measurable here: no local checkout, never scanned, or the path no longer holds it. */
     unscanned_commits: number | null
-    /** Local tags no sync has observed, newest first (issue-38); null when not measurable, as above. */
+    /** Local tags no sync has observed, newest first by tag date — a lightweight tag's is its commit's
+     *  (issue-38); null when not measurable, as above. */
     unscanned_tags: string[] | null
 }
 

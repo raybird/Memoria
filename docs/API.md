@@ -89,7 +89,8 @@ and never runs it.
 
 Each `/v1/brief` repository carries `unscanned_commits`, commits past the last sync on the
 registered default branch and tags (every branch when none is registered or it is not local), and
-`unscanned_tags`, the local tags no sync has seen, newest first. Both are `null` when they cannot be
+`unscanned_tags`, the local tags no sync has seen, newest first by tag date (a lightweight
+tag uses its commit's date). Both are `null` when they cannot be
 measured, for example when the registered path no longer holds the repository. The markdown names
 up to three of the tags on the repository line.
 

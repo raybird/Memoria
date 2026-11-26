@@ -12,6 +12,7 @@
 #   (I) pinned text survives at note length; only an outsized memory is cut
 #   (J) high-utility needs 2 observations, merges one source, skips pinned, respects scope
 #   (K) unscanned commits appear in brief and doctor without turning doctor red, and clear on sync
+#   (K/issue-38) the count covers the default branch and tags only; unscanned tags are named, newest first
 #
 # The single global BRIEF.md cannot hold a cwd-filtered result: `brief` is manual and CLAUDE.md
 # `@`-imports one fixed path, so whoever ran it last from whatever directory would decide what
@@ -326,11 +327,14 @@ grep -F "**k38**" "$BRIEF" | grep -q "未掃描" && fail38 "SCN-002／003：sync
 FEAT_SHA=$(git -C "$K38" rev-parse feature)
 node -e "const D=require('$BSQ');const db=new D(process.argv[1],{readonly:true});const r=db.prepare('SELECT 1 FROM git_commits WHERE commit_sha=?').get(process.argv[2]);process.exit(r?0:1)" "$MEMORIA_HOME/.memory/sessions.db" "$FEAT_SHA" \
   || fail38 "SCN-005：sync 後 feature 分支的提交沒有進 git_commits"
-# 超過 3 個未掃描 tag 時只列 3 個，加上總數。
-for t in t1 t2 t3 t4; do git -C "$K38" tag "$t"; done
+# 超過 3 個未掃描 tag 時只列 3 個，加上總數；依 tag 日期由新到舊。日期刻意和名稱順序錯開，
+# 所以依名稱正排或反排都過不了。
+for td in "r-b 2026-01-01" "r-d 2026-01-02" "r-a 2026-01-03" "r-c 2026-01-04"; do
+    read -r tag day <<<"$td"; GIT_COMMITTER_DATE="${day}T00:00:00Z" gc38 "$K38" tag -a "$tag" -m "$tag"
+done
 "$CLI" brief --global >/dev/null
-grep -F "**k38**" "$BRIEF" | grep -qF " 等 4 個" || fail38 "4 個未掃描 tag 時應寫「等 4 個」: $(grep -F '**k38**' "$BRIEF")"
-[ "$(lag38 'unscanned_tags?.length')" = "4" ] || fail38 "--json 應列出全部 4 個 tag"
+grep -F "**k38**" "$BRIEF" | grep -qF "未掃描 tag: r-c, r-a, r-d 等 4 個" || fail38 "4 個未掃描 tag 時應依日期列 3 個並寫「等 4 個」: $(grep -F '**k38**' "$BRIEF")"
+[ "$(lag38 'unscanned_tags?.join(",")')" = "r-c,r-a,r-d,r-b" ] || fail38 "--json 應依日期由新到舊列出全部 4 個 tag，實得 $(lag38 'unscanned_tags')"
 "$CLI" repo sync k38 >/dev/null
 # 預設分支登記了但本機沒有這個分支時退回原本的計數（不可量到 0 而漏報）。
 git -C "$K38" branch -m main trunk

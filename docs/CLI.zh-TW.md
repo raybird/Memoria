@@ -65,7 +65,7 @@ recall 的人讀輸出會說明查得少的原因。筆數那行下方出現 `- 
 
 在已註冊 repository 內執行 `brief`，會自動辨識專案並寫入 `knowledge/BRIEF-<project>.md`；明確指定 `--project` 仍寫 `BRIEF.md`，`--global` 則選取所有專案。正文的範圍行會顯示產生時間，因為以 `@` 引入 brief 的 host 看不到開頭的註解。Durable 記憶會列在不受 `--days`、`--top-k` 限制的固定區塊，被取代的記憶會排除。近期決策的 `--top-k` 格數由各專案輪流分配，最近活躍的專案優先。project 不屬於任何已註冊 repository 的記憶會隨各專案的 brief 載入。依 `brief` 輸出，在 `AGENTS.md` 設定讀取指令；Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 與 brief 路徑載入。記憶更新後重新產生 brief。詳見 [Operations](OPERATIONS.md#context-injection-via-briefmd)。
 
-Repository 狀態區塊會說明哪個 repository 該跑 `repo sync`。`未掃描 commit: N` 只算上次 sync 之後、登記的預設分支與 tag 上的提交，還沒合併的分支不算；沒有登記預設分支，或本機沒有這個分支時，和 `repo sync` 一樣算所有分支。`未掃描 tag: <名稱>` 列出還沒被 sync 看過的 tag，由新到舊，最多列 3 個，超過時加「等 N 個」寫總數。`--json` 以 `repositories[].unscanned_commits` 與 `unscanned_tags` 帶出。`repo sync` 本身照樣掃描所有分支。登記的預設分支不是實際合併的分支時，用 `memoria repo add <path> --default-branch <分支>` 重新登記；目前登記的分支可用 `repo list` 查看。
+Repository 狀態區塊會說明哪個 repository 該跑 `repo sync`。`未掃描 commit: N` 只算上次 sync 之後、登記的預設分支與 tag 上的提交，還沒合併的分支不算；沒有登記預設分支，或本機沒有這個分支時，和 `repo sync` 一樣算所有分支。`未掃描 tag: <名稱>` 列出還沒被 sync 看過的 tag，依 tag 的日期由新到舊（輕量 tag 用它指向的提交的日期），最多列 3 個，超過時加「等 N 個」寫總數。`--json` 以 `repositories[].unscanned_commits` 與 `unscanned_tags` 帶出。`repo sync` 本身照樣掃描所有分支。登記的預設分支不是實際合併的分支時，用 `memoria repo add <path> --default-branch <分支>` 重新登記；目前登記的分支可用 `repo list` 查看。
 
 ## 本機記憶工作台
 
