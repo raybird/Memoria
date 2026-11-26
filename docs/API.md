@@ -63,12 +63,18 @@ match"). Only the opt-in vector route ever produces `null`.
 Two recall meta fields say why a recall found little. Each is present only when it applies:
 
 - `vector_hits`: in `mode:"vector"` when the helper answered, how many memories the semantic route
-  found before fusion (a note's session and event rows count once, as in `data`). `0` means the
-  semantic query ran and matched nothing, the case where `route_mode` reads `keyword`. A degraded
-  route (`vector_unavailable`, `vector_timeout`) omits it, since `route_mode` already names the cause.
+  contributed before fusion. It counts in the unit of `data`: a note's session and event rows count
+  once, superseded memories are left out unless `include_superseded` is set, and after a refill
+  (a collapsed note pair left fewer than `top_k`) it counts the deeper `2 × top_k` window that pass
+  used. `0` means the semantic query ran and matched nothing, the case where `route_mode` reads
+  `keyword`. A degraded route (`vector_unavailable`, `vector_timeout`) omits it, since `route_mode`
+  already names the cause.
 - `project_known`: with a `project` filter, whether that project has any memory at all. `false` with
   zero hits means the name is wrong or unregistered, not that nothing relevant exists. It is omitted
   if the check itself fails; recall still answers.
+
+Neither field appears when the data root has no database yet (`data: []`, `confidence: 0`) or when
+the query is too trivial to run (`route_mode: "skipped"`).
 
 `route_mode` and every other field keep their values, so `routeUtility` groupings are unaffected.
 

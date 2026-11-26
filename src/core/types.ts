@@ -220,10 +220,11 @@ export type MemoriaResult<T> = {
         route_mode?: string  // Optional routing mode used by recall
         fallback_used?: boolean // Whether hybrid route fell back to keyword recall
         recall_id?: string   // Correlates a recall to a later utility outcome (UFL); success recall only
-        // issue-35, recall only. vector_hits: memories the semantic route found before fusion, a
-        // note's session/event pair counting once as in `data`; present only in vector mode when the
-        // helper answered (a degraded route_mode already names the cause). project_known: whether the
-        // filtered project has any memory; present only with a project filter, absent if the check failed.
+        // issue-35, recall only. vector_hits: memories among the semantic rows the final pass fused
+        // (2 × top_k after an issue-34 refill), counted as in `data`: superseded ones excluded, a note's
+        // session/event pair once; present only in vector mode when the helper answered (a degraded
+        // route_mode already names the cause). project_known: whether the filtered project has any
+        // memory; present only with a project filter, absent if the check failed.
         vector_hits?: number
         project_known?: boolean
         timestamp: string    // ISO8601

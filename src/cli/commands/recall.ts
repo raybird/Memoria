@@ -62,7 +62,9 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
             // stays `keyword` when the semantic route ran and matched nothing, which read as "vector
             // mode did not run"; and an empty project looked the same as an unrelated query.
             if (result.meta.vector_hits === 0) console.log('- 語意查詢有執行，沒有命中；列出的是字面查詢的結果')
-            if (result.meta.project_known === false) {
+            // Only on an empty result: tree routes filter memory_nodes.project, so a legacy row can
+            // still surface under a name that sessions does not hold (issue-35 review N2).
+            if (result.meta.project_known === false && hits.length === 0) {
                 console.log(`- 這個 project 沒有任何記憶：${options.project}；已登記的名稱見 \`memoria repo list\``)
             }
             for (const hit of hits) {

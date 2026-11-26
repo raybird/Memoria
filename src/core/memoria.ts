@@ -727,6 +727,8 @@ export class MemoriaCore {
                 fallbackUsed: boolean
                 /** hybrid only: its label is decided after ranking, from what is returned. */
                 treeKeys?: string[]
+                /** vector mode with the helper ok: the semantic rows this pass fused (issue-35). */
+                vectorRows?: RawRecallRow[]
             }
             const rowKey = (r: { id: string; session_id: string }): string => `${r.id}:${r.session_id}`
 
@@ -751,13 +753,14 @@ export class MemoriaCore {
                     if (v.status !== 'ok') {
                         return { rows: keywordRaw, routeMode: v.status === 'timeout' ? 'vector_timeout' : 'vector_unavailable', fallbackUsed: true }
                     }
-                    if (v.rows.length === 0) return { rows: keywordRaw, routeMode: 'keyword', fallbackUsed: false }
+                    if (v.rows.length === 0) return { rows: keywordRaw, routeMode: 'keyword', fallbackUsed: false, vectorRows: [] }
                     // At limit = topK this is exactly `v.rows`.
                     const vectorRows = v.candidates.slice(0, Math.max(1, limit)) as RawRecallRow[]
                     return {
                         rows: rrfFuse<RawRecallRow>([keywordRaw, vectorRows], limit),
                         routeMode: keywordRaw.length > 0 ? 'hybrid_vector' : 'vector',
-                        fallbackUsed: false
+                        fallbackUsed: false,
+                        vectorRows
                     }
                 }
 
@@ -774,25 +777,25 @@ export class MemoriaCore {
                 return { rows: merged.slice(0, limit), routeMode: 'hybrid', fallbackUsed: false, treeKeys: treeRaw.map(rowKey) }
             }
 
-            const rank = (rows: RawRecallRow[]): RecallHit[] => {
-                const rawHits: RecallHit[] = rows.map((r) => ({
-                    type: r.type as RecallHit['type'],
-                    id: r.id,
-                    session_id: r.session_id,
-                    timestamp: r.timestamp,
-                    project: r.project,
-                    snippet: r.snippet,
-                    // score = relevance × time-decay (ranking); relevance is the decay-free match quality
-                    score: Number.isFinite(r.score) ? Number(r.score) : 0,
-                    relevance: Number.isFinite(r.relevance) ? Number(r.relevance) : undefined,
-                    node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
-                    reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
-                }))
+            const toHits = (rows: RawRecallRow[]): RecallHit[] => rows.map((r) => ({
+                type: r.type as RecallHit['type'],
+                id: r.id,
+                session_id: r.session_id,
+                timestamp: r.timestamp,
+                project: r.project,
+                snippet: r.snippet,
+                // score = relevance × time-decay (ranking); relevance is the decay-free match quality
+                score: Number.isFinite(r.score) ? Number(r.score) : 0,
+                relevance: Number.isFinite(r.relevance) ? Number(r.relevance) : undefined,
+                node_id: typeof r.node_id === 'string' ? r.node_id : undefined,
+                reasoning_path: Array.isArray(r.reasoning_path) ? r.reasoning_path : undefined
+            }))
 
+            const rank = (rows: RawRecallRow[]): RecallHit[] => {
                 // issue-5: drop superseded memories and undo time-decay for durable ones. Runs FIRST so
                 // that utility weighting below stays the final arbiter — a mis-marked durable memory can
                 // still be pushed down by poor observed utility. Byte-identical when nothing is marked.
-                const attributed: RecallHit[] = applyMemoryAttributes(this.paths.dbPath, rawHits, {
+                const attributed: RecallHit[] = applyMemoryAttributes(this.paths.dbPath, toHits(rows), {
                     includeSuperseded: filter.include_superseded
                 })
 
@@ -868,6 +871,14 @@ export class MemoriaCore {
             const confidenceBasis: ConfidenceBasis =
                 top === undefined ? 'no_hits' : top.relevance === undefined ? 'unavailable' : 'lexical_coverage'
 
+            // issue-35: the semantic rows the final pass fused — `topK` rows, or `2 × topK` after an
+            // issue-34 refill — counted in the unit of `data`: superseded memories leave, as they do
+            // from the result, and a note's session/event pair counts once.
+            const vectorHits = route.vectorRows === undefined ? undefined
+                : collapseNoteHits(applyMemoryAttributes(this.paths.dbPath, toHits(route.vectorRows), {
+                    includeSuperseded: filter.include_superseded
+                })).length
+
             // Fail-open: a failed check leaves the field out rather than failing the recall.
             let projectKnown: boolean | undefined
             if (filter.project) {
@@ -905,8 +916,7 @@ export class MemoriaCore {
                     recall_id: recallId ?? undefined,
                     // issue-35: why a recall found little. Added fields only — route_mode keeps its
                     // values because routeUtility groups by it (issue-18).
-                    // A note is indexed twice (issue-34), so its pair counts once — the same unit as `data`.
-                    vector_hits: vectorOutcome?.status === 'ok' ? collapseNoteHits(vectorOutcome.rows).length : undefined,
+                    vector_hits: vectorHits,
                     project_known: projectKnown
                 }
             }

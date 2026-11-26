@@ -109,8 +109,14 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 
 | 編號 | 事項 | 狀態 | 影響 |
 |---|---|---|---|
-| TBD-1 | 計畫原把 `vector_hits` 定為 `vectorOutcome.rows.length`，但每則筆記在語意索引裡有 session 與 event 兩列，基準資料中回 2 則筆記時這個值是 4，和 `data` 的筆數對不起來 | 已解決（2026-11-26 實作時決定）：改成 `collapseNoteHits(vectorOutcome.rows).length`，和 issue-34「一則筆記佔一格」及 `data` 同一單位；SCN-002 的「2 筆語意命中」本來就以筆記計，Gherkin 不變；計畫「設計方案」已同步修訂 | SCN-002 |
+| TBD-1 | 計畫原把 `vector_hits` 定為 `vectorOutcome.rows.length`，但每則筆記在語意索引裡有 session 與 event 兩列，基準資料中回 2 則筆記時這個值是 4，和 `data` 的筆數對不起來 | 已解決（2026-11-26 實作時決定，2026-11-26 使用者對 review-14b4625 回「照建議」時一併確認）：改以 `data` 的單位計數，一則筆記的兩列算一則；SCN-002 的「2 筆語意命中」本來就以筆記計，Gherkin 不變。最後的定義見 TBD-3 | SCN-002 |
 | TBD-2 | libSQL 的向量索引是近似搜尋：同一份 4 列資料重建 25 次，有 2 次 helper 只回其中一則筆記的兩列（2026-11-26 實測），SCN-002 的測試因此偶發失敗過一次 | 不影響本次交付（2026-11-26 整理）。追蹤：無；SCN-002 的測試先確認 helper 回滿 4 列，沒有就重建索引（最多 5 次），斷言本身不放寬；issue-34 的語意補滿測試用 10 列、只要 3 則，今天跑了約 12 次沒有失敗過 | SCN-002、SCN-006 |
+| TBD-3 | review-14b4625 S1：`vector_hits` 只算 helper 前 top_k 列，觸發 issue-34 補位時，補位那一輪用的是 2 × top_k 列，會少算（實測 5 則筆記全部來自語意命中，卻報 3）；被取代的記憶也被算進去 | 已解決（2026-11-26 使用者選「修正」）：改成計算最後一輪路由實際融合的語意列，先扣掉被取代的記憶，成對筆記算一則。測試與紅綠燈證據見計畫步驟 2 | SCN-001、SCN-002 |
+| TBD-4 | review-14b4625 N1：SCN-002 的前提檢查用 topK 5 問 helper，recall 實際送 15，前提比實際嚴格 | 已解決（2026-11-26 使用者選「修正」）：前提檢查改用 15，抽成 `build_full_index35`，補位測試也共用 | SCN-002 |
+| TBD-5 | review-14b4625 N2：tree 路由過濾的是 `memory_nodes.project`，舊資料若 project 為 NULL，可能一邊列出命中、一邊印「這個 project 沒有任何記憶」 | 已解決（2026-11-26 使用者選「修正」）：只在 0 筆時印這行提示；`project_known` 欄位照舊依 sessions 判定。沒有另寫測試，因為要造出舊格式資料；SCN-003 的 0 筆情況照常會印 | SCN-003 |
+| TBD-6 | review-14b4625 N3：「已登記的名稱見 memoria repo list」列不出不屬於任何 repository 的 project | 不影響本次交付（2026-11-26 使用者選「不修」）。追蹤：無；這是 SCN-003 核准的寫法 | SCN-003 |
+| TBD-7 | review-14b4625 N4：資料庫不存在、以及查詢太短被略過時，兩個新欄位都不會出現，API 文件沒寫 | 已解決（2026-11-26 使用者選「修正」）：API.md 與 API.zh-TW.md 各補一句 | SCN-006 |
+| TBD-8 | review-14b4625 N5：計畫步驟 1 沒寫明 GitNexus impact 的 CRITICAL 結果已經告知使用者 | 已解決（2026-11-26 使用者選「修正」）：步驟 1 證據已補上 | 無 |
 
 ## Timeline
 
@@ -118,6 +124,7 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 |------|------|
 | 2026-11-25 | 建立並核准 SCN-001～006（來源：9 個下游 session 的使用體驗調查） |
 | 2026-11-26 | 實作完成：`vector_hits` 改以筆記計（TBD-1）；SCN-006 的 `vector_hits` 斷言放在 test-vector-recall.sh |
+| 2026-11-26 | review-14b4625 PASS，附 1 項 SHOULD FIX、5 項 NICE TO HAVE；使用者回「照建議」，修正 S1、N1、N2、N4、N5（TBD-3～8），送增量覆審 |
 
 ---
 **建立日期**: 2026-11-25  

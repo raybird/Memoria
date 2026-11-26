@@ -790,16 +790,21 @@ done
 cli35v remember "沒有向量的一則筆記" --project vec35bare --rationale "只用來讓 project 存在" >/dev/null
 echo "{\"entities\":[${ENTITIES35%,}]}" > "$TMP_DIR/payload-35.json"
 # libSQL's vector index is approximate: on a 4-row store about 1 build in 12 misses one note's
-# rows entirely (measured 2/25). SCN-002's premise is that the helper returns both notes, so the
-# index is rebuilt until it does rather than letting the premise fail at random.
-for _ in 1 2 3 4 5; do
-    rm -f "$VEC35V"*
-    LIBSQL_URL="file:$VEC35V" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$TMP_DIR/payload-35.json" >/dev/null
-    ROWS35=$(echo '{"query":"okapi grassland census","topK":5}' | LIBSQL_URL="file:$VEC35V" MEMORIA_EMBED_PROVIDER=stub \
-        node "$HELPER_DIR/vector-recall.mjs" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).hits.length))")
-    [ "$ROWS35" = "4" ] && break
-done
-[ "$ROWS35" = "4" ] || { echo "  ✗ 前提：helper 應回 4 列語意命中，5 次重建都是 $ROWS35"; exit 1; }
+# rows entirely (measured 2/25). A premise "the helper returns all N rows" is therefore checked
+# with the k recall itself sends (top_k 5 × overfetch 3 = 15), and the index rebuilt until it
+# holds rather than letting the premise fail at random. $1 = store, $2 = payload, $3 = query, $4 = rows.
+build_full_index35() {
+    local rows=""
+    for _ in 1 2 3 4 5; do
+        rm -f "$1"*
+        LIBSQL_URL="file:$1" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$2" >/dev/null
+        rows=$(echo "{\"query\":\"$3\",\"topK\":15}" | LIBSQL_URL="file:$1" MEMORIA_EMBED_PROVIDER=stub \
+            node "$HELPER_DIR/vector-recall.mjs" | node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync(0,'utf8')).hits.length))")
+        [ "$rows" = "$4" ] && return 0
+    done
+    echo "  ✗ 前提：helper 應回 $4 列語意命中，5 次重建都是 $rows"; exit 1
+}
+build_full_index35 "$VEC35V" "$TMP_DIR/payload-35.json" "okapi grassland census" 4
 
 RES35A=$(cli35v recall "okapi grassland census" --project vec35bare --mode vector --json)
 node -e "
@@ -859,5 +864,47 @@ if(c.vector_hits!==h.vector_hits||c.project_known!==h.project_known||h.project_k
 done
 stop_server
 echo "  HTTP 與 CLI 的 vector_hits、project_known 相同（0 筆與 2 筆）"
+
+# review-14b4625 S1: vector_hits counted the helper's first top_k rows even when an issue-34 refill
+# fused 2 × top_k of them, so 5 notes returned from the semantic route read vector_hits=3. It also
+# counted superseded memories, which the result drops. Five notes, each indexed as both halves:
+# both halves carry the same text, so a note's rows sit side by side and top_k 5 sees at most 3
+# notes in its first 5 rows — the refill always runs.
+echo "[vector] issue-35 vector_hits 計入補位那一輪的語意候選，扣掉被取代的"
+H35R="$TMP_DIR/home-35r"
+VEC35R="$TMP_DIR/vectors-35r.db"
+cli35r() { env MEMORIA_HOME="$H35R" LIBSQL_URL="file:$VEC35R" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" "$@"; }
+cli35r init >/dev/null
+ENTITIES35R=""
+for i in 1 2 3 4 5; do
+    FP=$(cli35r remember "本機文字不含查詢詞的補位筆記 $i" --project vec35r --rationale "理由 $i" --json \
+        | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync(0,'utf8')).data.noteId)")
+    [ "$i" = 5 ] && FP35R_LAST="$FP"
+    ENTITIES35R="$ENTITIES35R{\"id\":\"session:note-$FP\",\"type\":\"session\",\"name\":\"note $i\",\"text\":\"pangolin night survey $i\"},"
+    ENTITIES35R="$ENTITIES35R{\"id\":\"decision:noteev-$FP\",\"type\":\"decision\",\"name\":\"note $i\",\"text\":\"pangolin night survey $i\"},"
+done
+echo "{\"entities\":[${ENTITIES35R%,}]}" > "$TMP_DIR/payload-35r.json"
+build_full_index35 "$VEC35R" "$TMP_DIR/payload-35r.json" "pangolin night survey" 10
+RES35R=$(cli35r recall "pangolin night survey" --project vec35r --mode vector --top-k 5 --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.meta.route_mode!=='vector') throw new Error('前提：只有語意路由命中，route_mode 應為 vector，實際 '+d.meta.route_mode);
+if(d.data.length!==5) throw new Error('前提：補位後應回 5 則筆記，實際 '+d.data.length);
+if(d.meta.vector_hits!==5) throw new Error('補位後 5 則都來自語意命中，vector_hits 應為 5，實際 '+d.meta.vector_hits);
+" "$RES35R"
+# The superseding note matches nothing, so the result and the count each lose one memory.
+cli35r remember "取代第 5 則的新筆記" --project vec35r --rationale "取代" --supersedes "note-$FP35R_LAST" >/dev/null
+RES35R=$(cli35r recall "pangolin night survey" --project vec35r --mode vector --top-k 5 --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.data.length!==4) throw new Error('前提：第 5 則被取代後應回 4 則，實際 '+d.data.length);
+if(d.meta.vector_hits!==4) throw new Error('被取代的記憶不應計入，vector_hits 應為 4，實際 '+d.meta.vector_hits);
+" "$RES35R"
+RES35R=$(cli35r recall "pangolin night survey" --project vec35r --mode vector --top-k 5 --include-superseded --json)
+node -e "
+const d=JSON.parse(process.argv[1]);
+if(d.meta.vector_hits!==d.data.length||d.data.length!==5) throw new Error('--include-superseded 時應回 5 則且 vector_hits 相同，實際 '+d.data.length+'/'+d.meta.vector_hits);
+" "$RES35R"
+echo "  補位後 5 則 -> vector_hits=5；被取代 1 則 -> 4；--include-superseded -> 5"
 
 echo "[vector] ok"

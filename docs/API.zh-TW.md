@@ -61,12 +61,16 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 
 recall 的 meta 另有兩個欄位說明查得少的原因，各自只在適用時出現：
 
-- `vector_hits`：`mode:"vector"` 且 helper 有回應時，語意路由在融合前找到幾則記憶（一則筆記的 session
-  與 event 兩列算一則，和 `data` 相同）。`0` 表示語意查詢跑了但沒有命中，也就是 `route_mode` 顯示
-  `keyword` 的那種情況。降級（`vector_unavailable`、`vector_timeout`）時沒有這個欄位，因為 `route_mode`
+- `vector_hits`：`mode:"vector"` 且 helper 有回應時，語意路由在融合前提供了幾則記憶。計算單位和 `data`
+  相同：一則筆記的 session 與 event 兩列算一則，被取代的記憶不算（帶 `include_superseded` 時才算）；
+  觸發補位（合併成對筆記後不足 `top_k`）時，算的是那一輪用的 `2 × top_k` 視窗。`0` 表示語意查詢跑了
+  但沒有命中，也就是 `route_mode` 顯示 `keyword` 的那種情況。降級（`vector_unavailable`、`vector_timeout`）時沒有這個欄位，因為 `route_mode`
   已經說明了原因。
 - `project_known`：帶 `project` 過濾時，這個 project 有沒有任何記憶。`false` 且 0 筆表示名稱錯了或沒有
   登記，不是沒有相關記憶。檢查本身失敗時不放這個欄位，recall 照常回傳。
+
+資料根還沒有資料庫（`data: []`、`confidence: 0`），或查詢太短而略過（`route_mode: "skipped"`）時，
+兩個欄位都不會出現。
 
 `route_mode` 與其他欄位的值都不變，`routeUtility` 的分組不受影響。
 

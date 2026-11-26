@@ -251,8 +251,8 @@ Treat `null` as "unmeasurable", never as a low score — sorting or thresholding
 Without `LIBSQL_URL` no response ever carries `null`.
 
 Recall meta also says why a recall found little (issue-35), each field present only when it applies:
-`vector_hits` (vector mode with the helper answering: distinct memories the semantic route found; `0`
-is the case where `route_mode` reads `keyword`) and `project_known` (with a `project` filter: whether
+`vector_hits` (vector mode with the helper answering: memories the semantic route contributed, in the unit
+of `data`; `0` is the case where `route_mode` reads `keyword`) and `project_known` (with a `project` filter: whether
 that project has any memory). `route_mode` keeps its values — `routeUtility` groups by it.
 
 With more than one repository registered, pass `project` on recall — promoted git summaries use the
