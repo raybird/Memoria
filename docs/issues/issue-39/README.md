@@ -14,40 +14,65 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 
 ## 涉及檔案
 
-依 TBD-1 的決定而定，候選：
+採 TBD-1 做法 (a)：寫入語意不變，只讓說明與程式一致。
 
-- `src/cli/commands/feedback.ts` - `--used` 的預設值或旗標本身
-- `src/core/db/telemetry.ts` - `used` 與分數、逐筆效用歸因的關係
-- `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`、`DEPLOYED_REFERENCE.md` - feedback 段
-- `docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/API.md`、`docs/API.zh-TW.md` - feedback 與 outcome 的說明
-- `scripts/test-cli-memory.sh` 或 `scripts/test-utility-ranking.sh` - 回歸測試
+- `src/cli/commands/feedback.ts` - 可改：只改 `--used` 的 help 說明，寫入邏輯不動
+- `src/core/db/telemetry.ts` - 不可觸及：分數與逐筆效用歸因的寫入不變
+- `src/server.ts`、`src/sdk.ts` - 不可觸及：HTTP outcome 與 SDK 的 `used` 行為不變
+- `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`、`DEPLOYED_REFERENCE.md` - 可改：feedback 段與命令對照
+- `docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/API.md`、`docs/API.zh-TW.md` - 可改：feedback 與 outcome 的說明
+- `scripts/test-cli-memory.sh` - 可改：回歸斷言
+- `CHANGELOG.md` - 可改
 
 ## 驗收條件
 
-待 TBD-1 決定後撰寫，目前沒有已核准的驗收條件。
+1. **AC-1**：`memoria feedback --help` 的 `--used` 說明寫明它為相容而保留、不影響寫入。其他參數相同時，帶與不帶 `--used` 寫入的 `recall_telemetry`（分數、訊號）與 `memory_utility` 都相同，既有呼叫照常成功、exit 0。檢查方式：隔離資料根兩次 recall，以相同的 `--score` 與 `--hits` 各回報一次（一次帶 `--used`），比對兩列 telemetry 與該記憶 utility 的增量；斷言 help 文字。
+   - 失敗路徑：help 仍寫成會標記「用到」，或帶 `--used` 的舊呼叫失敗。
+2. **AC-2**：回報時只給 `--score`、不帶 `--hits`：`recall_telemetry` 記下這個分數，任何記憶的 `memory_utility` 都不變。檢查方式：回報前後比對 `memory_utility` 全表，並斷言該 recall 的 telemetry 分數。
+   - 失敗路徑：沒帶 `--hits` 的回報仍讓某筆記憶累積效用，測試查詢因此影響排序。
+3. **AC-3**：部署的 skill feedback 段與 `DEPLOYED_REFERENCE.md` 的命令都不再出現 `--used`。feedback 段改為三種情況：結果用在工作上時依品質給 `--score`，`--hits` 列出用到的 hit；沒有幫助時給 `--score 0`；只是測試或看看、結果沒用在工作上時依品質給 `--score`、不帶 `--hits`，並說明不帶 `--hits` 就不會有記憶累積效用、排序不受影響。檢查方式：grep 兩檔、`node scripts/check-deployed-skill-sync.mjs` 與 `test-npm-install.sh` 的部署驗證。
+   - 失敗路徑：skill 讓 agent 在結果用在工作上時也省略 `--hits`，有用的記憶不再累積效用。
+4. **AC-4**：CLI 雙語文件寫明 `--used` 不影響寫入、`--hits` 決定效用歸到哪些記憶；API 雙語文件寫明 outcome 的 `used` 只在沒有 `utility_score` 時用來推算分數（true 為 1、false 為 0）。HTTP outcome 與 SDK `markRecallUseful` 的行為不變。檢查方式：`telemetry.ts`、`server.ts`、`sdk.ts` 沒有 diff，`test-http-api.sh`、`test-utility-ranking.sh` 照常通過，`release:docs-check` 通過。
+   - 失敗路徑：文件與程式對 `used` 的描述不一致，或 HTTP、SDK 呼叫端的寫入結果改變。
+
+- **核准日期**: 2026-11-26
+- **核准來源**: 使用者 2026-11-26 對 TBD-1 回「好 issue-39 選 a」，對 AC-1～4 回「核准」
 
 ## 風險與首要驗證
 
-- **最大風險**：改變回報語意會影響 UFL 的逐筆效用累積，進而改變 recall 排序與 prune 的保留判斷；既有資料已用舊語意寫入。
-- **風險等級與理由**：Medium。程式改動小，但效用訊號是排序的輸入，下游 adapter 與 SDK 也會送 `used`。
-- **首要驗證**：先在隔離資料根以現行程式重現「帶與不帶 `--used` 寫入相同」作為紅燈，再確認選定語意下 `memory_utility` 的變化。
-- **選擇理由**：這是問題本身的可觀察形態，直接對照 `recall_telemetry` 與 `memory_utility` 的列。
-- **完成證據**：待驗收條件核准後補上。
+- **最大風險**：skill 改寫後，agent 把該帶 `--hits` 的正式回報也省略，有用的記憶因此不再累積效用，排序訊號變弱。
+- **風險等級與理由**：Low。做法 (a) 不改寫入語意與 schema，程式只改 help 說明；既有資料與下游 adapter、SDK 都不受影響。風險只在 skill 的措辭。
+- **首要驗證**：先在 `scripts/test-cli-memory.sh` 寫 AC-1、AC-2 的斷言，以現行程式執行確認通過（這兩項描述既有行為，作為回歸保護，不會有紅燈）；help 說明的斷言先取得紅燈。
+- **選擇理由**：AC-2 是做法 (a) 成立的前提：測試查詢不帶 `--hits` 就不影響排序。先以斷言釘住，skill 才能放心依賴它。
+- **完成證據**：待實作後補上。
+
+## 實作與驗證步驟
+
+1. 📝 **AC-1、AC-2：回歸斷言與 help 說明** — 在 `test-cli-memory.sh` 加斷言：同一筆 hit 分別以帶與不帶 `--used` 回報，telemetry 與 utility 相同；只給 `--score` 時 utility 不變；`feedback --help` 的 `--used` 說明含「no effect」。help 斷言取得紅燈後改 `feedback.ts` 的說明。相依：無。
+   - 完成判準：三組斷言都通過；help 斷言有紅燈紀錄；`telemetry.ts`、`server.ts`、`sdk.ts` 沒有 diff。
+   - 完成證據：
+2. 📝 **AC-3：部署的 skill** — 改 `DEPLOYED_SKILL.md` feedback 段與 `DEPLOYED_REFERENCE.md` 命令對照。相依：步驟 1。
+   - 完成判準：兩檔不再出現 `--used`；`node scripts/check-deployed-skill-sync.mjs` 通過；措辭依 writing-rules 檢查。
+   - 完成證據：
+3. 📝 **AC-4：文件與回歸** — CLI、API 雙語文件與 CHANGELOG；跑 core 組與 `test-http-api.sh`、`test-utility-ranking.sh`、`test-npm-install.sh`（部署 skill 的安裝驗證）。相依：步驟 1、2。
+   - 完成判準：所列腳本全綠，`release:docs-check` 通過，文件與行為一致。
+   - 完成證據：
 
 ## 待確認事項
 
 | 編號 | 事項 | 狀態 | 影響 |
 |---|---|---|---|
-| TBD-1 | `--used` 該代表什麼。可選做法：(a) 不再區分，`--used` 保留為可接受但不影響寫入的旗標，skill 與文件改成測試查詢照品質給 `--score`、不帶 `--hits`，讓效用不歸到個別記憶；(b) 讓旗標有作用，沒帶 `--used` 時不做逐筆效用歸因，只記分數；(c) 在 `recall_telemetry` 另存 `used`，校準與遙測可以分開看，需要 migration。建議 (a)：不改程式與 schema，用既有的 `--hits` 就能讓測試查詢不影響排序 | 待確認 | 驗收條件、涉及檔案與分級都取決於此 |
+| TBD-1 | `--used` 該代表什麼。可選做法：(a) 不再區分，`--used` 保留為可接受但不影響寫入的旗標，skill 與文件改成測試查詢照品質給 `--score`、不帶 `--hits`，讓效用不歸到個別記憶；(b) 讓旗標有作用，沒帶 `--used` 時不做逐筆效用歸因，只記分數；(c) 在 `recall_telemetry` 另存 `used`，校準與遙測可以分開看，需要 migration。建議 (a)：不改程式與 schema，用既有的 `--hits` 就能讓測試查詢不影響排序 | 已解決（2026-11-26 使用者回「好 issue-39 選 a」）：採 (a)，驗收條件 AC-1～4 依此撰寫，風險降為 Low | 驗收條件、涉及檔案與分級 |
 
 ## Timeline
 
 | 日期 | 異動 |
 |------|------|
 | 2026-11-26 | 建立（來源：issue-36 review-88b341c S1；使用者 2026-11-26 回「照建議」：另開 issue 決定 `--used` 的語意）；驗收條件待 TBD-1 決定 |
+| 2026-11-26 | TBD-1 使用者選 (a)；撰寫並核准 AC-1～4 |
 
 ---
 **建立日期**: 2026-11-26  
 **分級**: Small  
-**風險**: Medium\
-**狀態**: 待確認
+**風險**: Low\
+**狀態**: 待實作
