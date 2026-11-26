@@ -527,7 +527,7 @@ recall39() { u39 recall "部署前先在測試環境確認" --project demo39 --j
 u39 init >/dev/null
 u39 remember "部署前先在測試環境確認再上線" --project demo39 >/dev/null
 # 先合併換行再比對：help 的折行由 commander 決定，說明改寫後未必還在同一行。
-u39 feedback --help | tr -s ' \n' ' ' | grep -qiE -- '--used [^-]*no effect' || fail39 "AC-1：feedback --help 的 --used 說明應寫明不影響寫入: $(u39 feedback --help | grep -- --used)"
+u39 feedback --help | tr -s ' \n' ' ' | grep -qiE -- '--used ([^-]|-[^-])*no effect' || fail39 "AC-1：feedback --help 的 --used 說明應寫明不影響寫入: $(u39 feedback --help | grep -- --used)"
 read -r R1 HIT <<<"$(recall39)"
 [ -n "$HIT" ] || { echo "  ✗ 前提：recall 應命中剛寫入的筆記"; exit 1; }
 u39 feedback "$R1" --score 0.4 --used --hits "$HIT" >/dev/null || fail39 "AC-1：帶 --used 的既有呼叫應 exit 0"
