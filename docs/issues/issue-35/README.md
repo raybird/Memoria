@@ -15,7 +15,7 @@ issue-18 決定過「不新增 `route_mode` 值」：`route_mode` 是公開契�
 
 ## 現況
 
-**現行 review**: review-14b4625.md
+**現行 review**: review-c57fa47.md
 
 ## 關鍵差異
 
