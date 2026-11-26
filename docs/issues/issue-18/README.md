@@ -7,7 +7,7 @@
 | Issue 編號 | 18（本地文件編號） |
 | 複雜度級別 | Small（`doctor` 既有 `checks[]` 加一項 + `mark` 的配對寫入 + `renderBrief` 多印一行；零 schema 變更、零新依賴） |
 | 風險等級 | Medium（動到 `doctor` 的 `ok` 判定——弄錯會讓沒用語意召回的人每次都看到紅燈；並改變 `mark` 實際寫入的列數） |
-| 狀態 | **實作完成**（2026-08-25），AC-1～AC-4 全數通過 |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-24 另一個 session 的消費端實測（原 P0(b)）；本 session 驗證後大幅縮小範圍，並併入 issue-17 遺留的 U-4 與 P4 實驗所需的顯示面 |
 | 建立日期 | 2026-08-25 |
 | 相關 | [issue-17](../issue-17/README.md)（`mark`／pinned 區／U-4 的來源）、[issue-12](../issue-12/README.md)（`doctor` 的向量層檢查與「選用功能不得讓 doctor 變紅」的判準）、[issue-7](../issue-7/README.md)（同型的靜默覆蓋不足：10 個 session 只涵蓋 3 個）、`src/core/recall-vector.ts`（`inspectVectorLayer()`）、`src/core/db/brief.ts`（`renderBrief` 的 pinned 區） |
@@ -143,3 +143,6 @@ stock `sqlite3` 把 libSQL 的向量索引當成 covering index 拿來算 `COUNT
 - **豁免理由**：本 repo 不存在該套治理文件（root `AGENTS.md` 是工程指南，語意不符、無版本號）。
 - **核准**：使用者於 2026-08-24 明示選擇沿用 repo 既有格式（比照 `docs/issues/issue-16/README.md`），本 issue 沿用同一豁免。
 - **殘留差異**：本 issue 為 Small，依規範採輕量驗收條件（`AC-` 編號），與 issue-17 的完整 Gherkin 不同——那是規模決定的，不是豁免造成的。
+
+---
+**狀態**: 已完成

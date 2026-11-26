@@ -7,7 +7,7 @@
 | Issue 編號 | 11（本地文件編號） |
 | 複雜度級別 | Small（改的是一個 `package.json` 欄位；但選哪個方案需要拍板，見下） |
 | 風險等級 | Low（失敗有明確錯誤訊息，不是靜默降級——與 [issue-10](../issue-10/README.md) 不同） |
-| 狀態 | **實作完成**（2026-08-13，採方案 D） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-13 另一 session 分析 Memoria 升級機制時發現，經本 session 查證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | [issue-10](../issue-10/README.md)（helper 根本沒被交付）、[issue-12](../issue-12/README.md)（doctor 應該要能講出這個狀態） |
@@ -73,3 +73,6 @@ D 之所以在 issue-12 交付後變得便宜：可見性那一半（`doctor` �
 `embed.mjs` 的錯誤訊息原文是「run `npm install` inside skills/memoria-vector」——**對一個剛剛跑完 `npm install --omit=dev` 而且看著它成功的人來說，這句話讀起來像自相矛盾**。改成點名 `--omit=dev` 與 `NODE_ENV=production` 是最常見成因，並說明 `stub` 的代價（沒有語意品質），讓兩條出路的取捨是明說的而不是暗示的。
 
 README 加一段 callout，把「devDependency 是刻意的」與「`local` 是預設」這兩件事並排寫出來——單看任一件都不會覺得有問題，衝突只在它們相乘時出現，而那正是這個 issue 難被發現的原因。
+
+---
+**狀態**: 已完成

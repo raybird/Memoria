@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 3（本地文件編號） |
 | 複雜度級別 | Medium（局部修正 + 兩個 config 欄位，無 schema 變更） |
-| 狀態 | **實作完成**（2026-07-28，Phase 1–2 交付並通過真實驗證） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-07-28 以 v1.21.0 對 `external-repo`（20 個非 semver tag）實測 Git-Aware Memory 時發現 |
 | 建立日期 | 2026-07-28 |
 | 前置 | [issue-1](../issue-1/README.md)（Git-Aware Memory v1）、[issue-2](../issue-2/README.md)（可用性改進） |
@@ -95,5 +95,5 @@ external-repo 的 20 個 tag（`202606251200`、`nightly-2026.0723`、`nightly-2
 **建立日期**: 2026-07-28
 **最後更新**: 2026-07-28
 **文件版本**: 2.0
-**狀態**: **實作完成**
+**狀態**: 已完成
 **分級**: Medium

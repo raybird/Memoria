@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 4（本地文件編號） |
 | 複雜度級別 | Medium（新增 4 個 CLI 命令 + 1 個衍生產物，**零 schema 變更**、零新依賴） |
-| 狀態 | **實作中**（Q1–Q4 於 2026-08-09 拍板，全數採建議方案） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-09 以「把 Memoria 當成 coding agent 的永久記憶」角度盤點現況介面 |
 | 建立日期 | 2026-08-09 |
 | 前置 | [issue-1](../issue-1/README.md)（Git-Aware Memory v1）、[issue-2](../issue-2/README.md)、[issue-3](../issue-3/README.md) |
@@ -155,5 +155,5 @@ SELECT kind, ref_id, COUNT(*) FROM recall_fts GROUP BY 1,2 HAVING COUNT(*) > 1
 **建立日期**: 2026-08-09
 **最後更新**: 2026-08-09
 **文件版本**: 2.0
-**狀態**: **實作完成**（Phase 1–2 全數交付）
+**狀態**: 已完成
 **分級**: Medium

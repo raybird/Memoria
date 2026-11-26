@@ -7,7 +7,7 @@
 | Issue 編號 | 10（本地文件編號） |
 | 複雜度級別 | Small（打包腳本多複製一個目錄 + 一項安裝測試斷言，無程式碼變更） |
 | 風險等級 | Medium（失效是靜默的：fail-open 退回字面召回，使用者以為語意召回在跑） |
-| 狀態 | **實作完成**（2026-08-13，v1.26.0） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-13 另一 session 分析 Memoria 升級機制時發現，經本 session 查證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | [issue-11](../issue-11/README.md)（helper 裝得起來但跑不動，同一條交付鏈的下一段）、[issue-12](../issue-12/README.md)（兩者都沒有任何診斷會說出來）、[issue-7](../issue-7/README.md)（v1.23.1 修的是 npm 包不含 helper，本 issue 是 tarball 路徑的同型缺口） |
@@ -71,3 +71,6 @@ cp -R "$ROOT_DIR/skills/memoria-memory-sync" "$STAGE_DIR/skills/memoria-memory-s
 同時把 `skills/` 那幾條從 `required_entry` 移除——留著等於把這次要取代的那份手動清單再蓋一次。
 
 守門跑在 `release:package` 內，而 `ci.yml` 與 `release.yml` 都會執行它，所以每次推送就生效，不是等到發版。反向對照重演了 issue-10 的原始狀態（移除 helper 複製）：打包失敗並列出全部六個缺檔，**其中 `vector-ingest.mjs` 從來沒進過舊的手寫清單**——這一項就是推導相對於列舉的價值。
+
+---
+**狀態**: 已完成

@@ -7,7 +7,7 @@
 | Issue 編號 | 17（本地文件編號） |
 | 複雜度級別 | Medium（三個交付面：新增 1 個 CLI 命令 + BRIEF 新增 pinned 區 + per-project 輸出佈局；**零 schema 變更**、零新依賴） |
 | 風險等級 | Medium（輸出佈局變更會改變 `@` 注入看到的內容，屬破壞性預設值變更；新增頂層命令屬 agent 契約變更，且推翻 `CLAUDE.md` 既有的一條明文立場） |
-| 狀態 | **實作完成**（2026-08-24），7 個步驟全數交付，SCN-001～013 全數通過 |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-24，另一個 session 從「記憶消費端」做黑箱實測後交辦；本 session 對著程式碼與本機 `~/.memoria` 重跑證據後修正了其中的診斷 |
 | 建立日期 | 2026-08-24 |
 | 相關 | [issue-4](../issue-4/README.md)（`brief` 的來源，Phase 2 context injection）、[issue-5](../issue-5/README.md)（`memory_attributes`／`retention='durable'`／零標記 byte-identical 紀律）、[issue-7](../issue-7/README.md)（促升後自動建索引）、[docs/memory-mechanism-assessment.md](../../memory-mechanism-assessment.md)（缺點 #7「衍生視圖漂移」仍為開放項）、`src/core/db/brief.ts:52`（近期決策查詢）、`src/core/db/git-promote.ts:90`（硬寫 `impact_level`） |
@@ -239,3 +239,6 @@ Scenario: SCN-013 產出 per-project 檔後印出接線指引
 - **豁免理由**：本 repo 不存在 `docs/AGENTS.md`，也不存在 `docs/agents/` 目錄——這不是版本落後，是該套治理文件從未存在於本 repo。root 的 `AGENTS.md` 是工程指南（build／test／架構／code style），語意不符且無版本號。
 - **核准**：使用者於 2026-08-24 明示選擇「沿用 repo 既有格式」，保留 skill 的逐題澄清與驗收標準核准流程，文件結構比照 `docs/issues/issue-16/README.md`。
 - **殘留差異**：本 repo 既有 16 個 issue 均未使用 Gherkin；本 issue 是首次使用 `SCN-` 編號，屬使用者明示核准的增量，非既有慣例。
+
+---
+**狀態**: 已完成

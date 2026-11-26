@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 1（本地文件編號；GitHub repo 目前無既有 issue） |
 | 複雜度級別 | Large（跨多模組、新增資料庫表、大型功能） |
-| 狀態 | **實作完成**（2026-07-13，Phase 0–6 全數交付；FF-merge 推斷與 session 整合依決議延至 v1.1） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 使用者提供之《Memoria Git-Aware Memory v1 規格書》v1.0（2026-07-13） |
 | 建立日期 | 2026-07-13 |
 
@@ -55,3 +55,6 @@
 - 2026-07-13: D1–D4 與範圍事項定案，四份文件同步更新為已確認狀態。
 - 2026-07-13: 新增 decomposition.md（7 Phase / 36 Task），狀態轉為待 execute-task。
 - 2026-07-13: Phase 0–6 逐一實作、測試、提交完成（commits f851d4a / 2ac31e7 / ecee447 / 37f5af7 / d3ab226 / acbded6 + Phase 6）；文件（CLAUDE.md/AGENTS.md/README/CHANGELOG）對齊。
+
+---
+**狀態**: 已完成

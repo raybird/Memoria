@@ -7,7 +7,7 @@
 | Issue 編號 | 13（本地文件編號） |
 | 複雜度級別 | Medium（`/v1/brief` 本身是 Small；「主命令走 server」動到每個命令的執行模型，需要先定範圍） |
 | 風險等級 | Medium（會新增公開 HTTP 契約，一旦發布就要維持） |
-| 狀態 | **第一階段實作完成**（2026-08-13，`GET /v1/brief`）；`--server` 仍未實作、另議 |
+| 狀態 | 已完成（見檔尾 metadata；第一階段 `GET /v1/brief`，`--server` 見待確認事項 TBD-1） |
 | 需求來源 | 2026-08-13 另一 session 分析 Memoria 升級機制時發現，經本 session 查證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | [issue-4](../issue-4/README.md)（brief 與 CLI 記憶命令的來源）；`src/server.ts`、`src/adapter/adapter.ts` |
@@ -155,3 +155,12 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 **這件事本 repo 不做，下游可以做，而那不是膽量差別而是位置差別**：下游有一個會真的跑 `recall --mode vector` 並檢查 `route_mode` 不是 `vector_unavailable` 的 image 測試，所以哪天真的壞掉會在他們發版前紅燈；而我們發布的是一個套件，下游環境各異，同樣的刪除沒有等價的守門。要壓體積的話，正確的位置是使用者的 image，不是我們的 `files`。
 
 其餘既有的待決事項不變：錯誤語意（本地失敗 vs 網路失敗）、`MemoriaResult.meta.latency_ms` 在 server 模式下代表什麼。
+
+## 待確認事項
+
+| 編號 | 事項 | 狀態 | 影響 |
+|---|---|---|---|
+| TBD-1 | 第二階段「主命令走 server」（`--server`）：第一階段只交付 `GET /v1/brief`，`--server` 當時決定另議，連同錯誤語意（本地失敗與網路失敗）、server 模式下 `latency_ms` 的意義都還沒定（見「第二階段的真正理由」） | 待確認 | 不影響第一階段已交付的 `/v1/brief`；sidecar 部署的 agent 容器仍需自帶 CLI 與資料卷才能用 recall、remember 等命令 |
+
+---
+**狀態**: 已完成

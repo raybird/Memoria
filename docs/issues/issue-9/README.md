@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 9（本地文件編號） |
 | 複雜度級別 | Medium（改動點小——一個欄位的來源；但動到 envelope 契約，`confidence` 型別放寬為 `number \| null`） |
-| 狀態 | **實作完成**（2026-08-10，方案 D+E 組合） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-10 v1.24.0 升級後的例行驗證。順手看 `--json` 輸出時發現 `relevance` 與 `confidence` 全是 0，而命中本身是正確的 |
 | 建立日期 | 2026-08-10 |
 | 相關 | `docs/RFC-semantic-recall.md` §5b（原始設計明文說 confidence 應為 fused score）、`src/core/recall-vector.ts`、`src/core/memoria.ts:606`、[issue-8](../issue-8/README.md)（同一模組的另一個獨立缺口） |
@@ -161,3 +161,6 @@ CI 從不設這些變數，所以只在本機咬人——與 v1.22.0 修掉的�
 ---
 
 **最後更新**：2026-08-10
+
+---
+**狀態**: 已完成

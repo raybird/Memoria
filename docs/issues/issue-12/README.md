@@ -7,7 +7,7 @@
 | Issue 編號 | 12（本地文件編號） |
 | 複雜度級別 | Small（在既有 `checks[]` 陣列加項目，無 schema、無契約變更） |
 | 風險等級 | Low（純診斷面；但要小心別把 opt-in 功能的「未啟用」誤報成「不健康」） |
-| 狀態 | **實作完成**（2026-08-13，v1.26.0） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-13 另一 session 分析 Memoria 升級機制時發現，經本 session 查證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | [issue-10](../issue-10/README.md) 與 [issue-11](../issue-11/README.md)（本 issue 要能診斷出的兩種失效）、[issue-7](../issue-7/README.md)（同樣的「靜默漏掉」問題，當時的解法是讓 `stats` 報出 `memoryIndex` 覆蓋率） |
@@ -69,3 +69,6 @@ override 存在時**不探測**它的 `node_modules`：那可能是別人打包�
 **這條也是 issue-12 自己的教訓的實例**：一個安靜的檢查跟沒有檢查一樣沒用——本 issue 開出來就是為了這件事，第一版實作卻在自己的輸出裡犯了同一個錯。
 
 反向對照已驗證：還原 `doctor.ts` 後 `test-vector-recall.sh` 在第一段斷言就紅。`test-no-clone-install.sh:111` 既有的 `checks.every(ok)` 斷言則自動成為「未啟用不得算失敗」這條界線的守門員。
+
+---
+**狀態**: 已完成

@@ -6,7 +6,7 @@
 |---|---|
 | Issue 編號 | 2（本地文件編號） |
 | 複雜度級別 | Medium（局部功能調整，無架構變更、無 schema 變更） |
-| 狀態 | **待實作**（分析完成，三項待確認見文末） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-07-28 於兩個真實 repository 實跑 Git-Aware Memory v1 全鏈路後的實測發現 |
 | 建立日期 | 2026-07-28 |
 | 前置 | [issue-1](../issue-1/README.md) Git-Aware Memory v1（已於 v1.19.0 出貨） |
@@ -144,5 +144,5 @@ return decisions.length > 0 || known_limitations.length > 0 || risks.length > 0
 **建立日期**: 2026-07-28
 **最後更新**: 2026-07-28
 **文件版本**: 2.1
-**狀態**: **實作完成**（Phase 1–3 + R1 全數交付，無待決事項）
+**狀態**: 已完成
 **分級**: Medium

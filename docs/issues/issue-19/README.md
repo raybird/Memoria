@@ -55,7 +55,7 @@
 | 編號 | 事項 | 狀態 | 影響 |
 | --- | --- | --- | --- |
 | TBD-1 | AC-1～AC-3 與 D3（`MEMORIA_EMBED_BATCH`，預設 32）需使用者核准 | 已解決 | 2026-10-20 使用者回覆「照建議」，全部核准 |
-| TBD-2 | 增量 ingest（跳過 text 未變的實體）；目前直接呼叫 `vector-ingest.mjs` 時不提交 `memory_sync_state` 游標，每次全量重算 | 待確認 | 不影響本 issue 的 AC；另開 issue |
+| TBD-2 | 增量 ingest（跳過 text 未變的實體）；目前直接呼叫 `vector-ingest.mjs` 時不提交 `memory_sync_state` 游標，每次全量重算 | 不影響本次交付（2026-11-26 整理）。追蹤：issue-31，v1.37.0 起 vector-ingest 只 embed kind 或 text 有變的列 | 不影響本 issue 的 AC；另開 issue |
 | TBD-3 | 審查 S-2（`需決策`）：`MEMORIA_EMBED_BATCH` 非法時是否影響查詢。(a) 維持並註明；(b) 只有多筆輸入才解析；(c) 警告並退回 32。連帶 S-1：AC-2 的檢查方式測不到被改的程式 | 已解決 | 2026-10-20 使用者「一律都照建議」，採 reviewer 建議 (b)：單筆輸入不讀此變數，ingest 端非法值照樣報錯；AC-2 檢查方式補上查詢路徑斷言 |
 
 ## 實作與驗證步驟

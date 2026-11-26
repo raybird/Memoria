@@ -7,7 +7,7 @@
 | Issue 編號 | 15（本地文件編號） |
 | 複雜度級別 | Medium（改的是 `tokenizeQuery`，而它同時餵給**檢索**與**評分**兩條路；與 issue-9 剛定義的 confidence 尺度耦合） |
 | 風險等級 | Medium（會改變匹配行為，精確度可能下降；既有測試的預期會動） |
-| 狀態 | **實作完成**（2026-08-14） |
+| 狀態 | 已完成（見檔尾 metadata） |
 | 需求來源 | 2026-08-13，downstream-http-sidecar 修完自身的 summary／scope 問題後仍有 3/7 查詢落空，追出全部是整句中文；本 session 在使用者真實 `~/.memoria` 上獨立驗證 |
 | 建立日期 | 2026-08-13 |
 | 相關 | `src/core/utils.ts:21-34`（`TOKEN_SPLIT_PATTERN` / `tokenizeQuery`）、`src/core/db/recall.ts`（`recallKeyword` → FTS MATCH → LIKE fallback）、`src/core/db/schema.ts:48-59`（trigram FTS）；[issue-9](../issue-9/README.md)（記過同一個 tokenizer 行為，但把後果侷限在 confidence） |
@@ -308,3 +308,6 @@ memory recall   → 3 hits   route=keyword     ← 英文同構查詢可以
 - [x] 精確度變化有量測數字，不是推論（總回傳 21 → 24，正確答案 5 → 7）
 - [x] `confidence` 語意的處置是明示決定，並在 CHANGELOG 寫明
 - [x] `test-pure-functions.sh` 的預期值變動逐條確認過（既有斷言全是拉丁字故未受影響——那本身是覆蓋缺口，已補 6 條 CJK 斷言）
+
+---
+**狀態**: 已完成
