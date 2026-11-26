@@ -868,11 +868,12 @@ echo "  HTTP 與 CLI 的 vector_hits、project_known 相同（0 筆與 2 筆）"
 # review-14b4625 S1: vector_hits counted the helper's first top_k rows even when an issue-34 refill
 # fused 2 × top_k of them, so 5 notes returned from the semantic route read vector_hits=3. It also
 # counted superseded memories, which the result drops. Five notes, each indexed as both halves:
-# both halves carry the same text, and under the stub embedding all 10 rows sit at one distance from
-# the query, so their order is arbitrary. The first 5 rows then usually hold 3 or 4 notes, which
-# makes the refill run; the old count failed most runs rather than every one (3, 4 and 4 over three
-# runs). The superseded case depends on the same order under the old code, so a mutation test, not
-# the old code, is what shows it guards the superseded filter.
+# both halves carry the same text. The helper embeds name + text, so under the stub embedding note 1's
+# two rows sit closest (0.2333) and the other 8 rows tie (0.2454): the first 5 rows are note 1's pair
+# plus any 3 of the 8, which is 3 or 4 notes. The refill therefore always runs, and the old count
+# (3 or 4, never 5) failed every run. In the superseded case the old count is the same 3 or 4 against
+# an expected 4, so it fails only when the tie order gives 3; a mutation test (dropping the superseded
+# filter reads 5) is what shows that assertion guards it.
 echo "[vector] issue-35 vector_hits 計入補位那一輪的語意候選，扣掉被取代的"
 H35R="$TMP_DIR/home-35r"
 VEC35R="$TMP_DIR/vectors-35r.db"
