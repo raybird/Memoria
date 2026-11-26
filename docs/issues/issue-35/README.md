@@ -13,6 +13,10 @@
 
 issue-18 決定過「不新增 `route_mode` 值」：`route_mode` 是公開契約，`routeUtility` 也依它分組。所以本 issue 只在 meta 加欄位，並調整 CLI 的人讀輸出；`route_mode` 的值、recall 回傳的命中與排序都不變。
 
+## 現況
+
+**現行 review**: review-14b4625.md
+
 ## 關鍵差異
 
 | 項目 | 變更前 | 變更後 |
@@ -84,7 +88,7 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: fec4368
 - **核准來源**: 使用者 2026-11-25 對話中說「照這份清單開 issue」，三題分別選「meta 加 vector_hits 欄位」「meta 加 project_known」「只標示、不濾掉」（SCN-001～006）
 
 全部 Scenario 於 2026-11-25 核准。
