@@ -10,7 +10,7 @@
 
 ## 現況
 
-**現行 review**: review-8705ad3.md
+**現行 review**: review-e8771f5.md
 
 ## 涉及檔案
 
@@ -61,6 +61,7 @@
 | 2026-11-26 | 實作時把覆蓋率計算從 `inspectVectorLayer()` 抽成共用函式，涉及檔案改為修改 `recall-vector.ts`（原寫不改）；驗收條件不變 |
 | 2026-11-26 | 獨立審查 review-8705ad3：PASS，5 項 NICE TO HAVE |
 | 2026-11-26 | 使用者對建議回「照建議」：N1 記入待確認（TBD-1），N2～N5 修正（TBD-2） |
+| 2026-11-26 | 增量覆審 review-e8771f5：PASS，1 項 NICE TO HAVE |
 
 ---
 **建立日期**: 2026-11-25  
