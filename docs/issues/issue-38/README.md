@@ -20,6 +20,10 @@ brief 與 `doctor` 會顯示每個 repository 的「未掃描 commit」，提醒
 | 未掃描的 tag | 不顯示 | brief 的 Repository 狀態行與 `--json` 列出名稱 |
 | `repo sync` 掃描範圍 | 所有分支與 tag | 不變 |
 
+## 現況
+
+**現行 review**: review-2cca66c.md
+
 ## 涉及檔案
 
 ```text
@@ -107,10 +111,11 @@ Feature: brief 的未掃描提示只反映該 sync 的變更，並點名未掃�
 |------|------|
 | 2026-11-25 | 建立並核准 SCN-001～005（來源：9 個下游 session 的使用體驗調查）；記錄 TBD-1 |
 | 2026-11-26 | 步驟 1 盤點完成；TBD-1 使用者選更正，該下游登記改為 dev |
-| 2026-11-26 | 步驟 2～5 完成，三組回歸全綠，待審查 |
+| 2026-11-26 | 步驟 2～5 完成，三組回歸全綠 |
+| 2026-11-26 | 獨立審查 review-2cca66c：PASS，2 項 SHOULD FIX（其中 1 項需決策）、5 項 NICE TO HAVE |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Medium（scan-lag 計數範圍 + brief／doctor 顯示 + BriefData 加一個欄位；零 schema 變更、零新依賴）  
 **風險**: Medium — 預設分支登記不符時會漏報\
-**狀態**: 實作中
+**狀態**: 審查中
