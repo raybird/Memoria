@@ -2,7 +2,7 @@
 
 [English](CLI.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-11-26，對照 issue-35 原始碼（recall 的說明行與弱命中標示）、CLI help 與文件檢查。
+最後驗證：2026-11-26，對照 issue-36 取得的 `recall --json` 輸出（信封欄位與 `n/a` 命中）、issue-35 原始碼、CLI help 與文件檢查。
 
 以下命令使用 npm 安裝後的 `memoria`。在 repository checkout 中可改用 `./cli`；完整旗標以 `memoria <command> --help` 為準。方括號表示可選參數，`<…>` 表示需替換的值。
 
@@ -57,7 +57,9 @@ memoria setup [--serve] [--json]       # 自動化一鍵安裝
 
 以 `--verify` 寫入的是狀態類記憶，也就是可能過時的快照。recall 會在該 hit 下方印出 `⟳ 截至 <日期>；據以行動前先跑：<命令>`，`--json` 與 `/v1/recall` 以 `verify` 欄位帶出；brief 在列出它的每個區塊、該項下方加一行 `截至 <日期>；據以行動前先跑 <命令>`，並在統計行之後加一行固定說明：Memoria 不執行命令，只有唯讀檢查才該跑。命令完整顯示、從不執行，由讀到的 agent 決定要不要跑。截至日期是該記憶的 UTC 日期。`--verify` 必須是單行、非空、不含控制字元的命令（Tab 可以，Unicode 換行字元會被拒絕），且不能與 `--durable` 並用，寫入時與之後用 `mark` 都一樣（把長期約束與快照拆成兩則）。
 
-recall 的人讀輸出會說明查得少的原因。筆數那行下方出現 `- 語意查詢有執行，沒有命中；列出的是字面查詢的結果`，表示 `--mode vector` 確實跑了、語意索引沒有提供任何記憶（請看這一行或 `vector_hits`，不要看 `route_mode`：它的標籤是在去掉被取代的記憶之前決定的）；出現 `- 這個 project 沒有任何記憶：<名稱>；已登記的名稱見 \`memoria repo list\``，表示 `--project` 指的名稱底下完全沒有記憶，查不到不是因為沒有相關的。relevance 低於 0.3 的命中只和查詢共用一兩個字，標成 `[0.250 弱命中]`，仍照常回傳；只靠語意索引找到的命中印 `n/a`，不標示。`--json` 以 `meta.vector_hits` 與 `meta.project_known` 帶出前兩項。
+recall 的人讀輸出會說明查得少的原因。筆數那行下方出現 `- 語意查詢有執行，沒有命中；列出的是字面查詢的結果`，表示 `--mode vector` 確實跑了、語意索引沒有提供任何記憶（請看這一行或 `vector_hits`，不要看 `route_mode`：它的標籤是在去掉被取代的記憶之前決定的）；出現 `- 這個 project 沒有任何記憶：<名稱>；已登記的名稱見 \`memoria repo list\``，表示 `--project` 指的名稱底下完全沒有記憶，查不到不是因為沒有相關的。relevance 低於 0.3 的命中只和查詢共用一兩個字，標成 `[0.250 弱命中]`，仍照常回傳；只靠語意索引找到的命中印 `n/a`，不標示：它沒有字面分數可顯示，不代表分數低。`--json` 以 `meta.vector_hits` 與 `meta.project_known` 帶出前兩項。
+
+`recall --json` 輸出 `MemoriaResult` 信封 `{ok, data, meta}`。`data` 是命中陣列，每筆有 `id`（`feedback --hits` 要填的值）、`type`、`project`、`timestamp`、`snippet` 與 `score`；`score` 決定排序，不是 0–1 的分數。`relevance`（0–1 的字面比對分數）除了只靠語意索引找到的命中以外，每筆都有；`source` 與 `verify` 在適用時出現。`meta` 帶 `recall_id`、`route_mode`、`confidence` 與 `confidence_basis`；首位命中只來自語意索引時，`confidence` 為 `null`、basis 為 `unavailable`。人讀輸出把 `recall_id` 印在最後一行。
 
 在已註冊 repository 內執行 `brief`，會自動辨識專案並寫入 `knowledge/BRIEF-<project>.md`；明確指定 `--project` 仍寫 `BRIEF.md`，`--global` 則選取所有專案。正文的範圍行會顯示產生時間，因為以 `@` 引入 brief 的 host 看不到開頭的註解。Durable 記憶會列在不受 `--days`、`--top-k` 限制的固定區塊，被取代的記憶會排除。近期決策的 `--top-k` 格數由各專案輪流分配，最近活躍的專案優先。project 不屬於任何已註冊 repository 的記憶會隨各專案的 brief 載入。依 `brief` 輸出，在 `AGENTS.md` 設定讀取指令；Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 與 brief 路徑載入。記憶更新後重新產生 brief。詳見 [Operations](OPERATIONS.md#context-injection-via-briefmd)。
 

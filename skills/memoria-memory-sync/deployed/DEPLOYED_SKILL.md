@@ -15,6 +15,8 @@ repository: Memoria
 - **Runtime** = the Memoria program, reached through `bin/memoria` next to this file.
 - **Data root (`MEMORIA_HOME`)** = the memory itself (`.memory/`, `knowledge/`, `configs/`).
 
+Your host may keep a memory of its own (for example Claude auto-memory). That is a separate store with different contents, so recall from Memoria at the moments below whatever it says.
+
 ## Locate your data root (do this first)
 
 ```bash
@@ -44,7 +46,14 @@ MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" doctor --json
 MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" recall "<issue id or topic>" --mode vector --project <repo>
 ```
 
-`--mode vector` fuses semantic and lexical hits; the default keyword mode misses anything phrased differently. Without a vector index it falls back to lexical on its own (`route_mode: vector_unavailable`). Keep the `recall_id` from the output for feedback.
+`--mode vector` fuses semantic and lexical hits; the default keyword mode misses anything phrased differently. Without a vector index it falls back to lexical on its own (`route_mode: vector_unavailable`). Run it even when you expect no hits or your host's memory seems to cover the topic: only the result tells, and an empty one is reported with `--score 0`.
+
+Keep the `recall_id` for feedback. The listing prints it on its last line, `- recall_id: <id>`. With `--json` the output is `{ok, data, meta}`:
+
+- `data` is an array of hits. Each has `id` (what `--hits` takes), `type`, `project`, `timestamp` and `snippet`; `relevance` (0–1 lexical match) is on every hit except one the semantic index alone found.
+- `meta` holds `recall_id`, `route_mode`, `confidence` and `confidence_basis`. `confidence` is `null` with basis `unavailable` when the top hit came from the semantic index alone.
+
+A hit printed `[ n/a ]` (no `relevance` in `--json`) was found by the semantic index alone. It has no lexical score to show, which is not a low score.
 
 A hit or brief line that reads `截至 <date>；據以行動前先跑 <command>` is a snapshot of a state that may have changed since. Before you state it as current or act on it, read the command; run it only if it is a read-only check, and go by its output rather than the memory text. Memoria never runs it for you.
 
@@ -56,7 +65,7 @@ Done when: the relevant decisions and pitfalls among the hits are reflected in y
 MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --used --hits <comma-separated hit ids>
 ```
 
-If nothing helped, report `--score 0` without `--used`. This is the only utility signal Memoria gets; ranking adapts to it.
+If nothing helped, report `--score 0` without `--used`. A recall you ran only as a test or a look, whose results did not go into your work, gets `--score` for how good the hits were and no `--used`. This is the only utility signal Memoria gets; ranking adapts to it.
 
 Done when: every `recall_id` from this session has been reported once.
 

@@ -34,21 +34,22 @@
 
 ## 實作與驗證步驟
 
-1. 📝 **AC-1、AC-2：recall 段** — 先取得一份真實的 `recall --json` 輸出（隔離資料根），照它寫形狀說明；同步 `docs/CLI.md`、`docs/CLI.zh-TW.md`。
-   - 完成證據：
-2. 📝 **AC-3、AC-4：feedback 段與主機記憶** — 修改 `DEPLOYED_SKILL.md`。
-   - 完成證據：
-3. 📝 **AC-5：部署檢查** — 跑 AC-5 的三支腳本。不改變可觀察行為，記等價證據：三支腳本全綠的輸出。
-   - 完成證據：
+1. ✅ **AC-1、AC-2：recall 段** — 先取得一份真實的 `recall --json` 輸出（隔離資料根），照它寫形狀說明；同步 `docs/CLI.md`、`docs/CLI.zh-TW.md`。
+   - 完成證據：✅ 2026-11-26。真實輸出兩份：(a) 隔離資料根用本分支的 `./cli` 寫一則筆記後 `recall "pnpm lockfile" --project Demo --json`；(b) 維護者資料根用已安裝的 1.39.0 跑 `recall … --mode vector --project Memoria --json`（`route_mode: hybrid_vector`）。兩份的頂層鍵都是 `ok`、`data`、`meta`，`data` 是陣列；每筆命中有 `id`、`type`、`project`、`timestamp`、`snippet`、`score`、`session_id`；`meta` 有 `recall_id`、`route_mode`、`confidence`、`confidence_basis`。(b) 的 5 筆裡只有 1 筆沒有 `relevance`，同一查詢的人讀輸出正是這筆印 `[ n/a ]`；`relevance` 只在語意單獨命中時省略，對照 `src/core/memoria.ts:789` 與 `src/core/types.ts:278-281`。skill 的 recall 段、`docs/CLI.md` 與中文版的欄位名稱與位置照這兩份寫，`n/a` 的說法和 `src/cli/commands/recall.ts:71-76` 的註解一致（issue-35 之後行號從 57-63 移到這裡）。`node scripts/check-deployed-skill-sync.mjs` → `deployed_skill_check=ok`，`pnpm run release:docs-check` 通過。
+2. ✅ **AC-3、AC-4：feedback 段與主機記憶** — 修改 `DEPLOYED_SKILL.md`。
+   - 完成證據：✅ 2026-11-26。feedback 段在「沒有幫助時 `--score 0`」之後加一句：只是測試或看看、結果沒用在工作上的 recall，照命中品質給 `--score`，不標 `--used`；收尾判準「每個 `recall_id` 都回報一次」原樣保留。開頭在 Runtime／Data root 兩項之後寫明主機自己的記憶（例如 Claude auto-memory）是另一份內容不同的記憶，照下列時機 recall；recall 段寫明預期沒有結果、或主機記憶看似已涵蓋時照樣執行，沒有結果就回報 `--score 0`。CHANGELOG `[Unreleased]` 加 `### Changed`。
+3. ✅ **AC-5：部署檢查** — 跑 AC-5 的三支腳本。不改變可觀察行為，記等價證據：三支腳本全綠的輸出。
+   - 完成證據：✅ 2026-11-26。以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME`（地雷 M-4）跑三支腳本，全部 exit 0：`[bootstrap] ok`、`[setup-onboarding] ok`、`[npm-install] ok`，輸出沒有任何 ✗。`test-setup-onboarding.sh` Step 6 以 `cmp` 確認各 host 讀到的 `SKILL.md` 與本分支的範本相同，`test-bootstrap.sh` Step 3 確認部署後的 skill 仍含 setup 指引並能執行 `run-sync.sh`。
 
 ## Timeline
 
 | 日期 | 異動 |
 |------|------|
 | 2026-11-25 | 建立並核准 AC-1～5（來源：9 個下游 session 的使用體驗調查） |
+| 2026-11-26 | 步驟 1～3 完成：skill recall／feedback 段、開頭與 CLI 文件補齊，AC-5 三支腳本全綠 |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待實作
+**狀態**: 實作中
