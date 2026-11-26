@@ -15,7 +15,7 @@ issue-18 決定過「不新增 `route_mode` 值」：`route_mode` 是公開契�
 
 ## 現況
 
-**現行 review**: review-880740c.md
+**現行 review**: review-3029499.md
 
 ## 關鍵差異
 
@@ -133,9 +133,10 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 | 2026-11-26 | review-c57fa47 PASS，附 2 項 NICE TO HAVE；使用者回「照建議」，修正文件與測試註解（TBD-9、TBD-10），送增量覆審 |
 | 2026-11-26 | review-c303bc6 PASS，附 2 項 NICE TO HAVE；使用者回「照建議」，修正文件與證據（TBD-11、TBD-12），送增量覆審 |
 | 2026-11-26 | review-880740c PASS，附 1 項 NICE TO HAVE；使用者回「照建議」，實測距離後改正紅燈紀錄（TBD-13），送增量覆審 |
+| 2026-11-26 | review-3029499 PASS，沒有任何建議；狀態寫成已完成，待合併 |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Medium（recall meta 加兩個欄位 + CLI 人讀輸出 + HTTP 同步；零 schema 變更、零新依賴）  
 **風險**: Medium — `recall()` 是共用核心路徑，承諾只加欄位、其餘輸出不變\
-**狀態**: 實作中
+**狀態**: 已完成
