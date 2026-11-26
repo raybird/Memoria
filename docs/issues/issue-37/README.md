@@ -11,7 +11,8 @@
 ## 涉及檔案
 
 - `src/cli/commands/remember.ts` - 寫入成功後檢查向量覆蓋率，有缺口時提示；`--json` 加欄位
-- `src/core/recall-vector.ts` - 不改，沿用 `inspectVectorLayer()` 的覆蓋率計算（`countEmbeddedRows` 以 `NOT INDEXED` 讀本機向量庫）
+- `src/core/recall-vector.ts` - 把 `inspectVectorLayer()` 的覆蓋率計算抽成 `measureVectorCoverage()`，兩者共用同一份計算（`countEmbeddedRows` 以 `NOT INDEXED` 讀本機向量庫），`inspectVectorLayer()` 的結果不變；由 `src/core/index.ts` 匯出
+- `CHANGELOG.md` - `[Unreleased]` 的 `### Added`
 - `scripts/test-vector-recall.sh` - 新增：有缺口時提示、沒缺口或未啟用時不提示、檢查失敗時 remember 仍成功
 - `docs/CLI.md`、`docs/CLI.zh-TW.md` - remember 段補說明
 - `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` - remember 段補一句：看到提示時可以當下補，或留到收尾
@@ -34,21 +35,22 @@
 
 ## 實作與驗證步驟
 
-1. 📝 **AC-2 基準** — 未啟用語意召回時，保存 remember 的人讀與 `--json` 輸出。
-   - 完成證據：
-2. 📝 **AC-1、AC-3：提示缺口** — 在 `test-vector-recall.sh` 先寫 AC-1、AC-3 的斷言並取得紅燈，再改 `remember.ts`。
-   - 完成證據：
-3. 📝 **AC-2 回歸與文件** — 比對步驟 1 的基準；更新 `docs/CLI.md`、`docs/CLI.zh-TW.md`、`DEPLOYED_SKILL.md`；跑 `core`、`http-mcp` 組。
-   - 完成證據：
+1. ✅ **AC-2 基準** — 未啟用語意召回時，保存 remember 的人讀與 `--json` 輸出。
+   - 完成證據：✅ 2026-11-26。`evidence/baseline.sh` 在隔離資料根、清掉所有向量相關環境變數後跑 4 次人讀 remember（新筆記、同文字重寫、`--verify`、`--type skill --durable`）與 2 次 `--json`（新筆記與重寫，去掉 `timestamp`、`latency_ms`）。改動前在 main `97273a8` 的 build 上連跑兩次逐位元組相同，sha256 前 12 碼：`human.txt` 17aaef2cf246、`json.txt` 16db2c3907ce。
+2. ✅ **AC-1、AC-3：提示缺口** — 在 `test-vector-recall.sh` 先寫 AC-1、AC-3 的斷言並取得紅燈，再改 `remember.ts`。
+   - 完成證據：✅ 2026-11-26。新增 `[vector] issue-37` 一段，以 stub provider、從未 ingest 的向量庫寫兩則筆記。紅燈（改動前的 build）：`✗ AC-1：--json 的 data.vector_missing (undefined) 應等於 doctor 的 missing (9)`、人讀輸出沒有提示等 4 項失敗；同段的 AC-2（補完後重寫、未啟用、helper 被覆寫）與 AC-3（向量庫是非 SQLite 檔案、是目錄）斷言在舊程式上就通過，用來守住回歸。實作：`remember.ts` 寫入成功後呼叫 `measureVectorCoverage(core.paths.dbPath)`，包在 try/catch 裡，缺口大於 0 才在人讀輸出加一行、`--json` 的 `data` 加 `vector_missing`。覆蓋率計算從 `inspectVectorLayer()` 抽出共用，是為了讓兩邊的筆數同一份來源，也避開 `inspectVectorLayer()` 另外做的 embedder 探測（會 spawn `deps.mjs`），remember 不因此變慢。綠燈：`[vector] issue-37` 印出「有缺口時提示且筆數與 doctor 一致；補完、未啟用、覆寫時不提示；向量庫讀不到時照常寫入」，整支 `test-vector-recall.sh` exit 0。GitNexus：`inspectVectorLayer` 影響評為 CRITICAL（doctor、setup 直接呼叫），所以只抽出計算、不改判定順序；`test-setup-onboarding.sh` 與 doctor 相關段落全綠。`remember` 的影響為 LOW。
+3. ✅ **AC-2 回歸與文件** — 比對步驟 1 的基準；更新 `docs/CLI.md`、`docs/CLI.zh-TW.md`、`DEPLOYED_SKILL.md`；跑 `core`、`http-mcp` 組。
+   - 完成證據：✅ 2026-11-26。改動後的 build 重跑 `evidence/baseline.sh`，`diff -r` 與基準相同，sha256 一致。`docs/CLI.md`、`docs/CLI.zh-TW.md` 的本地存取段之後加一段說明提示、`data.vector_missing` 與不提示的情況；`DEPLOYED_SKILL.md` remember 段加一句：看到提示時要語意查這筆就先跑 doctor 的修法，否則收尾會補。以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME`（地雷 M-4）跑 core 組 10 支與 http-mcp 組 5 支，全部 exit 0；文件改完後再跑 `test-bootstrap.sh`、`test-setup-onboarding.sh`、`test-npm-install.sh`，三支 exit 0、沒有 ✗。`pnpm run check`、`check-deployed-skill-sync.mjs`、`release:docs-check` 通過。精煉：`inspectVectorLayer()` 改在建立報告物件時直接帶入覆蓋率結果，不再先填 null 再覆寫；改完重跑 `test-vector-recall.sh` 與 `test-setup-onboarding.sh`，皆 exit 0、沒有 ✗。
 
 ## Timeline
 
 | 日期 | 異動 |
 |------|------|
 | 2026-11-25 | 建立並核准 AC-1～3（來源：9 個下游 session 的使用體驗調查） |
+| 2026-11-26 | 實作時把覆蓋率計算從 `inspectVectorLayer()` 抽成共用函式，涉及檔案改為修改 `recall-vector.ts`（原寫不改）；驗收條件不變 |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待實作
+**狀態**: 實作中

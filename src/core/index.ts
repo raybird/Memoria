@@ -19,7 +19,7 @@ export {
 } from './install-settings.js'
 export type { InstallHostAgent, InstallVectorSettings, InstallSettings, InstallSettingsContext } from './install-settings.js'
 export { importSourceFile } from './source-import.js'
-export { inspectVectorLayer, probeDepsLocation, countEmbeddableEntities } from './recall-vector.js'
+export { inspectVectorLayer, measureVectorCoverage, probeDepsLocation, countEmbeddableEntities } from './recall-vector.js'
 export type { DepsLocation, VectorLayerReport } from './recall-vector.js'
 export { loadMemoriaConfig, defaultMemoriaConfig, CONFIG_FILE_NAME } from './config.js'
 export type { MemoriaConfig, MemoriaGitConfig } from './config.js'

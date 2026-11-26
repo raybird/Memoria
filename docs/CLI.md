@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](CLI.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-11-26 against the issue-36 `recall --json` output (envelope fields and the `n/a` hit), the issue-35 source, CLI help and documentation checks.
+Last verified: 2026-11-26 against the issue-37 source (remember's vector coverage hint), the issue-36 `recall --json` output, CLI help and documentation checks.
 
 These examples use the npm-installed `memoria` command. From a repository checkout, use `./cli` instead. Run `memoria <command> --help` for all flags. Square brackets denote optional arguments; replace values inside `<…>`.
 
@@ -54,6 +54,8 @@ memoria setup [--serve] [--json]       # Automation one-shot install
 ```
 
 `remember`, `recall`, `mark`, `feedback` and `brief` work directly against local storage, so a skill-based setup needs no server. When several repositories share a store, pass `--project` to recall to keep results scoped.
+
+With semantic recall enabled, `remember` checks the vector index after the write. It never writes vectors itself, so a new note stays invisible to `--mode vector` until the index is filled. When the index is short, the output adds `- vector coverage: 缺 <n> 筆，語意召回查不到它們；…`, with the same count as the `vector coverage` line of `doctor`, and `--json` adds `data.vector_missing`. Fill it with the fix `doctor` prints, now or at wrap-up. Nothing is added when semantic recall is off, when coverage cannot be measured (a remote libSQL, an overridden helper), when nothing is missing, or when the index cannot be read; the write and the exit code are unaffected either way.
 
 A memory written with `--verify` is a state memory, a snapshot that can go stale. recall prints `⟳ 截至 <date>；據以行動前先跑：<command>` under the hit, and `--json` and `/v1/recall` carry it as `verify`. The brief adds `截至 <date>；據以行動前先跑 <command>` under the entry in every block that lists it, and one fixed note after the totals line saying the command is never run by Memoria and should be run only if it is a read-only check. The command is shown whole and never executed; the agent reading it decides whether to run it. The as-of date is the memory's UTC date. `--verify` must be a single non-empty line without control characters (tab is allowed; Unicode line separators are refused) and cannot be combined with `--durable`, either at write time or later through `mark` (split the lasting constraint and the snapshot into two notes).
 

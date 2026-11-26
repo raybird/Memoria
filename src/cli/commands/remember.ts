@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { measureVectorCoverage } from '../../core/index.js'
 import type { MemoriaCore } from '../../core/index.js'
 
 const NOTE_TYPES = ['decision', 'skill'] as const
@@ -66,8 +67,19 @@ export function registerRememberCommand(program: Command, core: MemoriaCore): vo
             })
             if (!result.ok) throw new Error(result.error)
 
+            // issue-37: remember never writes the vector store, so until the gap is filled semantic
+            // recall cannot see this note, with no error anywhere. Say so now, in doctor's own number.
+            // The check runs after the write and is optional: a store it cannot read leaves the
+            // write and the exit code alone, and prints nothing.
+            let vectorMissing: number | undefined
+            try {
+                const missing = measureVectorCoverage(core.paths.dbPath).coverage?.missing ?? 0
+                if (missing > 0) vectorMissing = missing
+            } catch { /* optional hint */ }
+
             if (options.json) {
-                console.log(JSON.stringify(result))
+                console.log(JSON.stringify(vectorMissing === undefined ? result
+                    : { ...result, data: { ...result.data, vector_missing: vectorMissing } }))
             } else {
                 const data = result.data
                 console.log(`${data?.created ? '✓ 已記住' : '✓ 已存在（內容相同，未新增）'}: ${data?.sessionId}`)
@@ -77,6 +89,9 @@ export function registerRememberCommand(program: Command, core: MemoriaCore): vo
                 if (options.sensitivity) console.log(`- sensitivity: ${options.sensitivity}`)
                 if (options.verify !== undefined) console.log(`- verify: ${options.verify.trim()}（狀態類，據以行動前先跑；Memoria 不執行）`)
                 if (data?.superseded?.length) console.log(`- 已標記取代: ${data.superseded.join(', ')}`)
+                if (vectorMissing !== undefined) {
+                    console.log(`- vector coverage: 缺 ${vectorMissing} 筆，語意召回查不到它們；補法見 \`memoria doctor\` 的 vector coverage（現在補或留到收尾都可以）`)
+                }
             }
         })
 }

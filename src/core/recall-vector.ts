@@ -147,6 +147,25 @@ function countEmbeddedRows(libsqlUrl: string): { embedded: number } | { reason: 
     }
 }
 
+/** The coverage half of `inspectVectorLayer`, on its own so `remember` can report a gap right after a
+ *  write (issue-37) without the embedder probe, which spawns a process. One function, so the number
+ *  `remember` prints is the one `doctor` prints. */
+export function measureVectorCoverage(dbPath?: string): Pick<VectorLayerReport, 'coverage'> & { reason: VectorLayerReport['coverageUnknownReason'] } {
+    const libsqlUrl = process.env.LIBSQL_URL?.trim()
+    if (!libsqlUrl) return { coverage: null, reason: 'not_enabled' }
+    // Same judgement as the embedder probe: with an override we cannot assume the store at
+    // LIBSQL_URL is filled by OUR ingest pipeline, so a short count would not mean what the
+    // number claims — and the fix we would print names a two-step that may not be theirs.
+    // Reporting a red light plus an inapplicable remedy is how a working setup gets turned into
+    // a manufactured failure (issue-12).
+    if (process.env.MEMORIA_VECTOR_RECALL_CMD?.trim()) return { coverage: null, reason: 'overridden_helper' }
+    if (!dbPath || !existsSync(dbPath)) return { coverage: null, reason: 'no_local_db' }
+    const counted = countEmbeddedRows(libsqlUrl)
+    if ('reason' in counted) return { coverage: null, reason: counted.reason }
+    const expected = countEmbeddableEntities(dbPath)
+    return { coverage: { embedded: counted.embedded, expected, missing: Math.max(0, expected - counted.embedded) }, reason: null }
+}
+
 export function inspectVectorLayer(dbPath?: string): VectorLayerReport {
     const override = process.env.MEMORIA_VECTOR_RECALL_CMD?.trim() || null
     // `resolveHelperScript` hands back an override verbatim without probing it — recallVector is the
@@ -155,6 +174,7 @@ export function inspectVectorLayer(dbPath?: string): VectorLayerReport {
     const resolved = resolveHelperScript()
     const helperPath = resolved !== null && existsSync(resolved) ? resolved : null
     const provider = (process.env.MEMORIA_EMBED_PROVIDER ?? 'local').trim()
+    const measured = measureVectorCoverage(dbPath)
     const report: VectorLayerReport = {
         enabled: Boolean(process.env.LIBSQL_URL?.trim()),
         helperPath,
@@ -165,35 +185,10 @@ export function inspectVectorLayer(dbPath?: string): VectorLayerReport {
         embedderDir: null,
         embedderCacheDir: null,
         embedderUnknownReason: null,
-        coverage: null,
-        coverageUnknownReason: null
+        coverage: measured.coverage,
+        coverageUnknownReason: measured.reason
     }
 
-    const libsqlUrl = process.env.LIBSQL_URL?.trim()
-    if (!libsqlUrl) {
-        report.coverageUnknownReason = 'not_enabled'
-    } else if (override !== null) {
-        // Same judgement as the embedder probe: with an override we cannot assume the store at
-        // LIBSQL_URL is filled by OUR ingest pipeline, so a short count would not mean what the
-        // number claims — and the fix we would print names a two-step that may not be theirs.
-        // Reporting a red light plus an inapplicable remedy is how a working setup gets turned into
-        // a manufactured failure (issue-12).
-        report.coverageUnknownReason = 'overridden_helper'
-    } else if (!dbPath || !existsSync(dbPath)) {
-        report.coverageUnknownReason = 'no_local_db'
-    } else {
-        const counted = countEmbeddedRows(libsqlUrl)
-        if ('reason' in counted) {
-            report.coverageUnknownReason = counted.reason
-        } else {
-            const expected = countEmbeddableEntities(dbPath)
-            report.coverage = {
-                embedded: counted.embedded,
-                expected,
-                missing: Math.max(0, expected - counted.embedded)
-            }
-        }
-    }
     // Only the helper we ship has a dependency layout we can reason about. An override may name a
     // bare command, or a copy bundled into someone else's image — probing a sibling node_modules
     // there would manufacture a failure out of a working setup. Each skip names itself, because the

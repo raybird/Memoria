@@ -79,6 +79,8 @@ Worth remembering is what the code and git history cannot tell: the reason behin
 - `--verify "<read-only command>"` when the fact is a current state that someone else or a later release can change: merged, deployed, an installed version, a count, a platform setting. Phrase it as of today and give the command that re-checks it; recall and the brief show both. A state note cannot be `--durable`, so write the lasting constraint and the snapshot as two notes.
 - `--supersedes <old id>` corrects an older memory (the id comes from a recall hit); the old one leaves recall and the brief.
 
+A `- vector coverage: 缺 <n> 筆…` line after the write means semantic recall cannot see that many memories, this note likely among them, until the vector index is filled. Run the fix `doctor` prints now if you are about to recall it semantically; otherwise the wrap-up step covers it.
+
 Done when: the text makes sense on its own outside this conversation and includes the why.
 
 ### After a merge to the main branch or a release — repo sync and the merge summary

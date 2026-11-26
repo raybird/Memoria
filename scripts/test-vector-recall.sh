@@ -911,4 +911,53 @@ if(d.meta.vector_hits!==d.data.length||d.data.length!==5) throw new Error('--inc
 " "$RES35R"
 echo "  補位後 5 則 -> vector_hits=5；被取代 1 則 -> 4；--include-superseded -> 5"
 
+echo "[vector] issue-37 remember 寫入後向量庫有缺口時當下提示"
+# remember 會建 tree index，但不寫向量庫；補上之前語意召回查不到，只有收尾的 doctor 才看得出來。
+# 提示的筆數必須和 doctor 的 missing 一致，否則兩邊說的缺口對不起來。
+H37="$TMP_DIR/home-37"; V37="$TMP_DIR/vectors-37.db"; I37_FAILS=0
+fail37() { echo "  ✗ $1"; I37_FAILS=$((I37_FAILS + 1)); }
+r37() { env MEMORIA_HOME="$H37" "$@"; }
+r37 "$ROOT_DIR/cli" init >/dev/null
+# AC-1：啟用語意召回、向量庫從未 ingest（量到 0），寫入一則新筆記。
+OUT37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi census uses drone transects" --project vec37)
+J37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi census second season plan" --project vec37 --json)
+D37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" doctor --json)
+DOC_MISSING=$(node -e "
+const cov=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector coverage');
+const m=/missing=(\\d+)/.exec(cov&&cov.value||''); process.stdout.write(m?m[1]:'none');" "$D37")
+J37_MISSING=$(node -e "const d=JSON.parse(process.argv[1]).data; process.stdout.write(String(d.vector_missing))" "$J37")
+[ "$DOC_MISSING" != none ] && [ "$DOC_MISSING" -ge 1 ] || fail37 "前提：doctor 應量到缺口，實得 $DOC_MISSING"
+[ "$J37_MISSING" = "$DOC_MISSING" ] || fail37 "AC-1：--json 的 data.vector_missing ($J37_MISSING) 應等於 doctor 的 missing ($DOC_MISSING)"
+OUT37_LINE=$(printf '%s\n' "$OUT37" | grep -F -- '- vector coverage: 缺 ' || true)
+[ -n "$OUT37_LINE" ] || fail37 "AC-1：人讀輸出沒有缺口提示: $OUT37"
+printf '%s' "$OUT37_LINE" | grep -qF 'memoria doctor' || fail37 "AC-1：提示沒有指向 memoria doctor: $OUT37_LINE"
+OUT37_N=$(printf '%s' "$OUT37_LINE" | sed -E 's/.*缺 ([0-9]+) 筆.*/\1/')
+[ "$OUT37_N" -ge 1 ] 2>/dev/null || fail37 "AC-1：提示沒有寫出缺幾筆: $OUT37_LINE"
+# AC-2：照 doctor 的修法補完之後，重寫同一則（created:false）不再提示，--json 也沒有 vector_missing。
+FIX37=$(fix_cmd "$D37")
+(cd "$TMP_DIR" && env LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub bash -c "$FIX37") >/dev/null || fail37 "前提：doctor 修法執行失敗"
+AGAIN37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi census second season plan" --project vec37 --json)
+node -e "const d=JSON.parse(process.argv[1]).data; if(d.created!==false) throw new Error('前提：應為 created:false '+process.argv[1]); if('vector_missing' in d) throw new Error('補完後不應有 vector_missing: '+process.argv[1])" "$AGAIN37" || fail37 "AC-2：補完向量後仍帶 vector_missing"
+AGAIN37H=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi census uses drone transects" --project vec37)
+printf '%s' "$AGAIN37H" | grep -qF 'vector coverage' && fail37 "AC-2：補完向量後人讀輸出仍有提示: $AGAIN37H"
+# AC-2：未啟用語意召回、helper 被覆寫（覆蓋率無法判定）時都不提示。
+NOV37=$(r37 "$ROOT_DIR/cli" remember "okapi note without vector" --project vec37 --json)
+node -e "if('vector_missing' in JSON.parse(process.argv[1]).data) throw new Error(process.argv[1])" "$NOV37" || fail37 "AC-2：未啟用語意召回卻帶 vector_missing"
+OVR37=$(r37 LIBSQL_URL="file:$TMP_DIR/never-37.db" MEMORIA_VECTOR_RECALL_CMD="$HELPER_DIR/vector-recall.mjs" "$ROOT_DIR/cli" remember "okapi note with override" --project vec37)
+printf '%s' "$OVR37" | grep -qF 'vector coverage' && fail37 "AC-2：helper 被覆寫時不應提示: $OVR37"
+# AC-3：向量庫讀不到（不是 SQLite 的檔案、目錄）時 remember 照常成功，筆記已寫入，不提示。
+printf 'not a database' > "$TMP_DIR/garbage-37.db"; mkdir -p "$TMP_DIR/dir-37.db"
+for bad in "$TMP_DIR/garbage-37.db" "$TMP_DIR/dir-37.db"; do
+  RC37=0
+  BAD37=$(r37 LIBSQL_URL="file:$bad" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi note beside $(basename "$bad")" --project vec37 --json 2>&1) || RC37=$?
+  [ "$RC37" -eq 0 ] || { fail37 "AC-3：向量庫讀不到（$bad）時 remember 結束碼 $RC37: $BAD37"; continue; }
+  node -e "const d=JSON.parse(process.argv[1]).data; if(d.created!==true) throw new Error('筆記未寫入'); if('vector_missing' in d) throw new Error('讀不到時不應有 vector_missing')" "$BAD37" \
+    || fail37 "AC-3：向量庫讀不到（$bad）時輸出不對: $BAD37"
+  SID37=$(node -e "process.stdout.write(JSON.parse(process.argv[1]).data.sessionId)" "$BAD37")
+  r37 "$ROOT_DIR/cli" recall "okapi note beside $(basename "$bad")" --project vec37 --json | grep -qF "$SID37" \
+    || fail37 "AC-3：向量庫讀不到（$bad）時筆記沒有留在資料庫"
+done
+[ "$I37_FAILS" -eq 0 ] || { echo "  ✗ issue-37：$I37_FAILS 項失敗"; exit 1; }
+echo "  有缺口時提示且筆數與 doctor 一致；補完、未啟用、覆寫時不提示；向量庫讀不到時照常寫入"
+
 echo "[vector] ok"

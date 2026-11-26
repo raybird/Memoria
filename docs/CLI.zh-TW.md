@@ -2,7 +2,7 @@
 
 [English](CLI.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-11-26，對照 issue-36 取得的 `recall --json` 輸出（信封欄位與 `n/a` 命中）、issue-35 原始碼、CLI help 與文件檢查。
+最後驗證：2026-11-26，對照 issue-37 原始碼（remember 的向量缺口提示）、issue-36 取得的 `recall --json` 輸出、CLI help 與文件檢查。
 
 以下命令使用 npm 安裝後的 `memoria`。在 repository checkout 中可改用 `./cli`；完整旗標以 `memoria <command> --help` 為準。方括號表示可選參數，`<…>` 表示需替換的值。
 
@@ -54,6 +54,8 @@ memoria setup [--serve] [--json]       # 自動化一鍵安裝
 ```
 
 `remember`、`recall`、`mark`、`feedback`、`brief` 直接存取本地資料，skill 型部署不需要 server。多個 repository 共用記憶庫時，recall 請帶 `--project` 限定範圍。
+
+啟用語意召回時，`remember` 寫入後會檢查向量庫。它本身不寫向量，所以新筆記在向量庫補上之前，`--mode vector` 查不到它。向量庫有缺口時，輸出多一行 `- vector coverage: 缺 <n> 筆，語意召回查不到它們；…`，筆數與 `doctor` 的 `vector coverage` 那行相同，`--json` 則多 `data.vector_missing`。照 `doctor` 印出的修法補上即可，現在補或留到收尾都可以。語意召回沒啟用、覆蓋率無法量測（遠端 libSQL、helper 被覆寫）、沒有缺口，或向量庫讀不到時都不會多這一行；寫入本身與結束碼都不受影響。
 
 以 `--verify` 寫入的是狀態類記憶，也就是可能過時的快照。recall 會在該 hit 下方印出 `⟳ 截至 <日期>；據以行動前先跑：<命令>`，`--json` 與 `/v1/recall` 以 `verify` 欄位帶出；brief 在列出它的每個區塊、該項下方加一行 `截至 <日期>；據以行動前先跑 <命令>`，並在統計行之後加一行固定說明：Memoria 不執行命令，只有唯讀檢查才該跑。命令完整顯示、從不執行，由讀到的 agent 決定要不要跑。截至日期是該記憶的 UTC 日期。`--verify` 必須是單行、非空、不含控制字元的命令（Tab 可以，Unicode 換行字元會被拒絕），且不能與 `--durable` 並用，寫入時與之後用 `mark` 都一樣（把長期約束與快照拆成兩則）。
 
