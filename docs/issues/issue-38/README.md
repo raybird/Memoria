@@ -22,7 +22,7 @@ brief 與 `doctor` 會顯示每個 repository 的「未掃描 commit」，提醒
 
 ## 現況
 
-**現行 review**: review-9439f0a.md
+**現行 review**: review-2be3c8d.md
 
 ## 涉及檔案
 
@@ -120,9 +120,10 @@ Feature: brief 的未掃描提示只反映該 sync 的變更，並點名未掃�
 | 2026-11-26 | 使用者對 review-2cca66c 的建議回「照建議」：修正 S1、S2（做法 B）、N2、N5，記錄 TBD-2～4，送增量覆審 |
 | 2026-11-26 | 增量覆審 review-9439f0a：PASS，1 項 SHOULD FIX |
 | 2026-11-26 | 使用者對 review-9439f0a 回「好照這樣修」：補輕量 tag 的排序覆蓋，TBD-1 去掉尖括號，送增量覆審 |
+| 2026-11-26 | 增量覆審 review-2be3c8d：PASS，無建議；狀態改為已完成，待合併 |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Medium（scan-lag 計數範圍 + brief／doctor 顯示 + BriefData 加一個欄位；零 schema 變更、零新依賴）  
 **風險**: Medium — 預設分支登記不符時會漏報\
-**狀態**: 審查中
+**狀態**: 已完成
