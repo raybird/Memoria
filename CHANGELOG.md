@@ -7,8 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **`recall` says why it found little.** A `--mode vector` query that ran but matched nothing used to read `route_mode: keyword` with no other trace, so callers concluded semantic recall was broken; recall meta now carries `vector_hits` (`0` in that case). A `--project` naming no memory at all looked the same as an unrelated query; meta now carries `project_known` (`false`). The human listing prints a line for each, and marks hits with relevance below 0.3 as `弱命中`. Hits, ordering, `route_mode` and every other field are unchanged, and both fields are absent where they do not apply (issue-35).
 - **`remember` says when semantic recall cannot see the note yet.** `remember` writes the tree index but never the vector store, so with semantic recall enabled a new note was invisible to `--mode vector` with no error until `doctor` ran at wrap-up. After the write, `remember` now checks coverage and, when the index is short, prints `- vector coverage: 缺 <n> 筆…` pointing at `doctor`'s fix; `--json` adds `data.vector_missing`, the same count `doctor` reports. It loads no model and writes nothing to the vector store; nothing changes when semantic recall is off, coverage cannot be measured, nothing is missing, or the index cannot be read (issue-37).
+- **`brief` names releases nobody synced.** A tag no `repo sync` has seen is listed on the repository's line as `未掃描 tag: <names>` (newest first, up to three plus the total), and `/v1/brief` and `brief --json` carry `unscanned_tags`. A release that was published but not synced used to leave the brief's latest summary a version behind with only a commit count next to it (issue-38).
 
 ### Changed
+- **`未掃描 commit` counts only what a merge or a release adds.** The count now covers the registered default branch and tags instead of every local branch and `HEAD`, so an issue branch checked out in the main worktree no longer shows as unscanned work. Without a registered default branch, or when it is not checked out locally, it counts every branch as before. `repo sync` still scans every branch (issue-38).
 - **The deployed `memoria` skill says how to read recall and when to report it.** It now spells out the `recall --json` shape (`data` is the array of hits; `recall_id`, `route_mode`, `confidence` and `confidence_basis` are in `meta`), says a `[ n/a ]` hit was found by the semantic index alone and has no lexical score rather than a low one, tells a recall run only as a test to report `--score` by hit quality without `--used`, and says a host's own memory does not replace recall. `docs/CLI.md` documents the same envelope and `n/a`. Hosts pick it up after `memoria setup` on the new release (issue-36).
 
 ### Fixed
@@ -17,6 +19,7 @@ All notable changes to this project will be documented in this file.
 ### Compatibility and upgrade
 - **`routeUtility` readings are not comparable across this upgrade for hybrid queries that hit a note.** The hybrid label counts only the rows a caller receives; the collapsed half no longer does, so such a query can now read `hybrid_tree` where it read `hybrid_fallback`. Compare route utility within one side of the upgrade.
 - When a refill happens, the result is what the routes return at the deeper window minus the collapsed halves, so the other hits in it can differ from the previous release's.
+- **`未掃描 commit` can drop after upgrading, and can now be smaller than `repo sync --dry-run`'s `new_commits`.** A repository whose registered default branch is not where work is merged will under-report; check `repo list` and re-register with `repo add <path> --default-branch <branch>`.
 
 ## [1.39.0] - 2026-11-18
 

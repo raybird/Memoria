@@ -26,10 +26,12 @@ brief 與 `doctor` 會顯示每個 repository 的「未掃描 commit」，提醒
 src/core/git/scan-lag.ts      # 可改：計數範圍改為預設分支與 tag；另列未掃描的 tag
 src/core/db/brief.ts          # 可改：Repository 狀態行顯示未掃描的 tag
 src/core/types.ts             # 可改：BriefData 的 repository 加 unscanned_tags
-src/cli/commands/doctor.ts    # 可改：repo scan 檢查沿用新的計數
+src/core/memoria.ts           # 可改：attachScanLag 一併帶入 unscanned_tags
+src/cli/commands/doctor.ts    # 未改：repo scan 檢查透過 measureScanLag 沿用新的計數
 src/core/git/scanner.ts       # 不可觸及：repo sync 的掃描範圍不變
 scripts/test-brief-scope.sh   # 可改：(K) 段擴充
-docs/CLI.md、docs/CLI.zh-TW.md、docs/API.md、docs/API.zh-TW.md、docs/OPERATIONS.md  # 常青文件
+scripts/test-http-api.sh      # 可改：/v1/brief 的 unscanned_tags
+docs/CLI.md、docs/CLI.zh-TW.md、docs/API.md、docs/API.zh-TW.md、docs/OPERATIONS.md、docs/agents/architecture.md、CHANGELOG.md  # 常青文件
 ```
 
 ## Gherkin 驗收劇本
@@ -76,7 +78,7 @@ Feature: brief 的未掃描提示只反映該 sync 的變更，並點名未掃�
 ```
 
 ## Gherkin 核准紀錄
-- **核准 commit**: 待提交
+- **核准 commit**: fec4368
 - **核准來源**: 使用者 2026-11-25 對話中說「照這份清單開 issue」，兩題分別選「只算預設分支與 tag」與「點名未掃描的 tag」（SCN-001～005）
 
 全部 Scenario 於 2026-11-25 核准。
@@ -97,16 +99,18 @@ Feature: brief 的未掃描提示只反映該 sync 的變更，並點名未掃�
 
 | 編號 | 事項 | 狀態 | 影響 |
 |------|------|------|------|
-| TBD-1 | 登記的預設分支和實際整合分支不同時怎麼辦：目前已知 1 個下游（登記 `master`、合併進 `dev`）。可以用既有的 `repo add <path> --default-branch dev` 更正登記，不需改程式；要不要更正，由使用者決定 | 待確認 | 不更正時，該 repository 的未掃描提示會漏報合併到 `dev` 的工作；不阻擋 SCN-001～005 的實作 |
+| TBD-1 | 登記的預設分支和實際整合分支不同時怎麼辦：目前已知 1 個下游（登記 `master`、合併進 `dev`）。可以用既有的 `repo add <path> --default-branch dev` 更正登記，不需改程式；要不要更正，由使用者決定 | 已解決（2026-11-26 使用者回「照建議」，選更正）：步驟 1 盤點 12 個 repository，只有這個下游不一致，近 30 天 dev 有 926 個提交不在 master、最新 tag 只在 dev。已在維護者資料根執行 `repo add` 加 `--default-branch dev`，登記改為 dev；這次 `repo add` 也順帶做了一次初始掃描（commits=83、refs=11、tags=1）。其他使用者的登記不一致時仍會漏報，文件寫明並指出更正方式 | 不更正時，該 repository 的未掃描提示會漏報合併到 `dev` 的工作；不阻擋 SCN-001～005 的實作 |
 
 ## Timeline
 
 | 日期 | 異動 |
 |------|------|
 | 2026-11-25 | 建立並核准 SCN-001～005（來源：9 個下游 session 的使用體驗調查）；記錄 TBD-1 |
+| 2026-11-26 | 步驟 1 盤點完成；TBD-1 使用者選更正，該下游登記改為 dev |
+| 2026-11-26 | 步驟 2～5 完成，三組回歸全綠，待審查 |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Medium（scan-lag 計數範圍 + brief／doctor 顯示 + BriefData 加一個欄位；零 schema 變更、零新依賴）  
 **風險**: Medium — 預設分支登記不符時會漏報\
-**狀態**: 待實作
+**狀態**: 實作中

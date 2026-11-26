@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](API.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-11-26 against the issue-35 source (`vector_hits` and `project_known` on recall meta), CLI help and documentation checks.
+Last verified: 2026-11-26 against the issue-38 source (`unscanned_tags` on `/v1/brief` repositories) and the issue-35 source, CLI help and documentation checks.
 
 This is the local HTTP interface. See the [Install Guide](INSTALL.md) for startup and background service options.
 
@@ -86,6 +86,12 @@ and the rendered `markdown` adds `截至 <date>；據以行動前先跑 <command
 plus one fixed note after the totals line on when to run it (only when at least one such line is
 present). The field is absent on every other memory. The server stores and returns the command
 and never runs it.
+
+Each `/v1/brief` repository carries `unscanned_commits`, commits past the last sync on the
+registered default branch and tags (every branch when none is registered or it is not local), and
+`unscanned_tags`, the local tags no sync has seen, newest first. Both are `null` when they cannot be
+measured, for example when the registered path no longer holds the repository. The markdown names
+up to three of the tags on the repository line.
 
 ## UI-mode API
 

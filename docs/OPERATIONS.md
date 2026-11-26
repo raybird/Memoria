@@ -1,6 +1,6 @@
 # Operations Guide
 
-Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1, with `remember`'s gap hint checked against the issue-37 source on 2026-11-26.
+Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1, with `remember`'s gap hint checked against the issue-37 source and the scan-lag scope against the issue-38 source on 2026-11-26.
 
 ## Runtime Health Commands
 
@@ -464,7 +464,7 @@ mutates a managed repo: only an allowlisted set of read subcommands runs against
   milliseconds falls back to the default), then fails with `repository_sync_busy` and
   writes nothing. `--dry-run` waits the same way but never takes the lease: taking it is a write.
   Inside one process (an HTTP server) syncs still queue in memory first.
-- **Scan lag**: `brief` shows `未掃描 commit: N` on a repository with commits past its last `repo sync`, and `doctor` lists them under `repo scan`. N is what a sync would discover (same as `repo sync --dry-run`'s `new_commits`). It never fails `doctor`: unscanned commits are normal between syncs. An unmeasurable repository is named as `not measured` and stays `null` in brief JSON.
+- **Scan lag**: `brief` shows `未掃描 commit: N` on a repository with commits past its last `repo sync`, and `doctor` lists them under `repo scan`. Since issue-38 N counts only the registered default branch and tags, the changes a merge or a release adds, so it can be smaller than `repo sync --dry-run`'s `new_commits`, which also counts unmerged branches; without a registered default branch, or when that branch is not local, it counts every branch and matches `new_commits`. `brief` also names tags no sync has seen as `未掃描 tag: <names>` (`unscanned_tags` in JSON). It never fails `doctor`: unscanned commits are normal between syncs. An unmeasurable repository is named as `not measured` and stays `null` in brief JSON. A registered default branch that is not where work is merged makes the count miss that work; check it with `repo list` and fix it with `repo add <path> --default-branch <branch>`.
 - **Commit-range skeletons**: writing back a merge or release summary dismisses every pending commit-range skeleton whose head falls inside any enriched milestone in that repository (a merge counts only the commits it brought in, `<merge>^1..<merge>`). Skeletons no milestone covers stay pending on purpose; there is no age limit, because one may be work still unwritten. Use `--dismiss-pending --type commit_range` to clear those by hand.
 - **Config**: `<configPath>/config.json`, `git.*` block (optional; Zod-validated). Tunables:
   `summarization.{minimumCommits,minimumChangedLines,branchIdleHours,promoteImportanceThreshold,includeDiff,maxDiffBytes,maxContextCommits,maxContextFiles}`,

@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](CLI.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-11-26 against the issue-37 source (remember's vector coverage hint), the issue-36 `recall --json` output, CLI help and documentation checks.
+Last verified: 2026-11-26 against the issue-38 source (unscanned count scope and unscanned tags), the issue-37 source, CLI help and documentation checks.
 
 These examples use the npm-installed `memoria` command. From a repository checkout, use `./cli` instead. Run `memoria <command> --help` for all flags. Square brackets denote optional arguments; replace values inside `<…>`.
 
@@ -64,6 +64,8 @@ recall's listing says why it found little. Under the count line, `- 語意查詢
 `recall --json` prints the `MemoriaResult` envelope `{ok, data, meta}`. `data` is the array of hits; each has `id` (what `feedback --hits` takes), `session_id`, `type`, `project`, `timestamp`, `snippet` and `score`, which orders the hits and is not a 0–1 match quality. `relevance` (0–1 lexical match) is on every hit except one the semantic index alone found; other fields such as `source` and `verify` appear when they apply. `meta` carries `recall_id`, `route_mode`, `confidence` and `confidence_basis`; `confidence` is `null` with basis `unavailable` when the top hit came from the semantic index alone. The human listing prints the `recall_id` on its last line.
 
 Inside a registered repository, `brief` detects the project and writes `knowledge/BRIEF-<project>.md`; an explicit `--project` still writes `BRIEF.md`, and `--global` selects all projects. The body shows the generation time on the scope line, because hosts that `@`-import the brief drop the header comment. Durable memories appear in a pinned block outside the `--days` and `--top-k` limits; superseded memories are excluded. Recent decisions share their `--top-k` slots across projects, most recently active first. Memories whose project is not a registered repository accompany each project's brief. Follow the output to add read instructions to `AGENTS.md`; Claude's `CLAUDE.md` imports `@AGENTS.md` and the brief path. Regenerate the brief after memory updates. See [Operations](OPERATIONS.md#context-injection-via-briefmd).
+
+The Repository block says when a repository needs `repo sync`. `未掃描 commit: N` counts commits past the last sync on the registered default branch and on tags, so work on a branch that is not merged yet does not count; without a registered default branch, or when that branch is not checked out locally, it counts every branch as `repo sync` does. `未掃描 tag: <names>` names tags no sync has seen, newest first, up to three plus `等 N 個` for the total. `--json` carries them as `repositories[].unscanned_commits` and `unscanned_tags`. `repo sync` itself still scans every branch. When the registered default branch is not where work is merged, re-register it with `memoria repo add <path> --default-branch <branch>`; `repo list` shows the current one.
 
 ## Local memory workspace
 

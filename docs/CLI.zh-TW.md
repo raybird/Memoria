@@ -2,7 +2,7 @@
 
 [English](CLI.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-11-26，對照 issue-37 原始碼（remember 的向量缺口提示）、issue-36 取得的 `recall --json` 輸出、CLI help 與文件檢查。
+最後驗證：2026-11-26，對照 issue-38 原始碼（未掃描的計算範圍與未掃描 tag）、issue-37 原始碼、CLI help 與文件檢查。
 
 以下命令使用 npm 安裝後的 `memoria`。在 repository checkout 中可改用 `./cli`；完整旗標以 `memoria <command> --help` 為準。方括號表示可選參數，`<…>` 表示需替換的值。
 
@@ -64,6 +64,8 @@ recall 的人讀輸出會說明查得少的原因。筆數那行下方出現 `- 
 `recall --json` 輸出 `MemoriaResult` 信封 `{ok, data, meta}`。`data` 是命中陣列，每筆有 `id`（`feedback --hits` 要填的值）、`session_id`、`type`、`project`、`timestamp`、`snippet` 與 `score`；`score` 決定排序，不是 0–1 的比對品質。`relevance`（0–1 的字面比對分數）除了只靠語意索引找到的命中以外，每筆都有；`source`、`verify` 等其他欄位在適用時出現。`meta` 帶 `recall_id`、`route_mode`、`confidence` 與 `confidence_basis`；首位命中只來自語意索引時，`confidence` 為 `null`、basis 為 `unavailable`。人讀輸出把 `recall_id` 印在最後一行。
 
 在已註冊 repository 內執行 `brief`，會自動辨識專案並寫入 `knowledge/BRIEF-<project>.md`；明確指定 `--project` 仍寫 `BRIEF.md`，`--global` 則選取所有專案。正文的範圍行會顯示產生時間，因為以 `@` 引入 brief 的 host 看不到開頭的註解。Durable 記憶會列在不受 `--days`、`--top-k` 限制的固定區塊，被取代的記憶會排除。近期決策的 `--top-k` 格數由各專案輪流分配，最近活躍的專案優先。project 不屬於任何已註冊 repository 的記憶會隨各專案的 brief 載入。依 `brief` 輸出，在 `AGENTS.md` 設定讀取指令；Claude 的 `CLAUDE.md` 以 `@AGENTS.md` 與 brief 路徑載入。記憶更新後重新產生 brief。詳見 [Operations](OPERATIONS.md#context-injection-via-briefmd)。
+
+Repository 狀態區塊會說明哪個 repository 該跑 `repo sync`。`未掃描 commit: N` 只算上次 sync 之後、登記的預設分支與 tag 上的提交，還沒合併的分支不算；沒有登記預設分支，或本機沒有這個分支時，和 `repo sync` 一樣算所有分支。`未掃描 tag: <名稱>` 列出還沒被 sync 看過的 tag，由新到舊，最多列 3 個，超過時加「等 N 個」寫總數。`--json` 以 `repositories[].unscanned_commits` 與 `unscanned_tags` 帶出。`repo sync` 本身照樣掃描所有分支。登記的預設分支不是實際合併的分支時，用 `memoria repo add <path> --default-branch <分支>` 重新登記；目前登記的分支可用 `repo list` 查看。
 
 ## 本機記憶工作台
 

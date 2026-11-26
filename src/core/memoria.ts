@@ -654,8 +654,12 @@ export class MemoriaCore {
         if (data.repositories.length === 0) return
         try {
             const lags = await measureScanLag(this.paths.dbPath, this.paths.memoryDir)
-            const byName = new Map(lags.map((lag) => [lag.repository, lag.unscanned_commits]))
-            for (const repo of data.repositories) repo.unscanned_commits = byName.get(repo.repository) ?? null
+            const byName = new Map(lags.map((lag) => [lag.repository, lag]))
+            for (const repo of data.repositories) {
+                const lag = byName.get(repo.repository)
+                repo.unscanned_commits = lag?.unscanned_commits ?? null
+                repo.unscanned_tags = lag?.unscanned_tags ?? null
+            }
         } catch { /* stays null */ }
     }
 

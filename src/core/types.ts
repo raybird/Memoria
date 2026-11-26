@@ -523,8 +523,11 @@ export type BriefRepository = {
     latest_summary: { id: string; title: string; type: string; created_at: string } | null
     pending_summaries: number
     dismissed_summaries: number
-    /** Commits a `repo sync` would discover; null when it cannot be measured here. */
+    /** Commits a `repo sync` would add on the registered default branch and tags (all branches when
+     *  none is registered or it is not local, issue-38); null when it cannot be measured here. */
     unscanned_commits: number | null
+    /** Local tags no sync has observed yet, newest first (issue-38); null when not measurable. */
+    unscanned_tags: string[] | null
 }
 
 export type BriefData = {

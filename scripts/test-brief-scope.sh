@@ -289,4 +289,62 @@ case "$(repo_scan)" in "true "*"not measured: lagging") ;; *) echo "  ✗ 路徑
 [ "$("$CLI" brief --global --json | field '.data.repositories[0].unscanned_commits')" = "null" ] || { echo "  ✗ 量不到時應為 null"; exit 1; }
 echo "  brief 與 doctor 顯示落後、與 dry-run 一致、sync 後消失、路徑失效標示為量不到"
 
+echo "[brief-scope] (K/issue-38) 未掃描只算登記的預設分支與 tag，未掃描的 tag 被點名"
+# 合併或發版之後才該 sync；未合併分支的工作算進來，數字只會讓人分心。repo sync 的掃描範圍不變。
+reset_home home-k38
+BRIEF="$MEMORIA_HOME/knowledge/BRIEF.md"
+K38="$TMP_DIR/k38"; K38_FAILS=0
+fail38() { echo "  ✗ $1"; K38_FAILS=$((K38_FAILS + 1)); }
+gc38() { git -C "$1" -c user.name=memoria-test -c user.email=test@memoria.local "${@:2}"; }
+make_repo "$K38"; git -C "$K38" branch -M main
+"$CLI" repo add "$K38" --default-branch main >/dev/null
+lag38() { "$CLI" brief --global --json | field '.data.repositories.find(r=>r.repository==="k38").'"$1"; }
+# SCN-001：sync 之後在 feature 分支新增 4 個提交，main 沒有新提交（HEAD 停在 feature）。
+git -C "$K38" checkout -q -b feature
+for n in 1 2 3 4; do gc38 "$K38" commit -q --allow-empty -m "feature $n"; done
+"$CLI" brief --global >/dev/null
+grep -F "**k38**" "$BRIEF" | grep -q "未掃描" && fail38 "SCN-001：只有 feature 分支的提交時不應提示未掃描: $(grep -F '**k38**' "$BRIEF")"
+[ "$(lag38 unscanned_commits)" = "0" ] || fail38 "SCN-001：--json 的 unscanned_commits 應為 0，實得 $(lag38 unscanned_commits)"
+case "$(repo_scan)" in "true 1 of 1 repositories up to date") ;; *) fail38 "SCN-001：doctor 不應把它列為落後: $(repo_scan)" ;; esac
+# SCN-005：sync 的掃描範圍不變，feature 分支的提交照常是 sync 會發現的新提交。
+[ "$("$CLI" repo sync k38 --dry-run --json | field '.data.new_commits')" = "4" ] || fail38 "SCN-005：dry-run 應照常發現 feature 的 4 個提交"
+# SCN-002：main 新增 3 個提交，只算這 3 個，不算 feature 的 4 個。
+git -C "$K38" checkout -q main
+for n in 1 2 3; do gc38 "$K38" commit -q --allow-empty -m "main $n"; done
+"$CLI" brief --global >/dev/null
+grep -F "**k38**" "$BRIEF" | grep -qF "未掃描 commit: 3" || fail38 "SCN-002：應顯示未掃描 commit: 3: $(grep -F '**k38**' "$BRIEF")"
+# SCN-003：main 上新增 tag v1.1.0。
+gc38 "$K38" tag -a v1.1.0 -m "release 1.1.0"
+"$CLI" brief --global >/dev/null
+grep -F "**k38**" "$BRIEF" | grep -qF "未掃描 tag: v1.1.0" || fail38 "SCN-003：Repository 狀態行應列出未掃描 tag: v1.1.0: $(grep -F '**k38**' "$BRIEF")"
+[ "$(lag38 'unscanned_tags?.join(",")')" = "v1.1.0" ] || fail38 "SCN-003：--json 的 unscanned_tags 應為 [\"v1.1.0\"]，實得 $(lag38 'unscanned_tags')"
+# sync 後兩者都消失；SCN-005：feature 的提交照常被掃描進來。
+"$CLI" repo sync k38 >/dev/null
+"$CLI" brief --global >/dev/null
+grep -F "**k38**" "$BRIEF" | grep -q "未掃描" && fail38 "SCN-002／003：sync 後仍顯示未掃描: $(grep -F '**k38**' "$BRIEF")"
+[ "$(lag38 'unscanned_tags?.length')" = "0" ] || fail38 "SCN-003：sync 後 unscanned_tags 應為空，實得 $(lag38 'unscanned_tags')"
+FEAT_SHA=$(git -C "$K38" rev-parse feature)
+node -e "const D=require('$BSQ');const db=new D(process.argv[1],{readonly:true});const r=db.prepare('SELECT 1 FROM git_commits WHERE commit_sha=?').get(process.argv[2]);process.exit(r?0:1)" "$MEMORIA_HOME/.memory/sessions.db" "$FEAT_SHA" \
+  || fail38 "SCN-005：sync 後 feature 分支的提交沒有進 git_commits"
+# 超過 3 個未掃描 tag 時只列 3 個，加上總數。
+for t in t1 t2 t3 t4; do git -C "$K38" tag "$t"; done
+"$CLI" brief --global >/dev/null
+grep -F "**k38**" "$BRIEF" | grep -qF " 等 4 個" || fail38 "4 個未掃描 tag 時應寫「等 4 個」: $(grep -F '**k38**' "$BRIEF")"
+[ "$(lag38 'unscanned_tags?.length')" = "4" ] || fail38 "--json 應列出全部 4 個 tag"
+"$CLI" repo sync k38 >/dev/null
+# 預設分支登記了但本機沒有這個分支時退回原本的計數（不可量到 0 而漏報）。
+git -C "$K38" branch -m main trunk
+gc38 "$K38" commit -q --allow-empty -m "on trunk"
+[ "$(lag38 unscanned_commits)" = "1" ] || fail38 "登記的預設分支不在本機時應退回原本的計數（1），實得 $(lag38 unscanned_commits)"
+git -C "$K38" branch -m trunk main
+# SCN-004：沒有登記預設分支（沒有 remote，偵測不到）時維持原本的計數。
+K38N="$TMP_DIR/k38n"; make_repo "$K38N"
+"$CLI" repo add "$K38N" >/dev/null
+[ "$("$CLI" repo list --json | field '.data.find(r=>r.repository.name==="k38n").repository.default_branch ?? null')" = "null" ] || fail38 "SCN-004 前提：k38n 不應有登記的預設分支"
+git -C "$K38N" checkout -q -b side
+for n in 1 2; do gc38 "$K38N" commit -q --allow-empty -m "side $n"; done
+[ "$("$CLI" brief --global --json | field '.data.repositories.find(r=>r.repository==="k38n").unscanned_commits')" = "2" ] || fail38 "SCN-004：沒有預設分支時應維持原本的計數 2"
+[ "$K38_FAILS" -eq 0 ] || { echo "  ✗ issue-38：$K38_FAILS 項失敗"; exit 1; }
+echo "  feature 分支不算、main 只算 3、tag 被點名、sync 後清除；sync 範圍不變；沒有預設分支或本機沒有該分支時維持原計數"
+
 echo "[brief-scope] ✓ all checks passed"

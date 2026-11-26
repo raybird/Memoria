@@ -277,4 +277,18 @@ assert_ok "$(curl -sf "$SERVER_URL/v1/brief")"
 [ ! -e "$RAN_HTTP" ] || { echo "  ✗ 伺服器執行了查證命令"; exit 1; }
 echo "  /v1/recall（三種模式）與 /v1/brief 之後檔案不存在；對照組會建出"
 
+echo "[http] issue-38 GET /v1/brief 的 repository 帶 unscanned_tags，markdown 點名未掃描的 tag"
+REPO38="$TMP_DIR/http38"; git init -q "$REPO38"
+git -C "$REPO38" -c user.name=memoria-test -c user.email=test@memoria.local commit -q --allow-empty -m "init http38"
+assert_ok "$(curl -sf -X POST "$SERVER_URL/v1/repos" -H 'Content-Type: application/json' -d "{\"path\":\"$REPO38\",\"name\":\"http38\"}")"
+git -C "$REPO38" -c user.name=memoria-test -c user.email=test@memoria.local tag -a v3.8.0 -m "release 3.8.0"
+BRIEF38=$(curl -sf "$SERVER_URL/v1/brief")
+node -e "
+const d = JSON.parse(process.argv[1]).data;
+const repo = d.repositories.find((r) => r.repository === 'http38');
+if (!repo || JSON.stringify(repo.unscanned_tags) !== '[\"v3.8.0\"]') throw new Error('unscanned_tags wrong: ' + JSON.stringify(repo));
+if (!d.markdown.split('\n').some((l) => l.startsWith('- **http38**') && l.includes('未掃描 tag: v3.8.0'))) throw new Error('markdown does not name the tag:\n' + d.markdown);
+" "$BRIEF38"
+echo "  structured unscanned_tags and markdown agree"
+
 echo "[http] ok"

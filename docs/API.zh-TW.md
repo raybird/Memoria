@@ -2,7 +2,7 @@
 
 [English](API.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-11-26，對照 issue-35 原始碼（recall meta 的 `vector_hits` 與 `project_known`）、CLI help 與文件檢查。
+最後驗證：2026-11-26，對照 issue-38 原始碼（`/v1/brief` repository 的 `unscanned_tags`）與 issue-35 原始碼、CLI help 與文件檢查。
 
 這是本地 HTTP 介面；啟動與背景服務設定見 [安裝指南](INSTALL.md)。
 
@@ -80,6 +80,11 @@ recall 的 meta 另有兩個欄位說明查得少的原因，各自只在適用�
 與 `verify_as_of`，渲染出的 `markdown` 在這些項目下方加一行 `截至 <日期>；據以行動前先跑 <命令>`，
 並在統計行之後加一行固定說明何時該跑（至少有一行查證行時才出現）。其他記憶都沒有這個欄位。
 伺服器只儲存與回傳命令，從不執行。
+
+`/v1/brief` 的每個 repository 帶 `unscanned_commits`：上次 sync 之後、登記的預設分支與 tag 上的提交數
+（沒有登記預設分支或本機沒有該分支時算所有分支）；以及 `unscanned_tags`：還沒被 sync 看過的本機 tag，
+由新到舊。量不到時兩者都是 `null`，例如登記的路徑已不是這個 repository。markdown 在該 repository 那行
+最多列出 3 個 tag。
 
 ## UI 模式 API
 

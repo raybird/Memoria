@@ -355,7 +355,8 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                     latest_summary: latest ? { id: latest.id, title: truncateText(latest.title, 120), type: latest.summary_type, created_at: latest.created_at } : null,
                     pending_summaries: pending,
                     dismissed_summaries: dismissed,
-                    unscanned_commits: null
+                    unscanned_commits: null,
+                    unscanned_tags: null
                 })
             }
         }
@@ -482,7 +483,11 @@ export function renderBrief(data: BriefData): string {
             const dismissed = repo.dismissed_summaries > 0 ? ` ｜ 已略過: ${repo.dismissed_summaries}` : ''
             // Only when behind, so a caught-up repository renders as it always has.
             const unscanned = repo.unscanned_commits ? ` ｜ 未掃描 commit: ${repo.unscanned_commits}` : ''
-            lines.push(`- **${repo.repository}**${branch} ｜ 待增強: ${repo.pending_summaries}${dismissed}${unscanned}`)
+            // issue-38: a release nobody synced is what leaves "最新摘要" a version behind; name it.
+            const tags = repo.unscanned_tags ?? []
+            const unscannedTags = tags.length === 0 ? ''
+                : ` ｜ 未掃描 tag: ${tags.slice(0, 3).join(', ')}${tags.length > 3 ? ` 等 ${tags.length} 個` : ''}`
+            lines.push(`- **${repo.repository}**${branch} ｜ 待增強: ${repo.pending_summaries}${dismissed}${unscanned}${unscannedTags}`)
             if (repo.latest_summary) {
                 lines.push(`  - 最新摘要: ${repo.latest_summary.title} [${repo.latest_summary.type}] ｜ ${repo.latest_summary.created_at}`)
             }
