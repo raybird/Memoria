@@ -252,8 +252,8 @@ Without `LIBSQL_URL` no response ever carries `null`.
 
 Recall meta also says why a recall found little (issue-35), each field present only when it applies:
 `vector_hits` (vector mode with the helper answering: memories the semantic route contributed, in the unit
-of `data`; `0` means it ran but contributed nothing — usually `route_mode: keyword`, or `vector` when every
-semantic hit was superseded) and `project_known` (with a `project` filter: whether
+of `data`; `0` means it ran but contributed nothing — read it here, not from `route_mode`, whose label is decided
+before superseded memories are dropped) and `project_known` (with a `project` filter: whether
 that project has any memory). `route_mode` keeps its values — `routeUtility` groups by it.
 
 With more than one repository registered, pass `project` on recall — promoted git summaries use the

@@ -119,6 +119,8 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 | TBD-8 | review-14b4625 N5：計畫步驟 1 沒寫明 GitNexus impact 的 CRITICAL 結果已經告知使用者 | 已解決（2026-11-26 使用者選「修正」）：步驟 1 證據已補上 | 無 |
 | TBD-9 | review-c57fa47 N1：`vector_hits` 扣掉被取代的記憶，`route_mode` 卻在扣之前決定，語意命中全部被取代時會出現 `route_mode` 為 vector 而 `vector_hits` 為 0；文件寫的「0 就是 route_mode 顯示 keyword 的情況」只剩單向成立 | 已解決（2026-11-26 使用者選「修正」）：只改文件，API.md、API.zh-TW.md、AGENTS.md、CLI.md、CLI.zh-TW.md 改寫成「0 表示語意查詢有執行但沒有提供任何記憶」，並說明兩種 `route_mode`；程式不變，`route_mode` 的值維持 issue-18 的契約 | SCN-001 |
 | TBD-10 | review-c57fa47 N2：補位測試的註解說前 5 列最多 3 則筆記、一定會補位，實際可能是 4 則，舊程式碼的紅燈不是每次都出現；計畫記的「被取代時為 5」也不精確 | 已解決（2026-11-26 使用者選「修正」）：測試註解與計畫步驟 2 的證據改成實際觀察到的值，被取代那條的保護力改記變異測試的結果 | SCN-002 |
+| TBD-11 | review-c303bc6 N1：文件把 `vector_hits` 為 0 時的 `route_mode` 列舉成 `keyword` 或 `vector`，漏了 `hybrid_vector`（語意命中全部被取代但仍有字面命中時，覆審實測）；中英語氣不對等，architecture.md 仍寫 matched nothing | 已解決（2026-11-26 使用者選「修正」）：五份文件與 architecture.md 改成「0 表示語意路由沒有提供任何記憶，要看 `vector_hits`，不要看 `route_mode`」，不再列舉標籤值 | SCN-001 |
+| TBD-12 | review-c303bc6 N2：計畫步驟 2 把上一份報告的 4、4、4、4 誤讀成被取代那條跑了 4 次，推出「舊程式碼不會紅」，結論不成立；測試註解「兩列排在一起」與 stub embedding 下 10 列同距離的事實矛盾 | 已解決（2026-11-26 使用者選「修正」）：計畫證據改寫成舊程式碼紅綠看排序（實作時一次為 5 是紅燈、probe 一次為 4），保護力以變異測試為準；測試註解改寫成 10 列同距離、排序不固定 | SCN-002 |
 
 ## Timeline
 
@@ -128,6 +130,7 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 | 2026-11-26 | 實作完成：`vector_hits` 改以筆記計（TBD-1）；SCN-006 的 `vector_hits` 斷言放在 test-vector-recall.sh |
 | 2026-11-26 | review-14b4625 PASS，附 1 項 SHOULD FIX、5 項 NICE TO HAVE；使用者回「照建議」，修正 S1、N1、N2、N4、N5（TBD-3～8），送增量覆審 |
 | 2026-11-26 | review-c57fa47 PASS，附 2 項 NICE TO HAVE；使用者回「照建議」，修正文件與測試註解（TBD-9、TBD-10），送增量覆審 |
+| 2026-11-26 | review-c303bc6 PASS，附 2 項 NICE TO HAVE；使用者回「照建議」，修正文件與證據（TBD-11、TBD-12），送增量覆審 |
 
 ---
 **建立日期**: 2026-11-25  
