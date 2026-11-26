@@ -12,6 +12,10 @@
 
 本 issue 只改文件，不改程式行為。
 
+## 現況
+
+**現行 review**: review-88b341c.md
+
 ## 涉及檔案
 
 - `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` - recall 段補輸出形狀、`n/a`；feedback 段補測試查詢的規則；開頭補主機記憶不能取代 recall
@@ -47,9 +51,10 @@
 |------|------|
 | 2026-11-25 | 建立並核准 AC-1～5（來源：9 個下游 session 的使用體驗調查） |
 | 2026-11-26 | 步驟 1～3 完成：skill recall／feedback 段、開頭與 CLI 文件補齊，AC-5 三支腳本全綠 |
+| 2026-11-26 | 獨立審查 review-88b341c：PASS，1 項 SHOULD FIX（需決策）、4 項 NICE TO HAVE |
 
 ---
 **建立日期**: 2026-11-25  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 實作中
+**狀態**: 審查中
