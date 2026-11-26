@@ -14,7 +14,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 
 ## 現況
 
-**現行 review**: review-03683f0.md
+**現行 review**: review-3d70567.md
 
 ## 涉及檔案
 
@@ -83,6 +83,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 | 2026-11-26 | 依 review-430907e 修正 S1、N1～N3，記錄 TBD-2，送增量覆審 |
 | 2026-11-26 | 增量覆審 review-03683f0：PASS，3 項 NICE TO HAVE |
 | 2026-11-26 | 依 review-03683f0 修正 N1、N2，記錄 TBD-3、TBD-4，另開 issue-40；rebase 到建立 issue-40 的 main，送增量覆審 |
+| 2026-11-26 | review-3d70567：rebase 後增量覆審的條件不成立，改做完整審查，PASS，1 項 NICE TO HAVE |
 
 ---
 **建立日期**: 2026-11-26  
