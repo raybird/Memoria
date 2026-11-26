@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.40.0] - 2026-11-26
+
 ### Added
 - **`recall` says why it found little.** A `--mode vector` query that ran but matched nothing used to read `route_mode: keyword` with no other trace, so callers concluded semantic recall was broken; recall meta now carries `vector_hits` (`0` in that case). A `--project` naming no memory at all looked the same as an unrelated query; meta now carries `project_known` (`false`). The human listing prints a line for each, and marks hits with relevance below 0.3 as `弱命中`. Hits, ordering, `route_mode` and every other field are unchanged, and both fields are absent where they do not apply (issue-35).
 - **`remember` says when semantic recall cannot see the note yet.** `remember` writes the tree index but never the vector store, so with semantic recall enabled a new note was invisible to `--mode vector` with no error until `doctor` ran at wrap-up. After the write, `remember` now checks coverage and, when the index is short, prints `- vector coverage: 缺 <n> 筆…` pointing at `doctor`'s fix; `--json` adds `data.vector_missing`, the same count `doctor` reports. It loads no model and writes nothing to the vector store; nothing changes when semantic recall is off, coverage cannot be measured, nothing is missing, or the index cannot be read (issue-37).
