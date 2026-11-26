@@ -21,7 +21,10 @@ export function registerFeedbackCommand(program: Command, core: MemoriaCore): vo
         .argument('<recallId>', 'recall_id returned by `memoria recall`')
         .option(`--signal <signal>`, `Outcome source: ${SIGNALS.join('|')}`, 'explicit')
         .option('--score <n>', 'Observed utility 0–1', '1')
-        .option('--used', 'Mark the recall as used')
+        // issue-39: kept so existing calls still parse. The CLI always sends a score, and `used` only
+        // derives one when none is given, so it cannot change what is written; --hits is what decides
+        // which memories accrue utility.
+        .option('--used', 'Accepted for compatibility; has no effect (--score is recorded, --hits picks the memories)')
         .option('--hits <ids>', 'Comma-separated hit ids the utility is attributed to')
         .option('--json', 'Machine-readable JSON output')
         .action(async (recallId: string, options: FeedbackCommandOptions) => {

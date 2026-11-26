@@ -60,10 +60,14 @@ Done when: the relevant decisions and pitfalls among the hits are reflected in y
 ### After using (or ruling out) recall results — feedback
 
 ```bash
-MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --used --hits <comma-separated hit ids>
+MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --hits <comma-separated ids of the hits you used>
 ```
 
-If nothing helped, report `--score 0` without `--used`. A recall you ran only as a test or a look, whose results did not go into your work, gets `--score` for how good the hits were and no `--used`. This is the only utility signal Memoria gets; ranking adapts to it.
+- Results went into your work: `--score` for how good they were, `--hits` for the hits you used. Those memories accrue utility and rank higher next time.
+- Nothing helped: `--score 0`.
+- A recall you ran only as a test or a look, whose results did not go into your work: `--score` for how good the hits were, and no `--hits`. Without `--hits` no memory accrues utility, so ranking is unaffected.
+
+This is the only utility signal Memoria gets; ranking adapts to it.
 
 Done when: every `recall_id` from this session has been reported once.
 

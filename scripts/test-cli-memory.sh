@@ -11,6 +11,7 @@
 #   (E) an unknown recall_id is a graceful no-op, not an error
 #   (N) query text is off by default; opted in it is masked and capped, and stats --zero-utility reads it
 #   (P) issue-32 SCN-007 the brief shows its generation time in the body, not only in the header comment
+#   (Q) issue-39 --used changes nothing that is written; without --hits no memory accrues utility
 
 set -euo pipefail
 
@@ -515,5 +516,35 @@ d.data.forEach((h,i)=>{
 });
 " "$RES35" "$OUT35"
 echo "  relevance 低於 0.3 的命中標「弱命中」，其餘不標，筆數不變"
+
+echo "[cli-memory] (Q/issue-39) --used 不影響寫入；不帶 --hits 時沒有記憶累積效用"
+# 做法 (a)：寫入只看 --score 與 --hits。skill 依此要測試查詢不帶 --hits，所以這兩件事要釘住。
+U39_HOME="$TMP_DIR/home-39"; U39_DB="$U39_HOME/.memory/sessions.db"; U39_FAILS=0
+fail39() { echo "  ✗ $1"; U39_FAILS=$((U39_FAILS + 1)); }
+u39() { MEMORIA_HOME="$U39_HOME" "$ROOT_DIR/cli" "$@"; }
+q39() { node -e "const D=require('$BSQ');const db=new D('$U39_DB',{readonly:true});const r=db.prepare(process.argv[1]).get();console.log(r?Object.values(r).join('|'):'')" "$1"; }
+recall39() { u39 recall "部署前先在測試環境確認" --project demo39 --json | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(d.meta.recall_id+" "+(d.data[0]?d.data[0].id:""))'; }
+u39 init >/dev/null
+u39 remember "部署前先在測試環境確認再上線" --project demo39 >/dev/null
+u39 feedback --help | grep -- "--used" | grep -qi "no effect" || fail39 "AC-1：feedback --help 的 --used 說明應寫明不影響寫入: $(u39 feedback --help | grep -- --used)"
+read -r R1 HIT <<<"$(recall39)"
+[ -n "$HIT" ] || { echo "  ✗ 前提：recall 應命中剛寫入的筆記"; exit 1; }
+u39 feedback "$R1" --score 0.4 --used --hits "$HIT" >/dev/null || fail39 "AC-1：帶 --used 的既有呼叫應 exit 0"
+AFTER_USED=$(q39 "SELECT explicit_observations, explicit_sum FROM memory_utility WHERE ref_id = '$HIT'")
+read -r R2 HIT2 <<<"$(recall39)"
+u39 feedback "$R2" --score 0.4 --hits "$HIT2" >/dev/null
+AFTER_PLAIN=$(q39 "SELECT explicit_observations, explicit_sum FROM memory_utility WHERE ref_id = '$HIT'")
+[ "$(q39 "SELECT utility_score, outcome_kind FROM recall_telemetry WHERE id = '$R1'")" = "$(q39 "SELECT utility_score, outcome_kind FROM recall_telemetry WHERE id = '$R2'")" ] \
+    || fail39 "AC-1：帶與不帶 --used 的 telemetry 應相同"
+[ "$AFTER_USED" = "1|0.4" ] && [ "$AFTER_PLAIN" = "2|0.8" ] || fail39 "AC-1：兩次回報對 utility 的增量應相同，實得 $AFTER_USED → $AFTER_PLAIN"
+# AC-2：只給 --score（測試查詢的回報方式），telemetry 記分數，memory_utility 整表不變。
+SNAP=$(q39 "SELECT group_concat(ref_id || ':' || observations || ':' || utility_sum || ':' || explicit_observations || ':' || explicit_sum, ',') FROM memory_utility")
+read -r R3 _ <<<"$(recall39)"
+u39 feedback "$R3" --score 0.7 >/dev/null
+[ "$(q39 "SELECT utility_score FROM recall_telemetry WHERE id = '$R3'")" = "0.7" ] || fail39 "AC-2：telemetry 應記下 0.7"
+[ "$(q39 "SELECT group_concat(ref_id || ':' || observations || ':' || utility_sum || ':' || explicit_observations || ':' || explicit_sum, ',') FROM memory_utility")" = "$SNAP" ] \
+    || fail39 "AC-2：沒帶 --hits 時 memory_utility 不應改變"
+[ "$U39_FAILS" -eq 0 ] || { echo "  ✗ issue-39：$U39_FAILS 項失敗"; exit 1; }
+echo "  help 寫明 --used 不影響寫入；帶不帶 --used 寫入相同；只給 --score 時沒有記憶累積效用"
 
 echo "[cli-memory] ✓ all checks passed"

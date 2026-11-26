@@ -60,7 +60,7 @@ Validated with Zod:
 ```bash
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" doctor --json
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" recall "<query>" --mode vector --project <repo>
-MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --used --hits <ids>
+MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --hits <ids>
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" remember "<fact>" --project <repo> --rationale "<why>"
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" repo sync <repo>
 MEMORIA_HOME="<memoria-home>" "$MEMORIA_BIN" repo summarize <repo> --merge <sha> --json

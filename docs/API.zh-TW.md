@@ -2,7 +2,7 @@
 
 [English](API.md) ｜ **繁體中文** · [README](../README.zh-TW.md)
 
-最後驗證：2026-11-26，對照 issue-38 原始碼（`/v1/brief` repository 的 `unscanned_tags`）與 issue-35 原始碼、CLI help 與文件檢查。
+最後驗證：2026-11-26，對照 issue-39 原始碼（outcome 的 `used`）、issue-38 原始碼（`/v1/brief` repository 的 `unscanned_tags`）、CLI help 與文件檢查。
 
 這是本地 HTTP 介面；啟動與背景服務設定見 [安裝指南](INSTALL.md)。
 
@@ -85,6 +85,9 @@ recall 的 meta 另有兩個欄位說明查得少的原因，各自只在適用�
 （沒有登記預設分支或本機沒有該分支時算所有分支）；以及 `unscanned_tags`：還沒被 sync 看過的本機 tag，
 依 tag 的日期由新到舊（輕量 tag 用它指向的提交的日期）。量不到時兩者都是 `null`，例如登記的路徑已不是這個 repository。markdown 在該 repository 那行
 最多列出 3 個 tag。
+
+`POST /v1/recall/:id/outcome` 記錄的是 `utility_score`；`used` 只在沒有 `utility_score` 時用來推算分數
+（`true` 為 1、`false` 為 0）。`hits[]` 決定效用歸到哪些記憶，沒有它時任何記憶的效用都不變。
 
 ## UI 模式 API
 

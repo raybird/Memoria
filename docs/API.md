@@ -2,7 +2,7 @@
 
 **English** ｜ [繁體中文](API.zh-TW.md) · [README](../README.md)
 
-Last verified: 2026-11-26 against the issue-38 source (`unscanned_tags` on `/v1/brief` repositories) and the issue-35 source, CLI help and documentation checks.
+Last verified: 2026-11-26 against the issue-39 source (outcome `used`), the issue-38 source (`unscanned_tags` on `/v1/brief` repositories), CLI help and documentation checks.
 
 This is the local HTTP interface. See the [Install Guide](INSTALL.md) for startup and background service options.
 
@@ -93,6 +93,10 @@ registered default branch and tags (every branch when none is registered or it i
 tag uses its commit's date). Both are `null` when they cannot be
 measured, for example when the registered path no longer holds the repository. The markdown names
 up to three of the tags on the repository line.
+
+In `POST /v1/recall/:id/outcome`, `utility_score` is what is recorded; `used` is consulted only when
+`utility_score` is absent, to derive one (`true` gives 1, `false` gives 0). `hits[]` decides which
+memories accrue utility, and without it no memory's utility changes.
 
 ## UI-mode API
 
