@@ -43,7 +43,15 @@
 2. ✅ **AC-3、AC-4：feedback 段與主機記憶** — 修改 `DEPLOYED_SKILL.md`。
    - 完成證據：✅ 2026-11-26。feedback 段在「沒有幫助時 `--score 0`」之後加一句：只是測試或看看、結果沒用在工作上的 recall，照命中品質給 `--score`，不標 `--used`；收尾判準「每個 `recall_id` 都回報一次」原樣保留。開頭在 Runtime／Data root 兩項之後寫明主機自己的記憶（例如 Claude auto-memory）是另一份內容不同的記憶，照下列時機 recall；recall 段寫明預期沒有結果、或主機記憶看似已涵蓋時照樣執行，沒有結果就回報 `--score 0`。CHANGELOG `[Unreleased]` 加 `### Changed`。
 3. ✅ **AC-5：部署檢查** — 跑 AC-5 的三支腳本。不改變可觀察行為，記等價證據：三支腳本全綠的輸出。
-   - 完成證據：✅ 2026-11-26。以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME`（地雷 M-4）跑三支腳本，全部 exit 0：`[bootstrap] ok`、`[setup-onboarding] ok`、`[npm-install] ok`，輸出沒有任何 ✗。`test-setup-onboarding.sh` Step 6 以 `cmp` 確認各 host 讀到的 `SKILL.md` 與本分支的範本相同，`test-bootstrap.sh` Step 3 確認部署後的 skill 仍含 setup 指引並能執行 `run-sync.sh`。
+   - 完成證據：✅ 2026-11-26。以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME`（地雷 M-4）跑三支腳本，全部 exit 0：`[bootstrap] ok`、`[setup-onboarding] ok`、`[npm-install] ok`，輸出沒有任何 ✗。`test-setup-onboarding.sh` Step 6 以 `cmp` 確認各 host 讀到的 `SKILL.md` 與本分支的範本相同，`test-bootstrap.sh` Step 3 確認部署後的 skill 仍含 setup 指引並能執行 `run-sync.sh`。處理 review-88b341c 的建議（TBD-2）後在同樣環境重跑，三支仍全部 exit 0、沒有 ✗；`check-deployed-skill-sync.mjs` 與 `release:docs-check` 也照樣通過。
+
+## 待確認事項
+
+| 編號 | 事項 | 狀態 | 影響 |
+|---|---|---|---|
+| TBD-1 | review-88b341c S1：AC-3 要測試查詢不標 `--used`，但 CLI 的 `--used` 不影響寫入。`src/cli/commands/feedback.ts:41` 沒帶旗標時也當成 true，CLI 一定會送分數，而 `src/core/db/telemetry.ts:99-101` 只在沒有分數時才看 `used`；隔離資料根實測帶與不帶旗標寫入的資料相同。skill 原有的「`--score 0` without `--used`」也一樣 | 待確認（2026-11-26 使用者對 review-88b341c 回「照建議」：記入待確認，另開 issue 決定 `--used` 的語意）。追蹤：另開的 issue 尚未建立。本 issue 的文字照核准的 AC-3 保留，AC-3 要的測試查詢回報一致已經達到，不會造成錯誤寫入 | AC-3 |
+| TBD-2 | review-88b341c N1～N3：skill 的命中欄位沒提 `score`；「沒有 `relevance`」在 skill 寫了三次；`docs/CLI.md` 與中文版漏了 `session_id`，且「`score` 不在 0–1 範圍」不準 | 已解決（2026-11-26 使用者回「照建議」，選修正）：skill 補 `score` 只決定排序，`[ n/a ]` 併進命中欄位那一條；CLI 文件補 `session_id`，改成「不是 0–1 的比對品質」，其他欄位改用泛稱 | AC-1、AC-2 |
+| TBD-3 | review-88b341c N4：README 的涉及檔案沒列 CHANGELOG.md | 已解決（2026-11-26 使用者回「照建議」，選不修）：例行更新、影響很小 | 無 |
 
 ## Timeline
 
@@ -52,6 +60,7 @@
 | 2026-11-25 | 建立並核准 AC-1～5（來源：9 個下游 session 的使用體驗調查） |
 | 2026-11-26 | 步驟 1～3 完成：skill recall／feedback 段、開頭與 CLI 文件補齊，AC-5 三支腳本全綠 |
 | 2026-11-26 | 獨立審查 review-88b341c：PASS，1 項 SHOULD FIX（需決策）、4 項 NICE TO HAVE |
+| 2026-11-26 | 使用者對建議回「照建議」：S1 記入待確認（TBD-1），N1～N3 修正（TBD-2），N4 不修（TBD-3） |
 
 ---
 **建立日期**: 2026-11-25  

@@ -50,10 +50,8 @@ MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" recall "<issue id or topic>" --mode 
 
 Keep the `recall_id` for feedback. The listing prints it on its last line, `- recall_id: <id>`. With `--json` the output is `{ok, data, meta}`:
 
-- `data` is an array of hits. Each has `id` (what `--hits` takes), `type`, `project`, `timestamp` and `snippet`; `relevance` (0–1 lexical match) is on every hit except one the semantic index alone found.
-- `meta` holds `recall_id`, `route_mode`, `confidence` and `confidence_basis`. `confidence` is `null` with basis `unavailable` when the top hit came from the semantic index alone.
-
-A hit printed `[ n/a ]` (no `relevance` in `--json`) was found by the semantic index alone. It has no lexical score to show, which is not a low score.
+- `data` is an array of hits. Each has `id` (what `--hits` takes), `type`, `project`, `timestamp`, `snippet` and `score`, which only orders the hits. `relevance` (0–1 lexical match) is on every hit except one the semantic index alone found; the listing prints that one as `[ n/a ]`: it has no lexical score, which is not a low score.
+- `meta` holds `recall_id`, `route_mode`, `confidence` and `confidence_basis`. `confidence` is `null` with basis `unavailable` when the top hit is such a semantic-only hit.
 
 A hit or brief line that reads `截至 <date>；據以行動前先跑 <command>` is a snapshot of a state that may have changed since. Before you state it as current or act on it, read the command; run it only if it is a read-only check, and go by its output rather than the memory text. Memoria never runs it for you.
 
