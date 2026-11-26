@@ -328,10 +328,13 @@ FEAT_SHA=$(git -C "$K38" rev-parse feature)
 node -e "const D=require('$BSQ');const db=new D(process.argv[1],{readonly:true});const r=db.prepare('SELECT 1 FROM git_commits WHERE commit_sha=?').get(process.argv[2]);process.exit(r?0:1)" "$MEMORIA_HOME/.memory/sessions.db" "$FEAT_SHA" \
   || fail38 "SCN-005：sync 後 feature 分支的提交沒有進 git_commits"
 # 超過 3 個未掃描 tag 時只列 3 個，加上總數；依 tag 日期由新到舊。日期刻意和名稱順序錯開，
-# 所以依名稱正排或反排都過不了。
-for td in "r-b 2026-01-01" "r-d 2026-01-02" "r-a 2026-01-03" "r-c 2026-01-04"; do
+# 所以依名稱正排或反排都過不了。r-a 是輕量 tag，日期取它指向的提交（另建、不在任何分支上），
+# 所以只看 annotated tag 日期（taggerdate）的排序也過不了。
+for td in "r-b 2026-01-01" "r-d 2026-01-02" "r-c 2026-01-04"; do
     read -r tag day <<<"$td"; GIT_COMMITTER_DATE="${day}T00:00:00Z" gc38 "$K38" tag -a "$tag" -m "$tag"
 done
+LIGHT38=$(GIT_COMMITTER_DATE="2026-01-03T00:00:00Z" GIT_AUTHOR_DATE="2026-01-03T00:00:00Z" gc38 "$K38" commit-tree -p HEAD -m "light" "HEAD^{tree}")
+git -C "$K38" tag r-a "$LIGHT38"
 "$CLI" brief --global >/dev/null
 grep -F "**k38**" "$BRIEF" | grep -qF "未掃描 tag: r-c, r-a, r-d 等 4 個" || fail38 "4 個未掃描 tag 時應依日期列 3 個並寫「等 4 個」: $(grep -F '**k38**' "$BRIEF")"
 [ "$(lag38 'unscanned_tags?.join(",")')" = "r-c,r-a,r-d,r-b" ] || fail38 "--json 應依日期由新到舊列出全部 4 個 tag，實得 $(lag38 'unscanned_tags')"
