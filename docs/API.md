@@ -66,8 +66,10 @@ Two recall meta fields say why a recall found little. Each is present only when 
   contributed before fusion. It counts in the unit of `data`: a note's session and event rows count
   once, superseded memories are left out unless `include_superseded` is set, and after a refill
   (a collapsed note pair left fewer than `top_k`) it counts the deeper `2 × top_k` window that pass
-  used. `0` means the semantic query ran and matched nothing, the case where `route_mode` reads
-  `keyword`. A degraded route (`vector_unavailable`, `vector_timeout`) omits it, since `route_mode`
+  used. `0` means the semantic query ran but contributed no memory to the result. That is why
+  `route_mode` can read `keyword` in vector mode; when every semantic hit was superseded it can also
+  read `vector` with `vector_hits: 0`, because `route_mode` is decided before superseded memories are
+  dropped. A degraded route (`vector_unavailable`, `vector_timeout`) omits it, since `route_mode`
   already names the cause.
 - `project_known`: with a `project` filter, whether that project has any memory at all. `false` with
   zero hits means the name is wrong or unregistered, not that nothing relevant exists. It is omitted

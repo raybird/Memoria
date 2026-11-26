@@ -64,7 +64,9 @@ recall 的 meta 另有兩個欄位說明查得少的原因，各自只在適用�
 - `vector_hits`：`mode:"vector"` 且 helper 有回應時，語意路由在融合前提供了幾則記憶。計算單位和 `data`
   相同：一則筆記的 session 與 event 兩列算一則，被取代的記憶不算（帶 `include_superseded` 時才算）；
   觸發補位（合併成對筆記後不足 `top_k`）時，算的是那一輪用的 `2 × top_k` 視窗。`0` 表示語意查詢跑了
-  但沒有命中，也就是 `route_mode` 顯示 `keyword` 的那種情況。降級（`vector_unavailable`、`vector_timeout`）時沒有這個欄位，因為 `route_mode`
+  但沒有提供任何記憶給結果，所以 vector 模式下 `route_mode` 會顯示 `keyword`；語意命中全部被取代時，
+  也可能是 `route_mode` 顯示 `vector` 而 `vector_hits` 為 0，因為 `route_mode` 是在去掉被取代的記憶之前
+  決定的。降級（`vector_unavailable`、`vector_timeout`）時沒有這個欄位，因為 `route_mode`
   已經說明了原因。
 - `project_known`：帶 `project` 過濾時，這個 project 有沒有任何記憶。`false` 且 0 筆表示名稱錯了或沒有
   登記，不是沒有相關記憶。檢查本身失敗時不放這個欄位，recall 照常回傳。

@@ -117,6 +117,8 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 | TBD-6 | review-14b4625 N3：「已登記的名稱見 memoria repo list」列不出不屬於任何 repository 的 project | 不影響本次交付（2026-11-26 使用者選「不修」）。追蹤：無；這是 SCN-003 核准的寫法 | SCN-003 |
 | TBD-7 | review-14b4625 N4：資料庫不存在、以及查詢太短被略過時，兩個新欄位都不會出現，API 文件沒寫 | 已解決（2026-11-26 使用者選「修正」）：API.md 與 API.zh-TW.md 各補一句 | SCN-006 |
 | TBD-8 | review-14b4625 N5：計畫步驟 1 沒寫明 GitNexus impact 的 CRITICAL 結果已經告知使用者 | 已解決（2026-11-26 使用者選「修正」）：步驟 1 證據已補上 | 無 |
+| TBD-9 | review-c57fa47 N1：`vector_hits` 扣掉被取代的記憶，`route_mode` 卻在扣之前決定，語意命中全部被取代時會出現 `route_mode` 為 vector 而 `vector_hits` 為 0；文件寫的「0 就是 route_mode 顯示 keyword 的情況」只剩單向成立 | 已解決（2026-11-26 使用者選「修正」）：只改文件，API.md、API.zh-TW.md、AGENTS.md、CLI.md、CLI.zh-TW.md 改寫成「0 表示語意查詢有執行但沒有提供任何記憶」，並說明兩種 `route_mode`；程式不變，`route_mode` 的值維持 issue-18 的契約 | SCN-001 |
+| TBD-10 | review-c57fa47 N2：補位測試的註解說前 5 列最多 3 則筆記、一定會補位，實際可能是 4 則，舊程式碼的紅燈不是每次都出現；計畫記的「被取代時為 5」也不精確 | 已解決（2026-11-26 使用者選「修正」）：測試註解與計畫步驟 2 的證據改成實際觀察到的值，被取代那條的保護力改記變異測試的結果 | SCN-002 |
 
 ## Timeline
 
@@ -125,6 +127,7 @@ Feature: recall 的輸出能說明查不到或只查到弱命中的原因
 | 2026-11-25 | 建立並核准 SCN-001～006（來源：9 個下游 session 的使用體驗調查） |
 | 2026-11-26 | 實作完成：`vector_hits` 改以筆記計（TBD-1）；SCN-006 的 `vector_hits` 斷言放在 test-vector-recall.sh |
 | 2026-11-26 | review-14b4625 PASS，附 1 項 SHOULD FIX、5 項 NICE TO HAVE；使用者回「照建議」，修正 S1、N1、N2、N4、N5（TBD-3～8），送增量覆審 |
+| 2026-11-26 | review-c57fa47 PASS，附 2 項 NICE TO HAVE；使用者回「照建議」，修正文件與測試註解（TBD-9、TBD-10），送增量覆審 |
 
 ---
 **建立日期**: 2026-11-25  
