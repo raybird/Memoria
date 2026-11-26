@@ -1,6 +1,6 @@
 # Architecture and Memory Contracts
 
-Last verified: 2026-11-26 against the issue-35 source (recall meta explains empty and weak results). Paths below are repository-relative.
+Last verified: 2026-11-26 against the issue-37 source (`measureVectorCoverage` shared by doctor and remember) and the issue-35 source (recall meta explains empty and weak results). Paths below are repository-relative.
 
 Read when changing core modules, recall, markers, brief generation, Git memory or their downstream contracts. Common development rules and validation commands live in [AGENTS.md](../../AGENTS.md).
 
@@ -25,7 +25,7 @@ The CLI (`src/cli.ts`, ~50 lines) is a thin Commander registration shell — it 
 - `core/paths.ts` — `resolveMemoriaPaths()`, `resolveMemoriaHomeInfo()` (`MemoriaHomeSource`: `env` > `detected` > `global-config` > `fallback`), `getMemoriaHome()`
 - `core/install-settings.ts` — user-level `install.json` persistence (`defaultDataRoot`, per-root local vector settings, `applyEffectiveVectorEnv`, `assertIngestDbPathMatchesRoot`; never persists `LIBSQL_AUTH_TOKEN`)
 - `core/utils.ts` — pure helpers (`safeDate`, `slugify`, `stableStringify`, `tokenCoverage`, `effectiveUtility`, `buildCalibration`, etc.)
-- `core/recall-vector.ts` — opt-in semantic recall: spawns the `skills/memoria-vector` helper, maps prefixed ids back to authoritative local rows, RRF fusion (`LIBSQL_URL`-gated, fail-open). The helper loads its own deps through `skills/memoria-vector/deps.mjs` — sibling `node_modules` first, else the user cache `setup --vector` fills, keyed by the helper's lockfile hash (issue-25); doctor asks `node deps.mjs` rather than re-deriving the hash
+- `core/recall-vector.ts` — opt-in semantic recall: spawns the `skills/memoria-vector` helper, maps prefixed ids back to authoritative local rows, RRF fusion (`LIBSQL_URL`-gated, fail-open). The helper loads its own deps through `skills/memoria-vector/deps.mjs` — sibling `node_modules` first, else the user cache `setup --vector` fills, keyed by the helper's lockfile hash (issue-25); doctor asks `node deps.mjs` rather than re-deriving the hash. `measureVectorCoverage()` is the one coverage count: `inspectVectorLayer()` (doctor, setup) and `remember`'s gap hint (issue-37) both read it, so the two numbers cannot drift
 - `core/source-import.ts` — raw markdown/text ingestion
 - `core/wiki.ts` / `wiki-build.ts` / `wiki-query.ts` / `wiki-lint.ts` — compiled wiki pipeline (`index`/`log`/`overview` special pages, `synthesis`/`comparison` file-back, durable lint findings)
 - `core/index.ts` — unified re-export (import from here, not deep paths, when adding callers)

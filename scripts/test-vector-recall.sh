@@ -920,11 +920,13 @@ r37() { env MEMORIA_HOME="$H37" "$@"; }
 r37 "$ROOT_DIR/cli" init >/dev/null
 # AC-1：啟用語意召回、向量庫從未 ingest（量到 0），寫入一則新筆記。
 OUT37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi census uses drone transects" --project vec37)
+D37H=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" doctor --json)
 J37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi census second season plan" --project vec37 --json)
 D37=$(r37 LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" doctor --json)
-DOC_MISSING=$(node -e "
+doc_missing37() { node -e "
 const cov=JSON.parse(process.argv[1]).checks.find(c=>c.name==='vector coverage');
-const m=/missing=(\\d+)/.exec(cov&&cov.value||''); process.stdout.write(m?m[1]:'none');" "$D37")
+const m=/missing=(\\d+)/.exec(cov&&cov.value||''); process.stdout.write(m?m[1]:'none');" "$1"; }
+DOC_MISSING=$(doc_missing37 "$D37")
 J37_MISSING=$(node -e "const d=JSON.parse(process.argv[1]).data; process.stdout.write(String(d.vector_missing))" "$J37")
 [ "$DOC_MISSING" != none ] && [ "$DOC_MISSING" -ge 1 ] || fail37 "前提：doctor 應量到缺口，實得 $DOC_MISSING"
 [ "$J37_MISSING" = "$DOC_MISSING" ] || fail37 "AC-1：--json 的 data.vector_missing ($J37_MISSING) 應等於 doctor 的 missing ($DOC_MISSING)"
@@ -933,6 +935,8 @@ OUT37_LINE=$(printf '%s\n' "$OUT37" | grep -F -- '- vector coverage: 缺 ' || tr
 printf '%s' "$OUT37_LINE" | grep -qF 'memoria doctor' || fail37 "AC-1：提示沒有指向 memoria doctor: $OUT37_LINE"
 OUT37_N=$(printf '%s' "$OUT37_LINE" | sed -E 's/.*缺 ([0-9]+) 筆.*/\1/')
 [ "$OUT37_N" -ge 1 ] 2>/dev/null || fail37 "AC-1：提示沒有寫出缺幾筆: $OUT37_LINE"
+# 人讀那則寫完當下就量 doctor，兩邊的筆數要相同（review-8705ad3 N2）。
+[ "$OUT37_N" = "$(doc_missing37 "$D37H")" ] || fail37 "AC-1：人讀提示的筆數 ($OUT37_N) 應等於當下 doctor 的 missing ($(doc_missing37 "$D37H"))"
 # AC-2：照 doctor 的修法補完之後，重寫同一則（created:false）不再提示，--json 也沒有 vector_missing。
 FIX37=$(fix_cmd "$D37")
 (cd "$TMP_DIR" && env LIBSQL_URL="file:$V37" MEMORIA_EMBED_PROVIDER=stub bash -c "$FIX37") >/dev/null || fail37 "前提：doctor 修法執行失敗"
@@ -945,6 +949,11 @@ NOV37=$(r37 "$ROOT_DIR/cli" remember "okapi note without vector" --project vec37
 node -e "if('vector_missing' in JSON.parse(process.argv[1]).data) throw new Error(process.argv[1])" "$NOV37" || fail37 "AC-2：未啟用語意召回卻帶 vector_missing"
 OVR37=$(r37 LIBSQL_URL="file:$TMP_DIR/never-37.db" MEMORIA_VECTOR_RECALL_CMD="$HELPER_DIR/vector-recall.mjs" "$ROOT_DIR/cli" remember "okapi note with override" --project vec37)
 printf '%s' "$OVR37" | grep -qF 'vector coverage' && fail37 "AC-2：helper 被覆寫時不應提示: $OVR37"
+# 遠端 libSQL 量不到覆蓋率（只讀得到 file:），不連線、不提示（review-8705ad3 N3）。
+RC37R=0
+REM37=$(r37 LIBSQL_URL="libsql://memoria-37.invalid" MEMORIA_EMBED_PROVIDER=stub "$ROOT_DIR/cli" remember "okapi note with remote store" --project vec37 --json 2>&1) || RC37R=$?
+[ "$RC37R" -eq 0 ] || fail37 "AC-2：遠端 libSQL 時 remember 結束碼 $RC37R: $REM37"
+node -e "if('vector_missing' in JSON.parse(process.argv[1]).data) throw new Error(process.argv[1])" "$REM37" || fail37 "AC-2：遠端 libSQL 時不應有 vector_missing"
 # AC-3：向量庫讀不到（不是 SQLite 的檔案、目錄）時 remember 照常成功，筆記已寫入，不提示。
 printf 'not a database' > "$TMP_DIR/garbage-37.db"; mkdir -p "$TMP_DIR/dir-37.db"
 for bad in "$TMP_DIR/garbage-37.db" "$TMP_DIR/dir-37.db"; do
@@ -958,6 +967,6 @@ for bad in "$TMP_DIR/garbage-37.db" "$TMP_DIR/dir-37.db"; do
     || fail37 "AC-3：向量庫讀不到（$bad）時筆記沒有留在資料庫"
 done
 [ "$I37_FAILS" -eq 0 ] || { echo "  ✗ issue-37：$I37_FAILS 項失敗"; exit 1; }
-echo "  有缺口時提示且筆數與 doctor 一致；補完、未啟用、覆寫時不提示；向量庫讀不到時照常寫入"
+echo "  有缺口時提示且筆數與 doctor 一致；補完、未啟用、覆寫、遠端時不提示；向量庫讀不到時照常寫入"
 
 echo "[vector] ok"

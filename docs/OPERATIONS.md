@@ -1,6 +1,6 @@
 # Operations Guide
 
-Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1.
+Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1, with `remember`'s gap hint checked against the issue-37 source on 2026-11-26.
 
 ## Runtime Health Commands
 
@@ -363,7 +363,7 @@ export MEMORIA_VECTOR_RECALL_CMD="/path/to/Memoria/skills/memoria-vector/vector-
 That override still works on current versions — useful when you already have a checkout with the
 runtime installed and would rather not download it twice.
 
-**2. The runtime is ready, but memories have not reached the vector index.** Choosing semantic recall during interactive `memoria setup`, or running the complete non-interactive flow with `memoria setup --scope global --memoria-home <existing-data-root> --agent none --vector --yes`, builds the tree index, ingests your existing corpus into `<memoria-home>/.memory/vectors.db` (or your explicit `LIBSQL_URL`), and verifies vector coverage and recall routing. A legacy `memoria setup --vector` call without onboarding options still only installs dependencies and warms the model; it does not ingest the corpus or save onboarding settings. Memories added *after* setup via `remember` or `repo sync` are not automatically embedded unless `run-sync-with-enhancement.sh` is used. The bridge payload derives its scope from `memory_nodes`, so missing tree nodes must be indexed before vector ingest. Since v1.24.0, git promotion automatically indexes its session (best-effort); older databases or a failed auto-build can still have gaps. `memoria stats` reports tree-index coverage. First repair any gap:
+**2. The runtime is ready, but memories have not reached the vector index.** Choosing semantic recall during interactive `memoria setup`, or running the complete non-interactive flow with `memoria setup --scope global --memoria-home <existing-data-root> --agent none --vector --yes`, builds the tree index, ingests your existing corpus into `<memoria-home>/.memory/vectors.db` (or your explicit `LIBSQL_URL`), and verifies vector coverage and recall routing. A legacy `memoria setup --vector` call without onboarding options still only installs dependencies and warms the model; it does not ingest the corpus or save onboarding settings. Memories added *after* setup via `remember` or `repo sync` are not automatically embedded unless `run-sync-with-enhancement.sh` is used; since issue-37 `remember` says so right after the write, printing the gap with the same count `doctor` reports. The bridge payload derives its scope from `memory_nodes`, so missing tree nodes must be indexed before vector ingest. Since v1.24.0, git promotion automatically indexes its session (best-effort); older databases or a failed auto-build can still have gaps. `memoria stats` reports tree-index coverage. First repair any gap:
 
 ```bash
 memoria index build                     # picks up every session that has no node yet

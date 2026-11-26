@@ -42,9 +42,16 @@
 1. ✅ **AC-2 基準** — 未啟用語意召回時，保存 remember 的人讀與 `--json` 輸出。
    - 完成證據：✅ 2026-11-26。`evidence/baseline.sh` 在隔離資料根、清掉所有向量相關環境變數後跑 4 次人讀 remember（新筆記、同文字重寫、`--verify`、`--type skill --durable`）與 2 次 `--json`（新筆記與重寫，去掉 `timestamp`、`latency_ms`）。改動前在 main `97273a8` 的 build 上連跑兩次逐位元組相同，sha256 前 12 碼：`human.txt` 17aaef2cf246、`json.txt` 16db2c3907ce。
 2. ✅ **AC-1、AC-3：提示缺口** — 在 `test-vector-recall.sh` 先寫 AC-1、AC-3 的斷言並取得紅燈，再改 `remember.ts`。
-   - 完成證據：✅ 2026-11-26。新增 `[vector] issue-37` 一段，以 stub provider、從未 ingest 的向量庫寫兩則筆記。紅燈（改動前的 build）：`✗ AC-1：--json 的 data.vector_missing (undefined) 應等於 doctor 的 missing (9)`、人讀輸出沒有提示等 4 項失敗；同段的 AC-2（補完後重寫、未啟用、helper 被覆寫）與 AC-3（向量庫是非 SQLite 檔案、是目錄）斷言在舊程式上就通過，用來守住回歸。實作：`remember.ts` 寫入成功後呼叫 `measureVectorCoverage(core.paths.dbPath)`，包在 try/catch 裡，缺口大於 0 才在人讀輸出加一行、`--json` 的 `data` 加 `vector_missing`。覆蓋率計算從 `inspectVectorLayer()` 抽出共用，是為了讓兩邊的筆數同一份來源，也避開 `inspectVectorLayer()` 另外做的 embedder 探測（會 spawn `deps.mjs`），remember 不因此變慢。綠燈：`[vector] issue-37` 印出「有缺口時提示且筆數與 doctor 一致；補完、未啟用、覆寫時不提示；向量庫讀不到時照常寫入」，整支 `test-vector-recall.sh` exit 0。GitNexus：`inspectVectorLayer` 影響評為 CRITICAL（doctor、setup 直接呼叫），所以只抽出計算、不改判定順序；`test-setup-onboarding.sh` 與 doctor 相關段落全綠。`remember` 的影響為 LOW。
+   - 完成證據：✅ 2026-11-26。新增 `[vector] issue-37` 一段，以 stub provider、從未 ingest 的向量庫寫兩則筆記。紅燈：先只改 `scripts/test-vector-recall.sh`，在 main `97273a8` 的 `pnpm run build` 產物上跑 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME bash scripts/test-vector-recall.sh`，前面各段照常通過，到 `[vector] issue-37` 段 exit 1：`✗ AC-1：--json 的 data.vector_missing (undefined) 應等於 doctor 的 missing (9)`、人讀輸出沒有提示等 4 項失敗；紅燈與綠燈用同一層：提示只存在於 CLI 輸出，`--json` 的欄位也由 CLI 組出，沒有更內層可單獨測的行為，所以端到端腳本就是最直接的入口（單迴圈合併）。同段的 AC-2（補完後重寫、未啟用、helper 被覆寫）與 AC-3（向量庫是非 SQLite 檔案、是目錄）斷言在舊程式上就通過，用來守住回歸。實作：`remember.ts` 寫入成功後呼叫 `measureVectorCoverage(core.paths.dbPath)`，包在 try/catch 裡，缺口大於 0 才在人讀輸出加一行、`--json` 的 `data` 加 `vector_missing`。覆蓋率計算從 `inspectVectorLayer()` 抽出共用，是為了讓兩邊的筆數同一份來源，也避開 `inspectVectorLayer()` 另外做的 embedder 探測（會 spawn `deps.mjs`），remember 不因此變慢。綠燈：`[vector] issue-37` 印出「有缺口時提示且筆數與 doctor 一致；補完、未啟用、覆寫時不提示；向量庫讀不到時照常寫入」，整支 `test-vector-recall.sh` exit 0。處理 review-8705ad3 的建議（TBD-2）補上兩個斷言後重跑，整支仍 exit 0，該段印出「…補完、未啟用、覆寫、遠端時不提示…」。GitNexus：`inspectVectorLayer` 影響評為 CRITICAL（doctor、setup 直接呼叫），所以只抽出計算、不改判定順序；`test-setup-onboarding.sh` 與 doctor 相關段落全綠。`remember` 的影響為 LOW。
 3. ✅ **AC-2 回歸與文件** — 比對步驟 1 的基準；更新 `docs/CLI.md`、`docs/CLI.zh-TW.md`、`DEPLOYED_SKILL.md`；跑 `core`、`http-mcp` 組。
    - 完成證據：✅ 2026-11-26。改動後的 build 重跑 `evidence/baseline.sh`，`diff -r` 與基準相同，sha256 一致。`docs/CLI.md`、`docs/CLI.zh-TW.md` 的本地存取段之後加一段說明提示、`data.vector_missing` 與不提示的情況；`DEPLOYED_SKILL.md` remember 段加一句：看到提示時要語意查這筆就先跑 doctor 的修法，否則收尾會補。以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME`（地雷 M-4）跑 core 組 10 支與 http-mcp 組 5 支，全部 exit 0；文件改完後再跑 `test-bootstrap.sh`、`test-setup-onboarding.sh`、`test-npm-install.sh`，三支 exit 0、沒有 ✗。`pnpm run check`、`check-deployed-skill-sync.mjs`、`release:docs-check` 通過。精煉：`inspectVectorLayer()` 改在建立報告物件時直接帶入覆蓋率結果，不再先填 null 再覆寫；改完重跑 `test-vector-recall.sh` 與 `test-setup-onboarding.sh`，皆 exit 0、沒有 ✗。
+
+## 待確認事項
+
+| 編號 | 事項 | 狀態 | 影響 |
+|---|---|---|---|
+| TBD-1 | review-8705ad3 N1：另一個行程對向量庫持有 EXCLUSIVE 鎖時，覆蓋率檢查沿用 5000ms 的 busy timeout，remember 會多等約 5 秒（審查實測 5.15 秒，exit 0、筆記已寫入）；步驟 2 寫的「remember 不因此變慢」沒提這個例外 | 不影響本次交付（2026-11-26 使用者回「照建議」，選記入待確認）。追蹤：無；ingest 自 issue-31 起逐列提交，鎖只在單列提交時短暫持有，長時間的獨占鎖很少見；doctor 原本就有同樣的等待；寫入與結束碼都不受影響。縮短等待要改 doctor 共用的讀取函式，不在本 issue 範圍 | AC-3 |
+| TBD-2 | review-8705ad3 N2～N5：人讀提示的筆數沒跟 doctor 比對；遠端 libSQL 沒有自動化測試；`docs/OPERATIONS.md`、`docs/agents/architecture.md` 沒提這次改動；步驟 2 的紅燈紀錄沒寫命令與單迴圈理由 | 已解決（2026-11-26 使用者回「照建議」，選修正）：測試補「人讀那則寫完當下量 doctor，筆數相同」與 `libsql://` 不提示、exit 0 的斷言；兩份文件各補一句；步驟 2 補紅燈命令與理由 | AC-1、AC-2 |
 
 ## Timeline
 
@@ -53,6 +60,7 @@
 | 2026-11-25 | 建立並核准 AC-1～3（來源：9 個下游 session 的使用體驗調查） |
 | 2026-11-26 | 實作時把覆蓋率計算從 `inspectVectorLayer()` 抽成共用函式，涉及檔案改為修改 `recall-vector.ts`（原寫不改）；驗收條件不變 |
 | 2026-11-26 | 獨立審查 review-8705ad3：PASS，5 項 NICE TO HAVE |
+| 2026-11-26 | 使用者對建議回「照建議」：N1 記入待確認（TBD-1），N2～N5 修正（TBD-2） |
 
 ---
 **建立日期**: 2026-11-25  
