@@ -63,7 +63,7 @@ Done when: the relevant decisions and pitfalls among the hits are reflected in y
 MEMORIA_HOME="$MEMORIA_HOME" "$MEMORIA_BIN" feedback <recall_id> --score <0..1> --hits <comma-separated ids of the hits you used>
 ```
 
-- Results went into your work: `--score` for how good they were, `--hits` for the hits you used. Those memories accrue utility and rank higher next time.
+- Results went into your work: `--score` for how good they were, `--hits` for the hits you used. Those memories accrue that score: a low one moves them down in later recalls, a high one keeps their place and protects them from stale pruning.
 - Nothing helped: `--score 0`.
 - A recall you ran only as a test or a look, whose results did not go into your work: `--score` for how good the hits were, and no `--hits`. Without `--hits` no memory accrues utility, so ranking is unaffected.
 

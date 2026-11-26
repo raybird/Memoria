@@ -445,7 +445,7 @@ export type RecallTelemetryPoint = {
 export type RecallOutcomeInput = {
     signal: string            // outcome source, e.g. 'reuse'
     utility_score?: number    // observed utility [0,1]
-    used?: boolean            // explicit host signal that the recall was used
+    used?: boolean            // derives a score only when utility_score is absent (true → 1, false → 0)
     hits?: Array<{            // per-hit utility attribution (UFL Phase 3); accrues into memory_utility
         id: string            // RecallHit.id the utility is attributed to (session/event id)
         utility_score: number // observed utility [0,1] for this specific hit

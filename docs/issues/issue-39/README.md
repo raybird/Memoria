@@ -26,6 +26,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 - `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md`、`DEPLOYED_REFERENCE.md` - 可改：feedback 段與命令對照
 - `docs/CLI.md`、`docs/CLI.zh-TW.md`、`docs/API.md`、`docs/API.zh-TW.md` - 可改：feedback 與 outcome 的說明
 - `scripts/test-cli-memory.sh` - 可改：回歸斷言
+- `src/core/types.ts` - 可改：只改 `RecallOutcomeInput.used` 的註解
 - `CHANGELOG.md` - 可改
 
 ## 驗收條件
@@ -48,7 +49,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 - **風險等級與理由**：Low。做法 (a) 不改寫入語意與 schema，程式只改 help 說明；既有資料與下游 adapter、SDK 都不受影響。風險只在 skill 的措辭。
 - **首要驗證**：先在 `scripts/test-cli-memory.sh` 寫 AC-1、AC-2 的斷言，以現行程式執行確認通過（這兩項描述既有行為，作為回歸保護，不會有紅燈）；help 說明的斷言先取得紅燈。
 - **選擇理由**：AC-2 是做法 (a) 成立的前提：測試查詢不帶 `--hits` 就不影響排序。先以斷言釘住，skill 才能放心依賴它。
-- **完成證據**：待實作後補上。
+- **完成證據**：步驟 1 的完成證據（help 斷言的紅燈、AC-1 與 AC-2 的回歸斷言）；review-430907e 另以 6 種會改變寫入的注入錯誤確認這兩項斷言都會失敗。
 
 ## 實作與驗證步驟
 
@@ -67,6 +68,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 | 編號 | 事項 | 狀態 | 影響 |
 |---|---|---|---|
 | TBD-1 | `--used` 該代表什麼。可選做法：(a) 不再區分，`--used` 保留為可接受但不影響寫入的旗標，skill 與文件改成測試查詢照品質給 `--score`、不帶 `--hits`，讓效用不歸到個別記憶；(b) 讓旗標有作用，沒帶 `--used` 時不做逐筆效用歸因，只記分數；(c) 在 `recall_telemetry` 另存 `used`，校準與遙測可以分開看，需要 migration。建議 (a)：不改程式與 schema，用既有的 `--hits` 就能讓測試查詢不影響排序 | 已解決（2026-11-26 使用者回「好 issue-39 選 a」）：採 (a)，驗收條件 AC-1～4 依此撰寫，風險降為 Low | 驗收條件、涉及檔案與分級 |
+| TBD-2 | review-430907e S1、N1～N3：skill 寫回報 `--hits` 的記憶「下次排得更高」，但效用加權只往下調（`src/core/db/recall.ts` 的係數介於 0.5 到 1）；風險段的完成證據沒有回填；help 斷言依賴折行；`types.ts` 的 `used` 註解與新文件不一致 | 已解決（2026-11-26 使用者回「是否能增量複審先」，照建議四項都修並走增量覆審）：skill 改為分數低的往後排、分數高的維持原位並免於 stale prune；回填風險段的完成證據；help 斷言先合併換行再比對；`types.ts` 註解改為只在沒有 `utility_score` 時推算分數，並列入涉及檔案 | AC-1、AC-3 |
 
 ## Timeline
 
@@ -76,6 +78,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 | 2026-11-26 | TBD-1 使用者選 (a)；撰寫並核准 AC-1～4 |
 | 2026-11-26 | 步驟 1～3 完成，rebase 到 v1.40.0 之後的 main |
 | 2026-11-26 | 獨立審查 review-430907e：PASS，1 項 SHOULD FIX、3 項 NICE TO HAVE |
+| 2026-11-26 | 依 review-430907e 修正 S1、N1～N3，記錄 TBD-2，送增量覆審 |
 
 ---
 **建立日期**: 2026-11-26  
