@@ -48,15 +48,15 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 
 ## 實作與驗證步驟
 
-1. 📝 **AC-1、AC-2：回歸斷言與 help 說明** — 在 `test-cli-memory.sh` 加斷言：同一筆 hit 分別以帶與不帶 `--used` 回報，telemetry 與 utility 相同；只給 `--score` 時 utility 不變；`feedback --help` 的 `--used` 說明含「no effect」。help 斷言取得紅燈後改 `feedback.ts` 的說明。相依：無。
+1. ✅ **AC-1、AC-2：回歸斷言與 help 說明** — 在 `test-cli-memory.sh` 加斷言：同一筆 hit 分別以帶與不帶 `--used` 回報，telemetry 與 utility 相同；只給 `--score` 時 utility 不變；`feedback --help` 的 `--used` 說明含「no effect」。help 斷言取得紅燈後改 `feedback.ts` 的說明。相依：無。
    - 完成判準：三組斷言都通過；help 斷言有紅燈紀錄；`telemetry.ts`、`server.ts`、`sdk.ts` 沒有 diff。
-   - 完成證據：
-2. 📝 **AC-3：部署的 skill** — 改 `DEPLOYED_SKILL.md` feedback 段與 `DEPLOYED_REFERENCE.md` 命令對照。相依：步驟 1。
+   - 完成證據：✅ 2026-11-26。`test-cli-memory.sh` 新增 (Q/issue-39) 段，以獨立資料根比對：同一筆 hit 以 `--score 0.4` 回報兩次（一次帶 `--used`），兩列 telemetry 相同，該記憶的 explicit 累積為 1、0.4 再到 2、0.8；只給 `--score 0.7` 時 telemetry 記 0.7，`memory_utility` 整表前後相同。紅燈（改 help 前）：只有 help 斷言失敗（`--used  Mark the recall as used`），AC-1 的寫入比對與 AC-2 在現行程式就通過，屬回歸保護。綠燈：`feedback.ts` 只改 `--used` 的說明與註解，寫入邏輯未動；`git diff main` 對三個不可觸及的檔案為空。
+2. ✅ **AC-3：部署的 skill** — 改 `DEPLOYED_SKILL.md` feedback 段與 `DEPLOYED_REFERENCE.md` 命令對照。相依：步驟 1。
    - 完成判準：兩檔不再出現 `--used`；`node scripts/check-deployed-skill-sync.mjs` 通過；措辭依 writing-rules 檢查。
-   - 完成證據：
-3. 📝 **AC-4：文件與回歸** — CLI、API 雙語文件與 CHANGELOG；跑 core 組與 `test-http-api.sh`、`test-utility-ranking.sh`、`test-npm-install.sh`（部署 skill 的安裝驗證）。相依：步驟 1、2。
+   - 完成證據：✅ 2026-11-26。feedback 段的命令改為 `--hits <ids of the hits you used>`，下接三個情況各一行：用在工作上、沒有幫助、只是測試或看看（不帶 `--hits`，並說明不累積效用、排序不受影響）；「用在工作上」放第一行並寫出帶 `--hits` 的效果，對應最大風險。兩檔 grep `--used` 為 0；`check-deployed-skill-sync` 通過；`test-bootstrap.sh`、`test-npm-install.sh` 的部署驗證通過。writing-rules：正面表述，沒有提到被移除的旗標。
+3. ✅ **AC-4：文件與回歸** — CLI、API 雙語文件與 CHANGELOG；跑 core 組與 `test-http-api.sh`、`test-utility-ranking.sh`、`test-npm-install.sh`（部署 skill 的安裝驗證）。相依：步驟 1、2。
    - 完成判準：所列腳本全綠，`release:docs-check` 通過，文件與行為一致。
-   - 完成證據：
+   - 完成證據：✅ 2026-11-26。CLI 雙語在 `recall --json` 段後補一段 feedback 的寫入規則；API 雙語補 outcome 的 `used` 只在沒有 `utility_score` 時推算分數、`hits[]` 決定歸因；CHANGELOG `[Unreleased]` 的 Changed；各檔 Last verified 更新。rebase 到 v1.40.0 發版後的 main（`8d55363`）前後各跑一次：rebase 前 core 組 10 支與 `test-http-api`、`test-npm-install` 共 12 支 exit 0；rebase 後 `pnpm run check`、`build`、`--help`、`release:docs-check`（v1.40.0）、`check-deployed-skill-sync` 與 `test-cli-memory`、`test-utility-ranking`、`test-http-api`、`test-bootstrap`、`test-npm-install` 全部通過。
 
 ## 待確認事項
 
@@ -70,9 +70,10 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 |------|------|
 | 2026-11-26 | 建立（來源：issue-36 review-88b341c S1；使用者 2026-11-26 回「照建議」：另開 issue 決定 `--used` 的語意）；驗收條件待 TBD-1 決定 |
 | 2026-11-26 | TBD-1 使用者選 (a)；撰寫並核准 AC-1～4 |
+| 2026-11-26 | 步驟 1～3 完成，rebase 到 v1.40.0 之後的 main，待審查 |
 
 ---
 **建立日期**: 2026-11-26  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待實作
+**狀態**: 實作中
