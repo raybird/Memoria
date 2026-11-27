@@ -79,6 +79,7 @@
 | TBD-4 | issue-41 在 `test-repo-promotion.sh` idempotency 段加的斷言：已促升的摘要以不同文字、不帶 decision 重送時 `promotion` 為 `already_promoted`。AC-1 規定這種重送回 `updated`（失敗路徑寫明「結果仍是 `already_promoted`」），與 AC-4「既有斷言不需改值」對同一個斷言要求相反 | 已解決（2026-11-27 使用者確認 AC-4「既有斷言需要改值」排除這條斷言，因為 AC-1 的失敗路徑明文要反轉它）。處理：這個斷言描述的正是本 issue 要改的行為，改為期望 `updated`，並在同一段補一次內容完全相同的重送，期望 `already_promoted`，保住 issue-41 AC-2 要區分的那個結果。同段其他斷言（`promoted` 為 false、`memory_sources` 與 sessions 筆數不變）原值通過 | AC-1、AC-4 |
 | TBD-5 | review-28ec168 的 MUST FIX 1、SHOULD FIX 與 NICE TO HAVE 1、2：`buildMemoryIndex` 取 session 第一個 `DecisionMade` 當 topic 標題，沒有排除已取代的事件，拿掉或改寫 decision 0 時舊文字留在 tree index 與向量 payload；`updatePromotedSummary` 先讀後寫卻用 deferred 交易，多程序同時寫回時可能直接 SQLITE_BUSY 而回假的 `failed`；手動 `--supersedes` 的標記不受重送影響沒有直接測試；`memoria.ts` 兩段 JSDoc 疊在一起、失敗時的註解過時、`SummaryPromotion` 說明沒提 `updated` | 已解決（2026-11-27 使用者選全部修正）：`buildMemoryIndex` 挑 topic 用的事件排除 `memory_attributes.superseded_by` 不為空的列，沒有這張表的舊資料庫照舊（GitNexus impact：CRITICAL，remember、sync、`index build` 與 setup 的向量準備都呼叫它；已索引的 session 會被跳過，所以只影響之後新建或重建的 session）；`updatePromotedSummary` 改用 `.immediate()`；`test-repo-promotion.sh` 補拿掉 decision A 的寫回，斷言 tree index 節點、tree recall 與向量 payload 的 `memory_node` 實體都不再帶出它的文字，並以 `remember --supersedes` 先取代 B、C，斷言重送後兩者仍指向原本的筆記；JSDoc 與註解整理 | AC-2、AC-3 |
 | TBD-6 | review-28ec168 NICE TO HAVE 3、4：拿掉 tree index 節點與重建是兩個交易，重建失敗後若該 session 超過 180 天，`prune --stale` 可能把整筆促升的 session 刪掉；`summary.range` 為 null 時重送回 `failed`，session 被手動刪除時回 `already_promoted`，兩者都沒有精確說明發生什麼 | 不影響本次交付（2026-11-27 使用者選記入待確認）。追蹤：無；(1) 需要重建本身失敗，且失敗會讓 `stats` 的 `memoryIndex.missing` 與 doctor 顯示缺口，可用 `memoria index build` 補回；合併兩個交易要改 `buildMemoryIndex` 的交易結構。(2) 促升過的摘要都有 range，session 被手動刪除也只發生在手動改資料時 | 無 |
+| TBD-7 | review-8750532 NICE TO HAVE（需決策）：拿掉第一個 decision 後 session 改掛到新的 topic；舊 topic 若與其他 session 共用，它的 summary 仍是這個 session 的舊摘要文字，以舊文字查詢會命中另一個 session，但輸出不帶出舊文字。只在同一個 project 有兩個 session 的第一個 decision 文字相同時發生 | 不影響本次交付（2026-11-27 使用者回「照建議」，記入待確認）。追蹤：無；修法是 `dropSessionFromIndex` 拿掉節點時，以剩下的 session 重寫共用 topic 的 summary | 無 |
 
 ## Timeline
 
@@ -89,10 +90,10 @@
 | 2026-11-27 | 使用者核准 AC-1～4 |
 | 2026-11-27 | 開始實作（使用者回「直接開始 issue-42」）；核准 commit 回填為 `fec7d1b`；步驟 1～4 完成，待審查 |
 | 2026-11-27 | review-28ec168 RETURN TO execute-task（使用者對建議與 TBD-4 都回照建議，結論記在 TBD-4～6；修正後送增量覆審）：MUST FIX 2 項（被取代的第一個 decision 留在 topic 節點；TBD-4 需決策）、SHOULD FIX 1 項、NICE TO HAVE 4 項 |
-| 2026-11-27 | review-8750532（增量覆審）PASS，附 NICE TO HAVE 1 項（需決策），結論待使用者確認 |
+| 2026-11-27 | review-8750532（增量覆審）PASS，附 NICE TO HAVE 1 項（需決策）；使用者回「照建議」，結論記在 TBD-7；狀態改為已完成，待合併 |
 
 ---
 **建立日期**: 2026-11-27  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 待審查
+**狀態**: 已完成
