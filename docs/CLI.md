@@ -38,7 +38,8 @@ memoria repo sync project              # Incremental scan → events → summari
 memoria repo summarize project --pending --json  # Summary requests for agent enrichment
 memoria repo summarize project --dismiss-pending --type merge,release  # Skip teammates' skeletons without promoting them
 # Writing back a merge or release summary also dismisses the commit-range skeletons inside it; the result reports dismissed_covered
-# The write-back result's promotion says whether it reached recall: promoted, not_eligible, already_promoted, or failed with promotion_error
+# The write-back result's promotion says whether it reached recall: promoted, updated, not_eligible, already_promoted, or failed with promotion_error
+# Re-submitting a summary already in recall updates it (updated): decisions are matched by text, and one no longer listed is superseded, not deleted
 memoria wiki build --json              # Rebuild the compiled wiki
 memoria wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 memoria wiki lint --json               # Produce durable wiki governance findings

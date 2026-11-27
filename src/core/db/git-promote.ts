@@ -7,8 +7,12 @@
 // milestone. Deterministic ids + INSERT OR IGNORE make the whole promotion idempotent.
 
 import { createHash } from 'node:crypto'
+import type Database from 'better-sqlite3'
 import { withDb } from './connection.js'
+import { clearSupersededBy, loadAttributes, markSupersededBy } from './memory-attributes.js'
 import type { GitSummaryRecord, GitSummaryType, RecallHitSource } from '../types.js'
+
+type GitSummaryDecision = GitSummaryRecord['decisions'][number]
 
 function nowIso(): string {
     return new Date().toISOString()
@@ -56,6 +60,16 @@ function buildMemoryText(summary: GitSummaryRecord): string {
     return parts.join(' ')
 }
 
+/** The DecisionMade content a promoted decision carries — shared by promotion and its update
+ *  (issue-42), so a decision added on re-submit is indistinguishable from one promoted first time. */
+function decisionEventContent(decision: GitSummaryDecision): string {
+    return JSON.stringify({ decision: decision.decision, rationale: decision.reason ?? '', impact_level: 'high' })
+}
+
+function memorySourceId(memoryId: string, sourceType: string, summaryId: string): string {
+    return `ms_${createHash('sha256').update(`${memoryId}|${sourceType}|${summaryId}`).digest('hex').slice(0, 16)}`
+}
+
 export type PromotionOutcome = {
     promoted: boolean
     memoryIds: string[]
@@ -84,11 +98,8 @@ export function promoteSummary(dbPath: string, summary: GitSummaryRecord, reposi
         `)
         summary.decisions.forEach((decision, index) => {
             const eventId = `gitdec-${summary.id}-${index}`
-            eventInsert.run(eventId, sessionId, now, JSON.stringify({
-                decision: decision.decision,
-                rationale: decision.reason ?? '',
-                impact_level: 'high'
-            }), JSON.stringify({ source: 'git_summary', summary_id: summary.id }))
+            eventInsert.run(eventId, sessionId, now, decisionEventContent(decision),
+                JSON.stringify({ source: 'git_summary', summary_id: summary.id }))
             memoryIds.push(eventId)
         })
 
@@ -99,8 +110,7 @@ export function promoteSummary(dbPath: string, summary: GitSummaryRecord, reposi
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
         for (const memoryId of memoryIds) {
-            const id = `ms_${createHash('sha256').update(`${memoryId}|${sourceType}|${summary.id}`).digest('hex').slice(0, 16)}`
-            sourceInsert.run(id, memoryId, sourceType, summary.id, summary.repository_id,
+            sourceInsert.run(memorySourceId(memoryId, sourceType, summary.id), memoryId, sourceType, summary.id, summary.repository_id,
                 range.base_sha ?? null, range.head_sha, now)
         }
 
@@ -118,6 +128,126 @@ export function promoteSummary(dbPath: string, summary: GitSummaryRecord, reposi
 
         return { promoted: true, memoryIds }
     })())
+}
+
+export type PromotionUpdate = {
+    updated: boolean
+    sessionId: string
+}
+
+type StoredDecision = { id: string; seq: number; decision: string; rationale: string; content: Record<string, unknown> }
+
+function parseContent(raw: string): Record<string, unknown> {
+    try {
+        const value: unknown = JSON.parse(raw)
+        return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+    } catch {
+        return {}
+    }
+}
+
+/** Bring an already-promoted summary's recall memories in line with its current content (issue-42).
+ *
+ *  The session text is rewritten from the summary. Decisions are matched by their text, never by
+ *  position: `gitdec-<summary>-<n>` ids are positional, and utility and markers hang off them, so a
+ *  dropped decision in the middle must not shift its neighbour's history onto different content.
+ *    - same text → keeps its id, utility and markers; a changed reason is written in place, and a
+ *      supersession this function recorded earlier is lifted (the decision came back);
+ *    - new text → a new event under the next sequence number never used for this summary;
+ *    - no longer listed → superseded by the summary's session: out of recall and brief, row kept.
+ *  The FTS triggers follow the UPDATEs; the caller re-indexes the tree. One transaction, so a
+ *  failure leaves the previous memories whole. */
+export function updatePromotedSummary(dbPath: string, summary: GitSummaryRecord): PromotionUpdate {
+    if (!summary.range) throw new Error(`summary ${summary.id} has no range; cannot update its promotion`)
+    const range = summary.range
+    const sessionId = `gitsum-${summary.id}`
+    const prefix = `gitdec-${summary.id}-`
+    return withDb(dbPath, (db) => db.transaction((): PromotionUpdate => {
+        const session = db.prepare('SELECT summary, event_count FROM sessions WHERE id = ?')
+            .get(sessionId) as { summary: string | null; event_count: number } | undefined
+        // Provenance without its session (a memory removed by hand): nothing to update, and
+        // re-creating it here would undo that removal.
+        if (!session) return { updated: false, sessionId }
+        const now = nowIso()
+        let updated = false
+
+        const text = buildMemoryText(summary)
+        if (session.summary !== text || session.event_count !== summary.decisions.length) {
+            db.prepare('UPDATE sessions SET summary = ?, event_count = ? WHERE id = ?')
+                .run(text, summary.decisions.length, sessionId)
+            updated = true
+        }
+
+        const stored = (db.prepare(`SELECT id, content FROM events WHERE session_id = ? AND event_type = 'DecisionMade'`)
+            .all(sessionId) as Array<{ id: string; content: string | null }>)
+            .filter((row) => row.id.startsWith(prefix) && /^\d+$/.test(row.id.slice(prefix.length)))
+            .map((row): StoredDecision => {
+                const content = parseContent(row.content ?? '')
+                return {
+                    id: row.id,
+                    seq: Number(row.id.slice(prefix.length)),
+                    decision: String(content.decision ?? ''),
+                    rationale: String(content.rationale ?? ''),
+                    content
+                }
+            })
+            .sort((a, b) => a.seq - b.seq)
+        const attributes = loadAttributes(db, stored.map((decision) => decision.id))
+        const matched = new Set<string>()
+        let nextSeq = stored.reduce((max, decision) => Math.max(max, decision.seq + 1), 0)
+        const sourceType = SOURCE_TYPE_BY_SUMMARY[summary.summary_type]
+
+        for (const decision of summary.decisions) {
+            const existing = stored.find((candidate) =>
+                !matched.has(candidate.id) && candidate.decision.trim() === decision.decision.trim())
+            if (existing) {
+                matched.add(existing.id)
+                const rationale = decision.reason ?? ''
+                if (existing.rationale !== rationale) {
+                    db.prepare('UPDATE events SET content = ? WHERE id = ?')
+                        .run(JSON.stringify({ ...existing.content, rationale }), existing.id)
+                    updated = true
+                }
+                if (attributes.get(existing.id)?.superseded_by === sessionId) {
+                    updated = clearSupersededBy(db, existing.id, sessionId) || updated
+                }
+                continue
+            }
+            const eventId = `${prefix}${nextSeq}`
+            nextSeq += 1
+            insertDecision(db, summary, sessionId, eventId, decision, sourceType, range, now)
+            updated = true
+        }
+
+        for (const decision of stored) {
+            if (matched.has(decision.id)) continue
+            updated = markSupersededBy(db, decision.id, sessionId) || updated
+        }
+        return { updated, sessionId }
+    })())
+}
+
+function insertDecision(
+    db: Database.Database,
+    summary: GitSummaryRecord,
+    sessionId: string,
+    eventId: string,
+    decision: GitSummaryDecision,
+    sourceType: string,
+    range: NonNullable<GitSummaryRecord['range']>,
+    now: string
+): void {
+    db.prepare(`
+      INSERT INTO events (id, session_id, timestamp, event_type, content, metadata)
+      VALUES (?, ?, ?, 'DecisionMade', ?, ?)
+    `).run(eventId, sessionId, now, decisionEventContent(decision),
+        JSON.stringify({ source: 'git_summary', summary_id: summary.id }))
+    db.prepare(`
+      INSERT OR IGNORE INTO memory_sources
+        (id, memory_id, source_type, source_id, repository_id, base_sha, head_sha, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(memorySourceId(eventId, sourceType, summary.id), eventId, sourceType, summary.id,
+        summary.repository_id, range.base_sha ?? null, range.head_sha, now)
 }
 
 /** Recall enrichment (§21): map hit ids (session/event) back to their git provenance. */

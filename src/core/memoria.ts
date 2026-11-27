@@ -18,6 +18,7 @@ import {
     recordRecallOutcome,
     runVerify,
     buildMemoryIndex,
+    dropSessionFromIndex,
     recallTree,
     recallKeyword,
     projectHasMemories,
@@ -45,6 +46,7 @@ import {
     isPromotable,
     promotionExists,
     promoteSummary,
+    updatePromotedSummary,
     lookupGitSources,
     noteFingerprint,
     noteExists,
@@ -1320,6 +1322,17 @@ export class MemoriaCore {
      *  transaction, and nesting index building inside it would widen both its responsibility and its
      *  lock window. Best-effort by design — a promoted memory is already recallable through FTS, and
      *  `memoria index build` recovers anything missed. */
+    /** Rebuild an updated promotion's tree-index nodes from its new text (issue-42). A failed rebuild
+     *  leaves the session unindexed, which `stats`/`doctor` report as a tree-index gap. */
+    private reindexPromotedSession(sessionId: string): void {
+        try {
+            dropSessionFromIndex(this.paths.dbPath, sessionId)
+        } catch {
+            return // old nodes stay: stale text rather than a gap
+        }
+        this.indexPromotedSession(sessionId)
+    }
+
     private indexPromotedSession(sessionId: string | undefined): void {
         if (!sessionId) return
         try {
@@ -1450,7 +1463,10 @@ export class MemoriaCore {
             try {
                 const gitConfig = (await loadMemoriaConfig(this.paths)).git
                 if (promotionExists(this.paths.dbPath, summary.id)) {
-                    promotion = 'already_promoted'
+                    // Already in recall: bring those memories in line with this write-back (issue-42).
+                    const update = updatePromotedSummary(this.paths.dbPath, summary)
+                    promotion = update.updated ? 'updated' : 'already_promoted'
+                    if (update.updated) this.reindexPromotedSession(update.sessionId)
                 } else if (summary.range && isPromotable(summary, gitConfig.summarization.promoteImportanceThreshold)) {
                     const outcome = promoteSummary(this.paths.dbPath, summary, repositoryName)
                     promotion = outcome.promoted ? 'promoted' : 'already_promoted'

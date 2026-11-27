@@ -54,7 +54,8 @@ Validated with Zod:
 - `decisions` only takes decisions whose reason is written down in the issue or commit messages; otherwise `[]`. Each one becomes its own recall memory and appears among the brief's recent decisions.
 - When the merged range carries commits of another issue, say so at the end of `summary` and leave that issue's decisions out.
 - Keep tokens, keys, personal data and credentialed URLs out; name the env key instead.
-- The result's `promotion` says whether the summary reached recall: `promoted`; `not_eligible` (a commit range or branch summary below the importance threshold with no decisions, limitations or risks — expected for small changes); `already_promoted`; or `failed`, with the reason in `promotion_error`. The summary is written in every case; after a `failed`, resubmit the same payload, or the next `repo sync` retries it.
+- The result's `promotion` says whether the summary reached recall: `promoted`; `updated` (it was already in recall and now matches this payload); `not_eligible` (a commit range or branch summary below the importance threshold with no decisions, limitations or risks — expected for small changes); `already_promoted` (already in recall, nothing changed); or `failed`, with the reason in `promotion_error`. The summary is written in every case; after a `failed`, resubmit the same payload.
+- To correct a summary already in recall, submit the corrected payload: the recall text follows it. A decision keeps its id, utility and markers while its `decision` text stays the same, even if the reason changes; one left out is superseded (out of recall and the brief, not deleted) and returns if you list it again.
 
 ## Command Mapping
 

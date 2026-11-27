@@ -240,9 +240,10 @@ export function registerRepoCommand(program: Command, core: MemoriaCore): void {
                     console.log(`- ${s.title}`)
                     const d = result.data!
                     if (d.promotion === 'promoted') console.log('- 已進入 recall')
-                    else if (d.promotion === 'already_promoted') console.log('- 先前已進入 recall，這次沒有更新 recall 的內容')
+                    else if (d.promotion === 'updated') console.log('- 已更新 recall 的內容')
+                    else if (d.promotion === 'already_promoted') console.log('- 先前已進入 recall，這次沒有更動')
                     else if (d.promotion === 'not_eligible') console.log('- 不符促升條件，沒有進入 recall')
-                    else console.log(`⚠ 促升失敗，沒有進入 recall：${d.promotion_error ?? '原因不明'}（摘要已寫入；重送或下次 repo sync 會再試）`)
+                    else console.log(`⚠ 促升失敗，recall 沒有跟著這次寫回更新：${d.promotion_error ?? '原因不明'}（摘要已寫入；重送同一份內容會再試）`)
                     if (result.data!.dismissed_covered > 0) {
                         console.log(`- 已略過 ${result.data!.dismissed_covered} 筆被已寫回摘要涵蓋的 commit range 骨架`)
                     }

@@ -17,7 +17,7 @@ export { syncDailyNote, extractDecisions, extractSkills } from './sync.js'
 export { logRecallTelemetry, recordRecallOutcome, queryStats, readMemoryIndexCoverage, queryRecallTelemetry, queryGovernanceReview } from './telemetry.js'
 export { runVerify } from './verify.js'
 export { runPrune, exportMemory } from './prune-export.js'
-export { buildMemoryIndex, recallTree, recallKeyword, applyUtilityWeighting, projectHasMemories } from './recall.js'
+export { buildMemoryIndex, dropSessionFromIndex, recallTree, recallKeyword, applyUtilityWeighting, projectHasMemories } from './recall.js'
 export {
     registerRepository,
     listRepositories,
@@ -61,6 +61,7 @@ export {
     isPromotable,
     promotionExists,
     promoteSummary,
+    updatePromotedSummary,
     lookupGitSources
 } from './git-promote.js'
 export { noteFingerprint, noteExists, discardNewNote, recordNoteProvenance, CLI_NOTE_SOURCE_TYPE } from './memory-note.js'

@@ -11,6 +11,8 @@
 #   6. a sync blocked by another process's live lease answers 409 repository_sync_busy (issue-33)
 #   7. a write-back says which promotion outcome it got, with the error when promotion failed, and
 #      sync retries every missed promotion, not only the latest 50 enriched summaries (issue-41)
+#   8. re-submitting a promoted summary updates its recall memories: decisions are matched by text,
+#      dropped ones are superseded (never deleted) and FTS, tree index and vector payload follow (issue-42)
 
 set -euo pipefail
 
@@ -150,7 +152,12 @@ RESUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$SUM_ID" -H 'Conte
 }')
 assert_eq "re-submit ok (enrich in place)" "$(json_get "$RESUBMIT" "d.ok")" "true"
 assert_eq "re-submit does not re-promote" "$(json_get "$RESUBMIT" "d.data.promoted")" "false"
-assert_eq "issue-41 AC-2: re-submit says already_promoted" "$(json_get "$RESUBMIT" "d.data.promotion")" "already_promoted"
+# issue-42 AC-1: different text now updates recall; only an identical re-submit is already_promoted.
+assert_eq "issue-42 AC-1: re-submit with new text says updated" "$(json_get "$RESUBMIT" "d.data.promotion")" "updated"
+RESUBMIT_SAME=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$SUM_ID" -H 'Content-Type: application/json' -d '{
+  "title": "完成預訂衝突驗證流程 v2", "summary": "更新後摘要。", "importance": 0.9, "confidence": 0.9
+}')
+assert_eq "issue-41 AC-2: identical re-submit says already_promoted" "$(json_get "$RESUBMIT_SAME" "d.data.promotion")" "already_promoted"
 curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
 assert_eq "memory_sources unchanged" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_BEFORE"
 assert_eq "sessions unchanged" "$(db_get "SELECT COUNT(*) FROM sessions")" "$SESS_BEFORE"
@@ -361,6 +368,97 @@ MS_AFTER=$(db_get "SELECT COUNT(*) FROM memory_sources")
 curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
 assert_eq "AC-3: a further sync promotes nothing twice" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_AFTER"
 db_run "DELETE FROM git_summaries WHERE id LIKE 'sum_pad41_%'"
+
+echo "[repo-promotion] issue-42: re-submitting a promoted summary updates recall"
+HELPER_DIR="$ROOT_DIR/skills/memoria-vector"
+if [ ! -d "$HELPER_DIR/node_modules/@libsql/client" ]; then
+    (cd "$HELPER_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1)
+fi
+[ -d "$HELPER_DIR/node_modules/@libsql/client" ] || { echo "  ✗ vector helper deps install failed"; exit 1; }
+VEC42="$TMP_DIR/vectors-42.db"
+ingest42() {
+    local out="$TMP_DIR/bridge42"; rm -rf "$out"; mkdir -p "$out"
+    node "$ROOT_DIR/skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs" --memoria-home "$MEMORIA_HOME" --sync-target t42 --out "$out" >/dev/null
+    LIBSQL_URL="file:$VEC42" MEMORIA_EMBED_PROVIDER=stub node "$HELPER_DIR/vector-ingest.mjs" "$out"/*.json
+}
+vec_text42() { (cd "$HELPER_DIR" && LIBSQL_URL="file:$VEC42" node --input-type=module -e "
+const { importDep } = await import('./deps.mjs')
+const { createClient } = await importDep('@libsql/client')
+const db = createClient({ url: process.env.LIBSQL_URL })
+const r = await db.execute({ sql: 'SELECT text FROM memoria_vectors WHERE name = ?', args: [process.argv[1]] })
+process.stdout.write(String(r.rows[0]?.text ?? ''))
+db.close()
+" "$1"); }
+recall_ids() { json_get "$("$CLI" recall "$1" --project booking-api --top-k 20 --json)" "(d.data ?? []).map(h => h.id).join(',')"; }
+has_id() { case ",$1," in *",$2,"*) echo yes ;; *) echo no ;; esac; }
+
+git -C "$REPO" switch -q -c feature/notify
+seq 1 9 > "$REPO/src/notify.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c-notify: queue notifications"
+git -C "$REPO" switch -q main
+git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/notify'" feature/notify
+N_ID=$(json_get "$("$CLI" repo summarize "$REPO_ID" --merge "$(git -C "$REPO" rev-parse HEAD)" --json)" "d.data.summaries[0].id")
+N_SESSION="gitsum-$N_ID"; A_ID="gitdec-$N_ID-0"; B_ID="gitdec-$N_ID-1"
+cat > "$TMP_DIR/n1.json" <<'EOF'
+{"title": "合併通知佇列", "summary": "通知改走佇列寄送 kumquatalpha。",
+ "decisions": [{"decision": "通知寄送改走佇列", "reason": "避免請求逾時"},
+               {"decision": "保留舊版 webhook 通道", "reason": "相容既有客戶"}],
+ "importance": 0.6, "confidence": 0.8}
+EOF
+assert_eq "issue-42 premise: first write-back promotes" "$(json_get "$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n1.json" --json)" "d.data.promotion")" "promoted"
+RID=$(json_get "$("$CLI" recall "通知寄送改走佇列 webhook" --project booking-api --json)" "d.meta.recall_id")
+"$CLI" feedback "$RID" --signal explicit --score 0.9 --used --hits "$A_ID,$B_ID" >/dev/null
+"$CLI" mark "$A_ID" --durable >/dev/null
+A_UTIL=$(db_get "SELECT observations || '/' || utility_sum FROM memory_utility WHERE ref_id = '$A_ID'")
+B_UTIL=$(db_get "SELECT observations || '/' || utility_sum FROM memory_utility WHERE ref_id = '$B_ID'")
+assert_eq "issue-42 premise: utility recorded on A and B" "$(test -n "$A_UTIL" && test -n "$B_UTIL" && echo yes)" "yes"
+ingest42 >/dev/null
+assert_eq "issue-42 premise: vector row holds the old text" "$(vec_text42 "session:$N_SESSION" | grep -c kumquatalpha)" "1"
+
+# AC-1/AC-2: new text; A kept with a new reason, B dropped, C added.
+cat > "$TMP_DIR/n2.json" <<'EOF'
+{"title": "合併通知佇列", "summary": "通知改走佇列寄送 persimmonbeta。",
+ "decisions": [{"decision": "通知寄送改走佇列", "reason": "避免請求逾時並可重試"},
+               {"decision": "失敗通知寫入死信佇列", "reason": "方便追查"}],
+ "importance": 0.6, "confidence": 0.8}
+EOF
+N2=$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n2.json" --json)
+assert_eq "AC-1: re-submit says updated" "$(json_get "$N2" "d.data.promotion")" "updated"
+assert_eq "AC-1: promoted stays false for an update" "$(json_get "$N2" "d.data.promoted")" "false"
+assert_eq "AC-1: session text is the new summary" "$(db_get "SELECT instr(summary, 'persimmonbeta') > 0 AND instr(summary, 'kumquatalpha') = 0 FROM sessions WHERE id = '$N_SESSION'")" "1"
+assert_eq "AC-1/AC-3: recall finds the new text" "$(has_id "$(recall_ids persimmonbeta)" "$N_SESSION")" "yes"
+assert_eq "AC-1/AC-3: recall no longer finds the old text" "$(has_id "$(recall_ids kumquatalpha)" "$N_SESSION")" "no"
+assert_eq "AC-2: A keeps its id and takes the new reason" "$(db_get "SELECT json_extract(content, '\$.rationale') FROM events WHERE id = '$A_ID'")" "避免請求逾時並可重試"
+assert_eq "AC-2: A keeps its utility" "$(db_get "SELECT observations || '/' || utility_sum FROM memory_utility WHERE ref_id = '$A_ID'")" "$A_UTIL"
+assert_eq "AC-2: A keeps its marker" "$(db_get "SELECT retention FROM memory_attributes WHERE ref_id = '$A_ID'")" "durable"
+assert_eq "AC-2: B is superseded by the summary's session" "$(db_get "SELECT superseded_by FROM memory_attributes WHERE ref_id = '$B_ID'")" "$N_SESSION"
+assert_eq "AC-2: B's row and utility are kept" "$(db_get "SELECT COUNT(*) FROM events WHERE id = '$B_ID'")/$(db_get "SELECT observations || '/' || utility_sum FROM memory_utility WHERE ref_id = '$B_ID'")" "1/$B_UTIL"
+assert_eq "AC-2: B leaves recall" "$(has_id "$(recall_ids "保留舊版 webhook 通道")" "$B_ID")" "no"
+assert_eq "AC-2: C takes the next unused sequence number" "$(db_get "SELECT json_extract(content, '\$.decision') FROM events WHERE id = 'gitdec-$N_ID-2'")" "失敗通知寫入死信佇列"
+assert_eq "AC-2: C carries provenance" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE memory_id = 'gitdec-$N_ID-2' AND source_id = '$N_ID'")" "1"
+"$CLI" brief --project booking-api >/dev/null
+assert_eq "AC-2: brief drops B" "$(grep -c '保留舊版 webhook 通道' "$MEMORIA_HOME/knowledge/BRIEF.md" || true)" "0"
+assert_eq "AC-2: brief shows C" "$(grep -c '失敗通知寫入死信佇列' "$MEMORIA_HOME/knowledge/BRIEF.md" || true)" "1"
+assert_eq "AC-3: tree index node holds the new text" "$(db_get "SELECT instr(summary, 'persimmonbeta') > 0 AND instr(summary, 'kumquatalpha') = 0 FROM memory_nodes WHERE id = 'node:session:$N_SESSION'")" "1"
+assert_eq "AC-3: no tree index gap" "$(json_get "$("$CLI" stats --json)" "d.data.memoryIndex.missing")" "0"
+INGEST42=$(ingest42)
+assert_eq "AC-3: vector ingest re-embeds the changed rows" "$(json_get "$INGEST42" "d.embedded > 0")" "true"
+assert_eq "AC-3: vector row holds the new text" "$(vec_text42 "session:$N_SESSION" | grep -c persimmonbeta)" "1"
+assert_eq "AC-3: vector decision row holds the new reason" "$(vec_text42 "decision:$A_ID" | grep -c '避免請求逾時並可重試')" "1"
+
+# AC-2: bringing B back revives its original id.
+cat > "$TMP_DIR/n3.json" <<'EOF'
+{"title": "合併通知佇列", "summary": "通知改走佇列寄送 persimmonbeta。",
+ "decisions": [{"decision": "通知寄送改走佇列", "reason": "避免請求逾時並可重試"},
+               {"decision": "失敗通知寫入死信佇列", "reason": "方便追查"},
+               {"decision": "保留舊版 webhook 通道", "reason": "相容既有客戶"}],
+ "importance": 0.6, "confidence": 0.8}
+EOF
+assert_eq "AC-2: re-adding B is an update" "$(json_get "$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n3.json" --json)" "d.data.promotion")" "updated"
+assert_eq "AC-2: B is no longer superseded" "$(db_get "SELECT COALESCE(superseded_by, '') FROM memory_attributes WHERE ref_id = '$B_ID'")" ""
+assert_eq "AC-2: B is back in recall under its id" "$(has_id "$(recall_ids "保留舊版 webhook 通道")" "$B_ID")" "yes"
+assert_eq "AC-2: no fourth decision was created" "$(db_get "SELECT COUNT(*) FROM events WHERE session_id = '$N_SESSION'")" "3"
+assert_eq "AC-4: an identical re-submit changes nothing" "$(json_get "$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n3.json" --json)" "d.data.promotion")" "already_promoted"
 
 echo "[repo-promotion] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"

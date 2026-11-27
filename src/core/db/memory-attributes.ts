@@ -56,6 +56,26 @@ export function upsertMemoryAttributes(dbPath: string, refId: string, patch: Mem
     })
 }
 
+/** issue-42: mark `refId` superseded by `supersededBy`, inside the caller's transaction. A memory that
+ *  is already superseded keeps the marker it has — whoever recorded that correction meant it. */
+export function markSupersededBy(db: Database.Database, refId: string, supersededBy: string): boolean {
+    const now = nowIso()
+    return db.prepare(`
+      INSERT INTO memory_attributes (ref_id, superseded_by, created_at, updated_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(ref_id) DO UPDATE SET superseded_by = excluded.superseded_by, updated_at = excluded.updated_at
+      WHERE memory_attributes.superseded_by IS NULL
+    `).run(refId, supersededBy, now, now).changes > 0
+}
+
+/** issue-42: lift a supersession marker, but only one that points at `supersededBy` — the inverse of
+ *  markSupersededBy, so reviving a memory never undoes a correction recorded by anything else.
+ *  upsertMemoryAttributes cannot do this: its COALESCE keeps a stored value when the patch is null. */
+export function clearSupersededBy(db: Database.Database, refId: string, supersededBy: string): boolean {
+    return db.prepare(`
+      UPDATE memory_attributes SET superseded_by = NULL, updated_at = ? WHERE ref_id = ? AND superseded_by = ?
+    `).run(nowIso(), refId, supersededBy).changes > 0
+}
+
 export function getMemoryAttributes(dbPath: string, refIds: string[]): Map<string, MemoryAttributes> {
     const map = new Map<string, MemoryAttributes>()
     if (refIds.length === 0) return map

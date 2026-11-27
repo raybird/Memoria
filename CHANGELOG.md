@@ -10,7 +10,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **`repo sync` retries every promotion that failed, not only among the latest 50 enriched summaries.** A write-back whose promotion failed was meant to be picked up by the next sync, but sync looked only at the 50 most recently created enriched summaries, so after a large batch of write-backs an older failure stayed out of recall for good. One summary that still fails no longer stops the rest: sync reports it as a `memory_promotion_failed: <summary id>: <error>` warning and promotes the others (issue-41).
 
+- **Re-submitting a summary that is already in recall updates recall.** The write-back rewrote the summary but left its recall memories — the summary text and one memory per decision — as they were, so a corrected decision stayed in recall and the brief, and the only fix was `remember --supersedes`, which could not touch the summary text. The memories now follow the new payload and `promotion` is `updated`. Decisions are matched by their text: one whose text is unchanged keeps its id, utility and markers and takes a changed reason; one no longer listed is superseded by the summary rather than deleted, and comes back under its old id if listed again; a new one gets a sequence number never used before. The full-text index, tree index and vector payload follow the new text (issue-42).
+
 ### Compatibility and upgrade
+- **`already_promoted` now means nothing changed.** A re-submit with different content to a summary already in recall returns `updated` instead (issue-42).
 - **The first sync after upgrading can promote older summaries.** Any enriched summary that qualifies for promotion but never got it — a past failure, or a commit range or branch summary that clears a `promoteImportanceThreshold` you lowered later — now reaches recall on the next `repo sync`, however old.
 
 ## [1.40.2] - 2026-11-27

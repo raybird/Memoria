@@ -103,6 +103,28 @@ function extractTopicFromSession(
     return { title: `Session ${fallbackDate}`, summary: `Session memory captured on ${fallbackDate}` }
 }
 
+/** Drop one session from the tree index so the next buildMemoryIndex rebuilds it from the session's
+ *  current text (issue-42) — buildMemoryIndex skips any session that already has node sources. A node
+ *  left with no source and no children goes too; a topic shared with other sessions stays. */
+export function dropSessionFromIndex(dbPath: string, sessionId: string): void {
+    withDb(dbPath, (db) => db.transaction(() => {
+        const nodes = db.prepare(`
+          SELECT s.node_id AS id FROM memory_node_sources s
+          LEFT JOIN memory_nodes n ON n.id = s.node_id
+          WHERE s.session_id = ? ORDER BY COALESCE(n.level, 0) DESC
+        `).all(sessionId) as Array<{ id: string }>
+        db.prepare('DELETE FROM memory_node_sources WHERE session_id = ?').run(sessionId)
+        const inUse = db.prepare(`
+          SELECT 1 FROM memory_node_sources WHERE node_id = @id
+          UNION ALL SELECT 1 FROM memory_nodes WHERE parent_id = @id LIMIT 1
+        `)
+        const deleteNode = db.prepare('DELETE FROM memory_nodes WHERE id = ?')
+        for (const node of nodes) {
+            if (!inUse.get({ id: node.id })) deleteNode.run(node.id)
+        }
+    })())
+}
+
 export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOptions = {}): MemoryIndexBuildResult {
     if (!existsSync(dbPath)) {
         throw new Error(`sessions.db not found: ${dbPath}`)
