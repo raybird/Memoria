@@ -111,6 +111,18 @@ c40 feedback "$R2" --score 0 --hits "$KEPT2" >/dev/null
 read -r _ _ S3 <<<"$(top40 "前端建置 vite")"
 node -e 'const [s2,s3]=process.argv.slice(1).map(Number);if(!(s2>0)||Math.abs(s3/s2-0.5)>1e-6)throw new Error(s2+" → "+s3)' "$S2" "$S3" \
     || { echo "  ✗ AC-4：效用記在留下的那一半時應照舊乘 0.5"; exit 1; }
-echo "  效用記在 $OTHER：留下的 $KEPT 分數 $S0 → $S1；記在留下的那一半時同樣乘 0.5"
+# 反方向：讓 noteev- 排前面（把 session 那一半的時間調早一年），效用只記在 note-。
+c40 remember "日誌保存期限改為九十天" --project demo40 >/dev/null
+read -r _ FIRST _ <<<"$(top40 "日誌保存 九十天")"
+node -e "const D=require('$BSQ');const db=new D(process.argv[1]);const r=db.prepare('UPDATE sessions SET timestamp=? WHERE id=?').run(new Date(Date.now()-365*864e5).toISOString(),process.argv[2]);process.exit(r.changes===1?0:1)" "$H40/.memory/sessions.db" "note-${FIRST#*-}" \
+    || { echo "  ✗ 前提：無法把 session 那一半調早"; exit 1; }
+read -r R4 KEPT4 S4 <<<"$(top40 "日誌保存 九十天")"
+case "$KEPT4" in noteev-*) ;; *) echo "  ✗ 前提：調早 session 後應留下 noteev-，實得 $KEPT4"; exit 1 ;; esac
+c40 feedback "$R4" --score 0 --hits "note-${KEPT4#noteev-}" >/dev/null
+read -r _ KEPT5 S5 <<<"$(top40 "日誌保存 九十天")"
+[ "$KEPT5" = "$KEPT4" ] || { echo "  ✗ 前提：留下的那一半應不變（$KEPT4 → $KEPT5）"; exit 1; }
+node -e 'const [a,b]=process.argv.slice(1).map(Number);if(!(a>0)||Math.abs(b/a-0.5)>1e-6)throw new Error(a+" → "+b)' "$S4" "$S5" \
+    || { echo "  ✗ AC-1 反方向：效用記在 note- 時，留下的 $KEPT4 沒有被加權"; exit 1; }
+echo "  效用記在 $OTHER：留下的 $KEPT 分數 $S0 → $S1；反方向留下 $KEPT4 時同樣乘 0.5；記在留下的那一半時照舊乘 0.5"
 
 echo "[ranking] ok"

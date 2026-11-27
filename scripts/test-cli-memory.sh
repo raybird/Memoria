@@ -435,7 +435,7 @@ for HI_HALF in noteev note; do
     node -e "const D=require('$BSQ');const db=new D(process.argv[1]);const r=db.prepare('UPDATE $AGE_TABLE SET timestamp=? WHERE id=?').run(new Date(Date.now()-365*864e5).toISOString(),process.argv[2]);process.exit(r.changes===1?0:1)" "$H34F/.memory/sessions.db" "$LO" \
         || { echo "  ✗ 前提：無法把 $LO 的時間戳調早"; exit 1; }
     GOT=$(cli34 "$H34F" recall "$Q34" --project demo34 --json | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>console.log(JSON.parse(d).data.map(h=>h.id).join(" ")))')
-    [ "$GOT" = "$HI" ] || { echo "  ✗ utility favours $HI, recall returned: $GOT"; exit 1; }
+    [ "$GOT" = "$HI" ] || { echo "  ✗ $LO is older so $HI should rank first, recall returned: $GOT"; exit 1; }
 done
 echo "  session 較舊時留 noteev-，event 較舊時留 note-"
 

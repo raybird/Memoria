@@ -232,4 +232,33 @@ db.close();
 if (!process.exitCode) console.log('  效用記在 event 那一半：0.9 的筆記與其節點保留，0.2 的照舊刪除');
 "
 
+echo "[prune] issue-40: consolidate 依筆記 event 那一半的效用選留下的子節點"
+# consolidate 以子節點的 session 查效用；效用只記在 noteev- 時，以前照舊留最新那則。
+DB="$(fresh_home pair-cons)"
+node -e "
+const D = require('$BSQ'); const db = new D('$DB');
+const OLD = new Date(Date.now() - 200*864e5).toISOString();
+const mkNode = (id, parent, level, ts) => db.prepare(
+  'INSERT INTO memory_nodes (id,parent_id,project,scope,title,summary,level,path_key,created_at,updated_at,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+).run(id, parent, 'proj', null, id, id+' s', level, id, ts, ts, null);
+mkNode('P_n', null, 1, OLD);
+for (const [fp, ts] of [['nnew','2021-03-01T00:00:00Z'],['nmid','2021-02-01T00:00:00Z'],['nold','2021-01-01T00:00:00Z']]) {
+  db.prepare('INSERT INTO sessions (id,timestamp,project,scope,event_count,summary) VALUES (?,?,?,?,?,?)').run('note-'+fp, ts, 'proj', null, 1, fp);
+  db.prepare('INSERT INTO events (id,session_id,timestamp,event_type,content,metadata) VALUES (?,?,?,?,?,?)').run('noteev-'+fp, 'note-'+fp, ts, 'DecisionMade', '{}', null);
+  mkNode('node:'+fp, 'P_n', 2, ts);
+  db.prepare('INSERT INTO memory_node_sources (node_id,session_id,created_at) VALUES (?,?,?)').run('node:'+fp, 'note-'+fp, ts);
+}
+// 最舊那則的效用只記在 event 那一半。
+db.prepare('INSERT INTO memory_utility (ref_id,observations,utility_sum,explicit_observations,explicit_sum,last_outcome_at) VALUES (?,?,?,?,?,?)').run('noteev-nold', 0, 0, 1, 0.9, OLD);
+db.close();
+"
+MEMORIA_HOME="$TMP_DIR/pair-cons" "$ROOT_DIR/cli" prune --consolidate-days 90 --json > "$TMP_DIR/g-cons.json"
+node -e "
+const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
+const kids = db.prepare(\"SELECT id FROM memory_nodes WHERE parent_id='P_n' AND level=2\").all().map(r => r.id);
+db.close();
+if (JSON.stringify(kids) !== JSON.stringify(['node:nold'])) { console.error('  ✗ consolidate 應留下效用記在 noteev-nold 的 node:nold，實得 ' + JSON.stringify(kids)); process.exit(1); }
+console.log('  consolidate 留下效用記在 event 那一半的最舊子節點 node:nold');
+"
+
 echo "[prune] ok"

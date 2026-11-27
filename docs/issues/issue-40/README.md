@@ -44,6 +44,7 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
    - 失敗路徑：非筆記的記憶排序或保留結果改變。
 
 - **核准日期**: 2026-11-27
+- **核准 commit**: dc1f192
 - **核准來源**: 使用者 2026-11-27 對 TBD-1 回「依照建議處理」（做法 b），對 TBD-2 回「相加」，對 AC-1～4 回「核准」
 
 ## 風險與首要驗證
@@ -52,7 +53,7 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 - **風險等級與理由**：Medium。效用是 recall 排序與 prune 保留的輸入，既有資料已依舊方式寫入。
 - **首要驗證**：先寫 AC-1、AC-2 的斷言，以現行程式取得紅燈（審查已實測到這兩種形態），再實作共用的合併函式。
 - **選擇理由**：這是審查實測到的可觀察形態。
-- **完成證據**：待驗收條件核准後補上。
+- **完成證據**：見「實作與驗證步驟」步驟 1 的紅燈：AC-1、AC-2 的斷言以現行程式失敗，形態與審查實測相同。
 
 ## 實作與驗證步驟
 
@@ -61,10 +62,10 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
    - 完成證據：✅ 2026-11-27。`test-utility-ranking.sh` (E/issue-40)：效用 0 記在 `noteev-` 時，留下的 `note-` 分數不變（AC-1 失敗）。`test-prune.sh` issue-40 段：效用 0.9 記在 event 的孤立筆記與有節點的筆記都被刪（AC-2 兩項失敗）。`test-brief-scope.sh` (J)：兩半各回報一次 0.8 的筆記沒有列出（AC-3 失敗）。
 2. ✅ **共用合併函式與三個讀取點** — `utils.ts` 新增 `mergeNoteUtility`，並把 `notePairOf` 從 `memoria.ts` 移入共用；`applyUtilityWeighting`、`loadUtilityMeans`（stale 與 consolidate 共用）、brief 高效用區塊改讀合併後的效用。相依：步驟 1。
    - 完成判準：AC-1～3 綠燈；`telemetry.ts` 沒有 diff；`pure-fn-driver.mts` 直接斷言對稱、平均不變與非筆記 ref 不受影響。
-   - 完成證據：✅ 2026-11-27。三項斷言綠燈；AC-1 改以比例判斷（分數約 4e-6，`s1/s0` 與 0.5 相差小於 1e-6），以舊程式重跑仍失敗。brief 的 `keptRefs` 改為在觀察門檻前收合，兩半都有列的筆記不再被算兩次「未累積」。GitNexus impact：`applyUtilityWeighting` 為 CRITICAL（recall 主路徑，CLI、HTTP、UI、wiki file-query 都經過），行為只在筆記有效用列時改變，由 AC-4 回歸把關；`loadUtilityMeans`、`notePairOf` 為 LOW。
+   - 完成證據：✅ 2026-11-27。`pnpm run check` exit 0、`pnpm run build` exit 0 後，`bash scripts/test-utility-ranking.sh`、`test-prune.sh`、`test-brief-scope.sh`、`test-pure-functions.sh` 都 exit 0。三項斷言綠燈；AC-1 改以比例判斷（分數約 4e-6，`s1/s0` 與 0.5 相差小於 1e-6），以舊程式重跑仍失敗。精煉（code-simplify）：把 `notePairOf` 從 `memoria.ts` 移到 `utils.ts` 讓三個讀取點共用，沒有複製一份；其餘為 no-op，recall 與 prune 各四行的讀取流程沒有抽出（見 TBD-4 的 N2）。brief 的 `keptRefs` 改為在觀察門檻前收合，兩半都有列的筆記不再被算兩次「未累積」。GitNexus impact：`applyUtilityWeighting` 為 CRITICAL（recall 主路徑，CLI、HTTP、UI、wiki file-query 都經過），行為只在筆記有效用列時改變，由 AC-4 回歸把關；`loadUtilityMeans`、`notePairOf` 為 LOW。
 3. ✅ **AC-4 文件與回歸** — `docs/agents/architecture.md` UFL 段、`docs/OPERATIONS.md` 保留規則、CHANGELOG（Fixed 與升級注意）；跑 core、adapters、wiki、http-mcp 四組。相依：步驟 2。
    - 完成判準：CI 的 core、adapters、wiki、http-mcp、repo 五組全綠，`release:docs-check` 通過。
-   - 完成證據：✅ 2026-11-27。`pnpm run check`、`build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`release:docs-check` 通過；五組共 32 支腳本全綠。第一輪 `test-cli-memory.sh` 的 issue-34 AC-1 失敗：它靠兩半各回報 1 與 0 來決定排序，合併後兩半都是 0.5，操控手段失效而非行為退步；改為把較低的那一半時間戳調早一年後兩個方向都通過（session 較舊留 `noteev-`，event 較舊留 `note-`）。`telemetry.ts` 沒有 diff。
+   - 完成證據：✅ 2026-11-27。`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`pnpm run release:docs-check` 都 exit 0；五組共 32 支腳本以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME bash scripts/<name>.sh` 逐一執行，全部 exit 0。第一輪 `test-cli-memory.sh` 的 issue-34 AC-1 失敗：它靠兩半各回報 1 與 0 來決定排序，合併後兩半都是 0.5，操控手段失效而非行為退步；改為把較低的那一半時間戳調早一年後兩個方向都通過（session 較舊留 `noteev-`，event 較舊留 `note-`）。`telemetry.ts` 沒有 diff。
 
 ## 待確認事項
 
@@ -72,6 +73,9 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 |---|---|---|---|
 | TBD-1 | 在哪一層合併：(a) 寫入時，回報任一半就同時記到兩半（和 `mark` 一致；既有資料不會自動補）；(b) 讀取時，recall 加權與 prune 依指紋合併兩半的效用（既有資料立即生效，兩半都被回報時要避免重複計算）。建議 (b)：不必回補既有資料，也不改寫入的語意 | 已解決（2026-11-27 使用者回「依照建議處理」）：採 (b)；盤點後 brief 的高效用區塊也只看單一 id，一併納入（AC-3） | 驗收條件、涉及檔案與分級 |
 | TBD-2 | 兩半在同一次回報都列進 `--hits` 時，合併後觀察次數算兩次：平均效用不變，但 brief 的觀察門檻（2 次）一次回報就達到。可以接受，或改成取兩半中觀察次數較多的一列（兩半各回報一次時會少算） | 已解決（2026-11-27 使用者回「相加」）：兩半的觀察次數與效用總和直接相加；平均效用不受影響，舊資料裡一次回報兩半的筆記會較快達到 brief 的觀察門檻 | AC-3 |
+| TBD-3 | review-095652d S1、S2、S4、N1、N4：consolidate 的行為也變了卻沒有測試與 CHANGELOG；AC-1 只測了留下 `note-` 的方向；完成證據沒寫命令與 exit code、沒記精煉；`test-cli-memory.sh` 的失敗訊息還寫 utility；CHANGELOG 沒寫 explicit 覆蓋兩半的合併語意 | 已解決（2026-11-27 使用者回「照建議」，選修正）：`test-prune.sh` 補 consolidate 斷言，`test-utility-ranking.sh` (E) 補反方向，兩者以舊程式都失敗；CHANGELOG 與 OPERATIONS 補 consolidate 與合併語意；步驟 2、3 的完成證據補命令、exit code 與精煉結果；失敗訊息改寫 | AC-1、AC-2、AC-4 |
+| TBD-4 | review-095652d S3、N2、N5：README 缺風險 Medium 必填的 `**核准 commit**`；recall 與 prune 讀效用的流程重複；「風險與首要驗證」的完成證據還寫待核准後補上 | 已解決（2026-11-27 使用者回「照建議」）：S3、N5 修正，補 `**核准 commit**: dc1f192`（reviewer 依 acceptance.md 推導的同一基線），完成證據指向步驟 1；N2 不修：兩處開 DB 的方式不同，抽出共用函式要動 recall 主路徑，效益小 | AC-1～4 |
+| TBD-5 | review-095652d N3：stale prune 查效用時每則筆記多帶另一半的 id，`IN` 的參數數量加倍；better-sqlite3 上限 32766，約 16k 則過期筆記候選時 `prune --stale-days` 會丟例外 | 不影響本次交付（2026-11-27 使用者回「照建議」，選記入待確認）。追蹤：無；本機資料約 2k 筆記憶，離上限很遠，原本的上限也存在（約 32k 個候選），之後資料量接近時再分批查詢 | AC-2 |
 
 ## Timeline
 
@@ -81,7 +85,7 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 | 2026-11-27 | 補入 issue-39 TBD-5：skill 的效用敘述要對筆記也成立 |
 | 2026-11-27 | TBD-1 使用者選 (b)，TBD-2 選相加；撰寫並核准 AC-1～4 |
 | 2026-11-27 | 步驟 1～3 完成，待審查 |
-| 2026-11-27 | review-095652d PASS，附 SHOULD FIX S1～S4、NICE TO HAVE N1～N5，結論待使用者確認 |
+| 2026-11-27 | review-095652d PASS，附 SHOULD FIX S1～S4、NICE TO HAVE N1～N5；使用者回「照建議」，結論記在 TBD-3～5，修正後送增量覆審 |
 
 ---
 **建立日期**: 2026-11-26  

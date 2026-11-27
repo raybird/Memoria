@@ -55,7 +55,7 @@ Prune strategies for long-running instances:
 
 Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `sessions` and `events` rows are preserved for audit trail and keyword recall. `--stale-days` removes both stale nodes and orphan sessions.
 
-**Utility-weighted retention (UFL Phase 3)**: once a memory has accrued utility observations (via recall outcome write-backs), pruning respects them — `--stale-days` spares memories whose effective utility is ≥ 0.5 (explicit host feedback needs 1 observation, the lexical-reuse proxy needs 2), and `--consolidate-days` keeps the highest-utility child instead of merely the newest. A CLI note's utility counts whether it was reported under its session (`note-`) or event (`noteev-`) id; the two are summed. With no utility data, behavior is exactly as described above.
+**Utility-weighted retention (UFL Phase 3)**: once a memory has accrued utility observations (via recall outcome write-backs), pruning respects them — `--stale-days` spares memories whose effective utility is ≥ 0.5 (explicit host feedback needs 1 observation, the lexical-reuse proxy needs 2), and `--consolidate-days` keeps the highest-utility child instead of merely the newest. A CLI note's utility counts whether it was reported under its session (`note-`) or event (`noteev-`) id; the two are summed, for both the stale exemption and the consolidate keeper. With no utility data, behavior is exactly as described above.
 
 ## Tree Index Notes
 
