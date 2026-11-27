@@ -13,7 +13,7 @@
 
 ## 現況
 
-**現行 review**: review-28ec168.md
+**現行 review**: review-8750532.md
 
 ## 涉及檔案
 
@@ -89,6 +89,7 @@
 | 2026-11-27 | 使用者核准 AC-1～4 |
 | 2026-11-27 | 開始實作（使用者回「直接開始 issue-42」）；核准 commit 回填為 `fec7d1b`；步驟 1～4 完成，待審查 |
 | 2026-11-27 | review-28ec168 RETURN TO execute-task（使用者對建議與 TBD-4 都回照建議，結論記在 TBD-4～6；修正後送增量覆審）：MUST FIX 2 項（被取代的第一個 decision 留在 topic 節點；TBD-4 需決策）、SHOULD FIX 1 項、NICE TO HAVE 4 項 |
+| 2026-11-27 | review-8750532（增量覆審）PASS，附 NICE TO HAVE 1 項（需決策），結論待使用者確認 |
 
 ---
 **建立日期**: 2026-11-27  
