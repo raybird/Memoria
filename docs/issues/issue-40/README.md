@@ -74,8 +74,9 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 | TBD-1 | 在哪一層合併：(a) 寫入時，回報任一半就同時記到兩半（和 `mark` 一致；既有資料不會自動補）；(b) 讀取時，recall 加權與 prune 依指紋合併兩半的效用（既有資料立即生效，兩半都被回報時要避免重複計算）。建議 (b)：不必回補既有資料，也不改寫入的語意 | 已解決（2026-11-27 使用者回「依照建議處理」）：採 (b)；盤點後 brief 的高效用區塊也只看單一 id，一併納入（AC-3） | 驗收條件、涉及檔案與分級 |
 | TBD-2 | 兩半在同一次回報都列進 `--hits` 時，合併後觀察次數算兩次：平均效用不變，但 brief 的觀察門檻（2 次）一次回報就達到。可以接受，或改成取兩半中觀察次數較多的一列（兩半各回報一次時會少算） | 已解決（2026-11-27 使用者回「相加」）：兩半的觀察次數與效用總和直接相加；平均效用不受影響，舊資料裡一次回報兩半的筆記會較快達到 brief 的觀察門檻 | AC-3 |
 | TBD-3 | review-095652d S1、S2、S4、N1、N4：consolidate 的行為也變了卻沒有測試與 CHANGELOG；AC-1 只測了留下 `note-` 的方向；完成證據沒寫命令與 exit code、沒記精煉；`test-cli-memory.sh` 的失敗訊息還寫 utility；CHANGELOG 沒寫 explicit 覆蓋兩半的合併語意 | 已解決（2026-11-27 使用者回「照建議」，選修正）：`test-prune.sh` 補 consolidate 斷言，`test-utility-ranking.sh` (E) 補反方向，兩者以舊程式都失敗；CHANGELOG 與 OPERATIONS 補 consolidate 與合併語意；步驟 2、3 的完成證據補命令、exit code 與精煉結果；失敗訊息改寫 | AC-1、AC-2、AC-4 |
-| TBD-4 | review-095652d S3、N2、N5：README 缺風險 Medium 必填的 `**核准 commit**`；recall 與 prune 讀效用的流程重複；「風險與首要驗證」的完成證據還寫待核准後補上 | 已解決（2026-11-27 使用者回「照建議」）：S3、N5 修正，補 `**核准 commit**: dc1f192`（reviewer 依 acceptance.md 推導的同一基線），完成證據指向步驟 1；N2 不修：兩處開 DB 的方式不同，抽出共用函式要動 recall 主路徑，效益小 | AC-1～4 |
+| TBD-4 | review-095652d S3、N2、N5：README 缺風險 Medium 必填的 `**核准 commit**`；recall 與 prune 讀效用的流程重複；「風險與首要驗證」的完成證據還寫待核准後補上 | 已解決（2026-11-27 使用者回「照建議」）：S3、N5 修正，補 `**核准 commit**: dc1f192`（reviewer 依 acceptance.md 推導的同一基線）。review-095652d 對 S3 建議的是 (a) 記在記帳區段；N5 本來就要改凍結章節、需要重審，(b) 的缺點已不存在，所以改採 (b) 把欄位放在驗收條件，完成證據指向步驟 1；N2 不修：兩處開 DB 的方式不同，抽出共用函式要動 recall 主路徑，效益小 | AC-1～4 |
 | TBD-5 | review-095652d N3：stale prune 查效用時每則筆記多帶另一半的 id，`IN` 的參數數量加倍；better-sqlite3 上限 32766，約 16k 則過期筆記候選時 `prune --stale-days` 會丟例外 | 不影響本次交付（2026-11-27 使用者回「照建議」，選記入待確認）。追蹤：無；本機資料約 2k 筆記憶，離上限很遠，原本的上限也存在（約 32k 個候選），之後資料量接近時再分批查詢 | AC-2 |
+| TBD-6 | review-085b13a S1、N1：步驟 1 的紅燈證據沒寫命令與 exit code，新增的 consolidate 與反方向斷言也沒寫紅燈的跑法；TBD-4 寫 S3 照建議修正，卻沒說明為何改採 (b) | 不影響本次交付（2026-11-27 使用者回「照建議」：S1 記入待確認，N1 修正）。追蹤：無；步驟 1 在審查後凍結，以本列補證據，結論不變。步驟 1 紅燈：在 dc1f192（src 與 main 相同）上以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME bash scripts/test-utility-ranking.sh`、`test-prune.sh`、`test-brief-scope.sh` 執行，三支都 exit 1，失敗訊息即步驟 1 所列。新斷言紅燈：在 085b13a 的工作樹以 `git checkout main -- src` 加 `pnpm run build` 換回舊程式，因為前段的 issue-40 斷言會先中止腳本，改跑副本：`test-prune.sh` 的副本把節點判定的 `process.exitCode = 1` 拿掉，`test-utility-ranking.sh` 的副本把 AC-1 與 AC-4 兩行的 `exit 1` 改成只印訊息；兩個副本都 exit 1，失敗的分別是 consolidate 留下 `["node:nnew"]` 與反方向的分數比約 1.0。之後 `git checkout HEAD -- src` 加 `pnpm run build` 還原。N1 已在 TBD-4 補上改採 (b) 的理由 | AC-1、AC-2 |
 
 ## Timeline
 
@@ -86,10 +87,10 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 | 2026-11-27 | TBD-1 使用者選 (b)，TBD-2 選相加；撰寫並核准 AC-1～4 |
 | 2026-11-27 | 步驟 1～3 完成，待審查 |
 | 2026-11-27 | review-095652d PASS，附 SHOULD FIX S1～S4、NICE TO HAVE N1～N5；使用者回「照建議」，結論記在 TBD-3～5，修正後送增量覆審 |
-| 2026-11-27 | review-085b13a（增量覆審）PASS，附 SHOULD FIX S1、NICE TO HAVE N1，結論待使用者確認 |
+| 2026-11-27 | review-085b13a（增量覆審）PASS，附 SHOULD FIX S1、NICE TO HAVE N1；使用者回「照建議」，結論記在 TBD-6，TBD-4 補理由；狀態改為已完成，待合併 |
 
 ---
 **建立日期**: 2026-11-26  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 待審查
+**狀態**: 已完成
