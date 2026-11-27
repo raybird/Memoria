@@ -74,6 +74,7 @@
 | TBD-2 | sync 的補救要涵蓋多少。可選做法：(a) 改為列出所有「已增強、可促升、尚未促升」的摘要，不設 50 筆上限；(b) 維持上限但提高到某個數字；(c) 不改 sync，另加指令（例如 `repo summarize --promote-missing`）讓人手動補。建議 (a)：判斷條件就是 `isPromotable` 加上 `promotionExists`，查詢成本與摘要總數成正比，本機約 1000 筆以內 | 已解決（2026-11-27 使用者選 (a)）：不設上限（AC-3） | 驗收條件、涉及檔案 |
 | TBD-3 | 這次兩筆失敗的實際原因。錯誤被吞掉，事後無法重現當時的狀態；推測是多個程序同時寫入、等鎖超過 5000 毫秒 | 不影響本次交付。追蹤：無；實作 TBD-1 後再遇到時，`promotion_error` 會帶出原因 | 無 |
 | TBD-4 | review-91a8edc S1、N1～N5：AC-1 的測試用 commit range 而非 merge，merge 促升失敗後仍略過涵蓋範圍的路徑沒有斷言；部署 SKILL 的完成判準只認 `promoted`，重送得到 `already_promoted` 會被當成沒完成；REFERENCE 與 CHANGELOG 只說 commit range 受門檻影響，branch 摘要也是；sync 的補救整段只包一個 try，一筆失敗讓其餘候選全部跳過；`AGENTS.md` HTTP 表沒提 `promotion`；風險段完成證據仍是佔位文字 | 已解決（2026-11-27 使用者回「照建議」，全部修正）：`test-repo-promotion.sh` 補 merge 以 CLI `--json` 注入失敗的斷言（`failed`、原因、涵蓋的範圍仍略過、沒有半寫的 session）；`promoteEligible` 加可選的 `warnings`，sync 傳入時逐筆處理，失敗的記 `memory_promotion_failed` 警告後繼續，`--promote` 不傳、照舊拋錯；部署 SKILL 改為 `promoted` 或 `already_promoted` 都算完成；REFERENCE、CHANGELOG 改寫涵蓋 branch 摘要；`AGENTS.md` 補 `promotion`；風險段完成證據指向步驟 1 | AC-1、AC-3、AC-4 |
+| TBD-5 | review-48ede74 NICE TO HAVE：步驟 4 完成證據寫部署 SKILL 的完成判準改為 `promotion: promoted`，N1 修正後實際是 `promoted` 或 `already_promoted`；步驟 4 也沒記下處理 review-91a8edc 建議後的增量驗證 | 已解決（2026-11-27 使用者回「照建議」，記入待確認、不改凍結內容）：部署 SKILL 現行的完成判準以 TBD-4 的 N1 為準。增量驗證：N3 的「失敗後繼續」斷言以 `91a8edc` 的程式失敗（AC-3 最早那筆未促升），`48ede74` 上 `pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help` exit 0，repo、http-mcp 兩組與 `test-smoke`、`test-bootstrap`、`test-setup-onboarding`、`test-npm-install` 共 17 支腳本全部 exit 0；review-48ede74 另以 `91a8edc` worktree 重現 3 項紅燈 | 無 |
 
 ## Timeline
 
@@ -84,10 +85,10 @@
 | 2026-11-27 | 使用者核准 AC-1～4 |
 | 2026-11-27 | 步驟 1～4 完成，待審查 |
 | 2026-11-27 | review-91a8edc PASS，附 SHOULD FIX 1 項、NICE TO HAVE 5 項；使用者回「照建議」，結論記在 TBD-4，修正後送增量覆審 |
-| 2026-11-27 | review-48ede74（增量覆審）PASS，附 NICE TO HAVE 1 項，結論待使用者確認 |
+| 2026-11-27 | review-48ede74（增量覆審）PASS，附 NICE TO HAVE 1 項；使用者回「照建議」，結論記在 TBD-5；狀態改為已完成，待合併 |
 
 ---
 **建立日期**: 2026-11-27  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待審查
+**狀態**: 已完成
