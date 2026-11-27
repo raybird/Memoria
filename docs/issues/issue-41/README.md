@@ -23,6 +23,7 @@
 - `src/cli/commands/repo.ts` - `--submit` 的人類可讀輸出
 - `src/server.ts`、`docs/API.md`、`docs/API.zh-TW.md` - `POST /v1/repos/:ref/summaries/:summaryId` 的回應欄位
 - `docs/CLI.md`、`docs/CLI.zh-TW.md`、`skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md` - 寫回結果的說明
+- `AGENTS.md` - 可改：HTTP API 表的寫回端點補 `promotion`
 - `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` - 可改：merge 摘要寫回的完成判準原本是 `promoted: true`，改為看 `promotion`，失敗時重送
 - `src/sdk.ts` - 寫回結果的型別
 - `scripts/test-repo-promotion.sh` - 回歸測試
@@ -48,7 +49,7 @@
 - **風險等級與理由**：Low。寫回結果是新增欄位，原有欄位不變；補救只影響「已增強、可促升卻沒有促升」的摘要，2026-11-27 查本機資料根為 0 筆。
 - **首要驗證**：先寫 AC-1、AC-3 的斷言，以現行程式取得紅燈：注入的促升失敗只回 `promoted:false`、沒有原因；超過 50 筆時最早那筆 sync 後仍未促升。
 - **選擇理由**：這兩個都是實際發生的可觀察形態。
-- **完成證據**：待驗收條件核准後補上。
+- **完成證據**：見「實作與驗證步驟」步驟 1 的紅燈：注入的促升失敗只回 `promoted:false`、沒有原因；超過 50 筆時最早那筆 sync 後仍未促升。
 
 ## 實作與驗證步驟
 
@@ -72,6 +73,7 @@
 | TBD-1 | 促升失敗時寫回要怎麼回報。可選做法：(a) 回傳新增 `promotion` 欄位，值為 `promoted`、`not_eligible`、`already_promoted`、`failed` 之一，`failed` 時附錯誤訊息，CLI 印出警告；`ok` 維持 true，因為摘要本身已寫入；(b) 在 (a) 之外，遇到 SQLITE_BUSY 時於 submit 內重試促升數次；(c) 促升失敗就讓整個寫回失敗並回滾。建議 (a)：原因看得見，呼叫端可以自行重送；(b) 的重試次數與間隔沒有實測依據，(c) 違反「促升失敗不回滾增強」的既有設計 | 已解決（2026-11-27 使用者選 (a)）：加 `promotion` 欄位與 `promotion_error`，不在 submit 內重試，不回滾（AC-1、AC-2） | 驗收條件、涉及檔案 |
 | TBD-2 | sync 的補救要涵蓋多少。可選做法：(a) 改為列出所有「已增強、可促升、尚未促升」的摘要，不設 50 筆上限；(b) 維持上限但提高到某個數字；(c) 不改 sync，另加指令（例如 `repo summarize --promote-missing`）讓人手動補。建議 (a)：判斷條件就是 `isPromotable` 加上 `promotionExists`，查詢成本與摘要總數成正比，本機約 1000 筆以內 | 已解決（2026-11-27 使用者選 (a)）：不設上限（AC-3） | 驗收條件、涉及檔案 |
 | TBD-3 | 這次兩筆失敗的實際原因。錯誤被吞掉，事後無法重現當時的狀態；推測是多個程序同時寫入、等鎖超過 5000 毫秒 | 不影響本次交付。追蹤：無；實作 TBD-1 後再遇到時，`promotion_error` 會帶出原因 | 無 |
+| TBD-4 | review-91a8edc S1、N1～N5：AC-1 的測試用 commit range 而非 merge，merge 促升失敗後仍略過涵蓋範圍的路徑沒有斷言；部署 SKILL 的完成判準只認 `promoted`，重送得到 `already_promoted` 會被當成沒完成；REFERENCE 與 CHANGELOG 只說 commit range 受門檻影響，branch 摘要也是；sync 的補救整段只包一個 try，一筆失敗讓其餘候選全部跳過；`AGENTS.md` HTTP 表沒提 `promotion`；風險段完成證據仍是佔位文字 | 已解決（2026-11-27 使用者回「照建議」，全部修正）：`test-repo-promotion.sh` 補 merge 以 CLI `--json` 注入失敗的斷言（`failed`、原因、涵蓋的範圍仍略過、沒有半寫的 session）；`promoteEligible` 加可選的 `warnings`，sync 傳入時逐筆處理，失敗的記 `memory_promotion_failed` 警告後繼續，`--promote` 不傳、照舊拋錯；部署 SKILL 改為 `promoted` 或 `already_promoted` 都算完成；REFERENCE、CHANGELOG 改寫涵蓋 branch 摘要；`AGENTS.md` 補 `promotion`；風險段完成證據指向步驟 1 | AC-1、AC-3、AC-4 |
 
 ## Timeline
 
@@ -81,7 +83,7 @@
 | 2026-11-27 | TBD-1、TBD-2 使用者選 (a)；撰寫 AC-1～4，待核准 |
 | 2026-11-27 | 使用者核准 AC-1～4 |
 | 2026-11-27 | 步驟 1～4 完成，待審查 |
-| 2026-11-27 | review-91a8edc PASS，附 SHOULD FIX 1 項、NICE TO HAVE 5 項，結論待使用者確認 |
+| 2026-11-27 | review-91a8edc PASS，附 SHOULD FIX 1 項、NICE TO HAVE 5 項；使用者回「照建議」，結論記在 TBD-4，修正後送增量覆審 |
 
 ---
 **建立日期**: 2026-11-27  

@@ -234,7 +234,7 @@ Start with `./cli serve` (default port 3917, override via `MEMORIA_PORT`):
 | `POST` | `/v1/repos/:ref/sync` | Incremental scan (`{generate_summaries?, dry_run?, force_summary?, from?, to?}`); `409` `repository_sync_busy` when another process holds the repository's sync lease past `MEMORIA_REPO_SYNC_WAIT_MS` |
 | `POST` | `/v1/repos/:ref/summarize` | Summarize branch/range/merge/tag or pending events |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | Summary requests awaiting agent enrichment (`?with_diff=true&limit=20`; diff omitted by default) |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent write-back of a structured summary payload |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent write-back of a structured summary payload; `promotion` says whether it reached recall (`promoted` / `not_eligible` / `already_promoted` / `failed` + `promotion_error`) |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | Mark a pending summary `dismissed` (not auto-promoted — an explicit `summarize --promote` still can; `409` if enriched or already in recall) |
 | `POST` | `/v1/repos/:ref/summaries/dismiss` | Dismiss every pending summary of `{types: [...]}` (required, non-empty; `400` otherwise); ones already in recall are skipped and counted in `skipped_promoted` |
 

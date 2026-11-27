@@ -1222,7 +1222,7 @@ export class MemoriaCore {
                         try {
                             memoriesPromoted += this.promoteEligible(
                                 candidates, found.repository.id, found.repository.name,
-                                gitConfig.summarization.promoteImportanceThreshold
+                                gitConfig.summarization.promoteImportanceThreshold, false, warnings
                             )
                         } catch (error) {
                             warnings.push(`memory_promotion_failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -1272,7 +1272,8 @@ export class MemoriaCore {
         repositoryId: string,
         repositoryName: string,
         threshold: number,
-        force = false
+        force = false,
+        warnings?: string[]
     ): number {
         const pool = new Map<string, GitSummaryRecord>()
         for (const summary of candidates) pool.set(summary.id, summary)
@@ -1287,7 +1288,17 @@ export class MemoriaCore {
             if (!summary.range) continue
             if (!force && !isPromotable(summary, threshold)) continue
             if (promotionExists(this.paths.dbPath, summary.id)) continue
-            const outcome = promoteSummary(this.paths.dbPath, summary, repositoryName)
+            // With `warnings`, one failed promotion is reported and the rest still run — since
+            // issue-41 the pool holds every missed promotion, so one bad summary must not hold
+            // the others back. Without it (`repo summarize --promote`) the error propagates.
+            let outcome: ReturnType<typeof promoteSummary>
+            try {
+                outcome = promoteSummary(this.paths.dbPath, summary, repositoryName)
+            } catch (error) {
+                if (!warnings) throw error
+                warnings.push(`memory_promotion_failed: ${summary.id}: ${error instanceof Error ? error.message : String(error)}`)
+                continue
+            }
             if (outcome.promoted) {
                 promoted += 1
                 this.indexPromotedSession(outcome.memoryIds[0])

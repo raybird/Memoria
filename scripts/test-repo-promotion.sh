@@ -305,11 +305,38 @@ assert_eq "AC-1: the error is carried" "$(json_get "$FAILED" "String(d.data.prom
 printf '%s' '{"title":"取消時限檢查","summary":"預訂取消加入時限檢查，逾時不可取消。","importance":0.85,"confidence":0.8}' > "$TMP_DIR/fail.json"
 CLI_OUT=$("$CLI" repo summarize booking-api --submit "$FAIL_ID" --file "$TMP_DIR/fail.json" 2>&1)
 case "$CLI_OUT" in *"injected promotion failure"*) echo "  ✓ AC-1: CLI prints the promotion failure" ;; *) echo "  ✗ AC-1: CLI output lacks the failure: $CLI_OUT"; exit 1 ;; esac
+
+# AC-1 for a merge, through the CLI's --json (review-91a8edc S1): the failure is reported and the
+# commit-range skeleton the merge covers is still dismissed afterwards.
+git -C "$REPO" switch -q -c feature/refund
+M_BASE=$(git -C "$REPO" rev-parse main)
+seq 1 6 > "$REPO/src/refund.js"
+git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "c-refund: partial refunds"
+M_RANGE=$(json_get "$("$CLI" repo summarize "$REPO_ID" --range "$M_BASE..$(git -C "$REPO" rev-parse HEAD)" --json)" "d.data.summaries[0].id")
+git -C "$REPO" switch -q main
+git -C "$REPO" "${GIT_ID[@]}" merge -q --no-ff -m "Merge branch 'feature/refund'" feature/refund
+M_ID=$(json_get "$("$CLI" repo summarize "$REPO_ID" --merge "$(git -C "$REPO" rev-parse HEAD)" --json)" "d.data.summaries[0].id")
+printf '%s' '{"title":"合併部分退款","summary":"把 feature/refund 併回 main。","importance":0.5,"confidence":0.8}' > "$TMP_DIR/merge.json"
+MERGE_FAILED=$("$CLI" repo summarize booking-api --submit "$M_ID" --file "$TMP_DIR/merge.json" --json)
+assert_eq "AC-1 merge: promotion outcome failed" "$(json_get "$MERGE_FAILED" "d.data.promotion")" "failed"
+assert_eq "AC-1 merge: the error is carried" "$(json_get "$MERGE_FAILED" "String(d.data.promotion_error).includes('injected promotion failure')")" "true"
+assert_eq "AC-1 merge: covered range still dismissed" "$(json_get "$MERGE_FAILED" "d.data.dismissed_covered")" "1"
+assert_eq "AC-1 merge: the covered range is dismissed" "$(db_get "SELECT status FROM git_summaries WHERE id = '$M_RANGE'")" "dismissed"
+assert_eq "AC-1 merge: no half-written promotion" "$(db_get "SELECT COUNT(*) FROM sessions WHERE id = 'gitsum-$M_ID'")" "0"
+
+# A second failure, created after FAIL_ID, keeps failing during sync (review-91a8edc N3).
+STUCK_ID=$(range_skeleton stuck.js "c-stuck: waitlist")
+STUCK=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$STUCK_ID" -H 'Content-Type: application/json' -d '{
+  "title": "候補名單", "summary": "滿額時可登記候補。", "importance": 0.85, "confidence": 0.8
+}')
+assert_eq "N3 premise: the second write-back failed too" "$(json_get "$STUCK" "d.data.promotion")" "failed"
 db_run "DROP TRIGGER t41_fail"
+db_run "CREATE TRIGGER t41_stuck BEFORE INSERT ON memory_sources WHEN NEW.source_id = '$STUCK_ID' BEGIN SELECT RAISE(ABORT, 'injected stuck promotion'); END"
 assert_eq "AC-1 premise: nothing promoted for the failed summary" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$FAIL_ID'")" "0"
 
-# AC-3: 50 newer enriched summaries push the failed one out of the latest 50. They are not promotable
-# (low importance, nothing listed), so the only thing sync can promote is the one that failed.
+# AC-3: 50 newer enriched summaries push the failed ones out of the latest 50. They are not promotable
+# (low importance, nothing listed), so sync can only promote the summaries that failed. Newest first,
+# STUCK_ID is tried before FAIL_ID, so FAIL_ID is promoted only if sync goes on past a failure.
 FAIL_RANGE=$(db_get "SELECT summary_range_id FROM git_summaries WHERE id = '$FAIL_ID'")
 (cd "$ROOT_DIR" && node -e "
 const db = new (require('better-sqlite3'))(process.argv[1]);
@@ -319,13 +346,20 @@ for (let i = 0; i < 50; i++) { const t = new Date(base + i * 1000).toISOString()
 db.close();
 " "$DB_PATH" "$REPO_ID" "$FAIL_RANGE")
 MS_PAD=$(db_get "SELECT COUNT(*) FROM memory_sources")
-curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+SYNC41=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}')
 assert_eq "AC-3: sync promotes the summary that failed, beyond the latest 50" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$FAIL_ID' AND memory_id = 'gitsum-$FAIL_ID'")" "1"
-assert_eq "AC-3: nothing else promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id <> '$FAIL_ID'")" "$MS_PAD"
+assert_eq "N3: the still-failing summary is not promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$STUCK_ID'")" "0"
+assert_eq "N3: sync warns about the failure, naming the summary" \
+    "$(json_get "$SYNC41" "d.data.warnings.some(w => w.startsWith('memory_promotion_failed') && w.includes('$STUCK_ID') && w.includes('injected stuck promotion'))")" "true"
+assert_eq "AC-3: the merge whose write-back failed is promoted too" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$M_ID' AND memory_id = 'gitsum-$M_ID'")" "1"
+assert_eq "AC-3: nothing else promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id NOT IN ('$FAIL_ID', '$STUCK_ID', '$M_ID')")" "$MS_PAD"
 assert_eq "AC-3: padding summaries not promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id LIKE 'sum_pad41_%'")" "0"
+db_run "DROP TRIGGER t41_stuck"
+curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+assert_eq "N3: once the failure clears, the next sync promotes it" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$STUCK_ID' AND memory_id = 'gitsum-$STUCK_ID'")" "1"
 MS_AFTER=$(db_get "SELECT COUNT(*) FROM memory_sources")
 curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
-assert_eq "AC-3: a second sync promotes nothing twice" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_AFTER"
+assert_eq "AC-3: a further sync promotes nothing twice" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_AFTER"
 db_run "DELETE FROM git_summaries WHERE id LIKE 'sum_pad41_%'"
 
 echo "[repo-promotion] non-invasive"

@@ -8,10 +8,10 @@ All notable changes to this project will be documented in this file.
 - **A summary write-back says whether it reached recall.** `repo summarize --submit` and `POST /v1/repos/:ref/summaries/:summaryId` return `promotion`: `promoted`, `not_eligible`, `already_promoted` or `failed`, and a failure carries its error in `promotion_error`; the CLI prints which one happened. A failed promotion used to be swallowed into `promoted: false`, indistinguishable from a summary that was never eligible. `promoted` is unchanged (issue-41).
 
 ### Fixed
-- **`repo sync` retries every promotion that failed, not only among the latest 50 enriched summaries.** A write-back whose promotion failed was meant to be picked up by the next sync, but sync looked only at the 50 most recently created enriched summaries, so after a large batch of write-backs an older failure stayed out of recall for good (issue-41).
+- **`repo sync` retries every promotion that failed, not only among the latest 50 enriched summaries.** A write-back whose promotion failed was meant to be picked up by the next sync, but sync looked only at the 50 most recently created enriched summaries, so after a large batch of write-backs an older failure stayed out of recall for good. One summary that still fails no longer stops the rest: sync reports it as a `memory_promotion_failed: <summary id>: <error>` warning and promotes the others (issue-41).
 
 ### Compatibility and upgrade
-- **The first sync after upgrading can promote older summaries.** Any enriched summary that qualifies for promotion but never got it — a past failure, or a commit range that clears a `promoteImportanceThreshold` you lowered later — now reaches recall on the next `repo sync`, however old.
+- **The first sync after upgrading can promote older summaries.** Any enriched summary that qualifies for promotion but never got it — a past failure, or a commit range or branch summary that clears a `promoteImportanceThreshold` you lowered later — now reaches recall on the next `repo sync`, however old.
 
 ## [1.40.2] - 2026-11-27
 
