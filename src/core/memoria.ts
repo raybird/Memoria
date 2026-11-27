@@ -68,7 +68,7 @@ import {
     type BriefOptions,
     type MemoryAttributePatch
 } from './db/index.js'
-import { CJK_CHAR, collapseNoteHits, hybridUsedKeyword, noteFingerprintOf } from './utils.js'
+import { CJK_CHAR, collapseNoteHits, hybridUsedKeyword, notePairOf } from './utils.js'
 import { queryMemoryPage, queryMemoryDetail, queryMemoryFacets } from './db/index.js'
 import type { MemoryFilter, MemoryPage, MemoryDetail, MemoryFacets, MemoryKind, MemorySearch } from './types.js'
 import { memorySearchSchema } from './db/memory-browser.js'
@@ -287,15 +287,6 @@ async function withResult<T>(
             }
         }
     }
-}
-
-/** The other half of a CLI note's ref pair, if this ref is one half of one. A note id is a content
- *  fingerprint shared by its session (`note-`) and its event (`noteev-`); everything else — a
- *  git-promoted `gitdec-`, a synthetic session — stands alone. */
-function notePairOf(refId: string): string[] {
-    const fingerprint = noteFingerprintOf(refId)
-    if (fingerprint === null) return []
-    return [refId.startsWith('noteev-') ? `note-${fingerprint}` : `noteev-${fingerprint}`]
 }
 
 export class MemoriaCore {

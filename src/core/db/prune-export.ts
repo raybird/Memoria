@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { existsSync } from '../paths.js'
 import { withDb } from './connection.js'
-import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRange, normalizeSkillKey, parseCreatedAt, effectiveUtility } from '../utils.js'
+import { slugify, maybeParseJson, parseDaysOption, parseBoundaryDate, inDateRange, normalizeSkillKey, parseCreatedAt, effectiveUtility, mergeNoteUtility, notePairOf } from '../utils.js'
 import { initDatabase } from './schema.js'
 import { loadDurableRefs } from './memory-attributes.js'
 import { buildRedactionMap, redactText, loadPrivateRefs } from './redact.js'
@@ -20,7 +20,8 @@ const UTILITY_RETAIN_THRESHOLD = 0.5
 // prune stays byte-identical on any DB with no utility observations.
 function loadUtilityMeans(db: Database.Database, refIds: string[]): Map<string, number> {
     const out = new Map<string, number>()
-    const ids = [...new Set(refIds.filter((r) => typeof r === 'string' && r))]
+    // issue-40: a stale note is reached through its session, but its utility may sit on the event.
+    const ids = [...new Set(refIds.filter((r) => typeof r === 'string' && r).flatMap((r) => [r, ...notePairOf(r)]))]
     if (ids.length === 0) return out
     const exists = db
         .prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'memory_utility' LIMIT 1`)
@@ -30,9 +31,9 @@ function loadUtilityMeans(db: Database.Database, refIds: string[]): Map<string, 
     const rows = db
         .prepare(`SELECT ref_id, observations, utility_sum, explicit_observations, explicit_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
         .all(...ids) as { ref_id: string; observations: number; utility_sum: number; explicit_observations: number; explicit_sum: number }[]
-    for (const r of rows) {
-        const mean = effectiveUtility(r)
-        if (mean !== null) out.set(r.ref_id, mean)
+    for (const [ref, counts] of mergeNoteUtility(rows)) {
+        const mean = effectiveUtility(counts)
+        if (mean !== null) out.set(ref, mean)
     }
     return out
 }

@@ -1,6 +1,6 @@
 # Operations Guide
 
-Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1, with `remember`'s gap hint checked against the issue-37 source and the scan-lag scope against the issue-38 source on 2026-11-26.
+Last verified: 2026-11-10 against the issue-32 source and CLI help for brief, markers (including `--verify`) and migration 17; vector recovery last checked against v1.31.1, with `remember`'s gap hint checked against the issue-37 source and the scan-lag scope against the issue-38 source on 2026-11-26; utility-weighted retention for notes against the issue-40 source on 2026-11-27.
 
 ## Runtime Health Commands
 
@@ -55,7 +55,7 @@ Prune strategies for long-running instances:
 
 Note: `--consolidate-days` only removes `memory_nodes` (level=2) — original `sessions` and `events` rows are preserved for audit trail and keyword recall. `--stale-days` removes both stale nodes and orphan sessions.
 
-**Utility-weighted retention (UFL Phase 3)**: once a memory has accrued utility observations (via recall outcome write-backs), pruning respects them — `--stale-days` spares memories whose effective utility is ≥ 0.5 (explicit host feedback needs 1 observation, the lexical-reuse proxy needs 2), and `--consolidate-days` keeps the highest-utility child instead of merely the newest. With no utility data, behavior is exactly as described above.
+**Utility-weighted retention (UFL Phase 3)**: once a memory has accrued utility observations (via recall outcome write-backs), pruning respects them — `--stale-days` spares memories whose effective utility is ≥ 0.5 (explicit host feedback needs 1 observation, the lexical-reuse proxy needs 2), and `--consolidate-days` keeps the highest-utility child instead of merely the newest. A CLI note's utility counts whether it was reported under its session (`note-`) or event (`noteev-`) id; the two are summed. With no utility data, behavior is exactly as described above.
 
 ## Tree Index Notes
 

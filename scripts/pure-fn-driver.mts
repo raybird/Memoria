@@ -18,7 +18,8 @@ import {
     buildRouteUtility,
     REUSE_UTILITY_MIN_OBS,
     EXPLICIT_UTILITY_MIN_OBS,
-    skillFileStem
+    skillFileStem,
+    mergeNoteUtility
 } from '../src/core/utils.js'
 import { computeDecayFactor } from '../src/core/db/recall.js'
 import { parseMergeSourceRef } from '../src/core/git/summary-pipeline.js'
@@ -369,6 +370,22 @@ else process.env.MEMORIA_EMBED_BATCH = savedBatch
     eq('a 198-byte CJK stem (66 three-byte chars) is unchanged', skillFileStem('中'.repeat(66)), '中'.repeat(66))
     eq('a 201-byte CJK stem is cut on a character boundary, never mid-character',
         skillFileStem('中'.repeat(67)), `${'中'.repeat(66)}_5ab93f89`)
+}
+
+// issue-40: a note's two halves share one utility, whichever half was reported.
+{
+    const row = (ref_id: string, eo: number, es: number) => ({ ref_id, observations: 0, utility_sum: 0, explicit_observations: eo, explicit_sum: es })
+    const onEvent = mergeNoteUtility([row('noteev-abc', 1, 0.9)])
+    eq('utility on the event half is seen under the session half', effectiveUtility(onEvent.get('note-abc')!), 0.9)
+    eq('…and under the event half itself', effectiveUtility(onEvent.get('noteev-abc')!), 0.9)
+    const onSession = mergeNoteUtility([row('note-abc', 1, 0.2)])
+    eq('the merge is symmetric: session-half utility is seen under the event half', effectiveUtility(onSession.get('noteev-abc')!), 0.2)
+    const both = mergeNoteUtility([row('note-abc', 1, 0.8), row('noteev-abc', 1, 0.8)])
+    eq('both halves reported together: observations add', both.get('note-abc')!.explicit_observations, 2)
+    eq('…and the mean is unchanged', effectiveUtility(both.get('note-abc')!), 0.8)
+    const other = mergeNoteUtility([row('gitdec-sum_x-0', 1, 0.3), row('note-abc', 1, 1)])
+    eq('a non-note ref keeps its own row', effectiveUtility(other.get('gitdec-sum_x-0')!), 0.3)
+    eq('a non-note ref gains no pair entry', other.has('noteev-sum_x-0'), false)
 }
 
 console.log(failures === 0 ? '[pure] ✓ all assertions passed' : `[pure] ✗ ${failures} assertion(s) failed`)

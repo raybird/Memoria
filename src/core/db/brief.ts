@@ -10,7 +10,7 @@
 
 import type Database from 'better-sqlite3'
 import { withDb } from './connection.js'
-import { effectiveUtility, maybeParseJson, noteFingerprintOf } from '../utils.js'
+import { effectiveUtility, maybeParseJson, mergeNoteUtility, noteFingerprintOf, type UtilityCounts } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { truncateText } from './mappers.js'
 import { loadAttributes } from './memory-attributes.js'
@@ -250,20 +250,25 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                 : new Set<string>()
             const pinnedRefs = new Set(durableRefs)
 
-            const observationsOf = (row: typeof rows[number]): number =>
+            const observationsOf = (row: UtilityCounts): number =>
                 row.explicit_observations > 0 ? row.explicit_observations : row.observations
 
+            // issue-40: both halves of a note count together, and both then carry the same counts.
+            const merged = mergeNoteUtility(rows)
             const scored = rows
-                .map((row) => ({ ref_id: row.ref_id, utility: effectiveUtility(row), row }))
-                .filter((entry): entry is { ref_id: string; utility: number; row: typeof rows[number] } => entry.utility !== null)
+                .map((row) => {
+                    const counts = merged.get(row.ref_id) as UtilityCounts
+                    return { ref_id: row.ref_id, utility: effectiveUtility(counts), row: counts }
+                })
+                .filter((entry): entry is { ref_id: string; utility: number; row: UtilityCounts } => entry.utility !== null)
                 .filter((entry) => !supersededRefs.has(entry.ref_id) && !pinnedRefs.has(entry.ref_id))
                 .sort((a, b) => b.utility - a.utility)
 
             if (scored.length > 0) {
                 const texts = resolveRefTexts(db, scored.map((entry) => entry.ref_id))
-                const keptRefs = new Set(collapseNotePairs(scored
-                    .filter((entry) => observationsOf(entry.row) >= BRIEF_UTILITY_MIN_OBS)
-                    .map((entry) => entry.ref_id)))
+                // Both halves of a note carry merged counts, so either can stand for it; collapsing
+                // before the threshold also keeps a note from counting twice as unproven.
+                const keptRefs = new Set(collapseNotePairs(scored.map((entry) => entry.ref_id)))
                 const seenSummaries = new Set<string>()
 
                 // Filtered before the topK cut so a duplicate or out-of-scope entry consumes no slot.
@@ -271,12 +276,12 @@ export function queryBrief(dbPath: string, options: BriefOptions = {}): BriefDat
                     const found = texts.get(entry.ref_id)
                     if (!found) continue
                     if (project && found.project !== project) continue
+                    if (!keptRefs.has(entry.ref_id)) continue
 
                     if (observationsOf(entry.row) < BRIEF_UTILITY_MIN_OBS) {
                         utility_unproven += 1
                         continue
                     }
-                    if (!keptRefs.has(entry.ref_id)) continue
                     const summaryId = gitSummaryIdOf(entry.ref_id)
                     if (summaryId !== null) {
                         if (seenSummaries.has(summaryId)) continue

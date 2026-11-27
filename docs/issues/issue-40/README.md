@@ -22,6 +22,8 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 - `src/core/db/brief.ts` - 可改：高效用區塊改讀合併後的效用
 - `src/core/db/telemetry.ts` - 不可觸及：寫入與逐筆歸因不變
 - `scripts/test-utility-ranking.sh`、`scripts/test-prune.sh`、`scripts/test-brief-scope.sh` - 可改：回歸斷言
+- `scripts/pure-fn-driver.mts` - 可改：合併函式的直接斷言
+- `scripts/test-cli-memory.sh` - 可改：issue-34 AC-1 原本以兩半各回報不同效用來決定誰排前面，本 issue 讓兩半共用效用後改以時間戳決定，驗證的行為不變
 - `docs/agents/architecture.md`、`docs/OPERATIONS.md`、`CHANGELOG.md` - 可改
 
 ## 驗收條件
@@ -48,6 +50,18 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 - **選擇理由**：這是審查實測到的可觀察形態。
 - **完成證據**：待驗收條件核准後補上。
 
+## 實作與驗證步驟
+
+1. ✅ **AC-1～3 紅燈** — 先寫斷言再改程式。相依：無。
+   - 完成判準：三項斷言以現行程式失敗，失敗訊息對應審查實測到的形態。
+   - 完成證據：✅ 2026-11-27。`test-utility-ranking.sh` (E/issue-40)：效用 0 記在 `noteev-` 時，留下的 `note-` 分數不變（AC-1 失敗）。`test-prune.sh` issue-40 段：效用 0.9 記在 event 的孤立筆記與有節點的筆記都被刪（AC-2 兩項失敗）。`test-brief-scope.sh` (J)：兩半各回報一次 0.8 的筆記沒有列出（AC-3 失敗）。
+2. ✅ **共用合併函式與三個讀取點** — `utils.ts` 新增 `mergeNoteUtility`，並把 `notePairOf` 從 `memoria.ts` 移入共用；`applyUtilityWeighting`、`loadUtilityMeans`（stale 與 consolidate 共用）、brief 高效用區塊改讀合併後的效用。相依：步驟 1。
+   - 完成判準：AC-1～3 綠燈；`telemetry.ts` 沒有 diff；`pure-fn-driver.mts` 直接斷言對稱、平均不變與非筆記 ref 不受影響。
+   - 完成證據：✅ 2026-11-27。三項斷言綠燈；AC-1 改以比例判斷（分數約 4e-6，`s1/s0` 與 0.5 相差小於 1e-6），以舊程式重跑仍失敗。brief 的 `keptRefs` 改為在觀察門檻前收合，兩半都有列的筆記不再被算兩次「未累積」。GitNexus impact：`applyUtilityWeighting` 為 CRITICAL（recall 主路徑，CLI、HTTP、UI、wiki file-query 都經過），行為只在筆記有效用列時改變，由 AC-4 回歸把關；`loadUtilityMeans`、`notePairOf` 為 LOW。
+3. ✅ **AC-4 文件與回歸** — `docs/agents/architecture.md` UFL 段、`docs/OPERATIONS.md` 保留規則、CHANGELOG（Fixed 與升級注意）；跑 core、adapters、wiki、http-mcp 四組。相依：步驟 2。
+   - 完成判準：CI 的 core、adapters、wiki、http-mcp、repo 五組全綠，`release:docs-check` 通過。
+   - 完成證據：✅ 2026-11-27。`pnpm run check`、`build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`release:docs-check` 通過；五組共 32 支腳本全綠。第一輪 `test-cli-memory.sh` 的 issue-34 AC-1 失敗：它靠兩半各回報 1 與 0 來決定排序，合併後兩半都是 0.5，操控手段失效而非行為退步；改為把較低的那一半時間戳調早一年後兩個方向都通過（session 較舊留 `noteev-`，event 較舊留 `note-`）。`telemetry.ts` 沒有 diff。
+
 ## 待確認事項
 
 | 編號 | 事項 | 狀態 | 影響 |
@@ -62,9 +76,10 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 | 2026-11-26 | 建立（來源：issue-39 review-03683f0 N1；使用者 2026-11-26 回「照建議」：另開 issue）；驗收條件待 TBD-1 決定 |
 | 2026-11-27 | 補入 issue-39 TBD-5：skill 的效用敘述要對筆記也成立 |
 | 2026-11-27 | TBD-1 使用者選 (b)，TBD-2 選相加；撰寫並核准 AC-1～4 |
+| 2026-11-27 | 步驟 1～3 完成，待審查 |
 
 ---
 **建立日期**: 2026-11-26  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 待實作
+**狀態**: 待審查

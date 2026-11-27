@@ -10,7 +10,8 @@
 #   (G) SCN-013 a per-project run prints shared AGENTS.md guidance and Claude imports
 #   (H) recent decisions are dealt per project, and the total counts the whole window
 #   (I) pinned text survives at note length; only an outsized memory is cut
-#   (J) high-utility needs 2 observations, merges one source, skips pinned, respects scope
+#   (J) high-utility needs 2 observations, merges one source, skips pinned, respects scope;
+#       a note's two halves count together (issue-40)
 #   (K) unscanned commits appear in brief and doctor without turning doctor red, and clear on sync
 #   (K/issue-38) the count covers the default branch and tags only; unscanned tags are named, newest first
 #
@@ -249,12 +250,17 @@ seed_memory note-other noteev-other beta "另一個專案的高分記憶"
 seed_utility note-other 3 1
 seed_memory note-alpha noteev-alpha alpha "本專案的記憶"
 seed_utility note-alpha 2 0.6
+# issue-40：兩半各被回報一次，合併後達到 2 次觀察，列一次。
+seed_memory note-split noteev-split alpha "兩半各被回報一次的筆記"
+seed_utility note-split 1 0.8
+seed_utility noteev-split 1 0.8
 "$CLI" mark note-pin --durable >/dev/null
 "$CLI" brief --global >/dev/null
 UFL=$(section "## 高效用記憶（UFL）" "$BRIEF")
 [ "$(printf '%s\n' "$UFL" | grep -cF "同一個合併的摘要")" = "1" ] || { echo "  ✗ 同一來源未合併: $UFL"; exit 1; }
 case "$UFL" in *"只被回報一次"*) echo "  ✗ 未達 2 次觀察卻上榜: $UFL"; exit 1 ;; esac
 case "$UFL" in *"已經釘選"*) echo "  ✗ pinned 記憶重複列在高效用區塊: $UFL"; exit 1 ;; esac
+[ "$(printf '%s\n' "$UFL" | grep -cF "兩半各被回報一次")" = "1" ] || { echo "  ✗ issue-40 AC-3：兩半各回報一次的筆記應合併成 2 次觀察、列一次: $UFL"; exit 1; }
 # 範圍外的高分記憶不能占掉 topK 的格子。
 SCOPED_UFL=$("$CLI" brief --project alpha --top-k 1 --json | field '.data.high_utility.map(m=>m.ref_id).join(",")')
 [ "$SCOPED_UFL" = "gitsum-sum_aaa" ] || { echo "  ✗ 範圍內記憶被其他專案擠掉: '$SCOPED_UFL'"; exit 1; }

@@ -6,6 +6,8 @@
 #   (C) below the observation threshold (1 obs): ordering is UNCHANGED;
 #   (B) at the threshold (2 low-utility obs on the top hit): its score is down-weighted
 #       and it sinks below the other hit — the ranking flips.
+#   (E) issue-40: a CLI note's utility counts whichever half was reported — the half recall keeps
+#       is down-weighted by utility recorded on the other half.
 # A third unrelated session makes the query terms rare enough for bm25 to give the two
 # matching sessions distinct, non-zero scores (a shared-by-all term has IDF 0).
 
@@ -84,5 +86,31 @@ AFTER3=$(order)
 # Confirm explicit accrued in its own column, reuse untouched.
 node -e "const D=require('$BSQ');const db=new D('$DB',{readonly:true});const r=db.prepare('SELECT observations, explicit_observations FROM memory_utility WHERE ref_id=?').get('$TOP');db.close();if(!r||r.explicit_observations!==1||r.observations!==2)throw new Error('explicit/reuse columns wrong: '+JSON.stringify(r))"
 echo "  explicit overrode reuse; order restored: $AFTER3"
+
+echo "[ranking] (E/issue-40) 筆記的效用記在另一半時，recall 留下的那一半照樣被加權"
+# remember 把一則筆記存成 note-<指紋> 與 noteev-<指紋>，issue-34 起 recall 只留其中一半。
+# 效用記在沒留下的那一半時，以前完全不影響排序；合併後要乘上效用的係數（效用 0 為 0.5）。
+H40="$TMP_DIR/home-40"
+c40() { MEMORIA_HOME="$H40" "$ROOT_DIR/cli" "$@"; }
+top40() { c40 recall "$1" --project demo40 --json | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8"));const h=d.data[0];console.log(d.meta.recall_id+" "+h.id+" "+h.score)'; }
+other40() { case "$1" in noteev-*) echo "note-${1#noteev-}" ;; note-*) echo "noteev-${1#note-}" ;; esac; }
+c40 init >/dev/null
+c40 remember "資料庫備份改到每天凌晨三點執行" --project demo40 >/dev/null
+c40 remember "前端建置改用 vite 取代 webpack" --project demo40 >/dev/null
+read -r R0 KEPT S0 <<<"$(top40 "資料庫備份 凌晨")"
+case "$KEPT" in note-*|noteev-*) ;; *) echo "  ✗ 前提：首筆應是 CLI 筆記，實得 $KEPT"; exit 1 ;; esac
+OTHER=$(other40 "$KEPT")
+c40 feedback "$R0" --score 0 --hits "$OTHER" >/dev/null
+read -r _ KEPT1 S1 <<<"$(top40 "資料庫備份 凌晨")"
+[ "$KEPT1" = "$KEPT" ] || { echo "  ✗ 前提：留下的那一半應不變（$KEPT → $KEPT1）"; exit 1; }
+node -e 'const [s0,s1]=process.argv.slice(1).map(Number);if(!(s0>0)||Math.abs(s1/s0-0.5)>1e-6)throw new Error("留下的 "+process.argv[3]+" 分數應乘 0.5："+s0+" → "+s1)' "$S0" "$S1" "$KEPT" \
+    || { echo "  ✗ AC-1：效用記在 $OTHER 時，留下的 $KEPT 沒有被加權"; exit 1; }
+# 對稱的一側：效用記在留下的那一半（既有行為），結果與記在另一半相同。
+read -r R2 KEPT2 S2 <<<"$(top40 "前端建置 vite")"
+c40 feedback "$R2" --score 0 --hits "$KEPT2" >/dev/null
+read -r _ _ S3 <<<"$(top40 "前端建置 vite")"
+node -e 'const [s2,s3]=process.argv.slice(1).map(Number);if(!(s2>0)||Math.abs(s3/s2-0.5)>1e-6)throw new Error(s2+" → "+s3)' "$S2" "$S3" \
+    || { echo "  ✗ AC-4：效用記在留下的那一半時應照舊乘 0.5"; exit 1; }
+echo "  效用記在 $OTHER：留下的 $KEPT 分數 $S0 → $S1；記在留下的那一半時同樣乘 0.5"
 
 echo "[ranking] ok"

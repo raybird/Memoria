@@ -199,4 +199,37 @@ db.close();
 console.log('  stale spared OU_keep (3 matched, 2 removed); consolidate kept high-utility oldest child CU_old');
 "
 
+echo "[prune] issue-40: 筆記的效用記在 event 那一半時，stale prune 照樣豁免"
+# remember 的筆記是 session note-<指紋> 加 event noteev-<指紋>；stale prune 經節點對到 session，
+# 以前只查 session 那一半的效用，回報 noteev- 的筆記照樣被刪。
+DB="$(fresh_home pair)"
+node -e "
+const D = require('$BSQ'); const db = new D('$DB');
+const OLD = new Date(Date.now() - 200*864e5).toISOString();
+const sess = (id) => db.prepare('INSERT INTO sessions (id,timestamp,project,scope,event_count,summary) VALUES (?,?,?,?,?,?)').run(id, OLD, 'proj', null, 1, id);
+const ev = (id, sid) => db.prepare('INSERT INTO events (id,session_id,timestamp,event_type,content,metadata) VALUES (?,?,?,?,?,?)').run(id, sid, OLD, 'DecisionMade', '{}', null);
+const node = (id) => db.prepare(
+  'INSERT INTO memory_nodes (id,parent_id,project,scope,title,summary,level,path_key,created_at,updated_at,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+).run(id, null, 'proj', null, id, id, 2, id, OLD, OLD, null);
+const mu = (ref, sum) => db.prepare('INSERT INTO memory_utility (ref_id,observations,utility_sum,explicit_observations,explicit_sum,last_outcome_at) VALUES (?,?,?,?,?,?)').run(ref, 0, 0, 1, sum, OLD);
+// 孤立的舊筆記 session：效用只記在 event 那一半。
+sess('note-keep'); ev('noteev-keep', 'note-keep'); mu('noteev-keep', 0.9);   // 0.9 -> 豁免
+sess('note-drop'); ev('noteev-drop', 'note-drop'); mu('noteev-drop', 0.2);   // 0.2 -> 照舊刪除
+// 有節點的舊筆記：節點經 memory_node_sources 對到 session note-nk，效用記在 noteev-nk。
+node('N_note'); sess('note-nk'); ev('noteev-nk', 'note-nk'); mu('noteev-nk', 0.9);
+db.prepare('INSERT INTO memory_node_sources (node_id,session_id,created_at) VALUES (?,?,?)').run('N_note','note-nk',OLD);
+db.close();
+"
+MEMORIA_HOME="$TMP_DIR/pair" "$ROOT_DIR/cli" prune --stale-days 180 --json > "$TMP_DIR/f-stale.json"
+node -e "
+const D = require('$BSQ'); const db = new D('$DB', { readonly: true });
+const fail = (m) => { console.error('  ✗ ' + m); process.exitCode = 1; };
+const has = (t, id) => db.prepare('SELECT count(*) c FROM ' + t + ' WHERE id=?').get(id).c === 1;
+if (!has('sessions','note-keep')) fail('AC-2：效用 0.9 記在 noteev-keep，note-keep 應被豁免');
+if (has('sessions','note-drop')) fail('AC-2：效用 0.2 的 note-drop 應照舊刪除');
+if (!has('memory_nodes','N_note')) fail('AC-2：對到 note-nk 的節點，效用 0.9 記在 noteev-nk，應被豁免');
+db.close();
+if (!process.exitCode) console.log('  效用記在 event 那一半：0.9 的筆記與其節點保留，0.2 的照舊刪除');
+"
+
 echo "[prune] ok"

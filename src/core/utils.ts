@@ -72,6 +72,15 @@ export function noteFingerprintOf(ref: string): string | null {
             : null
 }
 
+/** The other half of a CLI note's ref pair, if this ref is one half of one. A note id is a content
+ *  fingerprint shared by its session (`note-`) and its event (`noteev-`); everything else — a
+ *  git-promoted `gitdec-`, a synthetic session — stands alone. */
+export function notePairOf(refId: string): string[] {
+    const fingerprint = noteFingerprintOf(refId)
+    if (fingerprint === null) return []
+    return [refId.startsWith('noteev-') ? `note-${fingerprint}` : `noteev-${fingerprint}`]
+}
+
 /** One recall slot per note (issue-34). `remember` stores a note as two rows under one fingerprint,
  *  so a query matching it would otherwise spend two of its k slots on the same memory. Keeps the
  *  first-ranked row of each note; every other hit passes through in its original order. */
@@ -163,6 +172,41 @@ export function effectiveUtility(row: {
     const o = row.observations ?? 0
     if (o >= REUSE_UTILITY_MIN_OBS) return Math.min(1, Math.max(0, (row.utility_sum ?? 0) / o))
     return null
+}
+
+export type UtilityCounts = {
+    observations: number
+    utility_sum: number
+    explicit_observations: number
+    explicit_sum: number
+}
+
+/** A CLI note's utility, whichever half it was reported under (issue-40). `feedback --hits` records
+ *  on the id it is given, and recall keeps only one half of a note (issue-34), so readers that look
+ *  up a single id miss utility recorded on the other half. Sums both halves' counts — observations
+ *  and sums alike, so the mean is unchanged when both were reported together — and returns the
+ *  merged counts under every ref in `rows` and under each one's other half. Any other ref keeps its
+ *  own row. Callers pass rows fetched for their refs plus `notePairOf` of each. */
+export function mergeNoteUtility(rows: Array<UtilityCounts & { ref_id: string }>): Map<string, UtilityCounts> {
+    const keyOf = (ref: string): string => {
+        const fingerprint = noteFingerprintOf(ref)
+        return fingerprint === null ? ref : `note-${fingerprint}`
+    }
+    const byKey = new Map<string, UtilityCounts>()
+    for (const row of rows) {
+        const sum = byKey.get(keyOf(row.ref_id)) ?? { observations: 0, utility_sum: 0, explicit_observations: 0, explicit_sum: 0 }
+        sum.observations += row.observations
+        sum.utility_sum += row.utility_sum
+        sum.explicit_observations += row.explicit_observations
+        sum.explicit_sum += row.explicit_sum
+        byKey.set(keyOf(row.ref_id), sum)
+    }
+    const out = new Map<string, UtilityCounts>()
+    for (const row of rows) {
+        const merged = byKey.get(keyOf(row.ref_id)) as UtilityCounts
+        for (const ref of [row.ref_id, ...notePairOf(row.ref_id)]) out.set(ref, merged)
+    }
+    return out
 }
 
 // Confidence×utility calibration (UFL Phase 2). Pure aggregation over telemetry points that carry

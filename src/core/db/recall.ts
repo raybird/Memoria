@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { existsSync } from '../paths.js'
-import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery, tokenCoverage, effectiveUtility } from '../utils.js'
+import { slugify, shortHash, deriveScope, maybeParseJson, normalizeSkillKey, parseCreatedAt, parseBoundaryDate, tokenizeQuery, tokenCoverage, effectiveUtility, mergeNoteUtility, notePairOf } from '../utils.js'
 import { safeDate } from '../utils.js'
 import { parseDecisionEvent, parseSkillEvent } from '../extract.js'
 import { initDatabase } from './schema.js'
@@ -37,17 +37,18 @@ export function applyUtilityWeighting(dbPath: string, hits: RecallHit[]): Recall
                 .get() as { ok: number } | undefined
             if (!tableExists) return hits
 
-            const ids = [...new Set(hits.map((h) => h.id))]
+            // issue-40: a note's utility may sit on the half this recall did not keep.
+            const ids = [...new Set(hits.flatMap((h) => [h.id, ...notePairOf(h.id)]))]
             const placeholders = ids.map(() => '?').join(',')
             const rows = db
                 .prepare(`SELECT ref_id, observations, utility_sum, explicit_observations, explicit_sum FROM memory_utility WHERE ref_id IN (${placeholders})`)
                 .all(...ids) as { ref_id: string; observations: number; utility_sum: number; explicit_observations: number; explicit_sum: number }[]
 
             const factorById = new Map<string, number>()
-            for (const r of rows) {
-                const mean = effectiveUtility(r)
+            for (const [ref, counts] of mergeNoteUtility(rows)) {
+                const mean = effectiveUtility(counts)
                 if (mean === null) continue
-                factorById.set(r.ref_id, utilityFactor(mean))
+                factorById.set(ref, utilityFactor(mean))
             }
             if (factorById.size === 0) return hits
 

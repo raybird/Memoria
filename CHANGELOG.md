@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **A note's utility counts whichever half was reported.** `remember` stores a note as a session (`note-…`) and an event (`noteev-…`), and `feedback --hits` records utility under the id it is given. Recall keeps one half of a note (issue-34), and its utility weighting, stale prune and brief's high-utility block each looked up only their own id, so utility reported on the other half was invisible: a note scored 0 kept its ranking, and one scored highly could still be pruned. The two halves' counts are now summed when read, so existing data takes effect without a rewrite (issue-40).
+
+### Compatibility and upgrade
+- **Rankings, prune results and brief's high-utility block can change for notes that already have utility.** Notes reported under both halves in one feedback (common before issue-34, when recall listed both) now count those observations twice; the mean is unchanged, but such a note reaches brief's two-observation threshold from a single report.
+
 ## [1.40.1] - 2026-11-27
 
 ### Changed
