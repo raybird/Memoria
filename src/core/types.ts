@@ -832,8 +832,9 @@ export type GitSummaryType = 'commit_range' | 'branch' | 'merge' | 'release'
 // and can still be enriched later.
 export type GitSummaryStatus = 'pending' | 'enriched' | 'dismissed'
 
-/** What a write-back did about recall (issue-41): `promoted` it now, it does `not_eligible` (isPromotable
- *  said no), it was `already_promoted` earlier, or the promotion `failed` — the summary itself is
+/** What a write-back did about recall (issue-41): `promoted` it now, `updated` the memories an earlier
+ *  promotion wrote to match this payload (issue-42), it does `not_eligible` (isPromotable said no), it
+ *  was `already_promoted` and nothing changed, or the promotion `failed` — the summary itself is
  *  written either way, and `promotion_error` carries the reason for a failure. */
 export type SummaryPromotion = 'promoted' | 'updated' | 'not_eligible' | 'already_promoted' | 'failed'
 

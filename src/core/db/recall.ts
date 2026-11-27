@@ -181,11 +181,17 @@ export function buildMemoryIndex(dbPath: string, options: MemoryIndexBuildOption
           VALUES (?, ?, COALESCE((SELECT created_at FROM memory_node_sources WHERE node_id = ? AND session_id = ?), ?))
         `)
 
+        // A superseded decision must not name the topic: re-indexing an updated promotion would carry
+        // the replaced text back into the tree index and the vector payload (issue-42). A database
+        // that predates memory_attributes has no superseded rows to skip.
+        const hasAttributes = Boolean(db.prepare(
+            `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_attributes'`).get())
         const eventRowsBySession = db.prepare(`
           SELECT session_id, event_type, content
-          FROM events
+          FROM events e
           WHERE session_id = ?
             AND event_type IN ('DecisionMade', 'SkillLearned')
+            ${hasAttributes ? `AND NOT EXISTS (SELECT 1 FROM memory_attributes a WHERE a.ref_id = e.id AND a.superseded_by IS NOT NULL)` : ''}
           ORDER BY timestamp ASC
         `)
 

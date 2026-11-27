@@ -401,12 +401,12 @@ N_ID=$(json_get "$("$CLI" repo summarize "$REPO_ID" --merge "$(git -C "$REPO" re
 N_SESSION="gitsum-$N_ID"; A_ID="gitdec-$N_ID-0"; B_ID="gitdec-$N_ID-1"
 cat > "$TMP_DIR/n1.json" <<'EOF'
 {"title": "合併通知佇列", "summary": "通知改走佇列寄送 kumquatalpha。",
- "decisions": [{"decision": "通知寄送改走佇列", "reason": "避免請求逾時"},
+ "decisions": [{"decision": "通知寄送改走佇列 plumtoken", "reason": "避免請求逾時"},
                {"decision": "保留舊版 webhook 通道", "reason": "相容既有客戶"}],
  "importance": 0.6, "confidence": 0.8}
 EOF
 assert_eq "issue-42 premise: first write-back promotes" "$(json_get "$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n1.json" --json)" "d.data.promotion")" "promoted"
-RID=$(json_get "$("$CLI" recall "通知寄送改走佇列 webhook" --project booking-api --json)" "d.meta.recall_id")
+RID=$(json_get "$("$CLI" recall "通知寄送改走佇列 plumtoken webhook" --project booking-api --json)" "d.meta.recall_id")
 "$CLI" feedback "$RID" --signal explicit --score 0.9 --used --hits "$A_ID,$B_ID" >/dev/null
 "$CLI" mark "$A_ID" --durable >/dev/null
 A_UTIL=$(db_get "SELECT observations || '/' || utility_sum FROM memory_utility WHERE ref_id = '$A_ID'")
@@ -418,7 +418,7 @@ assert_eq "issue-42 premise: vector row holds the old text" "$(vec_text42 "sessi
 # AC-1/AC-2: new text; A kept with a new reason, B dropped, C added.
 cat > "$TMP_DIR/n2.json" <<'EOF'
 {"title": "合併通知佇列", "summary": "通知改走佇列寄送 persimmonbeta。",
- "decisions": [{"decision": "通知寄送改走佇列", "reason": "避免請求逾時並可重試"},
+ "decisions": [{"decision": "通知寄送改走佇列 plumtoken", "reason": "避免請求逾時並可重試"},
                {"decision": "失敗通知寫入死信佇列", "reason": "方便追查"}],
  "importance": 0.6, "confidence": 0.8}
 EOF
@@ -449,7 +449,7 @@ assert_eq "AC-3: vector decision row holds the new reason" "$(vec_text42 "decisi
 # AC-2: bringing B back revives its original id.
 cat > "$TMP_DIR/n3.json" <<'EOF'
 {"title": "合併通知佇列", "summary": "通知改走佇列寄送 persimmonbeta。",
- "decisions": [{"decision": "通知寄送改走佇列", "reason": "避免請求逾時並可重試"},
+ "decisions": [{"decision": "通知寄送改走佇列 plumtoken", "reason": "避免請求逾時並可重試"},
                {"decision": "失敗通知寫入死信佇列", "reason": "方便追查"},
                {"decision": "保留舊版 webhook 通道", "reason": "相容既有客戶"}],
  "importance": 0.6, "confidence": 0.8}
@@ -459,6 +459,37 @@ assert_eq "AC-2: B is no longer superseded" "$(db_get "SELECT COALESCE(supersede
 assert_eq "AC-2: B is back in recall under its id" "$(has_id "$(recall_ids "保留舊版 webhook 通道")" "$B_ID")" "yes"
 assert_eq "AC-2: no fourth decision was created" "$(db_get "SELECT COUNT(*) FROM events WHERE session_id = '$N_SESSION'")" "3"
 assert_eq "AC-4: an identical re-submit changes nothing" "$(json_get "$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n3.json" --json)" "d.data.promotion")" "already_promoted"
+
+# AC-3 (review-28ec168 MUST FIX 1): the first decision names the tree-index topic, so dropping it must
+# take its text out of the tree index and the vector payload too, not only out of the session.
+# Corrections recorded by hand (`remember --supersedes`) stay as they are, whether or not the payload
+# still lists the decision (review-28ec168 NICE TO HAVE).
+assert_eq "AC-3 premise: the topic is named after decision A" \
+    "$(db_get "SELECT COUNT(*) FROM memory_nodes n JOIN memory_node_sources s ON s.node_id = n.id WHERE s.session_id = '$N_SESSION' AND instr(n.title || ' ' || n.summary, 'plumtoken') > 0")" "1"
+C_ID="gitdec-$N_ID-2"
+"$CLI" remember "更正：通知不走 webhook 通道" --project booking-api --supersedes "$B_ID" >/dev/null
+"$CLI" remember "更正：死信改為重試表" --project booking-api --supersedes "$C_ID" >/dev/null
+B_MARK=$(db_get "SELECT superseded_by FROM memory_attributes WHERE ref_id = '$B_ID'")
+C_MARK=$(db_get "SELECT superseded_by FROM memory_attributes WHERE ref_id = '$C_ID'")
+assert_eq "premise: B and C are superseded by notes" "$(case "$B_MARK/$C_MARK" in note-*/note-*) echo yes ;; *) echo "$B_MARK/$C_MARK" ;; esac)" "yes"
+cat > "$TMP_DIR/n4.json" <<'EOF'
+{"title": "合併通知佇列", "summary": "通知改走佇列寄送 persimmonbeta。",
+ "decisions": [{"decision": "失敗通知寫入死信佇列", "reason": "方便追查"}],
+ "importance": 0.6, "confidence": 0.8}
+EOF
+assert_eq "AC-2: dropping decision A is an update" "$(json_get "$("$CLI" repo summarize booking-api --submit "$N_ID" --file "$TMP_DIR/n4.json" --json)" "d.data.promotion")" "updated"
+assert_eq "AC-2: A is superseded by the summary's session" "$(db_get "SELECT superseded_by FROM memory_attributes WHERE ref_id = '$A_ID'")" "$N_SESSION"
+assert_eq "manual supersede on a dropped decision keeps its note" "$(db_get "SELECT superseded_by FROM memory_attributes WHERE ref_id = '$B_ID'")" "$B_MARK"
+assert_eq "manual supersede on a listed decision stays" "$(db_get "SELECT superseded_by FROM memory_attributes WHERE ref_id = '$C_ID'")" "$C_MARK"
+assert_eq "AC-3: no tree-index node of the session holds the dropped decision" \
+    "$(db_get "SELECT COUNT(*) FROM memory_nodes n JOIN memory_node_sources s ON s.node_id = n.id WHERE s.session_id = '$N_SESSION' AND instr(n.title || ' ' || n.summary, 'plumtoken') > 0")" "0"
+assert_eq "AC-3: tree recall no longer finds the session by the dropped decision" \
+    "$(has_id "$(json_get "$("$CLI" recall plumtoken --mode tree --project booking-api --top-k 20 --json)" "(d.data ?? []).map(h => h.id).join(',')")" "$N_SESSION")" "no"
+assert_eq "AC-3: no tree index gap after the rebuild" "$(json_get "$("$CLI" stats --json)" "d.data.memoryIndex.missing")" "0"
+rm -rf "$TMP_DIR/bridge42n"; mkdir -p "$TMP_DIR/bridge42n"
+node "$ROOT_DIR/skills/memoria-memory-sync/scripts/build-mcp-bridge-payload.mjs" --memoria-home "$MEMORIA_HOME" --sync-target t42n --out "$TMP_DIR/bridge42n" >/dev/null
+assert_eq "AC-3: no memory-node entity in the vector payload holds the dropped decision" \
+    "$(node -e "const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')); process.stdout.write(String((p.entities ?? []).filter(e => e.type === 'memory_node' && (String(e.name) + ' ' + String(e.text)).includes('plumtoken')).length))" "$(ls "$TMP_DIR/bridge42n"/*.json)")" "0"
 
 echo "[repo-promotion] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"

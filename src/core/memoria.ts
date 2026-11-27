@@ -1322,6 +1322,15 @@ export class MemoriaCore {
      *  transaction, and nesting index building inside it would widen both its responsibility and its
      *  lock window. Best-effort by design — a promoted memory is already recallable through FTS, and
      *  `memoria index build` recovers anything missed. */
+    private indexPromotedSession(sessionId: string | undefined): void {
+        if (!sessionId) return
+        try {
+            buildMemoryIndex(this.paths.dbPath, { sessionId })
+        } catch {
+            // Never let indexing failure undo a successful promotion.
+        }
+    }
+
     /** Rebuild an updated promotion's tree-index nodes from its new text (issue-42). A failed rebuild
      *  leaves the session unindexed, which `stats`/`doctor` report as a tree-index gap. */
     private reindexPromotedSession(sessionId: string): void {
@@ -1331,15 +1340,6 @@ export class MemoriaCore {
             return // old nodes stay: stale text rather than a gap
         }
         this.indexPromotedSession(sessionId)
-    }
-
-    private indexPromotedSession(sessionId: string | undefined): void {
-        if (!sessionId) return
-        try {
-            buildMemoryIndex(this.paths.dbPath, { sessionId })
-        } catch {
-            // Never let indexing failure undo a successful promotion.
-        }
     }
 
     private async buildPipelineInput(ref: string, force?: boolean): Promise<SummaryPipelineInput> {
@@ -1473,7 +1473,8 @@ export class MemoriaCore {
                     if (outcome.promoted) this.indexPromotedSession(outcome.memoryIds[0])
                 }
             } catch (error) {
-                // Summary stays enriched; a resubmit or the next sync retries promotion.
+                // Summary stays enriched. A first promotion is retried by a resubmit or the next sync;
+                // an update (issue-42) only by a resubmit, since sync never revisits a promoted summary.
                 promotion = 'failed'
                 promotionError = error instanceof Error ? error.message : String(error)
             }

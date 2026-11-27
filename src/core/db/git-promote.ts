@@ -162,6 +162,8 @@ export function updatePromotedSummary(dbPath: string, summary: GitSummaryRecord)
     const range = summary.range
     const sessionId = `gitsum-${summary.id}`
     const prefix = `gitdec-${summary.id}-`
+    // IMMEDIATE: this reads before it writes, and a deferred transaction that has to upgrade its lock
+    // while another process writes gets SQLITE_BUSY at once instead of waiting out busy_timeout.
     return withDb(dbPath, (db) => db.transaction((): PromotionUpdate => {
         const session = db.prepare('SELECT summary, event_count FROM sessions WHERE id = ?')
             .get(sessionId) as { summary: string | null; event_count: number } | undefined
@@ -224,7 +226,7 @@ export function updatePromotedSummary(dbPath: string, summary: GitSummaryRecord)
             updated = markSupersededBy(db, decision.id, sessionId) || updated
         }
         return { updated, sessionId }
-    })())
+    }).immediate())
 }
 
 function insertDecision(
