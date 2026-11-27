@@ -406,7 +406,9 @@ for bad in $'git log‮1- enilno--' $'git ⁦status⁩' $'git​status' $'﻿git
 done
 [ "$(counts)" = "$BEFORE" ] || { echo "  ✗ 被拒絕的命令仍寫入了資料 ($BEFORE→$(counts))"; exit 1; }
 # 格式字元看不見，錯誤要指出第一個違規字元與它的位置（emoji 算一個字元；控制字元也一樣）。
-for case43 in $'git\u200bstatus|U+200B at character 4' $'\U1F600\u200dgit|U+200D at character 2' $'  git status\nrm x|U+000A at character 13'; do
+# 兩類都有時指出較前的那個；astral 的格式字元（U+E0001）要印出完整的 code point。
+for case43 in $'git\u200bstatus|U+200B at character 4' $'\U1F600\u200dgit|U+200D at character 2' $'  git status\nrm x|U+000A at character 13' \
+              $'a\u200bb\nc|U+200B at character 2' $'git\U000E0001x|U+E0001 at character 4'; do
     set +e
     ERR=$("$CLI" remember "某個會變的狀態" --project demo --verify "${case43%%|*}" 2>&1)
     set -e
