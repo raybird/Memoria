@@ -106,6 +106,7 @@
 | v1.39.0 | 多程式共用資料根時的並行寫入（issue-33） | 同一 repo 的多個 worktree 各開一個 CLI 同時 `repo sync` 時，每種 git 事件與目前有效的 ref 都會多一份；改由共用資料庫的 `git_sync_leases`（migration 18）跨程式租約序列化：預設 TTL 60 秒、執行中續約、過期可接手，等超過 `MEMORIA_REPO_SYNC_WAIT_MS`（預設 120 秒）回 `repository_sync_busy`（CLI exit 1、HTTP 409）；dry-run 只等待、不取得租約。Daily 筆記改為只附加，新檔以暫存檔加 hard link 出現，16 個程式同時 `remember` 不再掉條目，輸出位元組不變。SQLite 鎖等待明確寫成 5 秒，行為不變。前一版仍可讀寫升級後的資料庫但不理會租約，共用資料根的 runtime 要一起升級。三輪獨立審查（9d76366 RETURN、680ed91 PASS、d34b352 PASS）；main 完整 CI 通過後發版。 |
 | v1.40.0 | recall、remember、brief 說清楚自己看不到什麼（issue-34～38） | recall 把一則筆記的 `note-`／`noteev-` 兩筆合成一個名額並補滿 top-k（issue-34）；recall meta 加 `vector_hits` 與 `project_known`，說明語意路線有沒有貢獻、專案有沒有任何記憶（issue-35）；部署的 skill 寫明 `recall --json` 的形狀、`[ n/a ]` 的意思與測試查詢怎麼回報（issue-36）；`remember` 在向量庫有缺口時當下提示，筆數與 doctor 相同（issue-37）；brief 的未掃描 commit 只算登記的預設分支與 tag，並點名沒 sync 過的 tag，`/v1/brief` 多 `unscanned_tags`（issue-38）。沒有 migration，helper 的 lockfile 沒變。每個 issue 都經獨立審查 PASS 後 fast-forward 併入 main。 |
 | v1.40.1 | `feedback --used` 標明為不影響寫入（issue-39） | CLI 一定送分數、`used` 只在沒有分數時推算，所以 `--used` 從來不影響寫入；`--help`、CLI 與 API 雙語文件改為照實說明，部署的 skill 不再提 `--used`，改為用在工作上帶 `--hits`、只是測試時不帶 `--hits`（不累積效用），並寫明效用只會把低分記憶往後排。寫入語意、schema、HTTP 與 SDK 都沒變。三輪獨立審查（430907e、03683f0、3d70567 皆 PASS）；筆記兩半效用分開記的問題另開 issue-40。 |
+| v1.40.2 | 筆記的效用不論回報哪一半都算數（issue-40） | `feedback --hits` 把效用記在傳入的 id，recall 只留筆記的一半；recall 加權、stale 與 consolidate prune、brief 高效用區塊改為讀取時依指紋加總 `note-`／`noteev-` 兩半，既有資料立即生效，寫入不變 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.40.2] - 2026-11-27
+
 ### Fixed
 - **A note's utility counts whichever half was reported.** `remember` stores a note as a session (`note-…`) and an event (`noteev-…`), and `feedback --hits` records utility under the id it is given. Recall keeps one half of a note (issue-34), and its utility weighting, stale and consolidate prune and brief's high-utility block each looked up only their own id, so utility reported on the other half was invisible: a note scored 0 kept its ranking, one scored highly could still be pruned, and consolidate kept the newest child of a topic instead of the useful one. The two halves' counts are now summed when read, so existing data takes effect without a rewrite (issue-40).
 
