@@ -9,6 +9,8 @@
 #   4. release summaries auto-promote during sync; memory_checkpoints records the milestone
 #   5. the whole flow works over HTTP (/v1/repos add→sync→pending→submit→recall)
 #   6. a sync blocked by another process's live lease answers 409 repository_sync_busy (issue-33)
+#   7. a write-back says which promotion outcome it got, with the error when promotion failed, and
+#      sync retries every missed promotion, not only the latest 50 enriched summaries (issue-41)
 
 set -euo pipefail
 
@@ -98,6 +100,7 @@ MERGE_SUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$MERGE_ID" -H 
   "importance": 0.5, "confidence": 0.8
 }')
 assert_eq "merge promoted after enrichment" "$(json_get "$MERGE_SUBMIT" "d.data.promoted")" "true"
+assert_eq "issue-41 AC-2: promotion outcome promoted" "$(json_get "$MERGE_SUBMIT" "d.data.promotion")" "promoted"
 assert_eq "merge write-back dismisses the range it covers" "$(json_get "$MERGE_SUBMIT" "d.data.dismissed_covered")" "1"
 assert_eq "covered range left pending" "$(db_get "SELECT status FROM git_summaries WHERE id = '$SUM_ID'")" "dismissed"
 
@@ -147,6 +150,7 @@ RESUBMIT=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$SUM_ID" -H 'Conte
 }')
 assert_eq "re-submit ok (enrich in place)" "$(json_get "$RESUBMIT" "d.ok")" "true"
 assert_eq "re-submit does not re-promote" "$(json_get "$RESUBMIT" "d.data.promoted")" "false"
+assert_eq "issue-41 AC-2: re-submit says already_promoted" "$(json_get "$RESUBMIT" "d.data.promotion")" "already_promoted"
 curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
 assert_eq "memory_sources unchanged" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_BEFORE"
 assert_eq "sessions unchanged" "$(db_get "SELECT COUNT(*) FROM sessions")" "$SESS_BEFORE"
@@ -272,6 +276,57 @@ assert_eq "explicit range returned the same summary" \
     "$(db_get "SELECT COUNT(*) FROM git_summary_ranges WHERE summary_type = 'commit_range' AND head_sha = '$RANGE_HEAD'")" "1"
 assert_eq "dismissed range not promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$RANGE_ID'")" "0"
 rm "$MEMORIA_HOME/configs/config.json"
+
+echo "[repo-promotion] issue-41: write-back reports the promotion outcome; sync retries every missed promotion"
+# Explicit ranges, as in the section above: which skeletons a plain sync plans is not what this tests.
+range_skeleton() { # $1 = file, $2 = commit subject -> prints the new commit_range summary id
+    local base; base=$(git -C "$REPO" rev-parse HEAD)
+    seq 1 7 > "$REPO/src/$1"
+    git -C "$REPO" add . && git -C "$REPO" "${GIT_ID[@]}" commit -q -m "$2"
+    json_get "$("$CLI" repo summarize "$REPO_ID" --range "$base..$(git -C "$REPO" rev-parse HEAD)" --json)" "d.data.summaries[0].id"
+}
+LOW_ID=$(range_skeleton low.js "c-low: tidy constants")
+LOW=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$LOW_ID" -H 'Content-Type: application/json' -d '{
+  "title": "整理常數", "summary": "常數檔排版調整。", "importance": 0.3, "confidence": 0.8
+}')
+assert_eq "AC-2: low-importance commit_range is not_eligible" "$(json_get "$LOW" "d.data.promotion")" "not_eligible"
+assert_eq "AC-2: not_eligible keeps promoted:false" "$(json_get "$LOW" "d.data.promoted")" "false"
+
+FAIL_ID=$(range_skeleton fail.js "c-fail: cancellation window")
+# Promotion writes memory_sources; this trigger makes exactly that write fail, nothing else.
+db_run "CREATE TRIGGER t41_fail BEFORE INSERT ON memory_sources BEGIN SELECT RAISE(ABORT, 'injected promotion failure'); END"
+FAILED=$(curl -sf -X POST "$URL/v1/repos/$REPO_ID/summaries/$FAIL_ID" -H 'Content-Type: application/json' -d '{
+  "title": "取消時限檢查", "summary": "預訂取消加入時限檢查，逾時不可取消。", "importance": 0.85, "confidence": 0.8
+}')
+assert_eq "AC-1: write-back still ok" "$(json_get "$FAILED" "d.ok")" "true"
+assert_eq "AC-1: summary stays enriched" "$(db_get "SELECT status FROM git_summaries WHERE id = '$FAIL_ID'")" "enriched"
+assert_eq "AC-1: promotion outcome failed" "$(json_get "$FAILED" "d.data.promotion")" "failed"
+assert_eq "AC-1: the error is carried" "$(json_get "$FAILED" "String(d.data.promotion_error).includes('injected promotion failure')")" "true"
+printf '%s' '{"title":"取消時限檢查","summary":"預訂取消加入時限檢查，逾時不可取消。","importance":0.85,"confidence":0.8}' > "$TMP_DIR/fail.json"
+CLI_OUT=$("$CLI" repo summarize booking-api --submit "$FAIL_ID" --file "$TMP_DIR/fail.json" 2>&1)
+case "$CLI_OUT" in *"injected promotion failure"*) echo "  ✓ AC-1: CLI prints the promotion failure" ;; *) echo "  ✗ AC-1: CLI output lacks the failure: $CLI_OUT"; exit 1 ;; esac
+db_run "DROP TRIGGER t41_fail"
+assert_eq "AC-1 premise: nothing promoted for the failed summary" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$FAIL_ID'")" "0"
+
+# AC-3: 50 newer enriched summaries push the failed one out of the latest 50. They are not promotable
+# (low importance, nothing listed), so the only thing sync can promote is the one that failed.
+FAIL_RANGE=$(db_get "SELECT summary_range_id FROM git_summaries WHERE id = '$FAIL_ID'")
+(cd "$ROOT_DIR" && node -e "
+const db = new (require('better-sqlite3'))(process.argv[1]);
+const ins = db.prepare(\"INSERT INTO git_summaries (id, repository_id, summary_range_id, summary_type, title, summary, key_changes_json, decisions_json, known_limitations_json, risks_json, affected_domains_json, importance, confidence, generator, generator_version, prompt_version, status, created_at, updated_at) VALUES (?, ?, ?, 'commit_range', 'pad', 'pad', '[]', '[]', '[]', '[]', '[]', 0.1, 0.5, 'agent', 'test', ?, 'enriched', ?, ?)\");
+const base = Date.now() + 60000;
+for (let i = 0; i < 50; i++) { const t = new Date(base + i * 1000).toISOString(); ins.run('sum_pad41_' + i, process.argv[2], process.argv[3], 'pad-' + i, t, t); }
+db.close();
+" "$DB_PATH" "$REPO_ID" "$FAIL_RANGE")
+MS_PAD=$(db_get "SELECT COUNT(*) FROM memory_sources")
+curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+assert_eq "AC-3: sync promotes the summary that failed, beyond the latest 50" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id = '$FAIL_ID' AND memory_id = 'gitsum-$FAIL_ID'")" "1"
+assert_eq "AC-3: nothing else promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id <> '$FAIL_ID'")" "$MS_PAD"
+assert_eq "AC-3: padding summaries not promoted" "$(db_get "SELECT COUNT(*) FROM memory_sources WHERE source_id LIKE 'sum_pad41_%'")" "0"
+MS_AFTER=$(db_get "SELECT COUNT(*) FROM memory_sources")
+curl -sf -X POST "$URL/v1/repos/$REPO_ID/sync" -H 'Content-Type: application/json' -d '{}' >/dev/null
+assert_eq "AC-3: a second sync promotes nothing twice" "$(db_get "SELECT COUNT(*) FROM memory_sources")" "$MS_AFTER"
+db_run "DELETE FROM git_summaries WHERE id LIKE 'sum_pad41_%'"
 
 echo "[repo-promotion] non-invasive"
 STATUS_OUT="$(git -C "$REPO" status --porcelain)"

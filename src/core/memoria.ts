@@ -134,6 +134,8 @@ import type {
     PendingSummariesOptions,
     PendingSummaryRequest,
     GitSummaryRecord,
+    SubmitSummaryData,
+    SummaryPromotion,
     ConfidenceBasis
 } from './types.js'
 
@@ -1275,7 +1277,8 @@ export class MemoriaCore {
         const pool = new Map<string, GitSummaryRecord>()
         for (const summary of candidates) pool.set(summary.id, summary)
         if (!force) {
-            for (const summary of listSummaries(this.paths.dbPath, repositoryId, { status: 'enriched', limit: 50 })) {
+            // Every enriched summary a promotion missed, however long ago it was written (issue-41).
+            for (const summary of listSummaries(this.paths.dbPath, repositoryId, { status: 'enriched', unpromoted: true })) {
                 if (!pool.has(summary.id)) pool.set(summary.id, summary)
             }
         }
@@ -1406,7 +1409,7 @@ export class MemoriaCore {
     }
 
     /** Agent write-back (D1): validate the §7.5 payload, enrich in place, auto-promote if eligible. */
-    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean; dismissed_covered: number }>> {
+    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<SubmitSummaryData>> {
         return withResult('sqlite', async () => {
             await this.init()
             const { repositoryId, repositoryName, root } = await this.resolveManagedRepo(ref)
@@ -1429,18 +1432,24 @@ export class MemoriaCore {
                 },
                 generatorVersion: parsed.generator_version
             })
-            // Promotion failure never rolls back the enrichment (§24) — report promoted:false.
-            let promoted = false
+            // Promotion failure never rolls back the enrichment (§24); the outcome says what happened,
+            // with the error when it failed, so a caller can tell a failure from "not eligible" (issue-41).
+            let promotion: SummaryPromotion = 'not_eligible'
+            let promotionError: string | undefined
             try {
                 const gitConfig = (await loadMemoriaConfig(this.paths)).git
-                if (summary.range &&
-                    isPromotable(summary, gitConfig.summarization.promoteImportanceThreshold) &&
-                    !promotionExists(this.paths.dbPath, summary.id)) {
+                if (promotionExists(this.paths.dbPath, summary.id)) {
+                    promotion = 'already_promoted'
+                } else if (summary.range && isPromotable(summary, gitConfig.summarization.promoteImportanceThreshold)) {
                     const outcome = promoteSummary(this.paths.dbPath, summary, repositoryName)
-                    promoted = outcome.promoted
-                    if (promoted) this.indexPromotedSession(outcome.memoryIds[0])
+                    promotion = outcome.promoted ? 'promoted' : 'already_promoted'
+                    if (outcome.promoted) this.indexPromotedSession(outcome.memoryIds[0])
                 }
-            } catch { /* summary stays enriched; next sync retries promotion */ }
+            } catch (error) {
+                // Summary stays enriched; a resubmit or the next sync retries promotion.
+                promotion = 'failed'
+                promotionError = error instanceof Error ? error.message : String(error)
+            }
             // Housekeeping after the write that mattered: a failure leaves skeletons pending, and the
             // next milestone written back sweeps the whole repository again.
             let dismissedCovered = 0
@@ -1449,7 +1458,17 @@ export class MemoriaCore {
                     dismissedCovered = (await dismissCoveredCommitRanges(this.paths.dbPath, root, repositoryId)).length
                 } catch { /* stays pending */ }
             }
-            return { data: { summary, promoted, dismissed_covered: dismissedCovered }, evidence: [summary.id], confidence: 1 }
+            return {
+                data: {
+                    summary,
+                    promoted: promotion === 'promoted',
+                    promotion,
+                    ...(promotionError !== undefined ? { promotion_error: promotionError } : {}),
+                    dismissed_covered: dismissedCovered
+                },
+                evidence: [summary.id],
+                confidence: 1
+            }
         })
     }
 

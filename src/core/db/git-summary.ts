@@ -271,8 +271,14 @@ export function insertSummaryIfMissing(dbPath: string, input: InsertSummaryInput
 export function listSummaries(
     dbPath: string,
     repositoryId: string,
-    options: { status?: GitSummaryStatus; limit?: number } = {}
+    options: { status?: GitSummaryStatus; limit?: number; unpromoted?: boolean } = {}
 ): GitSummaryRecord[] {
+    // `unpromoted` keeps only summaries with no memory_sources row and lifts the default limit
+    // (LIMIT -1): it lists what promotion missed, and every one of them must be reachable (issue-41).
+    const unpromoted = options.unpromoted
+        ? 'AND NOT EXISTS (SELECT 1 FROM memory_sources m WHERE m.source_id = s.id)'
+        : ''
+    const limit = options.limit ?? (options.unpromoted ? -1 : 100)
     return withDb(dbPath, (db) => {
         const rows = db.prepare(`
           SELECT s.*, r.id AS r_id, r.repository_id AS r_repository_id, r.summary_type AS r_summary_type,
@@ -281,12 +287,12 @@ export function listSummaries(
                  r.range_fingerprint AS r_range_fingerprint, r.created_at AS r_created_at
           FROM git_summaries s
           JOIN git_summary_ranges r ON r.id = s.summary_range_id
-          WHERE s.repository_id = ? ${options.status ? "AND s.status = ?" : ''}
+          WHERE s.repository_id = ? ${options.status ? "AND s.status = ?" : ''} ${unpromoted}
           ORDER BY s.created_at DESC
           LIMIT ?
         `).all(...(options.status
-            ? [repositoryId, options.status, options.limit ?? 100]
-            : [repositoryId, options.limit ?? 100])) as Array<SummaryRow & Record<string, unknown>>
+            ? [repositoryId, options.status, limit]
+            : [repositoryId, limit])) as Array<SummaryRow & Record<string, unknown>>
         return rows.map((row) => mapSummary(row, {
             id: row.r_id as string,
             repository_id: row.r_repository_id as string,

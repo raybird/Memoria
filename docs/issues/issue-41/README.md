@@ -19,6 +19,8 @@
 - `src/cli/commands/repo.ts` - `--submit` 的人類可讀輸出
 - `src/server.ts`、`docs/API.md`、`docs/API.zh-TW.md` - `POST /v1/repos/:ref/summaries/:summaryId` 的回應欄位
 - `docs/CLI.md`、`docs/CLI.zh-TW.md`、`skills/memoria-memory-sync/deployed/DEPLOYED_REFERENCE.md` - 寫回結果的說明
+- `skills/memoria-memory-sync/deployed/DEPLOYED_SKILL.md` - 可改：merge 摘要寫回的完成判準原本是 `promoted: true`，改為看 `promotion`，失敗時重送
+- `src/sdk.ts` - 寫回結果的型別
 - `scripts/test-repo-promotion.sh` - 回歸測試
 - `src/core/db/telemetry.ts`、recall 排序 - 不應改動
 
@@ -46,14 +48,18 @@
 
 ## 實作與驗證步驟
 
-1. **AC-1、AC-3 紅燈** — 在 `scripts/test-repo-promotion.sh` 寫斷言。相依：驗收條件核准。
+1. ✅ **AC-1、AC-3 紅燈** — 在 `scripts/test-repo-promotion.sh` 寫斷言。相依：驗收條件核准。
    - 完成判準：兩項斷言以現行程式失敗，失敗形態與概述相同。
-2. **寫回回報促升結果** — `repoSubmitSummary` 區分四種結果並帶出例外訊息；CLI、HTTP 與型別帶出欄位。相依：步驟 1。對應 AC-1、AC-2。
+   - 完成證據：✅ 2026-11-27。以現行程式（main `fec7d1b` 的 src）執行 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME bash scripts/test-repo-promotion.sh` exit 1，停在第一個 `promotion` 斷言（得 `undefined`）。另以斷言失敗不中止的副本跑完全段：AC-1 的 `promotion` 為 `undefined`、錯誤訊息沒有帶出、CLI 只印「已寫回摘要」；AC-2 三種結果都是 `undefined`；AC-3 在 50 筆較新的已增強摘要之後，最早那筆 sync 後仍沒有 `memory_sources`（得 0）。促升失敗以測試資料庫在 `memory_sources` 加 `RAISE(ABORT)` trigger 注入；commit range 骨架以 `repo summarize --range` 明確建立，因為前一段測試用 `sync --from/--to` 掃過範圍，一般 sync 不一定會為新提交建出骨架。
+2. ✅ **寫回回報促升結果** — `repoSubmitSummary` 區分四種結果並帶出例外訊息；CLI、HTTP 與型別帶出欄位。相依：步驟 1。對應 AC-1、AC-2。
    - 完成判準：AC-1、AC-2 綠燈。
-3. **sync 補救不設上限** — `promoteEligible` 改為列出所有已增強、可促升、尚未促升的摘要。相依：步驟 1。對應 AC-3。
+   - 完成證據：✅ 2026-11-27。`types.ts` 新增 `SummaryPromotion` 與 `SubmitSummaryData`（core 與 SDK 共用）；先查 `promotionExists` 判定 `already_promoted`，再依 `isPromotable` 促升，任何例外都記為 `failed` 並帶 `promotion_error`。HTTP 直接回傳 core 的結果，不必改 server。CLI 依四種結果各印一行。`pnpm run check`、`pnpm run build` exit 0，AC-1、AC-2 斷言通過。GitNexus impact：`repoSubmitSummary` 為 HIGH（CLI、HTTP 寫回），新增欄位、原有欄位不變。
+3. ✅ **sync 補救不設上限** — `promoteEligible` 改為列出所有已增強、可促升、尚未促升的摘要。相依：步驟 1。對應 AC-3。
    - 完成判準：AC-3 綠燈，已促升的摘要沒有重複的 `memory_sources`。
-4. **文件與回歸** — CLI、API 雙語文件、部署的 REFERENCE、CHANGELOG；跑 CI 的 repo 與 http-mcp 組。相依：步驟 2、3。對應 AC-4。
+   - 完成證據：✅ 2026-11-27。`listSummaries` 新增 `unpromoted` 選項：只留沒有 `memory_sources` 列的摘要，未指定上限時不設限（`LIMIT -1`）；`promoteEligible` 的非 force 路徑改用它，是否促升仍由 `isPromotable` 決定。AC-3 斷言通過：最早那筆被促升、50 筆填充摘要沒有促升、第二次 sync 沒有新增任何 `memory_sources`。GitNexus impact：`promoteEligible` 為 CRITICAL（sync 主路徑），只放寬候選範圍。
+4. ✅ **文件與回歸** — CLI、API 雙語文件、部署的 REFERENCE、CHANGELOG；跑 CI 的 repo 與 http-mcp 組。相依：步驟 2、3。對應 AC-4。
    - 完成判準：兩組全綠，`release:docs-check` 通過。
+   - 完成證據：✅ 2026-11-27。CLI、API 雙語文件寫明 `promotion` 的四個值；部署的 REFERENCE 說明每個值與失敗後重送；部署的 SKILL 完成判準改為 `promotion: promoted`；CHANGELOG 記 Added、Fixed 與升級後第一次 sync 可能促升較早摘要。`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`pnpm run release:docs-check` 都 exit 0。repo、http-mcp、core 三組 23 支腳本，加上部署 SKILL 有改而補跑的 adapters 組與 `test-npm-install.sh`，共 29 支以 `env -u LIBSQL_URL -u MEMORIA_EMBED_PROVIDER -u MEMORIA_VECTOR_TIMEOUT_MS -u MEMORIA_HOME bash scripts/` 加腳本名執行，全部 exit 0；既有斷言沒有改值。精煉：`listSummaries` 加選項而不另寫一個查詢函式，沿用既有的欄位對應；其餘為 no-op。
 
 ## 待確認事項
 
@@ -70,9 +76,10 @@
 | 2026-11-27 | 建立（來源：2026-11-27 平行寫回 git 摘要時，downstream-b 兩筆 merge 首次寫回 `promoted:false`；使用者 2026-11-27 回「兩個發現開 issue」）；驗收條件待 TBD-1、TBD-2 決定 |
 | 2026-11-27 | TBD-1、TBD-2 使用者選 (a)；撰寫 AC-1～4，待核准 |
 | 2026-11-27 | 使用者核准 AC-1～4 |
+| 2026-11-27 | 步驟 1～4 完成，待審查 |
 
 ---
 **建立日期**: 2026-11-27  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待實作
+**狀態**: 待審查

@@ -48,7 +48,7 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 | `POST` | `/v1/repos/:ref/sync` | 增量掃描（`{generate_summaries?, dry_run?, ...}`）；另一個程式持有同一個 repository 的 sync 租約超過 `MEMORIA_REPO_SYNC_WAIT_MS` 時回 `409` `repository_sync_busy`，什麼都不寫 |
 | `POST` | `/v1/repos/:ref/summarize` | 摘要 branch/range/merge/tag |
 | `GET`  | `/v1/repos/:ref/summaries/pending` | 等待 agent 增強的摘要請求 |
-| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫。寫回 merge 或 release 時，一併略過它涵蓋的 pending commit range 骨架，並回報 `dismissed_covered` |
+| `POST` | `/v1/repos/:ref/summaries/:summaryId` | Agent 摘要回寫。寫回 merge 或 release 時，一併略過它涵蓋的 pending commit range 骨架，並回報 `dismissed_covered`。`promotion` 說明摘要是否進入 recall：`promoted`、`not_eligible`、`already_promoted`，或 `failed` 並附 `promotion_error`（摘要本身都已寫入；`promoted` 只有在 `promoted` 時為 true） |
 | `POST` | `/v1/repos/:ref/summaries/:summaryId/dismiss` | 略過一筆 pending 摘要（不自動促升；之後 `--submit` 或明確的 `--promote` 仍可讓它進 recall；已是 enriched 或已在 recall 時回 `409`） |
 | `POST` | `/v1/repos/:ref/summaries/dismiss` | 依 `{types}` 批次略過 pending 摘要；已在 recall 的會跳過（`skipped_promoted`） |
 

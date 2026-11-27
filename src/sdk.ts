@@ -29,6 +29,7 @@ import type {
     DismissPendingData,
     PendingSummariesOptions,
     GitSummaryRecord,
+    SubmitSummaryData,
     GitSummaryType
 } from './core/types.js'
 
@@ -166,7 +167,7 @@ export class MemoriaClient {
     }
 
     /** Write back an agent-generated §7.5 summary payload */
-    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<{ summary: GitSummaryRecord; promoted: boolean; dismissed_covered: number }>> {
+    async repoSubmitSummary(ref: string, summaryId: string, payload: unknown): Promise<MemoriaResult<SubmitSummaryData>> {
         return this.post(`/v1/repos/${encodeURIComponent(ref)}/summaries/${encodeURIComponent(summaryId)}`, payload)
     }
 

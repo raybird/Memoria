@@ -38,6 +38,7 @@ memoria repo sync project              # 增量掃描 → 事件 → 摘要 → 
 memoria repo summarize project --pending --json  # 待 agent 增強的摘要請求
 memoria repo summarize project --dismiss-pending --type merge,release  # 略過他人的骨架，不寫進記憶
 # 寫回 merge 或 release 摘要時，會一併略過範圍內的 commit range 骨架；結果回報 dismissed_covered
+# 寫回結果的 promotion 說明是否進入 recall：promoted、not_eligible、already_promoted，或 failed（附 promotion_error）
 memoria wiki build --json              # 重建 compiled wiki
 memoria wiki file-query --query "TS CLI migration" --title "TS CLI Migration Brief" --kind synthesis --scope project:Memoria
 memoria wiki lint --json               # 產生 durable wiki governance findings

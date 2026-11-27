@@ -832,6 +832,20 @@ export type GitSummaryType = 'commit_range' | 'branch' | 'merge' | 'release'
 // and can still be enriched later.
 export type GitSummaryStatus = 'pending' | 'enriched' | 'dismissed'
 
+/** What a write-back did about recall (issue-41): `promoted` it now, it does `not_eligible` (isPromotable
+ *  said no), it was `already_promoted` earlier, or the promotion `failed` — the summary itself is
+ *  written either way, and `promotion_error` carries the reason for a failure. */
+export type SummaryPromotion = 'promoted' | 'not_eligible' | 'already_promoted' | 'failed'
+
+export type SubmitSummaryData = {
+    summary: GitSummaryRecord
+    /** True exactly when `promotion` is `promoted`; kept for existing callers. */
+    promoted: boolean
+    promotion: SummaryPromotion
+    promotion_error?: string
+    dismissed_covered: number
+}
+
 /** Structured summary payload (spec §7.5) — what generators produce and agents write back. */
 export type GitSummaryContent = {
     title: string
