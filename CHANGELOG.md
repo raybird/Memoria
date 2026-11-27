@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-11-27
+
 ### Added
 - **A summary write-back says whether it reached recall.** `repo summarize --submit` and `POST /v1/repos/:ref/summaries/:summaryId` return `promotion`: `promoted`, `not_eligible`, `already_promoted` or `failed`, and a failure carries its error in `promotion_error`; the CLI prints which one happened. A failed promotion used to be swallowed into `promoted: false`, indistinguishable from a summary that was never eligible. `promoted` is unchanged (issue-41).
 
