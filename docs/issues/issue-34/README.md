@@ -63,17 +63,18 @@ brief 已經有同樣的合併（`collapseNotePairs`，`src/core/db/brief.ts:76`
 |---|---|---|---|
 | TBD-1 | 有成對筆記而觸發補滿時，結果等於路由在 2 × top-k 視窗下的管線結果再去掉成對的那筆，所以非筆記命中可能換位置，也可能換成員：keyword 的 FTS 與 LIKE 都先取 4 × limit 筆候選再依衰減分數重排，視窗加深後前幾名不一定相同，不需要任何 utility 或 superseded 標記（review-a6db261 S1，實測舊結果的非筆記命中被另兩筆取代）；hybrid 原本 k 筆內沒有命中帶 utility 時不依分數排序，視窗加深後有命中帶 utility 就整批重排。視窗內有被取代的筆記時，補一次仍可能不滿（S2，實測 6 則可見加 1 則被取代，--top-k 5 回 4 則，舊版回 2 則不同的）；先前「superseded 空位也會一起補上」的說法不成立。沒有成對筆記的查詢不受影響 | 已解決（2026-11-25 使用者選「接受並記錄」）：不改程式；AC-3 的「順序與數量和改動前相同」適用於沒有成對筆記的查詢，有成對筆記時以補滿後的結果為準；superseded 造成的不足不另開 issue，改動前 superseded 一律不補，這次沒有變差 | AC-3、AC-2 |
 | TBD-2 | review-a6db261 S3：AC-1「留排名較前的那一筆」沒有測試擋住，合併改成留排名較後的那筆時 test-cli-memory 仍全綠 | 已解決（2026-11-25 使用者選「修正」）：test-cli-memory 新增 utility 翻轉斷言，證據見步驟 4 | AC-1 |
-| TBD-3 | review-a6db261 S4：有成對筆記的 hybrid 查詢，route_mode 可能從 hybrid_fallback 變成 hybrid_tree，因為合併掉的那筆不再計入標籤；升級前後的 routeUtility 讀數會在升級點不連續 | 不影響本次交付（2026-11-25 使用者選「記錄並寫進 CHANGELOG」）。追蹤：CHANGELOG.md [Unreleased]「Compatibility and upgrade」已寫明 routeUtility 讀數在升級點前後不連續（2026-11-25，依 review-269a2aa 的建議）；行為依 issue-16「標籤看實際回傳的列」的規則 | AC-3 |
-| TBD-4 | review-a6db261 N1：POST /v1/recall 與 SDK 的 top_k 只驗 z.number()，負數與小數會進到 recall；-1 在沒有成對筆記的查詢上比改動前少一筆，2.5 不會補滿 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；CLI 的 --top-k 與 GET /v1/brief 已擋非正數，負數與小數在改動前就回無意義的筆數，合法輸入的行為不受影響 | 無 |
-| TBD-5 | review-a6db261 N2：補滿時，hybrid 標籤會把 2 × top-k 視窗截斷點之後被 superseded 濾掉的列也算進去 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；只影響 telemetry 標籤，而且需要同時有成對筆記、補滿與 superseded 的 keyword 專屬列，superseded 列計入標籤是改動前就有的慣例 | 無 |
+| TBD-3 | review-a6db261 S4：有成對筆記的 hybrid 查詢，route_mode 可能從 hybrid_fallback 變成 hybrid_tree，因為合併掉的那筆不再計入標籤；升級前後的 routeUtility 讀數會在升級點不連續 | 已解決（2026-11-27 使用者逐題確認：預定行為，v1.40.0 的 CHANGELOG「Compatibility and upgrade」已寫明，不需改程式）。原記錄：不影響本次交付（2026-11-25 使用者選「記錄並寫進 CHANGELOG」）。追蹤：CHANGELOG.md [Unreleased]「Compatibility and upgrade」已寫明 routeUtility 讀數在升級點前後不連續（2026-11-25，依 review-269a2aa 的建議）；行為依 issue-16「標籤看實際回傳的列」的規則 | AC-3 |
+| TBD-4 | review-a6db261 N1：POST /v1/recall 與 SDK 的 top_k 只驗 z.number()，負數與小數會進到 recall；-1 在沒有成對筆記的查詢上比改動前少一筆，2.5 不會補滿 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；CLI 的 --top-k 與 GET /v1/brief 已擋非正數，負數與小數在改動前就回無意義的筆數，合法輸入的行為不受影響。2026-11-27 使用者逐題確認：與另一項輸入驗證合併成 issue-43 處理。 | 無 |
+| TBD-5 | review-a6db261 N2：補滿時，hybrid 標籤會把 2 × top-k 視窗截斷點之後被 superseded 濾掉的列也算進去 | 不影響本次交付（2026-11-25 使用者未選修正）。追蹤：無；只影響 telemetry 標籤，而且需要同時有成對筆記、補滿與 superseded 的 keyword 專屬列，superseded 列計入標籤是改動前就有的慣例。2026-11-27 使用者逐題確認：維持記錄。 | 無 |
 | TBD-6 | review-a6db261 N3：notePairOf 與 noteFingerprintOf 各自解析 note-／noteev- 前綴 | 已解決（2026-11-25 使用者選修正）：notePairOf 改用 noteFingerprintOf，證據見步驟 4 | 無 |
-| TBD-7 | review-7e6baf6 NICE TO HAVE：CHANGELOG.md [Unreleased] 的「The hybrid label counts only the rows a caller receives」沒有提到被 superseded 濾掉的列照舊計入標籤 | 不影響本次交付（2026-11-26 使用者選「不修」）。追蹤：無；superseded 列計入標籤是改動前就有的行為（TBD-5），不是本版的變更，CHANGELOG 只記變更 | 無 |
+| TBD-7 | review-7e6baf6 NICE TO HAVE：CHANGELOG.md [Unreleased] 的「The hybrid label counts only the rows a caller receives」沒有提到被 superseded 濾掉的列照舊計入標籤 | 已解決（2026-11-27 使用者逐題確認：結案不修。superseded 列計入標籤不是那一版的變更，CHANGELOG 只記變更）。原記錄：不影響本次交付（2026-11-26 使用者選「不修」）。追蹤：無；superseded 列計入標籤是改動前就有的行為（TBD-5），不是本版的變更，CHANGELOG 只記變更 | 無 |
 
 ## Timeline
 
 | 日期 | 異動 |
 |------|------|
 | 2026-11-25 | 建立並核准 AC-1～3（來源：9 個下游 session 的使用體驗調查） |
+| 2026-11-27 | 待確認事項逐題確認：TBD-3、TBD-4、TBD-5、TBD-7 |
 
 ---
 **建立日期**: 2026-11-25  

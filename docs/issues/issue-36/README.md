@@ -49,7 +49,7 @@
 
 | 編號 | 事項 | 狀態 | 影響 |
 |---|---|---|---|
-| TBD-1 | review-88b341c S1：AC-3 要測試查詢不標 `--used`，但 CLI 的 `--used` 不影響寫入。`src/cli/commands/feedback.ts:41` 沒帶旗標時也當成 true，CLI 一定會送分數，而 `src/core/db/telemetry.ts:99-101` 只在沒有分數時才看 `used`；隔離資料根實測帶與不帶旗標寫入的資料相同。skill 原有的「`--score 0` without `--used`」也一樣 | 不影響本次交付（2026-11-26 使用者對 review-88b341c 回「照建議」：另開 issue 決定 `--used` 的語意）。追蹤：[issue-39](../issue-39/README.md)。本 issue 的文字照核准的 AC-3 保留，AC-3 要的測試查詢回報一致已經達到，不會造成錯誤寫入 | AC-3 |
+| TBD-1 | review-88b341c S1：AC-3 要測試查詢不標 `--used`，但 CLI 的 `--used` 不影響寫入。`src/cli/commands/feedback.ts:41` 沒帶旗標時也當成 true，CLI 一定會送分數，而 `src/core/db/telemetry.ts:99-101` 只在沒有分數時才看 `used`；隔離資料根實測帶與不帶旗標寫入的資料相同。skill 原有的「`--score 0` without `--used`」也一樣 | 已解決（2026-11-27 使用者逐題確認：已由 issue-39 解決，v1.40.1 起 `--help`、文件與部署的 skill 寫明 `--used` 不影響寫入）。原記錄：不影響本次交付（2026-11-26 使用者對 review-88b341c 回「照建議」：另開 issue 決定 `--used` 的語意）。追蹤：[issue-39](../issue-39/README.md)。本 issue 的文字照核准的 AC-3 保留，AC-3 要的測試查詢回報一致已經達到，不會造成錯誤寫入 | AC-3 |
 | TBD-2 | review-88b341c N1～N3：skill 的命中欄位沒提 `score`；「沒有 `relevance`」在 skill 寫了三次；`docs/CLI.md` 與中文版漏了 `session_id`，且「`score` 不在 0–1 範圍」不準 | 已解決（2026-11-26 使用者回「照建議」，選修正）：skill 補 `score` 只決定排序，`[ n/a ]` 併進命中欄位那一條；CLI 文件補 `session_id`，改成「不是 0–1 的比對品質」，其他欄位改用泛稱 | AC-1、AC-2 |
 | TBD-3 | review-88b341c N4：README 的涉及檔案沒列 CHANGELOG.md | 已解決（2026-11-26 使用者回「照建議」，選不修；2026-11-26 對 review-438a19e 的建議回「好照建議」，改寫理由）：「涉及檔案」在送審後屬凍結內容，補列會讓 PASS 失效；CHANGELOG 是每個 issue 都會更新的檔案，不列也不影響範圍判斷 | 無 |
 
@@ -63,6 +63,7 @@
 | 2026-11-26 | 使用者對建議回「照建議」：S1 記入待確認（TBD-1），N1～N3 修正（TBD-2），N4 不修（TBD-3） |
 | 2026-11-26 | 增量覆審 review-438a19e：PASS，1 項 NICE TO HAVE |
 | 2026-11-26 | 使用者對 review-438a19e 的建議回「好照建議」：TBD-3 改寫理由；TBD-1 開好追蹤 issue-39，改為不影響本次交付 |
+| 2026-11-27 | 待確認事項逐題確認：TBD-1 |
 
 ---
 **建立日期**: 2026-11-25  

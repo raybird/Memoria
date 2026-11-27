@@ -160,7 +160,7 @@ adapter 這一側本來就是 HTTP client：`src/adapter/adapter.ts:19-20` 的 c
 
 | 編號 | 事項 | 狀態 | 影響 |
 |---|---|---|---|
-| TBD-1 | 第二階段「主命令走 server」（`--server`）：第一階段只交付 `GET /v1/brief`，`--server` 當時決定另議，連同錯誤語意（本地失敗與網路失敗）、server 模式下 `latency_ms` 的意義都還沒定（見「第二階段的真正理由」） | 待確認 | 不影響第一階段已交付的 `/v1/brief`；sidecar 部署的 agent 容器仍需自帶 CLI 與資料卷才能用 recall、remember 等命令 |
+| TBD-1 | 第二階段「主命令走 server」（`--server`）：第一階段只交付 `GET /v1/brief`，`--server` 當時決定另議，連同錯誤語意（本地失敗與網路失敗）、server 模式下 `latency_ms` 的意義都還沒定（見「第二階段的真正理由」） | 已解決（2026-11-27 使用者逐題確認：結案不修。唯一提出需求的下游改用 CLI 加 runtime volume 的形態定案，之後沒有人再提；需要時另開新 issue）。原記錄：待確認 | 不影響第一階段已交付的 `/v1/brief`；sidecar 部署的 agent 容器仍需自帶 CLI 與資料卷才能用 recall、remember 等命令 |
 
 ---
 **狀態**: 已完成

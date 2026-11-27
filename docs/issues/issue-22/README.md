@@ -115,7 +115,7 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 | 編號 | 事項 | 狀態 | 影響 |
 |------|------|------|------|
 | TBD-1 | SCN-001～SCN-006 需使用者核准；其中 SCN-005／006 是覆蓋保護提案（以 frontmatter 的 `deployment_mode: installed` 與 `repository: Memoria` 作為部署標記） | 已解決 | 2026-10-20 使用者回覆「照建議」，全部核准，部署標記照提案 |
-| TBD-2 | 其他宿主（Codex、OpenCode）的 skill 目錄：本次只做 Claude Code，旗標值設計成可擴充 | 待確認 | 不影響已列 Scenario |
+| TBD-2 | 其他宿主（Codex、OpenCode）的 skill 目錄：本次只做 Claude Code，旗標值設計成可擴充 | 已解決（2026-11-27 使用者逐題確認：Codex 已由 issue-28 支援，提交 `d05980c`、v1.32.0，issue-29 改為 symlink；OpenCode 不另做，依其文件會讀 Claude 相容的 `~/.claude/skills`，本機未實測）。原記錄：待確認 | 不影響已列 Scenario |
 | TBD-3 | 合併順序：本分支相依 issue-20、issue-21 的行為（審查 81bb75d S-1，`需決策`） | 已解決 | 2026-10-20 使用者「一律都照建議」：採 reviewer 建議，列為阻擋性相依（見「風險與首要驗證」），合併前 issue-20、issue-21 須已在 main；若之後 rebase，HEAD 改變須重新審查 |
 | TBD-4 | 部署標記分不出「setup 寫的」與「手動複製後改過的」（審查 81bb75d M-1，`需決策`） | 已解決 | 2026-10-20 使用者「一律都照建議」：採 reviewer 建議 (A)＋(C)——覆蓋前把整個目錄備份到 `<memoria-home>/.agents/skill-backups/` 並印出路徑，文件改為如實描述；SCN-005「檔案更新為目前模板」不變，不需重新核准 |
 
@@ -129,6 +129,7 @@ Feature: agent 能看見並在對的時機使用 Memoria skill
 | 2026-10-20 | 獨立審查 RETURN TO execute-task（`81bb75d`，[報告](./review-81bb75d.md)）：M-1 帶標記的副本可能是使用者改過的；依 TBD-3、TBD-4 修正 | - |
 | 2026-10-20 | 第二輪審查 RETURN TO execute-task（`ccf0d94`，[報告](./review-ccf0d94.md)）：備份測試依目錄順序取路徑，ext4 上不穩定；改由 setup 輸出取得 | - |
 | 2026-10-20 | 合併進 main（rebase 後 fast-forward，`062071f`），結案 | - |
+| 2026-11-27 | 待確認事項逐題確認：TBD-2 |
 
 ---
 **建立日期**: 2026-10-20  
