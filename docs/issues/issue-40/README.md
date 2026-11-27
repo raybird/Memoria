@@ -23,7 +23,7 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 
 ## 驗收條件
 
-待 TBD-1 決定後撰寫，目前沒有已核准的驗收條件。
+待 TBD-1 決定後撰寫，目前沒有已核准的驗收條件。撰寫時要納入：部署的 skill 寫「Those memories accrue that score, and a low one moves them down in later recalls」，修正後這句對 CLI 筆記也要成立，不論回報的是哪一半、recall 留下的是哪一半（issue-39 TBD-5，review-3d70567 N1 實測：對 `noteev-` 回報 0 後留下 `note-` 時分數不變）。
 
 ## 風險與首要驗證
 
@@ -44,6 +44,7 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 | 日期 | 異動 |
 |------|------|
 | 2026-11-26 | 建立（來源：issue-39 review-03683f0 N1；使用者 2026-11-26 回「照建議」：另開 issue）；驗收條件待 TBD-1 決定 |
+| 2026-11-27 | 補入 issue-39 TBD-5：skill 的效用敘述要對筆記也成立 |
 
 ---
 **建立日期**: 2026-11-26  
