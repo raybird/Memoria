@@ -11,7 +11,7 @@
 
 ## 現況
 
-**現行 review**: review-91a8edc.md
+**現行 review**: review-48ede74.md
 
 ## 涉及檔案
 
@@ -84,6 +84,7 @@
 | 2026-11-27 | 使用者核准 AC-1～4 |
 | 2026-11-27 | 步驟 1～4 完成，待審查 |
 | 2026-11-27 | review-91a8edc PASS，附 SHOULD FIX 1 項、NICE TO HAVE 5 項；使用者回「照建議」，結論記在 TBD-4，修正後送增量覆審 |
+| 2026-11-27 | review-48ede74（增量覆審）PASS，附 NICE TO HAVE 1 項，結論待使用者確認 |
 
 ---
 **建立日期**: 2026-11-27  
