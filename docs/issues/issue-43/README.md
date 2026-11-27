@@ -14,7 +14,7 @@
 
 ## 現況
 
-**現行 review**: review-b2cc42a.md
+**現行 review**: review-d3a8ea0.md
 
 ## 涉及檔案
 
@@ -97,9 +97,10 @@
 | 2026-11-27 | 步驟 1～4 完成：紅燈後實作共用的 `top_k` 規則與 `--verify` 格式字元檢查，CI core 與 http-mcp 組全綠 |
 | 2026-11-27 | 獨立審查 review-b2cc42a：PASS，SHOULD FIX 1 項、NICE TO HAVE 4 項待使用者決定 |
 | 2026-11-27 | 使用者對 review-b2cc42a 的建議全部照建議處理（結論記在 TBD-4～8）；修正後送增量覆審 |
+| 2026-11-27 | 增量覆審 review-d3a8ea0：PASS，NICE TO HAVE 2 項待使用者決定 |
 
 ---
 **建立日期**: 2026-11-27  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 審查中
+**狀態**: 審查通過（review-d3a8ea0）
