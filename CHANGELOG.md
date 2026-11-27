@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.40.1] - 2026-11-27
+
 ### Changed
 - **`feedback --used` is documented as what it always was: no effect.** The CLI always sends a score, and `used` only derives one when none is given, so the flag never changed what was written; the deployed skill nonetheless told agents to set or omit it. `--help`, the CLI and API guides now say so, and the skill reports a recall run only as a test with `--score` and no `--hits`, which leaves every memory's utility unchanged. The flag is still accepted, and HTTP and SDK behaviour is unchanged (issue-39).
 
