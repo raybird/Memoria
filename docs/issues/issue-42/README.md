@@ -11,6 +11,10 @@
 
 本 issue 讓重新寫回已促升的摘要時，recall 的內容與寫回結果一致，或至少明確告知呼叫端 recall 沒有更新。
 
+## 現況
+
+**現行 review**: review-28ec168.md
+
 ## 涉及檔案
 
 採 TBD-1 (a)、TBD-2 依文字比對。相依 [issue-41](../issue-41/README.md)：寫回結果沿用它新增的 `promotion` 欄位，多一個值 `updated`。
@@ -70,7 +74,7 @@
 | TBD-1 | 重新寫回已促升的摘要時怎麼處理。可選做法：(a) 同步更新：更新 session 文字與既有 decision 的內容；新 payload 少掉的 decision 標記 superseded（不刪除，保留效用與標記），多出的新增；向量與 tree index 由既有的「文字變了就重 embed」與 `buildMemoryIndex` 更新；(b) 拒絕：已促升的摘要重新寫回回 409 `summary_already_promoted`，提示改用 `remember --supersedes`；(c) 維持現狀，只在回傳加 `already_promoted` 說明 recall 沒有更新，並把 `--supersedes` 的做法寫進文件。建議 (a)：更正摘要是正當需求，(b)、(c) 都只能撤下 decision，改不到摘要本身的文字。decision 依序號對應的問題見 TBD-2 | 已解決（2026-11-27 使用者選 (a)）：同步更新，拿掉的 decision 標記已取代、不刪除（AC-1～3） | 驗收條件、涉及檔案與風險等級 |
 | TBD-2 | 採 (a) 時，新舊 decision 怎麼對應。decision 的 id 是 `gitdec-` 加摘要 id 與序號，刪掉中間一個會讓後面的序號整體位移。可選：依序號對應（簡單，但位移時效用會掛到內容不同的 decision 上）；依 decision 文字比對，相同的沿用 id，不同的視為新增並把舊的標 superseded（效用只留在內容相同的 decision 上）。建議依文字比對 | 已解決（2026-11-27 使用者選依文字比對）：decision 文字相同沿用 id，不同的新增並用未用過的序號，沒對到的舊 decision 標記已取代（AC-2） | AC 的細節，TBD-1 選 (a) 時才需要 |
 | TBD-3 | 2026-11-27 已用 `--supersedes` 撤下的那一筆（downstream-b 的 decision），本 issue 完成後是否改用新做法重做。建議不重做：supersede 結果已正確，重做沒有收穫 | 已解決（2026-11-27 使用者選不重做） | 無 |
-| TBD-4 | issue-41 在 `test-repo-promotion.sh` idempotency 段加的斷言：已促升的摘要以不同文字、不帶 decision 重送時 `promotion` 為 `already_promoted`。AC-1 規定這種重送回 `updated`（失敗路徑寫明「結果仍是 `already_promoted`」），與 AC-4「既有斷言不需改值」對同一個斷言要求相反 | 已解決（2026-11-27，實作時依 AC-1 處理，結論待使用者確認）：這個斷言描述的正是本 issue 要改的行為，改為期望 `updated`，並在同一段補一次內容完全相同的重送，期望 `already_promoted`，保住 issue-41 AC-2 要區分的那個結果。同段其他斷言（`promoted` 為 false、`memory_sources` 與 sessions 筆數不變）原值通過 | AC-1、AC-4 |
+| TBD-4 | issue-41 在 `test-repo-promotion.sh` idempotency 段加的斷言：已促升的摘要以不同文字、不帶 decision 重送時 `promotion` 為 `already_promoted`。AC-1 規定這種重送回 `updated`（失敗路徑寫明「結果仍是 `already_promoted`」），與 AC-4「既有斷言不需改值」對同一個斷言要求相反 | 待確認（review-28ec168 加註需決策：AC-4「既有斷言需要改值」是否排除這條斷言）。實作時的處理：這個斷言描述的正是本 issue 要改的行為，改為期望 `updated`，並在同一段補一次內容完全相同的重送，期望 `already_promoted`，保住 issue-41 AC-2 要區分的那個結果。同段其他斷言（`promoted` 為 false、`memory_sources` 與 sessions 筆數不變）原值通過 | AC-1、AC-4 |
 
 ## Timeline
 
@@ -80,9 +84,10 @@
 | 2026-11-27 | TBD-1 使用者選 (a)、TBD-2 選依文字比對、TBD-3 選不重做；撰寫 AC-1～4，待核准 |
 | 2026-11-27 | 使用者核准 AC-1～4 |
 | 2026-11-27 | 開始實作（使用者回「直接開始 issue-42」）；核准 commit 回填為 `fec7d1b`；步驟 1～4 完成，待審查 |
+| 2026-11-27 | review-28ec168 RETURN TO execute-task：MUST FIX 2 項（被取代的第一個 decision 留在 topic 節點；TBD-4 需決策）、SHOULD FIX 1 項、NICE TO HAVE 4 項 |
 
 ---
 **建立日期**: 2026-11-27  
 **分級**: Small  
 **風險**: Medium\
-**狀態**: 待審查
+**狀態**: 實作中
