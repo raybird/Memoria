@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.41.1] - 2026-11-27
+
 ### Fixed
 - **`top_k` is validated the same way on every HTTP and CLI entry.** `POST /v1/recall` and `POST /v1/wiki/file-query` accepted any number, so a negative, fractional or very large `top_k` went straight into recall: a negative one returned a meaningless count, and a huge one made a single query scan a candidate window twice its size. `GET /v1/brief` and the CLI's `--top-k` on `recall`, `brief` and `wiki file-query` refused only non-positive values. All of them now take an integer from 1 to 100 and name `top_k` and the range when refusing (issue-43).
 - **`--verify` refuses Unicode format characters.** Bidi overrides and isolates (U+202A–202E, U+2066–2069) made recall and the brief display a command different from the one stored, and zero-width characters, U+FEFF and the soft hyphen were invisible. Every format character (category Cf) is now refused like a control character, and nothing is written; since these characters are invisible, the error names the first refused character and its position, e.g. `found U+200B at character 4` (issue-43).

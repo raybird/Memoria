@@ -108,6 +108,7 @@
 | v1.40.1 | `feedback --used` 標明為不影響寫入（issue-39） | CLI 一定送分數、`used` 只在沒有分數時推算，所以 `--used` 從來不影響寫入；`--help`、CLI 與 API 雙語文件改為照實說明，部署的 skill 不再提 `--used`，改為用在工作上帶 `--hits`、只是測試時不帶 `--hits`（不累積效用），並寫明效用只會把低分記憶往後排。寫入語意、schema、HTTP 與 SDK 都沒變。三輪獨立審查（430907e、03683f0、3d70567 皆 PASS）；筆記兩半效用分開記的問題另開 issue-40。 |
 | v1.40.2 | 筆記的效用不論回報哪一半都算數（issue-40） | `feedback --hits` 把效用記在傳入的 id，recall 只留筆記的一半；recall 加權、stale 與 consolidate prune、brief 高效用區塊改為讀取時依指紋加總 `note-`／`noteev-` 兩半，既有資料立即生效，寫入不變 |
 | v1.41.0 | 摘要寫回回報促升結果，重送已促升的摘要會更新 recall（issue-41、issue-42） | 寫回結果新增 `promotion`（`promoted`／`updated`／`not_eligible`／`already_promoted`／`failed` 加 `promotion_error`），sync 補做所有漏掉的促升並逐筆處理失敗；已在 recall 的摘要重送時改寫摘要文字，decision 依文字比對沿用、新增或標記已取代，tree index、FTS 與向量跟著更新 |
+| v1.41.1 | `top_k` 與 `--verify` 的輸入驗證收緊（issue-43） | HTTP（`POST /v1/recall`、`POST /v1/wiki/file-query`、`GET /v1/brief`）與 CLI 三個 `--top-k` 共用 `isValidTopK`，一律要求 1～100 的整數，其他值回 400 或錯誤並指出範圍；`--verify` 拒絕 Unicode 格式字元（類別 Cf，trim 之前檢查），錯誤訊息指出第一個被拒絕字元的 code point 與位置 |
 
 > 每一版都是「一個小單元 → 驗證 → commit → tag → release」的節奏,向後相容。
 >
