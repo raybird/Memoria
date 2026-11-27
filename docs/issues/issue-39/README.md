@@ -71,6 +71,7 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 | TBD-2 | review-430907e S1、N1～N3：skill 寫回報 `--hits` 的記憶「下次排得更高」，但效用加權只往下調（`src/core/db/recall.ts` 的係數介於 0.5 到 1）；風險段的完成證據沒有回填；help 斷言依賴折行；`types.ts` 的 `used` 註解與新文件不一致 | 已解決（2026-11-26 使用者回「是否能增量複審先」，照建議四項都修並走增量覆審）：skill 改為分數低的往後排、分數高的維持原位並免於 stale prune；回填風險段的完成證據；help 斷言先合併換行再比對；`types.ts` 註解改為只在沒有 `utility_score` 時推算分數，並列入涉及檔案 | AC-1、AC-3 |
 | TBD-3 | review-03683f0 N1、N2：skill 寫分數高的記憶「維持原位並免於 stale prune」，但分數低於 1 仍會略往下調，stale prune 也只用 session id 查效用，回報 `noteev-` 時沒有保護；help 斷言在「no effect」前有連字號時會誤報紅燈 | 已解決（2026-11-26 使用者回「照建議」，選修正）：skill 只保留「分數低的之後會往後排」；斷言改為 `([^-]\|-[^-])*`，允許單一連字號。stale prune 不認 event id 效用是既有限制，另開 [issue-40](../issue-40/README.md) | AC-3 |
 | TBD-4 | review-03683f0 N3：風險與首要驗證段的完成證據寫「6 種會改變寫入的注入錯誤」都讓斷言失敗；實際改變寫入的是 4 種（review-430907e 的 A～D），F 由 help 斷言抓到，每種注入只讓其中一項斷言失敗 | 不影響本次交付（2026-11-26 使用者回「照建議」，選記入待確認）。追蹤：無；該段在審查後凍結，以本列更正，結論不變：AC-1、AC-2 的斷言在寫入被改壞時會失敗 | AC-1、AC-2 |
+| TBD-5 | review-3d70567 N1：skill 的「分數低的之後會往後排」對一般 hit 成立，對 CLI 筆記只部分成立：recall 先做效用加權再收合筆記的兩半，回報其中一半後，下次留下另一半時分數不變或只部分下調 | 不影響本次交付（2026-11-27 使用者回「可以合併 推送發版」，同意記入待確認）。追蹤：[issue-40](../issue-40/README.md)；這是 issue-40 概述第二點的同一個問題，agent 的回報方式不受影響，issue-40 寫驗收條件時要讓這句對筆記也成立 | AC-3 |
 
 ## Timeline
 
@@ -84,9 +85,10 @@ issue-36 的審查（review-88b341c S1，見 [issue-36 TBD-1](../issue-36/README
 | 2026-11-26 | 增量覆審 review-03683f0：PASS，3 項 NICE TO HAVE |
 | 2026-11-26 | 依 review-03683f0 修正 N1、N2，記錄 TBD-3、TBD-4，另開 issue-40；rebase 到建立 issue-40 的 main，送增量覆審 |
 | 2026-11-26 | review-3d70567：rebase 後增量覆審的條件不成立，改做完整審查，PASS，1 項 NICE TO HAVE |
+| 2026-11-27 | 記錄 TBD-5；狀態改為已完成，待合併 |
 
 ---
 **建立日期**: 2026-11-26  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 審查中
+**狀態**: 已完成
