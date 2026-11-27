@@ -139,14 +139,31 @@ const VERIFY_FORBIDDEN = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/
  *  recall and the brief would differ from the one stored. Tested before trim(), which strips U+FEFF. */
 const VERIFY_FORMAT_CHARS = /\p{Cf}/u
 
+/** Index in `raw` of the first character `--verify` refuses, or undefined. Format characters are
+ *  searched in `raw`; controls only in the trimmed command, so a trailing newline stays acceptable. */
+function firstForbiddenIndex(raw: string, command: string): number | undefined {
+    const format = VERIFY_FORMAT_CHARS.exec(raw)?.index
+    const control = VERIFY_FORBIDDEN.exec(command)
+    const controlInRaw = control ? control.index + raw.length - raw.trimStart().length : undefined
+    if (format === undefined) return controlInRaw
+    return controlInRaw === undefined ? format : Math.min(format, controlInRaw)
+}
+
 /** Validate a `--verify` value. undefined stays undefined (no marker requested). The command is
  *  rendered on one line of the brief, so a value that could break or forge a line is refused
  *  rather than mangled. */
 export function normalizeVerifyCommand(raw: string | undefined): string | undefined {
     if (raw === undefined) return undefined
     const command = raw.trim()
-    if (!command || VERIFY_FORBIDDEN.test(command) || VERIFY_FORMAT_CHARS.test(raw)) {
-        throw new Error('--verify must be a non-empty, single-line command without control or format characters')
+    const forbidden = firstForbiddenIndex(raw, command)
+    if (!command || forbidden !== undefined) {
+        let message = '--verify must be a non-empty, single-line command without control or format characters'
+        if (forbidden !== undefined) {
+            // issue-43: format characters are invisible, so name the first offending one and where it is.
+            const codePoint = raw.codePointAt(forbidden)!.toString(16).toUpperCase().padStart(4, '0')
+            message += ` (found U+${codePoint} at character ${[...raw.slice(0, forbidden)].length + 1})`
+        }
+        throw new Error(message)
     }
     return command
 }

@@ -402,14 +402,22 @@ for bad in $'git log‮1- enilno--' $'git ⁦status⁩' $'git​status' $'﻿git
     CODE=$?
     set -e
     [ "$CODE" != "0" ] || { echo "  ✗ 含格式字元的 --verify 應該失敗: $(printf '%q' "$bad")"; exit 1; }
-    case "$ERR" in *--verify*format*) ;; *) echo "  ✗ 錯誤沒有指出 --verify 不接受格式字元: $ERR"; exit 1 ;; esac
+    case "$ERR" in *--verify*control*format*) ;; *) echo "  ✗ 錯誤沒有指出 --verify 不接受控制字元與格式字元: $ERR"; exit 1 ;; esac
+done
+[ "$(counts)" = "$BEFORE" ] || { echo "  ✗ 被拒絕的命令仍寫入了資料 ($BEFORE→$(counts))"; exit 1; }
+# 格式字元看不見，錯誤要指出第一個違規字元與它的位置（emoji 算一個字元；控制字元也一樣）。
+for case43 in $'git\u200bstatus|U+200B at character 4' $'\U1F600\u200dgit|U+200D at character 2' $'  git status\nrm x|U+000A at character 13'; do
+    set +e
+    ERR=$("$CLI" remember "某個會變的狀態" --project demo --verify "${case43%%|*}" 2>&1)
+    set -e
+    case "$ERR" in *"found ${case43#*|}"*) ;; *) echo "  ✗ 錯誤沒有指出 ${case43#*|}: $ERR"; exit 1 ;; esac
 done
 [ "$(counts)" = "$BEFORE" ] || { echo "  ✗ 被拒絕的命令仍寫入了資料 ($BEFORE→$(counts))"; exit 1; }
 "$CLI" remember "一般 ASCII 命令可以寫入" --project demo --verify "git log main --oneline -1" >/dev/null \
     || { echo "  ✗ ASCII 的 --verify 不該被拒絕"; exit 1; }
 "$CLI" remember "含中文與 Tab 的命令可以寫入" --project demo --verify $'git log --grep "修正"\t-1' >/dev/null \
     || { echo "  ✗ 含中文與 Tab 的 --verify 不該被拒絕"; exit 1; }
-echo "  U+202E、U+2066／2069、U+200B、U+FEFF、U+00AD 都拒絕且沒有寫入；ASCII、中文與 Tab 可以"
+echo "  U+202E、U+2066／2069、U+200B、U+FEFF、U+00AD 都拒絕且沒有寫入，錯誤指出第一個違規字元與位置；ASCII、中文與 Tab 可以"
 
 echo "[attributes] (R/issue-32 SCN-001, SCN-002) recall 顯示截至日期與查證命令"
 reset_home home-r

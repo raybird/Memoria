@@ -54,7 +54,7 @@ Launch: `memoria serve` (port 3917, override via `MEMORIA_PORT`).
 
 All responses use the `MemoriaResult<T>` envelope (`evidence[]`, `confidence`, `latency_ms`).
 
-`top_k` — in the body of `POST /v1/recall` and `POST /v1/wiki/file-query`, and as the `GET /v1/brief` query param — must be an integer from 1 to 100; anything else is `400` naming `top_k` and the range, the same rule as the CLI's `--top-k`. Omitting it keeps the endpoint's default.
+`top_k` — in the body of `POST /v1/recall` and `POST /v1/wiki/file-query`, and as the `GET /v1/brief` query param — must be an integer from 1 to 100; a number outside that range or a non-integer is `400` naming `top_k` and the range, the same rule as the CLI's `--top-k` (a body value that is not a number fails the type check first, also `400`). Omitting it keeps the endpoint's default.
 
 `confidence` is `0–1` **or `null`**, and recall responses carry `confidence_basis` naming where the
 value came from: `lexical_coverage` (query-token coverage of the top hit), `no_hits` (nothing
