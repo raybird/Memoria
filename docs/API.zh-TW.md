@@ -54,6 +54,8 @@ curl -sS -X POST http://localhost:3917/v1/recall \
 
 所有回傳皆為 `MemoriaResult<T>` 信封格式（含 `evidence[]`、`confidence`、`latency_ms`）。
 
+`top_k`（`POST /v1/recall`、`POST /v1/wiki/file-query` 的 body，以及 `GET /v1/brief` 的查詢參數）必須是 1～100 的整數，其他值回 `400` 並指出 `top_k` 與範圍，和 CLI 的 `--top-k` 同一規則；省略時沿用該端點的預設值。
+
 `confidence` 是 `0–1` **或 `null`**；recall 回傳另帶 `confidence_basis` 說明這個值從何而來：
 `lexical_coverage`（查詢 token 在首位命中的覆蓋率）、`no_hits`（沒有任何命中，`confidence` 為 `0`）、
 `unavailable`（首位命中僅來自語意索引，字面匹配品質無從衡量，`confidence` 為 `null`——意思是

@@ -134,14 +134,19 @@ export const VERIFY_DURABLE_CONFLICT =
  *  paragraph separators, and the remaining C0/C1 controls. Tab is the one control a command may hold. */
 const VERIFY_FORBIDDEN = /[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/
 
+/** issue-43: every format character (category Cf). Bidi overrides and isolates reorder what a reader
+ *  sees, and zero-width characters, the BOM and the soft hyphen are invisible, so the command shown in
+ *  recall and the brief would differ from the one stored. Tested before trim(), which strips U+FEFF. */
+const VERIFY_FORMAT_CHARS = /\p{Cf}/u
+
 /** Validate a `--verify` value. undefined stays undefined (no marker requested). The command is
  *  rendered on one line of the brief, so a value that could break or forge a line is refused
  *  rather than mangled. */
 export function normalizeVerifyCommand(raw: string | undefined): string | undefined {
     if (raw === undefined) return undefined
     const command = raw.trim()
-    if (!command || VERIFY_FORBIDDEN.test(command)) {
-        throw new Error('--verify must be a non-empty, single-line command without control characters')
+    if (!command || VERIFY_FORBIDDEN.test(command) || VERIFY_FORMAT_CHARS.test(raw)) {
+        throw new Error('--verify must be a non-empty, single-line command without control or format characters')
     }
     return command
 }

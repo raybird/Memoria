@@ -36,7 +36,7 @@
    - 失敗路徑：既有測試的斷言需要改值才能通過（為錯誤輸入新增的拒絕斷言除外）。
 
 - **核准日期**: 2026-11-27
-- **核准 commit**: `待提交`
+- **核准 commit**: `0eb4e8dd108407456e7c5c91444dc738429aefc2`
 - **核准來源**: 使用者 2026-11-27 逐題確認時 TBD-1 選所有入口一致、TBD-2 選 100、TBD-3 選 Cf 全擋，對 AC-1～4 回「核准並在 main 提交推送」
 
 ## 風險與首要驗證
@@ -45,18 +45,25 @@
 - **風險等級與理由**：Low。只改入口的驗證，合法輸入的行為不變；2026-11-27 查到的本機與下游呼叫都在 1～20 之間，內部唯一用到 50 的地方不經這些入口。
 - **首要驗證**：先寫 AC-1 的 HTTP 斷言，以現行程式取得紅燈：`POST /v1/recall` 對 `top_k: -1`、`2.5`、`101` 回 200。
 - **選擇理由**：HTTP 是最寬的入口，也是下游實際在用的介面。
-- **完成證據**：待驗收條件核准後補上。
+- **完成證據**：步驟 1 的紅燈：以原本的程式，`POST /v1/recall`、`POST /v1/wiki/file-query` 對 `-1`、`0`、`2.5`、`101` 都回 200，`GET /v1/brief` 對 `2.5`、`101` 回 200，錯誤值的 13 條斷言全部失敗，邊界值（1、100、省略）的斷言都通過。
 
 ## 實作與驗證步驟
 
 1. **紅燈** — 為 AC-1～3 寫斷言：HTTP 三個入口、CLI 三個命令與 `remember --verify` 各對錯誤值與邊界值。相依：驗收條件核准。
    - 完成判準：錯誤值的斷言以現行程式失敗，失敗形態與概述相同；邊界值（1、100、省略、合法命令）的斷言以現行程式通過。
+   - 結果（2026-11-27，已完成）：斷言加在 `scripts/test-http-api.sh`（AC-1）、`scripts/test-cli-memory.sh`（AC-2）、`scripts/test-memory-attributes.sh` 的 (Q2) 段（AC-3）。以原本的程式跑失敗不中斷的副本：
+     - HTTP：錯誤值的 13 條斷言全部失敗（POST 兩個端點各 4 個值回 200；brief 的 `2.5`、`101` 回 200，`-1`、`0`、`abc` 回 400 但訊息只寫 positive number）；邊界值的斷言都通過。
+     - CLI：`recall --top-k 0` 的錯誤訊息是 `Use a positive number`，沒有寫範圍。
+     - `--verify`：含 U+202E 的命令被寫入，輸出顯示成 `git log‮1- enilno--`，畫面上的命令與存下的不同。
 2. **共用規則與入口** — 定義 `top_k` 的上限與檢查一次，HTTP 的 schema 與查詢參數、CLI 的三個 `--top-k` 都使用它。相依：步驟 1。對應 AC-1、AC-2。
    - 完成判準：AC-1、AC-2 綠燈；HTTP 與 CLI 沒有各自寫一份範圍判斷。
+   - 結果（2026-11-27，已完成）：`src/core/utils.ts` 定義 `TOP_K_MAX`（100）、`TOP_K_RANGE`、`isValidTopK` 與 CLI 用的 `parseTopKOption`。`src/server.ts` 兩個 body schema 共用 `topKSchema`（以 `isValidTopK` refine），brief 的查詢參數也改用 `isValidTopK`；`recall`、`brief`、`wiki file-query` 的 `--top-k` 改用 `parseTopKOption`。AC-1、AC-2 的斷言綠燈。
 3. **`--verify` 格式字元** — `VERIFY_FORBIDDEN` 加入 Unicode 類別 Cf，錯誤訊息一併更新。相依：步驟 1。對應 AC-3。
    - 完成判準：AC-3 綠燈。
+   - 結果（2026-11-27，已完成）：`src/core/db/memory-attributes.ts` 新增 `VERIFY_FORMAT_CHARS`（`\p{Cf}`）。它檢查 trim 之前的原始值，因為 `String.prototype.trim()` 會把 U+FEFF 當空白去掉，開頭的 U+FEFF 在 trim 之後就看不到了；控制字元仍檢查 trim 之後的值，原本接受的、結尾帶換行的命令不受影響。AC-3 的斷言綠燈。
 4. **文件與回歸** — API、CLI 雙語文件與 CHANGELOG；跑 CI 的 core 與 http-mcp 組。相依：步驟 2、3。對應 AC-4。
    - 完成判準：兩組全綠，`release:docs-check` 通過。
+   - 結果（2026-11-27，已完成）：`docs/API.md`、`docs/API.zh-TW.md` 在信封說明後加 `top_k` 的範圍；`docs/CLI.md`、`docs/CLI.zh-TW.md` 加 `--top-k` 的範圍並更新 `--verify` 不接受的字元；`CHANGELOG.md` `[Unreleased]` 的 Fixed 兩項，Compatibility and upgrade 寫明以前會回結果的錯誤輸入改回 400 或錯誤。`pnpm run check`、`pnpm run build`、`node dist/cli.mjs --help`、`bash -n install.sh`、`pnpm run release:docs-check` 通過；CI core 組 10 支與 http-mcp 組 5 支全部 exit 0。三支測試檔的改動只有新增行（numstat 的刪除數都是 0），既有斷言沒有改值。
 
 ## 待確認事項
 
@@ -72,9 +79,10 @@
 |------|------|
 | 2026-11-27 | 建立（來源：2026-11-27 待確認事項逐題確認，使用者對 issue-34 TBD-4 與 issue-32 TBD-9 選「合併開一個 Small issue」）；TBD-1～3 使用者照建議選定；撰寫 AC-1～4，待核准 |
 | 2026-11-27 | 使用者核准 AC-1～4 |
+| 2026-11-27 | 步驟 1～4 完成：紅燈後實作共用的 `top_k` 規則與 `--verify` 格式字元檢查，CI core 與 http-mcp 組全綠 |
 
 ---
 **建立日期**: 2026-11-27  
 **分級**: Small  
 **風險**: Low\
-**狀態**: 待實作
+**狀態**: 審查中

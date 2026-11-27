@@ -291,4 +291,35 @@ if (!d.markdown.split('\n').some((l) => l.startsWith('- **http38**') && l.includ
 " "$BRIEF38"
 echo "  structured unscanned_tags and markdown agree"
 
+echo "[http] issue-43 AC-1: top_k 必須是 1～100 的整數"
+# Prints "<status> <error>" for a POST; the body is JSON with `error` on a 400.
+post43() { curl -s -w '\n%{http_code}' -X POST "$SERVER_URL/v1/$1" -H 'Content-Type: application/json' -d "$2" \
+    | node -e "const l=require('fs').readFileSync(0,'utf8').trimEnd().split('\n');const code=l.pop();let e='';try{e=JSON.parse(l.join('\n')).error??''}catch{};process.stdout.write(code+' '+e)"; }
+get43() { curl -s -w '\n%{http_code}' "$SERVER_URL/v1/$1" \
+    | node -e "const l=require('fs').readFileSync(0,'utf8').trimEnd().split('\n');const code=l.pop();let e='';try{e=JSON.parse(l.join('\n')).error??''}catch{};process.stdout.write(code+' '+e)"; }
+names_range() { case "$1" in 400\ *top_k*1*100*) return 0 ;; *) return 1 ;; esac; }
+for BAD in -1 0 2.5 101; do
+    for EP in "recall|{\"query\":\"http\",\"top_k\":$BAD}" "wiki/file-query|{\"query\":\"HTTP endpoints\",\"title\":\"t43\",\"top_k\":$BAD}"; do
+        OUT=$(post43 "${EP%%|*}" "${EP#*|}")
+        names_range "$OUT" || { echo "  ✗ POST /v1/${EP%%|*} top_k=$BAD: want 400 naming top_k and 1–100, got: $OUT"; exit 1; }
+    done
+done
+for BAD in -1 0 2.5 101 abc; do
+    OUT=$(get43 "brief?top_k=$BAD")
+    names_range "$OUT" || { echo "  ✗ GET /v1/brief?top_k=$BAD: want 400 naming top_k and 1–100, got: $OUT"; exit 1; }
+done
+for OK in 1 100; do
+    for EP in "recall|{\"query\":\"http\",\"top_k\":$OK}" "wiki/file-query|{\"query\":\"HTTP endpoints\",\"title\":\"t43-$OK\",\"top_k\":$OK}"; do
+        OUT=$(post43 "${EP%%|*}" "${EP#*|}")
+        [ "${OUT%% *}" = "200" ] || { echo "  ✗ POST /v1/${EP%%|*} top_k=$OK: want 200, got: $OUT"; exit 1; }
+    done
+    OUT=$(get43 "brief?top_k=$OK"); [ "${OUT%% *}" = "200" ] || { echo "  ✗ GET /v1/brief?top_k=$OK: want 200, got: $OUT"; exit 1; }
+done
+for EP in 'recall|{"query":"http"}' 'wiki/file-query|{"query":"HTTP endpoints","title":"t43-none"}'; do
+    OUT=$(post43 "${EP%%|*}" "${EP#*|}")
+    [ "${OUT%% *}" = "200" ] || { echo "  ✗ POST /v1/${EP%%|*} without top_k: want 200, got: $OUT"; exit 1; }
+done
+OUT=$(get43 "brief"); [ "${OUT%% *}" = "200" ] || { echo "  ✗ GET /v1/brief without top_k: want 200, got: $OUT"; exit 1; }
+echo "  -1、0、2.5、101（與 brief 的 abc）回 400 並指出 top_k 與 1～100；1、100、省略照常 200"
+
 echo "[http] ok"

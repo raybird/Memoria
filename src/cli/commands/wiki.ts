@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { parseTopKOption } from '../../core/index.js'
 import type { MemoriaCore } from '../../core/index.js'
 
 export function registerWikiCommand(program: Command, core: MemoriaCore): void {
@@ -39,8 +40,7 @@ export function registerWikiCommand(program: Command, core: MemoriaCore): void {
         .option('--json', 'Machine-readable JSON output')
         .action(async (options: { query: string; title: string; kind?: 'synthesis' | 'comparison'; scope?: string; topK?: string; timeWindow?: string; mode?: 'keyword' | 'tree' | 'hybrid'; json?: boolean; ['top-k']?: string; ['time-window']?: string }) => {
             const topKRaw = options.topK ?? options['top-k'] ?? '5'
-            const topK = Number(topKRaw)
-            if (!Number.isFinite(topK) || topK <= 0) throw new Error(`Invalid --top-k '${topKRaw}'. Use a positive number`)
+            const topK = parseTopKOption(topKRaw)
             const result = await core.fileQuery({
                 query: options.query,
                 title: options.title,

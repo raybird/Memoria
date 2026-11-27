@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Command } from 'commander'
-import { renderBrief } from '../../core/index.js'
+import { parseTopKOption, renderBrief } from '../../core/index.js'
 import type { MemoriaCore, MemoriaPaths } from '../../core/index.js'
 
 type BriefCommandOptions = {
@@ -30,8 +30,7 @@ export function registerBriefCommand(program: Command, paths: MemoriaPaths, core
         .action(async (options: BriefCommandOptions) => {
             const days = Number(options.days ?? '30')
             if (!Number.isFinite(days) || days <= 0) throw new Error(`Invalid --days '${options.days}'. Use a positive number`)
-            const topK = Number(options.topK ?? '10')
-            if (!Number.isFinite(topK) || topK <= 0) throw new Error(`Invalid --top-k '${options.topK}'. Use a positive number`)
+            const topK = parseTopKOption(options.topK ?? '10')
 
             // cwd scoping (docs/issues/issue-17). An explicit --project keeps writing BRIEF.md —
             // only DETECTED scope changes the filename, so existing callers are untouched.

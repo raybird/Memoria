@@ -1,4 +1,5 @@
 import type { Command } from 'commander'
+import { parseTopKOption } from '../../core/index.js'
 import type { MemoriaCore, RecallFilter } from '../../core/index.js'
 
 const RECALL_MODES = ['keyword', 'tree', 'hybrid', 'vector'] as const
@@ -32,8 +33,7 @@ export function registerRecallCommand(program: Command, core: MemoriaCore): void
         .option('--include-superseded', 'Also return memories that were replaced by a newer one')
         .option('--json', 'Machine-readable JSON output')
         .action(async (query: string, options: RecallCommandOptions) => {
-            const topK = Number(options.topK ?? '5')
-            if (!Number.isFinite(topK) || topK <= 0) throw new Error(`Invalid --top-k '${options.topK}'. Use a positive number`)
+            const topK = parseTopKOption(options.topK ?? '5')
             if (options.mode && !RECALL_MODES.includes(options.mode as RecallMode)) {
                 throw new Error(`Invalid --mode '${options.mode}'. Use: ${RECALL_MODES.join('|')}`)
             }

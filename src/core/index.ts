@@ -103,7 +103,7 @@ export {
     resolveSessionId, resolveEventId,
     getEventType, getEventContentObject,
     maybeParseJson, normalizeSkillKey,
-    parseDaysOption, parseBoundaryDate,
+    parseDaysOption, parseBoundaryDate, TOP_K_RANGE, isValidTopK, parseTopKOption,
     inDateRange, parseCreatedAt,
     isLowValueMemoryText, sanitizeSessionDataForImport,
     effectiveUtility, buildCalibration, buildRouteUtility, tokenCoverage

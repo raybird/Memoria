@@ -30,7 +30,7 @@
 import http from 'node:http'
 import { z } from 'zod'
 import { MemoriaCore } from './core/index.js'
-import { renderBrief, resolveMemoriaPaths, existsSync } from './core/index.js'
+import { renderBrief, resolveMemoriaPaths, existsSync, isValidTopK, TOP_K_RANGE } from './core/index.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const DEFAULT_PORT = 3917
@@ -69,12 +69,15 @@ const rememberSchema = z
     })
     .passthrough()
 
+// issue-43: same rule as the CLI's --top-k (isValidTopK); the message names the range.
+const topKSchema = z.number().refine(isValidTopK, { message: `must be ${TOP_K_RANGE}` })
+
 const recallSchema = z
     .object({
         query: z.string(),
         project: z.string().optional(),
         scope: z.string().optional(),
-        top_k: z.number().optional(),
+        top_k: topKSchema.optional(),
         time_window: z.string().optional(),
         mode: recallModeSchema.optional(),
         include_superseded: z.boolean().optional()  // issue-5: default hides superseded memories
@@ -96,7 +99,7 @@ const fileQuerySchema = z
         title: z.string(),
         kind: z.enum(['synthesis', 'comparison']).optional(),
         scope: z.string().optional(),
-        top_k: z.number().optional(),
+        top_k: topKSchema.optional(),
         time_window: z.string().optional(),
         mode: recallModeSchema.optional()
     })
@@ -311,8 +314,8 @@ export function createServer(core: MemoriaCore): http.Server {
                     sendError(res, 400, 'Invalid days query param; expected a positive number')
                     return
                 }
-                if (topK !== undefined && (!Number.isFinite(topK) || topK <= 0)) {
-                    sendError(res, 400, 'Invalid top_k query param; expected a positive number')
+                if (topK !== undefined && !isValidTopK(topK)) {
+                    sendError(res, 400, `Invalid top_k query param; expected ${TOP_K_RANGE}`)
                     return
                 }
                 const result = await core.brief({ project, days, topK })

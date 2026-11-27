@@ -435,6 +435,22 @@ export function parseDaysOption(raw: string | undefined, optionName: string): nu
     return value
 }
 
+/** issue-43: the one `top_k` rule HTTP and the CLI share. recall reads a 2 × top_k candidate window,
+ *  so the cap bounds one query's scan; 100 is an order of magnitude above every caller seen. */
+export const TOP_K_MAX = 100
+export const TOP_K_RANGE = `an integer from 1 to ${TOP_K_MAX}`
+
+export function isValidTopK(value: number): boolean {
+    return Number.isInteger(value) && value >= 1 && value <= TOP_K_MAX
+}
+
+/** Parse a CLI `--top-k` value; throws naming the flag and the allowed range. */
+export function parseTopKOption(raw: string): number {
+    const value = Number(raw)
+    if (!isValidTopK(value)) throw new Error(`Invalid --top-k '${raw}'. Use ${TOP_K_RANGE}`)
+    return value
+}
+
 export function parseBoundaryDate(raw: string | undefined, optionName: string): Date | undefined {
     if (!raw) return undefined
     const d = new Date(raw)

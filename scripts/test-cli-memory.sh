@@ -549,4 +549,32 @@ u39 feedback "$R3" --score 0.7 >/dev/null
 [ "$U39_FAILS" -eq 0 ] || { echo "  ✗ issue-39：$U39_FAILS 項失敗"; exit 1; }
 echo "  help 寫明 --used 不影響寫入；帶不帶 --used 寫入相同；只給 --score 時沒有記憶累積效用"
 
+echo "[cli-memory] (issue-43 AC-2) --top-k 必須是 1～100 的整數"
+# Its own note: earlier sections supersede and prune, and file-query fails when recall finds nothing.
+"$CLI" remember "wombat43 的部署改用藍綠切換" --project demo >/dev/null
+run43() { # $1 = recall|brief|wiki, $2 = --top-k value -> prints "<exit code> <output>"
+    local out code
+    set +e
+    case "$1" in
+        recall) out=$("$CLI" recall "wombat43" --project demo --top-k "$2" 2>&1) ;;
+        brief)  out=$("$CLI" brief --project demo --top-k "$2" 2>&1) ;;
+        wiki)   out=$("$CLI" wiki file-query --query "wombat43" --title "t43-$2" --top-k "$2" 2>&1) ;;
+    esac
+    code=$?
+    set -e
+    printf '%s %s' "$code" "$out"
+}
+for CMD43 in recall brief wiki; do
+    for BAD in 0 -1 2.5 101 abc; do
+        OUT=$(run43 "$CMD43" "$BAD")
+        case "$OUT" in 0\ *) echo "  ✗ $CMD43 --top-k $BAD should fail: $OUT"; exit 1 ;; esac
+        case "$OUT" in *--top-k*1*100*) ;; *) echo "  ✗ $CMD43 --top-k $BAD: error must name --top-k and 1–100: $OUT"; exit 1 ;; esac
+    done
+    for OK in 1 100; do
+        OUT=$(run43 "$CMD43" "$OK")
+        case "$OUT" in 0\ *) ;; *) echo "  ✗ $CMD43 --top-k $OK should succeed: $OUT"; exit 1 ;; esac
+    done
+done
+echo "  recall、brief、wiki file-query 對 0、-1、2.5、101、abc 都失敗並指出範圍；1、100 照常"
+
 echo "[cli-memory] ✓ all checks passed"
