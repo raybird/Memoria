@@ -12,6 +12,10 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 
 本 issue 讓一則筆記的效用不論回報哪一半，recall 排序與 stale prune 都看得到。
 
+## 現況
+
+**現行 review**: review-095652d.md
+
 ## 涉及檔案
 
 採 TBD-1 做法 (b)：讀取時依筆記指紋合併兩半的效用，寫入不變。
@@ -77,6 +81,7 @@ issue-39 的增量覆審（review-03683f0 N1，見 [issue-39 TBD-3](../issue-39/
 | 2026-11-27 | 補入 issue-39 TBD-5：skill 的效用敘述要對筆記也成立 |
 | 2026-11-27 | TBD-1 使用者選 (b)，TBD-2 選相加；撰寫並核准 AC-1～4 |
 | 2026-11-27 | 步驟 1～3 完成，待審查 |
+| 2026-11-27 | review-095652d PASS，附 SHOULD FIX S1～S4、NICE TO HAVE N1～N5，結論待使用者確認 |
 
 ---
 **建立日期**: 2026-11-26  
